@@ -4,7 +4,7 @@ import { expect } from "@playwright/test";
 import { gotoAppShell, openSettings } from "./app";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { getServerId } from "./server-id";
-import { openSettingsHost } from "./settings";
+import { openSettingsHostSection } from "./settings";
 
 type PaseoAgentDaemonClient = Pick<
   InternalDaemonClient,
@@ -35,7 +35,7 @@ async function connectPaseoAgentClient(): Promise<PaseoAgentDaemonClient> {
 export async function openPaseoAgentSettings(page: Page): Promise<void> {
   await gotoAppShell(page);
   await openSettings(page);
-  await openSettingsHost(page, getServerId());
+  await openSettingsHostSection(page, getServerId(), "providers");
   await page.getByRole("button", { name: "Paseo Agent provider details", exact: true }).click();
   const sheet = page.getByTestId("paseo-agent-settings-sheet");
   await expect(sheet).toBeVisible();
