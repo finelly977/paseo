@@ -1,5 +1,9 @@
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { hasEnvReference, substituteEnvReferences } from "./env-references.js";
+
+const execAsync = promisify(exec);
+const CREDENTIAL_COMMAND_TIMEOUT_MS = 30_000;
 
 // Resolution of a *self-supplied* OAuth refresh token expression — a literal, an env
 // reference (`$VAR` / `${VAR}`), or a `!command` that prints the token. This is an
@@ -17,23 +21,40 @@ import { hasEnvReference, substituteEnvReferences } from "./env-references.js";
 export function resolveRefreshTokenExpression(
   value: string,
   env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
+): Promise<string | undefined> {
   if (value.startsWith("!")) {
     const command = value.slice(1).trim();
     if (!command) {
-      return undefined;
+      return Promise.resolve(undefined);
     }
-    try {
-      const output = execSync(command, { encoding: "utf8", env }).trim();
-      return output.length > 0 ? output : undefined;
-    } catch {
-      return undefined;
-    }
+
+    return execAsync(command, {
+      encoding: "utf8",
+      env,
+      timeout: CREDENTIAL_COMMAND_TIMEOUT_MS,
+    })
+      .then(({ stdout }) => {
+        const output = stdout.trim();
+        return output.length > 0 ? output : undefined;
+      })
+      .catch(() => undefined);
   }
+
+  return Promise.resolve(resolveStaticRefreshTokenExpression(value, env));
+}
+
+function resolveStaticRefreshTokenExpression(
+  value: string,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
   if (hasEnvReference(value)) {
-    const substituted = substituteEnvReferences(value, env);
-    return substituted && substituted.length > 0 ? substituted : undefined;
+    const output = substituteEnvReferences(value, env);
+    if (output) {
+      return output.length > 0 ? output : undefined;
+    }
+    return undefined;
   }
+
   return value.length > 0 ? value : undefined;
 }
 

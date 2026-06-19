@@ -268,45 +268,46 @@ function toPiModels(entry: PaseoAgentInferenceProviderEntry, settings: ResolvedP
  * normally lives in the Paseo-owned store (populated by `paseo login chatgpt`); an
  * advanced `options.refreshToken` may supply the user's own token instead.
  */
-export function paseoAgentInferenceProviders(
+export async function paseoAgentInferenceProviders(
   config: PaseoAgentConfig,
   env: NodeJS.ProcessEnv = process.env,
-): PaseoAgentInferenceProvider[] {
-  return entries(config).flatMap(([name, entry]): PaseoAgentInferenceProvider[] => {
+): Promise<PaseoAgentInferenceProvider[]> {
+  const providers: PaseoAgentInferenceProvider[] = [];
+
+  for (const [name, entry] of entries(config)) {
     const settings = resolveProviderSettings(entry);
     const models = toPiModels(entry, settings);
 
     if (entry.type === "openai-codex") {
       const refreshToken = entry.options.refreshToken
-        ? resolveRefreshTokenExpression(entry.options.refreshToken, env)
+        ? await resolveRefreshTokenExpression(entry.options.refreshToken, env)
         : undefined;
-      return [
-        {
-          name,
-          config: {
-            ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
-            ...(settings.api ? { api: settings.api } : {}),
-            models,
-          },
-          oauth: { kind: "openai-codex" as const, ...(refreshToken ? { refreshToken } : {}) },
-        },
-      ];
-    }
-
-    return [
-      {
+      providers.push({
         name,
         config: {
           ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
-          ...(settings.apiKey ? { apiKey: settings.apiKey } : {}),
           ...(settings.api ? { api: settings.api } : {}),
-          ...(settings.headers ? { headers: settings.headers } : {}),
-          ...(settings.authHeader ? { authHeader: settings.authHeader } : {}),
           models,
         },
+        oauth: { kind: "openai-codex" as const, ...(refreshToken ? { refreshToken } : {}) },
+      });
+      continue;
+    }
+
+    providers.push({
+      name,
+      config: {
+        ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
+        ...(settings.apiKey ? { apiKey: settings.apiKey } : {}),
+        ...(settings.api ? { api: settings.api } : {}),
+        ...(settings.headers ? { headers: settings.headers } : {}),
+        ...(settings.authHeader ? { authHeader: settings.authHeader } : {}),
+        models,
       },
-    ];
-  });
+    });
+  }
+
+  return providers;
 }
 
 /** Enumerate configured models as Paseo model definitions (no Pi disk/auth reads). */
@@ -363,7 +364,7 @@ export function paseoAgentHasUsableModel(
 export function resolvePaseoAgentModel(
   config: PaseoAgentConfig,
   requestedModelId: string | null | undefined,
-  registeredProviders: PaseoAgentInferenceProvider[] = paseoAgentInferenceProviders(config),
+  registeredProviders: PaseoAgentInferenceProvider[] = paseoAgentModelInventory(config),
   agentDefaultModelId?: string | null,
 ): PaseoAgentModelReference | undefined {
   if (requestedModelId) {
@@ -381,6 +382,13 @@ export function resolvePaseoAgentModel(
   }
 
   return firstRegisteredModel(registeredProviders);
+}
+
+function paseoAgentModelInventory(config: PaseoAgentConfig): PaseoAgentInferenceProvider[] {
+  return entries(config).map(([name, entry]) => {
+    const settings = resolveProviderSettings(entry);
+    return { name, config: { models: toPiModels(entry, settings) } };
+  });
 }
 
 function firstModelId(config: PaseoAgentConfig): string | undefined {

@@ -535,7 +535,7 @@ export class PaseoAgentClient implements AgentClient {
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
-    const inferenceProviders = paseoAgentInferenceProviders(this.config);
+    const inferenceProviders = await paseoAgentInferenceProviders(this.config);
     if (inferenceProviders.length === 0) {
       throw new Error(
         "Paseo Agent has no configured inference providers. Add agents.paseo.providers to your Paseo config.",

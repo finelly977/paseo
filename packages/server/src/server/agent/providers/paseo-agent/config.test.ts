@@ -115,8 +115,8 @@ describe("listPaseoAgentModels", () => {
 });
 
 describe("paseoAgentInferenceProviders (per-type defaults)", () => {
-  it("applies openrouter defaults (base url, api, model fields)", () => {
-    const [provider] = paseoAgentInferenceProviders(configWith());
+  it("applies openrouter defaults (base url, api, model fields)", async () => {
+    const [provider] = await paseoAgentInferenceProviders(configWith());
     expect(provider.name).toBe("openrouter-main");
     expect(provider.config.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(provider.config.apiKey).toBe("sk-test");
@@ -130,19 +130,19 @@ describe("paseoAgentInferenceProviders (per-type defaults)", () => {
     });
   });
 
-  it("falls back to the type's env var when no apiKey is given", () => {
+  it("falls back to the type's env var when no apiKey is given", async () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
         anthropic: { type: "anthropic", options: { models: [{ id: "claude-x" }] } },
       },
     });
-    const [provider] = paseoAgentInferenceProviders(config);
+    const [provider] = await paseoAgentInferenceProviders(config);
     expect(provider.config.baseUrl).toBe("https://api.anthropic.com");
     expect(provider.config.apiKey).toBe("$ANTHROPIC_API_KEY");
     expect(provider.config.models?.[0]?.api).toBe("anthropic-messages");
   });
 
-  it("supports an OpenCode Zen / openai-compatible endpoint with per-model api override", () => {
+  it("supports an OpenCode Zen / openai-compatible endpoint with per-model api override", async () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
         zen: {
@@ -155,13 +155,13 @@ describe("paseoAgentInferenceProviders (per-type defaults)", () => {
         },
       },
     });
-    const [provider] = paseoAgentInferenceProviders(config);
+    const [provider] = await paseoAgentInferenceProviders(config);
     expect(provider.config.baseUrl).toBe("https://opencode.ai/zen/v1");
     expect(provider.config.models?.[0]?.api).toBe("openai-completions");
     expect(provider.config.models?.[1]?.api).toBe("anthropic-messages");
   });
 
-  it("passes through the custom escape hatch (explicit api + authHeader)", () => {
+  it("passes through the custom escape hatch (explicit api + authHeader)", async () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
         vertex: {
@@ -177,7 +177,7 @@ describe("paseoAgentInferenceProviders (per-type defaults)", () => {
         },
       },
     });
-    const [provider] = paseoAgentInferenceProviders(config);
+    const [provider] = await paseoAgentInferenceProviders(config);
     expect(provider.config.api).toBe("google-generative-ai");
     expect(provider.config.authHeader).toBe(true);
     expect(provider.config.headers).toEqual({ "x-extra": "1" });
@@ -288,8 +288,8 @@ describe("openai-codex (ChatGPT subscription) provider", () => {
     ).toThrow();
   });
 
-  it("maps to a codex inference provider with an oauth marker and no api key", () => {
-    const [provider] = paseoAgentInferenceProviders(codexConfig({}), {});
+  it("maps to a codex inference provider with an oauth marker and no api key", async () => {
+    const [provider] = await paseoAgentInferenceProviders(codexConfig({}), {});
     expect(provider.name).toBe("chatgpt");
     expect(provider.oauth).toEqual({ kind: "openai-codex" });
     expect(provider.config.apiKey).toBeUndefined();
@@ -298,9 +298,11 @@ describe("openai-codex (ChatGPT subscription) provider", () => {
     expect(provider.config.models?.[0]?.api).toBe("openai-codex-responses");
   });
 
-  it("carries an advanced self-supplied refresh token resolved from an env var", () => {
+  it("carries an advanced self-supplied refresh token resolved from an env var", async () => {
     const config = codexConfig({ refreshToken: "$CODEX_REFRESH_TOKEN" });
-    const [provider] = paseoAgentInferenceProviders(config, { CODEX_REFRESH_TOKEN: "rt-env" });
+    const [provider] = await paseoAgentInferenceProviders(config, {
+      CODEX_REFRESH_TOKEN: "rt-env",
+    });
     expect(provider.oauth).toEqual({ kind: "openai-codex", refreshToken: "rt-env" });
   });
 
