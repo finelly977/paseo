@@ -1,4 +1,3 @@
-import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   DaemonSelfUpdateInProgressError,
@@ -18,11 +17,11 @@ interface TestLogger {
 type Inspection = NpmGlobalPaseoInstall | Error;
 type RuntimeCall = "inspect" | "installLatest";
 
-const globalRoot = path.join(path.sep, "global", "lib");
-const globalNodeModules = path.join(globalRoot, "node_modules");
-const cliPackagePath = path.join(globalNodeModules, "@getpaseo", "cli");
-const npmServerPackageRoot = path.join(cliPackagePath, "node_modules", "@getpaseo", "server");
-const sourceServerPackageRoot = path.join(path.sep, "repo", "packages", "server");
+const globalRoot = "/global/lib";
+const globalNodeModules = `${globalRoot}/node_modules`;
+const cliPackagePath = `${globalNodeModules}/@getpaseo/cli`;
+const npmServerPackageRoot = `${cliPackagePath}/node_modules/@getpaseo/server`;
+const sourceServerPackageRoot = "/repo/packages/server";
 
 function npmGlobalPaseoInstall(
   version: string,
