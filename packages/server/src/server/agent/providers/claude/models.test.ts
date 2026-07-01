@@ -38,6 +38,7 @@ describe("getClaudeModels", () => {
       "claude-fable-5",
       "claude-opus-4-8[1m]",
       "claude-opus-4-8",
+      "claude-sonnet-5",
       "claude-opus-4-7[1m]",
       "claude-opus-4-7",
       "claude-opus-4-6[1m]",
@@ -203,12 +204,14 @@ describe("normalizeClaudeRuntimeModelId", () => {
     expect(normalizeClaudeRuntimeModelId("claude-fable-5")).toBe("claude-fable-5");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6[1m]")).toBe("claude-opus-4-6[1m]");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5")).toBe("claude-sonnet-5");
     expect(normalizeClaudeRuntimeModelId("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-haiku-4-5")).toBe("claude-haiku-4-5");
   });
 
   it("normalizes dated model IDs to base model", () => {
     expect(normalizeClaudeRuntimeModelId("claude-fable-5-20260301")).toBe("claude-fable-5");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5-20260101")).toBe("claude-sonnet-5");
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6-20260101")).toBe("claude-opus-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-sonnet-4-6-20260101")).toBe("claude-sonnet-4-6");
     expect(normalizeClaudeRuntimeModelId("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5");
@@ -216,6 +219,7 @@ describe("normalizeClaudeRuntimeModelId", () => {
 
   it("preserves [1m] suffix from runtime model strings", () => {
     expect(normalizeClaudeRuntimeModelId("claude-opus-4-6[1m]")).toBe("claude-opus-4-6[1m]");
+    expect(normalizeClaudeRuntimeModelId("claude-sonnet-5[1m]")).toBe("claude-sonnet-5");
   });
 
   it("returns null for empty/null/undefined", () => {

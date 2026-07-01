@@ -416,6 +416,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
         "claude-fable-5",
         "claude-opus-4-8[1m]",
         "claude-opus-4-8",
+        "claude-sonnet-5",
         "claude-opus-4-7[1m]",
         "claude-opus-4-7",
         "claude-opus-4-6[1m]",
@@ -457,6 +458,8 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
       expect(getThinkingIds("claude-fable-5")).toContain("ultracode");
       expect(getThinkingIds("claude-opus-4-8[1m]")).toContain("ultracode");
       expect(getThinkingIds("claude-opus-4-8")).toContain("ultracode");
+      expect(getThinkingIds("claude-sonnet-5")).toContain("xhigh");
+      expect(getThinkingIds("claude-sonnet-5")).not.toContain("ultracode");
       expect(getThinkingIds("claude-opus-4-7")).not.toContain("ultracode");
       expect(getThinkingIds("claude-sonnet-4-6")).not.toContain("ultracode");
     } finally {

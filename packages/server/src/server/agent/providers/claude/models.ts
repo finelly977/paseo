@@ -12,7 +12,7 @@ const CLAUDE_THINKING_OPTIONS = [
   { id: "max", label: "Max" },
 ] as const;
 
-const CLAUDE_OPUS_EXTENDED_THINKING_OPTIONS = [
+const CLAUDE_EXTENDED_THINKING_OPTIONS = [
   { id: "low", label: "Low" },
   { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
@@ -21,7 +21,7 @@ const CLAUDE_OPUS_EXTENDED_THINKING_OPTIONS = [
 ] as const;
 
 const CLAUDE_ULTRACODE_THINKING_OPTIONS = [
-  ...CLAUDE_OPUS_EXTENDED_THINKING_OPTIONS,
+  ...CLAUDE_EXTENDED_THINKING_OPTIONS,
   { id: "ultracode", label: "Ultracode" },
 ] as const;
 
@@ -50,17 +50,24 @@ const CLAUDE_MODELS: AgentModelDefinition[] = [
   },
   {
     provider: "claude",
+    id: "claude-sonnet-5",
+    label: "Sonnet 5",
+    description: "Sonnet 5 · Efficient for routine tasks",
+    thinkingOptions: [...CLAUDE_EXTENDED_THINKING_OPTIONS],
+  },
+  {
+    provider: "claude",
     id: "claude-opus-4-7[1m]",
     label: "Opus 4.7 1M",
     description: "Opus 4.7 with 1M context window",
-    thinkingOptions: [...CLAUDE_OPUS_EXTENDED_THINKING_OPTIONS],
+    thinkingOptions: [...CLAUDE_EXTENDED_THINKING_OPTIONS],
   },
   {
     provider: "claude",
     id: "claude-opus-4-7",
     label: "Opus 4.7",
     description: "Opus 4.7 · Previous release",
-    thinkingOptions: [...CLAUDE_OPUS_EXTENDED_THINKING_OPTIONS],
+    thinkingOptions: [...CLAUDE_EXTENDED_THINKING_OPTIONS],
   },
   {
     provider: "claude",
@@ -218,13 +225,16 @@ export function normalizeClaudeRuntimeModelId(value: string | null | undefined):
     return trimmed;
   }
 
-  // Fable uses a single-segment version (claude-fable-5), not the {major}-{minor}
-  // scheme of opus/sonnet/haiku, so match it separately. This maps dated runtime
-  // strings (e.g. claude-fable-5-20260301) back to the catalog ID. No [1m] variant:
-  // Fable 5 is natively 1M, so there is no 200K-default model to opt into 1M.
-  const fableMatch = trimmed.match(/(?:claude-)?fable[-_ ]+(\d+)/i);
-  if (fableMatch) {
-    return `claude-fable-${fableMatch[1]}`;
+  // Fable and Sonnet 5 use single-segment versions, not the {major}-{minor}
+  // scheme of older opus/sonnet/haiku models. They are natively 1M, so map
+  // dated or suffixed runtime strings back to the one catalog ID.
+  const singleSegmentMatch = trimmed.match(/(?:claude-)?(fable|sonnet)[-_ ]+(\d+)/i);
+  if (singleSegmentMatch) {
+    const family = singleSegmentMatch[1].toLowerCase();
+    const major = singleSegmentMatch[2];
+    if (family === "fable" || (family === "sonnet" && major === "5")) {
+      return `claude-${family}-${major}`;
+    }
   }
 
   // Match: claude-{family}-{major}-{minor}[1m]? possibly followed by a date suffix
