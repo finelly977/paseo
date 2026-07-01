@@ -10,7 +10,6 @@ import {
   type AgentClient,
   type AgentLaunchContext,
   type AgentMode,
-  type AgentModelDefinition,
   type AgentPermissionRequest,
   type AgentPermissionResponse,
   type AgentPersistenceHandle,
@@ -22,8 +21,8 @@ import {
   type AgentSessionConfig,
   type AgentSlashCommand,
   type AgentStreamEvent,
-  type ListModesOptions,
-  type ListModelsOptions,
+  type FetchCatalogOptions,
+  type ProviderCatalog,
 } from "../../agent-sdk-types.js";
 import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "../provider-runner.js";
 import {
@@ -604,12 +603,11 @@ export class PaseoAgentClient implements AgentClient {
     throw new Error("Paseo Agent does not support session resume in this prototype");
   }
 
-  async listModels(_options: ListModelsOptions): Promise<AgentModelDefinition[]> {
-    return listPaseoAgentModels(this.config);
-  }
-
-  async listModes(_options: ListModesOptions): Promise<AgentMode[]> {
-    return this.loadAvailableAgentModes();
+  async fetchCatalog(_options: FetchCatalogOptions): Promise<ProviderCatalog> {
+    return {
+      models: listPaseoAgentModels(this.config),
+      modes: await this.loadAvailableAgentModes(),
+    };
   }
 
   async isAvailable(): Promise<boolean> {

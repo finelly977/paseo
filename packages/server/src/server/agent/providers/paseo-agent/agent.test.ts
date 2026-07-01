@@ -208,7 +208,11 @@ describe("PaseoAgentClient", () => {
 
   it("lists only configured models, never Pi disk/default models", async () => {
     const client = new PaseoAgentClient({ logger: createTestLogger(), config: makeConfig() });
-    const models = await client.listModels({ cwd: process.cwd(), force: false });
+    const { models } = await client.fetchCatalog({
+      scope: "workspace",
+      cwd: process.cwd(),
+      force: false,
+    });
     expect(models.map((m) => m.id)).toEqual(["openrouter-main/test-model"]);
     expect(models[0]?.isDefault).toBe(true);
   });
@@ -358,7 +362,12 @@ Profile prompt.
     });
     const client = new PaseoAgentClient({ logger: createTestLogger(), config, paseoHome });
 
-    await expect(client.listModes({ cwd: process.cwd(), force: false })).resolves.toEqual([
+    const { modes } = await client.fetchCatalog({
+      scope: "workspace",
+      cwd: process.cwd(),
+      force: false,
+    });
+    expect(modes).toEqual([
       { id: "builder", label: "Builder" },
       { id: "reviewer", label: "reviewer" },
     ]);
