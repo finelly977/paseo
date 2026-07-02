@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import { loadPersistedConfig, savePersistedConfig } from "../../../persisted-config.js";
 import { PaseoAgentConfigService } from "./config-service.js";
+import { PaseoAgentConfigSchema } from "./config.js";
 import { paseoAgentAuthStoragePath } from "./oauth-store.js";
 
 describe("PaseoAgentConfigService", () => {
@@ -67,8 +68,50 @@ describe("PaseoAgentConfigService", () => {
         providerType: "kimi-coding",
         options: { apiKey: "sk-test", models: [{ id: "kimi-k3" }] },
       }),
-    ).toThrow(/Unknown model provider type "kimi-coding". Known types: openrouter/);
+    ).toThrow(
+      /Unknown model provider type "kimi-coding". Known provider ids: openrouter, chatgpt, kimi, opencode-go/,
+    );
     expect(loadPersistedConfig(home).agents?.paseo?.providers).toBeUndefined();
+  });
+
+  test("schema accepts an unknown type structurally and the service rejects it", () => {
+    const parsed = PaseoAgentConfigSchema.parse({
+      providers: {
+        future: { type: "future-provider", options: { models: [{ id: "m" }] } },
+      },
+    });
+    expect(parsed.providers?.future?.type).toBe("future-provider");
+    savePersistedConfig(
+      home,
+      {
+        agents: { paseo: parsed },
+      },
+      createTestLogger(),
+    );
+    const service = new PaseoAgentConfigService({
+      paseoHome: home,
+      logger: createTestLogger(),
+    });
+
+    expect(() => service.getProviders()).toThrow(
+      /Unknown model provider type "future-provider". Known provider ids: openrouter, chatgpt, kimi, opencode-go/,
+    );
+  });
+
+  test("maps the legacy provider type alias to the catalog id on write", () => {
+    const service = new PaseoAgentConfigService({
+      paseoHome: home,
+      logger: createTestLogger(),
+    });
+
+    const provider = service.setProvider({
+      name: "chatgpt",
+      providerType: "openai-codex",
+      options: {},
+    });
+
+    expect(provider.providerType).toBe("chatgpt");
+    expect(loadPersistedConfig(home).agents?.paseo?.providers?.chatgpt?.type).toBe("chatgpt");
   });
 
   test("preserves shared config fields when writing agents.paseo", () => {
@@ -116,13 +159,18 @@ describe("PaseoAgentConfigService", () => {
     );
   });
 
-  test("stores ChatGPT OAuth credentials in the Paseo-owned auth store with future fields intact", () => {
+  test("stores OAuth credentials in the Paseo-owned auth store with future fields intact", () => {
     const service = new PaseoAgentConfigService({
       paseoHome: home,
       logger: createTestLogger(),
     });
+    service.setProvider({
+      name: "chatgpt",
+      providerType: "chatgpt",
+      options: {},
+    });
 
-    service.storeChatGptCredential("chatgpt", {
+    service.storeOAuthCredential("chatgpt", {
       type: "oauth",
       access: "access-token",
       refresh: "refresh-token",
@@ -142,19 +190,17 @@ describe("PaseoAgentConfigService", () => {
     expect(authPath).toBe(join(home, "paseo-agent", "auth.json"));
   });
 
-  test("reports ChatGPT auth as stored without returning tokens", () => {
+  test("reports OAuth auth as stored without returning tokens", () => {
     const service = new PaseoAgentConfigService({
       paseoHome: home,
       logger: createTestLogger(),
     });
     service.setProvider({
       name: "chatgpt",
-      providerType: "openai-codex",
-      options: {
-        models: [{ id: "gpt-5.3-codex", reasoning: true }],
-      },
+      providerType: "chatgpt",
+      options: {},
     });
-    service.storeChatGptCredential("chatgpt", {
+    service.storeOAuthCredential("chatgpt", {
       type: "oauth",
       access: "access-token",
       refresh: "refresh-token",
@@ -165,7 +211,8 @@ describe("PaseoAgentConfigService", () => {
     expect(providers.providers).toEqual([
       expect.objectContaining({
         name: "chatgpt",
-        providerType: "openai-codex",
+        providerType: "chatgpt",
+        models: [{ id: "gpt-5.3-codex", reasoning: true }],
         auth: { kind: "oauth", configured: true, source: "stored" },
         available: true,
       }),

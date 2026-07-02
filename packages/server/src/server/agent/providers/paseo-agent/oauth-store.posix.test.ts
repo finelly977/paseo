@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isPlatform } from "../../../../test-utils/platform.js";
-import { loginAndStoreCodex, loginAndStoreCodexBrowser } from "./oauth-store.js";
+import { loginAndStoreOAuth, storeOAuthCredential } from "./oauth-store.js";
 
 describe.skipIf(isPlatform("win32"))("oauth-store POSIX-only", () => {
   let home: string;
@@ -20,10 +20,11 @@ describe.skipIf(isPlatform("win32"))("oauth-store POSIX-only", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("stores device-code credentials in a private file", async () => {
+  it("stores login credentials in a private file", async () => {
     const login = async () => ({ refresh: "rt-from-login", access: "ac", expires: 123 });
 
-    const { path } = await loginAndStoreCodex({
+    const { path } = await loginAndStoreOAuth({
+      flow: "paseo-test-oauth",
       providerInstance: "chatgpt",
       env,
       onDeviceCode: () => {},
@@ -33,17 +34,11 @@ describe.skipIf(isPlatform("win32"))("oauth-store POSIX-only", () => {
     expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 
-  it("stores browser-login credentials in a private file", async () => {
-    const login = async (opts: { onAuth: (info: { url: string }) => void }) => {
-      opts.onAuth({ url: "https://auth.openai.com/oauth/authorize?x=1" });
-      return { refresh: "rt-browser", access: "ac", expires: 456 };
-    };
-
-    const { path } = await loginAndStoreCodexBrowser({
+  it("stores explicit credentials in a private file", () => {
+    const { path } = storeOAuthCredential({
       providerInstance: "chatgpt",
       env,
-      onAuthUrl: () => {},
-      login,
+      credential: { type: "oauth", access: "ac", refresh: "rt", expires: 123 },
     });
 
     expect(statSync(path).mode & 0o777).toBe(0o600);

@@ -34,15 +34,16 @@ describe("PaseoAgentConfigSchema", () => {
     expect(() => PaseoAgentConfigSchema.parse({ providers: {}, unexpected: true })).toThrow();
   });
 
-  it("rejects an unknown model provider type", () => {
-    expect(() =>
-      PaseoAgentConfigSchema.parse({
-        providers: { p: { type: "mystery", options: { models: [{ id: "m" }] } } },
-      }),
-    ).toThrow();
+  it("accepts unknown model provider types structurally", () => {
+    const config = PaseoAgentConfigSchema.parse({
+      providers: {
+        future: { type: "future-provider", options: { models: [{ id: "m" }] } },
+      },
+    });
+    expect(config.providers?.future?.type).toBe("future-provider");
   });
 
-  it("requires at least one model per model provider", () => {
+  it("rejects an empty instance model override", () => {
     expect(() =>
       PaseoAgentConfigSchema.parse({
         providers: { p: { type: "openrouter", options: { models: [] } } },
@@ -50,36 +51,31 @@ describe("PaseoAgentConfigSchema", () => {
     ).toThrow();
   });
 
-  it("requires baseUrl for openai-compatible and api for custom", () => {
-    expect(() =>
-      PaseoAgentConfigSchema.parse({
-        providers: { p: { type: "openai-compatible", options: { models: [{ id: "m" }] } } },
-      }),
-    ).toThrow(/baseUrl/);
-    expect(() =>
-      PaseoAgentConfigSchema.parse({
-        providers: {
-          p: { type: "custom", options: { baseUrl: "https://x.test", models: [{ id: "m" }] } },
-        },
-      }),
-    ).toThrow(/api/);
-  });
-
-  it("accepts an empty config", () => {
-    expect(PaseoAgentConfigSchema.parse({})).toEqual({});
+  it("accepts a provider entry without options when the catalog supplies defaults", () => {
+    const config = PaseoAgentConfigSchema.parse({
+      providers: { chatgpt: { type: "chatgpt" } },
+    });
+    expect(config.providers?.chatgpt?.options).toEqual({});
   });
 
   it("accepts multiple entries of the same type with distinct names", () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
-        "openai-a": { type: "openai", options: { apiKey: "sk-a", models: [{ id: "gpt-a" }] } },
-        "openai-b": {
-          type: "openai",
-          options: { baseUrl: "https://proxy.test/v1", apiKey: "sk-b", models: [{ id: "gpt-b" }] },
+        "openrouter-a": {
+          type: "openrouter",
+          options: { apiKey: "sk-a", models: [{ id: "model-a" }] },
+        },
+        "openrouter-b": {
+          type: "openrouter",
+          options: {
+            baseUrl: "https://proxy.test/v1",
+            apiKey: "sk-b",
+            models: [{ id: "model-b" }],
+          },
         },
       },
     });
-    expect(Object.keys(config.providers ?? {})).toEqual(["openai-a", "openai-b"]);
+    expect(Object.keys(config.providers ?? {})).toEqual(["openrouter-a", "openrouter-b"]);
   });
 });
 
@@ -107,6 +103,13 @@ describe("listPaseoAgentModels", () => {
     expect(models.every((m) => m.provider === "paseo")).toBe(true);
   });
 
+  it("uses catalog model defaults when an instance does not override them", () => {
+    const models = listPaseoAgentModels(
+      PaseoAgentConfigSchema.parse({ providers: { chatgpt: { type: "chatgpt" } } }),
+    );
+    expect(models.map((m) => m.id)).toEqual(["chatgpt/gpt-5.3-codex"]);
+  });
+
   it("marks the configured default model", () => {
     const models = listPaseoAgentModels(configWith({ defaultModel: "openrouter-main/openai/gpt" }));
     const defaults = models.filter((m) => m.isDefault).map((m) => m.id);
@@ -114,8 +117,8 @@ describe("listPaseoAgentModels", () => {
   });
 });
 
-describe("paseoAgentModelProviders (per-type defaults)", () => {
-  it("applies openrouter defaults (base url, api, model fields)", async () => {
+describe("paseoAgentModelProviders", () => {
+  it("applies OpenRouter catalog defaults", async () => {
     const [provider] = await paseoAgentModelProviders(configWith());
     expect(provider.name).toBe("openrouter-main");
     expect(provider.config.baseUrl).toBe("https://openrouter.ai/api/v1");
@@ -130,62 +133,94 @@ describe("paseoAgentModelProviders (per-type defaults)", () => {
     });
   });
 
-  it("falls back to the type's env var when no apiKey is given", async () => {
+  it("falls back to the catalog env var when no apiKey is given", async () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
-        anthropic: { type: "anthropic", options: { models: [{ id: "claude-x" }] } },
+        openrouter: { type: "openrouter", options: { models: [{ id: "m" }] } },
       },
     });
     const [provider] = await paseoAgentModelProviders(config);
-    expect(provider.config.baseUrl).toBe("https://api.anthropic.com");
-    expect(provider.config.apiKey).toBe("$ANTHROPIC_API_KEY");
+    expect(provider.config.apiKey).toBe("$OPENROUTER_API_KEY");
+  });
+
+  it("applies the Kimi catalog API and default header", async () => {
+    const config = PaseoAgentConfigSchema.parse({
+      providers: {
+        kimi: { type: "kimi", options: { models: [{ id: "kimi-k2" }] } },
+      },
+    });
+    const [provider] = await paseoAgentModelProviders(config);
+    expect(provider.config.baseUrl).toBe("https://api.kimi.com/coding");
+    expect(provider.config.apiKey).toBe("$KIMI_API_KEY");
+    expect(provider.config.api).toBe("anthropic-messages");
+    expect(provider.config.headers).toEqual({ "User-Agent": "KimiCLI/1.5" });
     expect(provider.config.models?.[0]?.api).toBe("anthropic-messages");
   });
 
-  it("supports an OpenCode Zen / openai-compatible endpoint with per-model api override", async () => {
+  it("applies the OpenCode Go catalog base URL", async () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
-        zen: {
-          type: "openai-compatible",
-          options: {
-            baseUrl: "https://opencode.ai/zen/v1",
-            apiKey: "$OPENCODE_API_KEY",
-            models: [{ id: "big-pickle" }, { id: "claude-sonnet", api: "anthropic-messages" }],
-          },
-        },
+        go: { type: "opencode-go", options: { models: [{ id: "glm-5" }] } },
       },
     });
     const [provider] = await paseoAgentModelProviders(config);
-    expect(provider.config.baseUrl).toBe("https://opencode.ai/zen/v1");
-    expect(provider.config.models?.[0]?.api).toBe("openai-completions");
-    expect(provider.config.models?.[1]?.api).toBe("anthropic-messages");
+    expect(provider.config.baseUrl).toBe("https://opencode.ai/zen/go/v1");
+    expect(provider.config.apiKey).toBe("$OPENCODE_API_KEY");
+    expect(provider.config.api).toBe("openai-completions");
   });
 
-  it("passes through the custom escape hatch (explicit api + authHeader)", async () => {
-    const config = PaseoAgentConfigSchema.parse({
-      providers: {
-        vertex: {
-          type: "custom",
-          options: {
-            baseUrl: "https://my-gateway.test/v1",
-            api: "google-generative-ai",
-            apiKey: "sk-custom",
-            authHeader: true,
-            headers: { "x-extra": "1" },
-            models: [{ id: "gemini" }],
+  it("maps OAuth catalog entries to flow-based providers without an api key", async () => {
+    const [provider] = await paseoAgentModelProviders(
+      PaseoAgentConfigSchema.parse({ providers: { chatgpt: { type: "chatgpt" } } }),
+      {},
+    );
+    expect(provider.name).toBe("chatgpt");
+    expect(provider.oauth).toEqual({ flow: "openai-codex" });
+    expect(provider.config.apiKey).toBeUndefined();
+    expect(provider.config.api).toBe("openai-codex-responses");
+    expect(provider.config.baseUrl).toBe("https://chatgpt.com/backend-api");
+    expect(provider.config.models?.[0]?.id).toBe("gpt-5.3-codex");
+  });
+
+  it("lets instance models override catalog default models", async () => {
+    const [provider] = await paseoAgentModelProviders(
+      PaseoAgentConfigSchema.parse({
+        providers: {
+          chatgpt: {
+            type: "chatgpt",
+            options: { models: [{ id: "gpt-other", reasoning: false }] },
           },
         },
+      }),
+    );
+    expect(provider.config.models?.map((model) => model.id)).toEqual(["gpt-other"]);
+  });
+
+  it("maps the legacy type alias to the catalog entry", async () => {
+    const [provider] = await paseoAgentModelProviders(
+      PaseoAgentConfigSchema.parse({
+        providers: {
+          chatgpt: { type: "openai-codex" },
+        },
+      }),
+    );
+    expect(provider.oauth).toEqual({ flow: "openai-codex" });
+    expect(provider.config.models?.[0]?.id).toBe("gpt-5.3-codex");
+  });
+
+  it("rejects unknown provider types at runtime with known ids", async () => {
+    const config = PaseoAgentConfigSchema.parse({
+      providers: {
+        mystery: { type: "mystery", options: { models: [{ id: "m" }] } },
       },
     });
-    const [provider] = await paseoAgentModelProviders(config);
-    expect(provider.config.api).toBe("google-generative-ai");
-    expect(provider.config.authHeader).toBe(true);
-    expect(provider.config.headers).toEqual({ "x-extra": "1" });
-    expect(provider.config.models?.[0]?.api).toBe("google-generative-ai");
+    await expect(paseoAgentModelProviders(config)).rejects.toThrow(
+      /Unknown model provider type "mystery". Known provider ids: openrouter, chatgpt, kimi, opencode-go/,
+    );
   });
 });
 
-describe("paseoAgentHasUsableModel (env-aware auth)", () => {
+describe("paseoAgentHasUsableModel", () => {
   it("is true for a literal api key", () => {
     expect(paseoAgentHasUsableModel(configWith(), {})).toBe(true);
   });
@@ -194,13 +229,10 @@ describe("paseoAgentHasUsableModel (env-aware auth)", () => {
     expect(paseoAgentHasUsableModel(PaseoAgentConfigSchema.parse({}), {})).toBe(false);
   });
 
-  it("is false for an openai-compatible provider without any key", () => {
+  it("is false for an API-key provider without a configured key", () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
-        local: {
-          type: "openai-compatible",
-          options: { baseUrl: "https://local.test/v1", models: [{ id: "m" }] },
-        },
+        openrouter: { type: "openrouter", options: { models: [{ id: "m" }] } },
       },
     });
     expect(paseoAgentHasUsableModel(config, {})).toBe(false);
@@ -212,6 +244,21 @@ describe("paseoAgentHasUsableModel (env-aware auth)", () => {
     });
     expect(paseoAgentHasUsableModel(config, {})).toBe(false);
     expect(paseoAgentHasUsableModel(config, { OPENROUTER_API_KEY: "sk-env" })).toBe(true);
+  });
+
+  it("uses the OAuth store predicate, or an advanced refresh token", () => {
+    const config = PaseoAgentConfigSchema.parse({
+      providers: { chatgpt: { type: "chatgpt" } },
+    });
+    expect(paseoAgentHasUsableModel(config, {})).toBe(false);
+    expect(paseoAgentHasUsableModel(config, {}, () => true)).toBe(true);
+
+    const refreshConfig = PaseoAgentConfigSchema.parse({
+      providers: {
+        chatgpt: { type: "chatgpt", options: { refreshToken: "$OAUTH_REFRESH_TOKEN" } },
+      },
+    });
+    expect(paseoAgentHasUsableModel(refreshConfig, { OAUTH_REFRESH_TOKEN: "rt-env" })).toBe(true);
   });
 });
 
@@ -242,6 +289,15 @@ describe("resolvePaseoAgentModel", () => {
     expect(resolvePaseoAgentModel(PaseoAgentConfigSchema.parse({}), null)).toBeUndefined();
   });
 
+  it("uses catalog default models during implicit selection", () => {
+    expect(
+      resolvePaseoAgentModel(
+        PaseoAgentConfigSchema.parse({ providers: { chatgpt: { type: "chatgpt" } } }),
+        null,
+      ),
+    ).toEqual({ provider: "chatgpt", id: "gpt-5.3-codex" });
+  });
+
   it("ignores an implicit default whose provider is not registered", () => {
     const config = configWith({ defaultModel: "ghost/model" });
     expect(resolvePaseoAgentModel(config, null)).toEqual({
@@ -255,72 +311,5 @@ describe("resolvePaseoAgentModel", () => {
       provider: "ghost",
       id: "model",
     });
-  });
-});
-
-describe("openai-codex (ChatGPT subscription) provider", () => {
-  function codexConfig(options: Record<string, unknown>): PaseoAgentConfig {
-    return PaseoAgentConfigSchema.parse({
-      providers: {
-        chatgpt: {
-          type: "openai-codex",
-          options: { models: [{ id: "gpt-5.3-codex" }], ...options },
-        },
-      },
-    });
-  }
-
-  it("accepts a codex provider with no credential field (login provides it)", () => {
-    const config = codexConfig({});
-    expect(config.providers?.chatgpt?.type).toBe("openai-codex");
-  });
-
-  it("rejects an unknown option like a foreign credentials file", () => {
-    expect(() =>
-      PaseoAgentConfigSchema.parse({
-        providers: {
-          chatgpt: {
-            type: "openai-codex",
-            options: { credentialsFile: "/Users/me/.codex/auth.json", models: [{ id: "x" }] },
-          },
-        },
-      }),
-    ).toThrow();
-  });
-
-  it("maps to a codex model provider with an oauth marker and no api key", async () => {
-    const [provider] = await paseoAgentModelProviders(codexConfig({}), {});
-    expect(provider.name).toBe("chatgpt");
-    expect(provider.oauth).toEqual({ kind: "openai-codex" });
-    expect(provider.config.apiKey).toBeUndefined();
-    expect(provider.config.api).toBe("openai-codex-responses");
-    expect(provider.config.baseUrl).toBe("https://chatgpt.com/backend-api");
-    expect(provider.config.models?.[0]?.api).toBe("openai-codex-responses");
-  });
-
-  it("carries an advanced self-supplied refresh token resolved from an env var", async () => {
-    const config = codexConfig({ refreshToken: "$CODEX_REFRESH_TOKEN" });
-    const [provider] = await paseoAgentModelProviders(config, {
-      CODEX_REFRESH_TOKEN: "rt-env",
-    });
-    expect(provider.oauth).toEqual({ kind: "openai-codex", refreshToken: "rt-env" });
-  });
-
-  it("availability uses the OAuth store predicate, or an advanced refresh token", () => {
-    // No stored credential and no advanced token → not available.
-    expect(paseoAgentHasUsableModel(codexConfig({}), {})).toBe(false);
-    // Stored credential (predicate true) → available.
-    expect(paseoAgentHasUsableModel(codexConfig({}), {}, () => true)).toBe(true);
-    // Advanced env-backed token → available without the store.
-    expect(
-      paseoAgentHasUsableModel(codexConfig({ refreshToken: "$CODEX_REFRESH_TOKEN" }), {
-        CODEX_REFRESH_TOKEN: "rt-env",
-      }),
-    ).toBe(true);
-  });
-
-  it("lists codex models regardless of auth state", () => {
-    const models = listPaseoAgentModels(codexConfig({}));
-    expect(models.map((m) => m.id)).toEqual(["chatgpt/gpt-5.3-codex"]);
   });
 });

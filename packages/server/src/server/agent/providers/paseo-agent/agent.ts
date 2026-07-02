@@ -560,8 +560,8 @@ export class PaseoAgentClient implements AgentClient {
       "Creating Paseo Agent session",
     );
 
-    // OAuth providers (ChatGPT/Codex) use a Paseo-owned, file-backed AuthStorage so Pi
-    // reads the stored credential and persists refreshed tokens (rotation) back to it.
+    // Catalog OAuth providers use a Paseo-owned, file-backed AuthStorage so Pi reads
+    // the stored credential and persists refreshed tokens (rotation) back to it.
     const usesOAuth = modelProviders.some((provider) => provider.oauth);
     const authStorage = usesOAuth
       ? createPaseoAgentAuthStorage(envForPaseoHome(this.paseoHome))

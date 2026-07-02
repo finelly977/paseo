@@ -9,7 +9,7 @@ import { createTestLogger } from "../../../../test-utils/test-logger.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../../agent-sdk-types.js";
 import { PaseoAgentClient, PaseoAgentSession } from "./agent.js";
 import { PaseoAgentConfigSchema, type PaseoAgentConfig } from "./config.js";
-import { storeCodexOAuthCredential } from "./oauth-store.js";
+import { storeOAuthCredential } from "./oauth-store.js";
 import type { PaseoAgentSessionHandle } from "./pi-services.js";
 
 function makeConfig(): PaseoAgentConfig {
@@ -175,13 +175,13 @@ describe("PaseoAgentClient", () => {
     expect(await empty.isAvailable()).toBe(false);
   });
 
-  it("checks ChatGPT OAuth credentials in the configured Paseo home", async () => {
+  it("checks OAuth credentials in the configured Paseo home", async () => {
     const paseoHome = mkdtempSync(join(tmpdir(), "paseo-agent-client-"));
     const wrongHome = mkdtempSync(join(tmpdir(), "paseo-agent-wrong-home-"));
     tempDirs.push(paseoHome, wrongHome);
     const previousPaseoHome = process.env.PASEO_HOME;
     process.env.PASEO_HOME = wrongHome;
-    storeCodexOAuthCredential({
+    storeOAuthCredential({
       providerInstance: "chatgpt",
       credential: { type: "oauth", access: "access-token", refresh: "refresh-token", expires: 0 },
       env: { PASEO_HOME: paseoHome },
@@ -189,8 +189,7 @@ describe("PaseoAgentClient", () => {
     const config = PaseoAgentConfigSchema.parse({
       providers: {
         chatgpt: {
-          type: "openai-codex",
-          options: { models: [{ id: "gpt-5.3-codex" }] },
+          type: "chatgpt",
         },
       },
     });

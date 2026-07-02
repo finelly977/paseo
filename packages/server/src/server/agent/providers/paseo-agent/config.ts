@@ -6,121 +6,19 @@ import {
   resolveRefreshTokenExpression,
 } from "./oauth-credentials.js";
 import type { PaseoAgentModelProvider, PaseoAgentModelReference } from "./pi-services.js";
+import {
+  requirePaseoAgentCatalogEntry,
+  type PaseoAgentCatalogEntry,
+  type PaseoAgentCatalogModel,
+} from "./catalog.js";
 import { findEnvReferences } from "./env-references.js";
 
 export const PASEO_AGENT_PROVIDER = "paseo";
-
-// Dedicated Paseo-owned config for the Paseo Agent provider. This is the single
-// schema for `agents.paseo`; model-provider fields are intentionally NOT
-// merged into the shared strict ProviderOverrideSchema, and only this provider
-// (via the helpers below) consumes it. This module imports no Pi runtime code so
-// it stays cheap to load from persisted-config parsing.
-//
-// Model providers are typed by `type`. Each known type carries sensible
-// defaults (base URL, Pi wire `api`, and the env var its API key is read from),
-// so a user only needs to give an `apiKey` (or the env var) and one or more model
-// ids. `openai-compatible` covers any OpenAI Chat Completions endpoint (incl.
-// OpenCode Zen/Go behind a custom base URL); `custom` is a thin escape hatch for
-// directly choosing Pi's wire `api`.
-//
-// AUTH: API-key and env-var auth work for every type. ChatGPT/OpenAI subscription
-// OAuth is supported via the `openai-codex` type. The product path is `paseo login
-// chatgpt`, which runs Pi's browser PKCE/callback login by default and stores the
-// credential in a Paseo-controlled file (see oauth-store.ts); the session loads it and
-// Pi refreshes/persists rotation there. `options.refreshToken` is an advanced, manual
-// escape hatch for users supplying their OWN token (literal/`$ENV`/`!cmd`) — it is not
-// the normal path. Paseo never reads another tool's auth files. Other OAuth providers
-// (e.g. Anthropic Pro/Max) remain unwired.
-
-const PROVIDER_TYPES = [
-  "openrouter",
-  "openai",
-  "anthropic",
-  "opencode",
-  "openai-compatible",
-  "openai-codex",
-  "custom",
-] as const;
-
-export type PaseoAgentProviderType = (typeof PROVIDER_TYPES)[number];
-
-// The wire schema is an open string (protocol back-compat); the daemon owns
-// the closed set. Use this to gate incoming provider types with a clear error.
-export function isPaseoAgentProviderType(value: string): value is PaseoAgentProviderType {
-  return (PROVIDER_TYPES as readonly string[]).includes(value);
-}
-
-export function knownPaseoAgentProviderTypes(): readonly string[] {
-  return PROVIDER_TYPES;
-}
-
-export interface PaseoAgentProviderTypeDefault {
-  /** Pi wire protocol. `undefined` for `custom`, where the user must pick one. */
-  api?: string;
-  /** Default base URL. `undefined` means the user must supply `options.baseUrl`. */
-  baseUrl?: string;
-  /** Env var the API key is read from when `options.apiKey` is omitted. */
-  envVar?: string;
-}
-
-// Defaults mirror Pi's built-in provider definitions (packages/ai models). Pi adds
-// its own attribution headers for openrouter/opencode based on the base URL, so we
-// deliberately do not inject provider headers here.
-const PROVIDER_TYPE_DEFAULTS: Record<PaseoAgentProviderType, PaseoAgentProviderTypeDefault> = {
-  openrouter: {
-    api: "openai-completions",
-    baseUrl: "https://openrouter.ai/api/v1",
-    envVar: "OPENROUTER_API_KEY",
-  },
-  openai: {
-    api: "openai-responses",
-    baseUrl: "https://api.openai.com/v1",
-    envVar: "OPENAI_API_KEY",
-  },
-  anthropic: {
-    api: "anthropic-messages",
-    baseUrl: "https://api.anthropic.com",
-    envVar: "ANTHROPIC_API_KEY",
-  },
-  opencode: {
-    // OpenCode Zen. Some Zen models speak anthropic-messages; override per model
-    // with `api` when needed. Go models live behind a custom base URL via
-    // `openai-compatible` (or set `options.baseUrl` to .../zen/go/v1 here).
-    api: "openai-completions",
-    baseUrl: "https://opencode.ai/zen/v1",
-    envVar: "OPENCODE_API_KEY",
-  },
-  "openai-compatible": {
-    api: "openai-completions",
-    baseUrl: undefined,
-    envVar: undefined,
-  },
-  "openai-codex": {
-    // ChatGPT/OpenAI subscription via OAuth. Auth is a refresh token, not an API
-    // key, so there is no default env var here.
-    api: "openai-codex-responses",
-    baseUrl: "https://chatgpt.com/backend-api",
-    envVar: undefined,
-  },
-  custom: {
-    api: undefined,
-    baseUrl: undefined,
-    envVar: undefined,
-  },
-};
-
-export function resolvePaseoAgentProviderTypeDefaults(
-  type: PaseoAgentProviderType,
-): PaseoAgentProviderTypeDefault {
-  return PROVIDER_TYPE_DEFAULTS[type];
-}
 
 const PaseoAgentModelSchema = z
   .object({
     id: z.string().min(1),
     label: z.string().min(1).optional(),
-    // Override the provider's wire api for this model (e.g. an anthropic-messages
-    // model served by an otherwise openai-completions provider like OpenCode Zen).
     api: z.string().min(1).optional(),
     reasoning: z.boolean().optional(),
     contextWindow: z.number().int().positive().optional(),
@@ -130,75 +28,42 @@ const PaseoAgentModelSchema = z
 
 const PaseoAgentProviderOptionsSchema = z
   .object({
-    // API key. Literal value, an env-var reference like `$OPENROUTER_API_KEY` /
-    // `${OPENROUTER_API_KEY}`, or a `!command` (resolved by Pi at request time).
-    // When omitted, known types fall back to their default env var.
     apiKey: z.string().min(1).optional(),
     baseUrl: z.string().url().optional(),
-    // Override the wire api. Required for `custom`; optional elsewhere.
     api: z.string().min(1).optional(),
     headers: z.record(z.string(), z.string()).optional(),
-    // Advanced: send `Authorization: Bearer <apiKey>` as a header. Only needed for
-    // endpoints whose wire api doesn't already attach the key.
     authHeader: z.boolean().optional(),
-    // Advanced/manual ONLY: a self-supplied OAuth refresh token for `openai-codex`
-    // (literal, `$ENV`/`${ENV}`, or `!command`). The normal path is the Paseo-owned
-    // login (`paseo login chatgpt`), which stores the credential for you.
     refreshToken: z.string().min(1).optional(),
-    models: z.array(PaseoAgentModelSchema).min(1),
+    models: z.array(PaseoAgentModelSchema).min(1).optional(),
   })
   .strict();
 
 const PaseoAgentModelProviderSchema = z
   .object({
-    type: z.enum(PROVIDER_TYPES),
-    options: PaseoAgentProviderOptionsSchema,
+    type: z.string().min(1),
+    options: PaseoAgentProviderOptionsSchema.default({}),
   })
-  .strict()
-  .superRefine((entry, ctx) => {
-    const defaults = resolvePaseoAgentProviderTypeDefaults(entry.type);
-    if (!defaults.baseUrl && !entry.options.baseUrl) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["options", "baseUrl"],
-        message: `Model provider type "${entry.type}" requires options.baseUrl.`,
-      });
-    }
-    if (!defaults.api && !entry.options.api) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["options", "api"],
-        message: `Model provider type "${entry.type}" requires options.api.`,
-      });
-    }
-    // `openai-codex` needs no credential field here: auth comes from the Paseo-owned
-    // store populated by `paseo login chatgpt`. `options.refreshToken` is an
-    // optional advanced override.
-  });
+  .strict();
 
 export const PaseoAgentConfigSchema = z
   .object({
-    // Optional default model as "<modelProviderName>/<modelId>".
     defaultModel: z.string().min(1).optional(),
-    // Optional default agent definition from $PASEO_HOME/agents/<name>.md.
     defaultAgent: z.string().min(1).optional(),
-    // Legacy alias for defaultAgent.
     defaultProfile: z.string().min(1).optional(),
-    // Model providers keyed by instance name. Multiple entries may share a
-    // type while pointing at different APIs/base URLs/models.
     providers: z.record(z.string(), PaseoAgentModelProviderSchema).optional(),
   })
   .strict();
 
 export type PaseoAgentConfig = z.infer<typeof PaseoAgentConfigSchema>;
-type PaseoAgentModelProviderEntry = z.infer<typeof PaseoAgentModelProviderSchema>;
+export type PaseoAgentModelProviderEntry = z.infer<typeof PaseoAgentModelProviderSchema>;
+type PiModelConfig = NonNullable<PaseoAgentModelProvider["config"]["models"]>[number];
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 16_384;
 
-interface ResolvedProviderSettings {
-  baseUrl?: string;
-  api?: string;
+export interface ResolvedProviderSettings {
+  baseUrl: string;
+  api: string;
   apiKey?: string;
   headers?: Record<string, string>;
   authHeader?: boolean;
@@ -208,17 +73,37 @@ function entries(config: PaseoAgentConfig): [string, PaseoAgentModelProviderEntr
   return Object.entries(config.providers ?? {});
 }
 
-/** Apply per-type defaults to a raw model provider entry. */
-function resolveProviderSettings(entry: PaseoAgentModelProviderEntry): ResolvedProviderSettings {
-  const defaults = resolvePaseoAgentProviderTypeDefaults(entry.type);
-  const apiKey = entry.options.apiKey ?? (defaults.envVar ? `$${defaults.envVar}` : undefined);
+function mergeHeaders(
+  catalogHeaders: Record<string, string> | undefined,
+  optionHeaders: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  const headers = { ...catalogHeaders, ...optionHeaders };
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
+export function resolvePaseoAgentProviderSettings(
+  entry: PaseoAgentModelProviderEntry,
+  catalogEntry: PaseoAgentCatalogEntry = requirePaseoAgentCatalogEntry(entry.type),
+): ResolvedProviderSettings {
+  const apiKey =
+    catalogEntry.auth.kind === "api_key"
+      ? (entry.options.apiKey ?? `$${catalogEntry.auth.envVar}`)
+      : undefined;
+  const headers = mergeHeaders(catalogEntry.headers, entry.options.headers);
   return {
-    baseUrl: entry.options.baseUrl ?? defaults.baseUrl,
-    api: entry.options.api ?? defaults.api,
-    apiKey,
-    headers: entry.options.headers,
-    authHeader: entry.options.authHeader,
+    baseUrl: entry.options.baseUrl ?? catalogEntry.baseUrl,
+    api: entry.options.api ?? catalogEntry.api,
+    ...(apiKey ? { apiKey } : {}),
+    ...(headers ? { headers } : {}),
+    ...(entry.options.authHeader ? { authHeader: entry.options.authHeader } : {}),
   };
+}
+
+export function resolvePaseoAgentProviderModels(
+  entry: PaseoAgentModelProviderEntry,
+  catalogEntry: PaseoAgentCatalogEntry = requirePaseoAgentCatalogEntry(entry.type),
+): PaseoAgentCatalogModel[] {
+  return entry.options.models ?? catalogEntry.models;
 }
 
 /**
@@ -240,12 +125,10 @@ function isAuthConfigured(value: string | undefined, env: NodeJS.ProcessEnv): bo
   return referencedVars.every((name) => Boolean(env[name]));
 }
 
-/** Encode the Paseo-facing model id from an model provider + Pi model id. */
 export function encodePaseoAgentModelId(providerName: string, modelId: string): string {
   return `${providerName}/${modelId}`;
 }
 
-/** Parse a Paseo-facing model id back into its model provider + Pi model id. */
 export function parsePaseoAgentModelId(modelId: string): PaseoAgentModelReference | null {
   const slash = modelId.indexOf("/");
   if (slash <= 0 || slash === modelId.length - 1) {
@@ -254,28 +137,29 @@ export function parsePaseoAgentModelId(modelId: string): PaseoAgentModelReferenc
   return { provider: modelId.slice(0, slash), id: modelId.slice(slash + 1) };
 }
 
-function toPiModels(entry: PaseoAgentModelProviderEntry, settings: ResolvedProviderSettings) {
-  return entry.options.models.map((model) => {
+function toPiModels(
+  entry: PaseoAgentModelProviderEntry,
+  settings: ResolvedProviderSettings,
+): PiModelConfig[] {
+  const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+  return resolvePaseoAgentProviderModels(entry, catalogEntry).map((model) => {
     const api = model.api ?? settings.api;
-    return {
+    const piModel: PiModelConfig = {
       id: model.id,
       name: model.label ?? model.id,
-      ...(api ? { api } : {}),
       reasoning: model.reasoning ?? false,
       input: ["text"] as ("text" | "image")[],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
       maxTokens: model.maxTokens ?? DEFAULT_MAX_TOKENS,
     };
+    if (api) {
+      piModel.api = api;
+    }
+    return piModel;
   });
 }
 
-/**
- * Map Paseo-owned config into the in-memory model providers the Pi seam expects.
- * `openai-codex` entries carry an oauth marker instead of an API key. Their credential
- * normally lives in the Paseo-owned store (populated by `paseo login chatgpt`); an
- * advanced `options.refreshToken` may supply the user's own token instead.
- */
 export async function paseoAgentModelProviders(
   config: PaseoAgentConfig,
   env: NodeJS.ProcessEnv = process.env,
@@ -283,21 +167,23 @@ export async function paseoAgentModelProviders(
   const providers: PaseoAgentModelProvider[] = [];
 
   for (const [name, entry] of entries(config)) {
-    const settings = resolveProviderSettings(entry);
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    const settings = resolvePaseoAgentProviderSettings(entry, catalogEntry);
     const models = toPiModels(entry, settings);
 
-    if (entry.type === "openai-codex") {
+    if (catalogEntry.auth.kind === "oauth") {
       const refreshToken = entry.options.refreshToken
         ? await resolveRefreshTokenExpression(entry.options.refreshToken, env)
         : undefined;
       providers.push({
         name,
         config: {
-          ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
-          ...(settings.api ? { api: settings.api } : {}),
+          baseUrl: settings.baseUrl,
+          api: settings.api,
+          ...(settings.headers ? { headers: settings.headers } : {}),
           models,
         },
-        oauth: { kind: "openai-codex" as const, ...(refreshToken ? { refreshToken } : {}) },
+        oauth: { flow: catalogEntry.auth.flow, ...(refreshToken ? { refreshToken } : {}) },
       });
       continue;
     }
@@ -305,9 +191,9 @@ export async function paseoAgentModelProviders(
     providers.push({
       name,
       config: {
-        ...(settings.baseUrl ? { baseUrl: settings.baseUrl } : {}),
+        baseUrl: settings.baseUrl,
         ...(settings.apiKey ? { apiKey: settings.apiKey } : {}),
-        ...(settings.api ? { api: settings.api } : {}),
+        api: settings.api,
         ...(settings.headers ? { headers: settings.headers } : {}),
         ...(settings.authHeader ? { authHeader: settings.authHeader } : {}),
         models,
@@ -318,17 +204,17 @@ export async function paseoAgentModelProviders(
   return providers;
 }
 
-/** Enumerate configured models as Paseo model definitions (no Pi disk/auth reads). */
 export function listPaseoAgentModels(config: PaseoAgentConfig): AgentModelDefinition[] {
   const models: AgentModelDefinition[] = [];
   for (const [name, entry] of entries(config)) {
-    for (const model of entry.options.models) {
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    for (const model of resolvePaseoAgentProviderModels(entry, catalogEntry)) {
       const id = encodePaseoAgentModelId(name, model.id);
       models.push({
         provider: PASEO_AGENT_PROVIDER,
         id,
         label: model.label ?? model.id,
-        description: `${name} · ${model.id}`,
+        description: `${name} - ${model.id}`,
         isDefault: config.defaultModel === id,
       });
     }
@@ -336,23 +222,17 @@ export function listPaseoAgentModels(config: PaseoAgentConfig): AgentModelDefini
   return models;
 }
 
-/**
- * An model provider is usable when it has at least one model and auth is configured.
- * For API-key types that means a resolvable key (literal, set env var, or command). For
- * `openai-codex`, auth comes from the Paseo-owned store (checked via `isOAuthAuthed`,
- * keyed by provider instance name) or, as an advanced override, a resolvable
- * `options.refreshToken`.
- */
 export function paseoAgentHasUsableModel(
   config: PaseoAgentConfig,
   env: NodeJS.ProcessEnv = process.env,
   isOAuthAuthed: (providerInstance: string) => boolean = () => false,
 ): boolean {
   return entries(config).some(([name, entry]) => {
-    if (entry.options.models.length === 0) {
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    if (resolvePaseoAgentProviderModels(entry, catalogEntry).length === 0) {
       return false;
     }
-    if (entry.type === "openai-codex") {
+    if (catalogEntry.auth.kind === "oauth") {
       if (
         entry.options.refreshToken &&
         isRefreshTokenExpressionConfigured(entry.options.refreshToken, env)
@@ -361,14 +241,10 @@ export function paseoAgentHasUsableModel(
       }
       return isOAuthAuthed(name);
     }
-    return isAuthConfigured(resolveProviderSettings(entry).apiKey, env);
+    return isAuthConfigured(resolvePaseoAgentProviderSettings(entry, catalogEntry).apiKey, env);
   });
 }
 
-/**
- * Resolve which Pi model to launch: the explicit request is honored as-is; implicit
- * default selection only chooses models from the providers actually registered with Pi.
- */
 export function resolvePaseoAgentModel(
   config: PaseoAgentConfig,
   requestedModelId: string | null | undefined,
@@ -394,14 +270,15 @@ export function resolvePaseoAgentModel(
 
 function paseoAgentModelInventory(config: PaseoAgentConfig): PaseoAgentModelProvider[] {
   return entries(config).map(([name, entry]) => {
-    const settings = resolveProviderSettings(entry);
+    const settings = resolvePaseoAgentProviderSettings(entry);
     return { name, config: { models: toPiModels(entry, settings) } };
   });
 }
 
 function firstModelId(config: PaseoAgentConfig): string | undefined {
   for (const [name, entry] of entries(config)) {
-    const first = entry.options.models[0];
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    const first = resolvePaseoAgentProviderModels(entry, catalogEntry)[0];
     if (first) {
       return encodePaseoAgentModelId(name, first.id);
     }

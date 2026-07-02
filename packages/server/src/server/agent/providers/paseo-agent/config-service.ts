@@ -13,11 +13,11 @@ import {
 import {
   PaseoAgentConfigSchema,
   type PaseoAgentConfig,
-  isPaseoAgentProviderType,
-  knownPaseoAgentProviderTypes,
-  resolvePaseoAgentProviderTypeDefaults,
+  resolvePaseoAgentProviderModels,
+  resolvePaseoAgentProviderSettings,
 } from "./config.js";
-import { hasStoredOAuthCredential, storeCodexOAuthCredential } from "./oauth-store.js";
+import { requirePaseoAgentCatalogEntry } from "./catalog.js";
+import { hasStoredOAuthCredential, storeOAuthCredential } from "./oauth-store.js";
 import { isRefreshTokenExpressionConfigured } from "./oauth-credentials.js";
 import { findEnvReferences } from "./env-references.js";
 
@@ -37,7 +37,7 @@ interface SetProviderInput {
     api?: string;
     headers?: Record<string, string>;
     authHeader?: boolean;
-    models: Array<{
+    models?: Array<{
       id: string;
       label?: string;
       api?: string;
@@ -84,7 +84,14 @@ function authStateForApiKey(
 }
 
 function readPaseoAgentConfig(persisted: PersistedConfig): PaseoAgentConfig {
-  return PaseoAgentConfigSchema.parse(persisted.agents?.paseo ?? {});
+  return validatePaseoAgentConfig(PaseoAgentConfigSchema.parse(persisted.agents?.paseo ?? {}));
+}
+
+function validatePaseoAgentConfig(config: PaseoAgentConfig): PaseoAgentConfig {
+  for (const entry of Object.values(config.providers ?? {})) {
+    requirePaseoAgentCatalogEntry(entry.type);
+  }
+  return config;
 }
 
 function redactedProviders(
@@ -92,9 +99,11 @@ function redactedProviders(
   env: NodeJS.ProcessEnv,
 ): RedactedPaseoAgentProviderConfig[] {
   return Object.entries(config.providers ?? {}).map(([name, entry]) => {
-    const defaults = resolvePaseoAgentProviderTypeDefaults(entry.type);
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    const settings = resolvePaseoAgentProviderSettings(entry, catalogEntry);
+    const models = resolvePaseoAgentProviderModels(entry, catalogEntry);
     let auth: PaseoAgentProviderAuthState;
-    if (entry.type === "openai-codex") {
+    if (catalogEntry.auth.kind === "oauth") {
       const hasRefreshToken =
         entry.options.refreshToken &&
         isRefreshTokenExpressionConfigured(entry.options.refreshToken, env);
@@ -107,24 +116,18 @@ function redactedProviders(
           : { kind: "oauth", configured: false };
       }
     } else {
-      auth = authStateForApiKey(entry.options.apiKey, defaults.envVar, env);
+      auth = authStateForApiKey(entry.options.apiKey, catalogEntry.auth.envVar, env);
     }
     const provider: RedactedPaseoAgentProviderConfig = {
       name,
-      providerType: entry.type,
-      models: entry.options.models.map((model) => ({ ...model })),
+      providerType: catalogEntry.id,
+      models: models.map((model) => ({ ...model })),
       auth,
-      available: auth.configured && entry.options.models.length > 0,
+      available: auth.configured && models.length > 0,
       error: null,
     };
-    const baseUrl = entry.options.baseUrl ?? defaults.baseUrl;
-    if (baseUrl) {
-      provider.baseUrl = baseUrl;
-    }
-    const api = entry.options.api ?? defaults.api;
-    if (api) {
-      provider.api = api;
-    }
+    provider.baseUrl = settings.baseUrl;
+    provider.api = settings.api;
     return provider;
   });
 }
@@ -164,18 +167,14 @@ export class PaseoAgentConfigService {
   }
 
   setProvider(input: SetProviderInput): RedactedPaseoAgentProviderConfig {
-    if (!isPaseoAgentProviderType(input.providerType)) {
-      throw new Error(
-        `Unknown model provider type "${input.providerType}". Known types: ${knownPaseoAgentProviderTypes().join(", ")}. Update the host if this type is newer than it.`,
-      );
-    }
+    const catalogEntry = requirePaseoAgentCatalogEntry(input.providerType);
     const next = this.updateConfig((current) =>
       PaseoAgentConfigSchema.parse({
         ...current,
         providers: {
           ...current.providers,
           [input.name]: {
-            type: input.providerType,
+            type: catalogEntry.id,
             options: input.options,
           },
         },
@@ -199,13 +198,21 @@ export class PaseoAgentConfigService {
     return removed;
   }
 
-  storeChatGptCredential(providerName: string, credential: PaseoAgentOAuthCredential): void {
-    storeCodexOAuthCredential({
+  storeOAuthCredential(providerName: string, credential: PaseoAgentOAuthCredential): void {
+    const config = readPaseoAgentConfig(loadPersistedConfig(this.paseoHome, this.logger));
+    const entry = config.providers?.[providerName];
+    if (!entry) {
+      throw new Error(`Paseo Agent provider '${providerName}' is not configured.`);
+    }
+    const catalogEntry = requirePaseoAgentCatalogEntry(entry.type);
+    if (catalogEntry.auth.kind !== "oauth") {
+      throw new Error(`Paseo Agent provider '${providerName}' does not use OAuth.`);
+    }
+    storeOAuthCredential({
       providerInstance: providerName,
       credential,
       env: this.env,
     });
-    const config = readPaseoAgentConfig(loadPersistedConfig(this.paseoHome, this.logger));
     this.onConfigChanged?.(config);
   }
 
@@ -222,7 +229,7 @@ export class PaseoAgentConfigService {
 
   private updateConfig(update: (current: PaseoAgentConfig) => PaseoAgentConfig): PaseoAgentConfig {
     const persisted = loadPersistedConfig(this.paseoHome, this.logger);
-    const next = update(readPaseoAgentConfig(persisted));
+    const next = validatePaseoAgentConfig(update(readPaseoAgentConfig(persisted)));
     savePersistedConfig(this.paseoHome, mergePaseoAgentConfig(persisted, next), this.logger);
     this.onConfigChanged?.(next);
     return next;

@@ -10,8 +10,8 @@ import {
   createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import type { BeforeToolCallResult, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import { openaiCodexOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import type { ImageContent, OAuthProviderInterface, TextContent } from "@earendil-works/pi-ai";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import { evaluateToolPermission, type ToolPermissionPolicy } from "./agent-permissions.js";
 import type { PaseoComposedPrompt } from "./prompt-profiles.js";
 
@@ -36,14 +36,8 @@ export type PiProviderConfig = Parameters<ModelRegistry["registerProvider"]>[1];
 type PiAuthData = Parameters<typeof AuthStorage.inMemory>[0];
 type PiSettings = Parameters<typeof SettingsManager.inMemory>[0];
 
-/** OAuth wiring for an model provider (currently only ChatGPT/Codex). */
 export interface PaseoAgentOAuth {
-  kind: "openai-codex";
-  /**
-   * Advanced/manual override: an already-resolved refresh token to seed into the auth
-   * store. Omitted on the product path, where the credential already lives in the
-   * Paseo-owned store (populated by login).
-   */
+  flow: string;
   refreshToken?: string;
 }
 
@@ -173,6 +167,14 @@ function installPermissionPolicy(
   };
 }
 
+function resolveOAuthProvider(flow: string): OAuthProviderInterface {
+  const provider = getOAuthProvider(flow);
+  if (!provider) {
+    throw new Error(`Paseo Agent: OAuth flow "${flow}" is not registered by Pi.`);
+  }
+  return provider;
+}
+
 /**
  * Create a Pi agent session through the high-level `createAgentSession` API with
  * every service supplied in-memory and no Pi config discovery.
@@ -188,7 +190,7 @@ export async function createPaseoAgentSession(
   // The product path leaves this empty — the credential is already in the Paseo store.
   // Empty `access` + `expires: 0` forces a refresh on the first request.
   for (const provider of options.modelProviders) {
-    if (provider.oauth?.kind === "openai-codex" && provider.oauth.refreshToken) {
+    if (provider.oauth?.refreshToken) {
       authStorage.set(provider.name, {
         type: "oauth",
         access: "",
@@ -201,10 +203,9 @@ export async function createPaseoAgentSession(
   const modelRegistry = ModelRegistry.inMemory(authStorage);
 
   for (const provider of options.modelProviders) {
-    const config =
-      provider.oauth?.kind === "openai-codex"
-        ? { ...provider.config, oauth: openaiCodexOAuthProvider }
-        : provider.config;
+    const config = provider.oauth
+      ? { ...provider.config, oauth: resolveOAuthProvider(provider.oauth.flow) }
+      : provider.config;
     modelRegistry.registerProvider(provider.name, config);
   }
 

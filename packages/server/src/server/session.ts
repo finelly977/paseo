@@ -1796,7 +1796,7 @@ export class Session {
     >,
   ): Promise<void> {
     try {
-      this.createPaseoAgentConfigService().storeChatGptCredential(msg.providerName, msg.credential);
+      this.createPaseoAgentConfigService().storeOAuthCredential(msg.providerName, msg.credential);
       await this.refreshPaseoAgentRuntimeSnapshot();
       this.emit({
         type: "config.paseo_agent.store_chatgpt_credential.response",
@@ -1811,7 +1811,7 @@ export class Session {
     } catch (error) {
       this.sessionLogger.error(
         { err: error, providerName: msg.providerName },
-        "Failed to store Paseo Agent ChatGPT credential",
+        "Failed to store Paseo Agent OAuth credential",
       );
       this.emit({
         type: "config.paseo_agent.store_chatgpt_credential.response",

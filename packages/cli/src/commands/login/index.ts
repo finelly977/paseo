@@ -1,12 +1,8 @@
 import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
-import {
-  loginCodexBrowser,
-  loginAndStoreCodex,
-  type CodexDeviceCodeInfo,
-  type StoredCodexOAuthCredential,
-} from "@getpaseo/server";
+import { loginOAuthBrowser, loginAndStoreOAuth, type OAuthDeviceCodeInfo } from "@getpaseo/server";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { PaseoAgentOAuthCredential } from "@getpaseo/protocol/messages";
 
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
@@ -25,6 +21,7 @@ import {
 // remains a local-only fallback until a daemon-run device-code RPC exists.
 
 const PROVIDER_INSTANCE = "chatgpt";
+const OAUTH_FLOW = "openai-codex";
 
 interface LoginChatgptOptions extends CommandOptions {
   deviceCode?: boolean;
@@ -39,8 +36,8 @@ interface LoginResult {
 }
 
 interface LoginCommandDependencies {
-  loginDeviceCode: typeof loginAndStoreCodex;
-  loginBrowserCredential: typeof loginCodexBrowser;
+  loginDeviceCode: typeof loginAndStoreOAuth;
+  loginBrowserCredential: typeof loginOAuthBrowser;
   connectDaemon: (options: {
     host?: string;
   }) => Promise<
@@ -53,8 +50,8 @@ interface LoginCommandDependencies {
 }
 
 const defaultDependencies: LoginCommandDependencies = {
-  loginDeviceCode: loginAndStoreCodex,
-  loginBrowserCredential: loginCodexBrowser,
+  loginDeviceCode: loginAndStoreOAuth,
+  loginBrowserCredential: loginOAuthBrowser,
   connectDaemon: connectToDaemon,
   openBrowser: openBrowserUrl,
   promptForCode,
@@ -115,11 +112,12 @@ async function promptForCode(message: string): Promise<string> {
   }
 }
 
-function printDeviceCode(write: (message: string) => void, info: CodexDeviceCodeInfo): void {
+function printDeviceCode(write: (message: string) => void, info: OAuthDeviceCodeInfo): void {
+  const expiresInSeconds = info.expiresInSeconds ?? 900;
   write("To authorize Paseo:");
   write(`  1. Open: ${info.verificationUri}`);
   write(`  2. Enter code: ${info.userCode}`);
-  write(`  (expires in ~${Math.round(info.expiresInSeconds / 60)} min — waiting...)\n`);
+  write(`  (expires in ~${Math.round(expiresInSeconds / 60)} min — waiting...)\n`);
 }
 
 async function runChatgptLogin(
@@ -140,6 +138,7 @@ async function runChatgptLogin(
   if (options.deviceCode) {
     write("Paseo login — ChatGPT/Codex subscription (headless device-code flow)\n");
     const { path } = await dependencies.loginDeviceCode({
+      flow: OAUTH_FLOW,
       providerInstance: PROVIDER_INSTANCE,
       env,
       onDeviceCode: (info) => printDeviceCode(write, info),
@@ -161,7 +160,8 @@ async function runChatgptLogin(
   try {
     requirePaseoAgentConfigFeature(client);
     write("Paseo login — ChatGPT/Codex subscription (browser flow)\n");
-    const credential: StoredCodexOAuthCredential = await dependencies.loginBrowserCredential({
+    const credential: PaseoAgentOAuthCredential = await dependencies.loginBrowserCredential({
+      flow: OAUTH_FLOW,
       onAuthUrl: (url) => {
         const opened = dependencies.openBrowser(url);
         write(

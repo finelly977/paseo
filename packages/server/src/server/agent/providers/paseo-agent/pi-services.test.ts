@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
 import type { BeforeToolCallContext } from "@earendil-works/pi-agent-core";
+import type { OAuthCredentials, OAuthProviderInterface } from "@earendil-works/pi-ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createToolPermissionPolicy } from "./agent-permissions.js";
 
@@ -12,17 +14,19 @@ import {
   createPaseoAgentSession,
 } from "./pi-services.js";
 
-function codexModelProvider(): PaseoAgentModelProvider {
+const TEST_OAUTH_FLOW = "paseo-test-oauth";
+
+function oauthModelProvider(): PaseoAgentModelProvider {
   return {
-    name: "chatgpt",
+    name: "subscription",
     config: {
-      baseUrl: "https://chatgpt.com/backend-api",
-      api: "openai-codex-responses",
+      baseUrl: "https://example.invalid/oauth",
+      api: "openai-completions",
       models: [
         {
-          id: "gpt-5.3-codex",
-          name: "gpt-5.3-codex",
-          api: "openai-codex-responses",
+          id: "oauth-model",
+          name: "OAuth Model",
+          api: "openai-completions",
           reasoning: true,
           input: ["text"],
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -32,6 +36,27 @@ function codexModelProvider(): PaseoAgentModelProvider {
       ],
     },
   };
+}
+
+function registerTestOAuthProvider(): void {
+  const provider: OAuthProviderInterface = {
+    id: TEST_OAUTH_FLOW,
+    name: "Paseo Test OAuth",
+    async login(): Promise<OAuthCredentials> {
+      return { access: "access-from-login", refresh: "refresh-from-login", expires: Date.now() };
+    },
+    async refreshToken(credentials): Promise<OAuthCredentials> {
+      return {
+        ...credentials,
+        access: "access-from-refresh",
+        expires: Date.now() + 60_000,
+      };
+    },
+    getApiKey(credentials): string {
+      return credentials.access;
+    },
+  };
+  registerOAuthProvider(provider);
 }
 
 const FAKE_PROVIDER = "paseo-test-openrouter";
@@ -88,6 +113,7 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
   });
 
   afterEach(() => {
+    resetOAuthProviders();
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
     if (originalUserProfile === undefined) delete process.env.USERPROFILE;
@@ -260,38 +286,60 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
     });
   });
 
-  it("registers a codex provider and seeds the advanced refresh-token override", async () => {
-    const codex = codexModelProvider();
+  it("registers an OAuth provider by flow and seeds the advanced refresh-token override", async () => {
+    registerTestOAuthProvider();
+    const oauthProvider = oauthModelProvider();
     const { session, modelRegistry } = await createPaseoAgentSession({
       cwd,
       agentDir,
-      model: { provider: "chatgpt", id: "gpt-5.3-codex" },
-      modelProviders: [{ ...codex, oauth: { kind: "openai-codex", refreshToken: "rt-test-only" } }],
+      model: { provider: "subscription", id: "oauth-model" },
+      modelProviders: [
+        { ...oauthProvider, oauth: { flow: TEST_OAUTH_FLOW, refreshToken: "rt-test-only" } },
+      ],
     });
 
-    expect(session.model?.provider).toBe("chatgpt");
-    expect(modelRegistry.find("chatgpt", "gpt-5.3-codex")?.api).toBe("openai-codex-responses");
+    expect(session.model?.provider).toBe("subscription");
+    expect(modelRegistry.find("subscription", "oauth-model")?.api).toBe("openai-completions");
     const available = modelRegistry.getAvailable();
-    expect(available.some((m) => m.provider === "chatgpt" && m.id === "gpt-5.3-codex")).toBe(true);
+    expect(available.some((m) => m.provider === "subscription" && m.id === "oauth-model")).toBe(
+      true,
+    );
   });
 
-  it("loads a codex credential from a Paseo-owned AuthStorage (product path)", async () => {
-    // Simulate the result of `paseo login chatgpt`: a credential already in the store.
+  it("rejects an OAuth flow that Pi has not registered", async () => {
+    await expect(
+      createPaseoAgentSession({
+        cwd,
+        agentDir,
+        model: { provider: "subscription", id: "oauth-model" },
+        modelProviders: [{ ...oauthModelProvider(), oauth: { flow: "missing-flow" } }],
+      }),
+    ).rejects.toThrow(/OAuth flow "missing-flow" is not registered/);
+  });
+
+  it("loads an OAuth credential from a Paseo-owned AuthStorage", async () => {
+    registerTestOAuthProvider();
     const authPath = join(mkdtempSync(join(tmpdir(), "paseo-agent-auth-")), "auth.json");
     const authStorage = AuthStorage.create(authPath);
-    authStorage.set("chatgpt", { type: "oauth", access: "", refresh: "rt-stored", expires: 0 });
+    authStorage.set("subscription", {
+      type: "oauth",
+      access: "access-stored",
+      refresh: "rt-stored",
+      expires: Date.now() + 60_000,
+    });
 
     const { modelRegistry } = await createPaseoAgentSession({
       cwd,
       agentDir,
       authStorage,
-      model: { provider: "chatgpt", id: "gpt-5.3-codex" },
-      // No oauth.refreshToken marker — the credential comes from the Paseo store.
-      modelProviders: [{ ...codexModelProvider(), oauth: { kind: "openai-codex" } }],
+      model: { provider: "subscription", id: "oauth-model" },
+      modelProviders: [{ ...oauthModelProvider(), oauth: { flow: TEST_OAUTH_FLOW } }],
     });
 
     const available = modelRegistry.getAvailable();
-    expect(available.some((m) => m.provider === "chatgpt" && m.id === "gpt-5.3-codex")).toBe(true);
+    expect(available.some((m) => m.provider === "subscription" && m.id === "oauth-model")).toBe(
+      true,
+    );
     rmSync(authPath, { force: true });
   });
 });

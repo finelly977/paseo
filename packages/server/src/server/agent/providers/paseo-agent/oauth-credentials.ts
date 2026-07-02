@@ -7,12 +7,11 @@ const CREDENTIAL_COMMAND_TIMEOUT_MS = 30_000;
 
 // Resolution of a *self-supplied* OAuth refresh token expression — a literal, an env
 // reference (`$VAR` / `${VAR}`), or a `!command` that prints the token. This is an
-// advanced/manual escape hatch for users who already hold their own ChatGPT/Codex
-// refresh token; the product path is `paseo login chatgpt`, which performs browser
-// OAuth by default and writes a Paseo-owned credential store (see oauth-store.ts).
+// advanced/manual escape hatch for users who already hold their own refresh token;
+// the normal product path writes a Paseo-owned credential store (see oauth-store.ts).
 //
-// This module deliberately does NOT read any other tool's auth files (Codex CLI,
-// OpenCode, Pi, etc.) and imports no Pi runtime code. Token values are never logged.
+// This module deliberately does NOT read any other tool's auth files and imports no
+// Pi runtime code. Token values are never logged.
 
 /**
  * Resolve a refresh-token expression to its literal value (may run a `!command`).

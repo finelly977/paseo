@@ -48,14 +48,12 @@ export {
   type SherpaLoaderEnvResolution,
 } from "./speech/providers/local/sherpa/sherpa-runtime-env.js";
 
-// Paseo Agent (ChatGPT/Codex) OAuth login + Paseo-owned credential store
+// Paseo Agent OAuth login + Paseo-owned credential store
 export {
-  loginCodexBrowser,
-  loginAndStoreCodexBrowser,
-  loginAndStoreCodex,
+  loginOAuthBrowser,
+  loginAndStoreOAuth,
   paseoAgentAuthStoragePath,
-  type CodexDeviceCodeInfo,
-  type StoredCodexOAuthCredential,
+  type OAuthDeviceCodeInfo,
 } from "./agent/providers/paseo-agent/oauth-store.js";
 
 // Provider binary resolution

@@ -2,41 +2,23 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AuthStorage } from "@earendil-works/pi-coding-agent";
-import type { OAuthCredentials } from "@earendil-works/pi-ai";
-import { loginOpenAICodex, loginOpenAICodexDeviceCode } from "@earendil-works/pi-ai/oauth";
+import type {
+  OAuthCredentials,
+  OAuthDeviceCodeInfo as PiOAuthDeviceCodeInfo,
+  OAuthLoginCallbacks,
+  OAuthSelectPrompt,
+} from "@earendil-works/pi-ai";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import type { PaseoAgentOAuthCredential } from "@getpaseo/protocol/messages";
 
 // Paseo-owned OAuth credential store for the Paseo Agent provider. Credentials live
-// in a Paseo-controlled file (NOT ~/.pi, ~/.codex, OpenCode, or any other tool's
-// store) and are managed through Pi's own AuthStorage, so Pi refreshes tokens and
-// persists rotation back into Paseo's file. The login flows reuse Pi's OAuth helpers
-// (browser PKCE/callback by default, device-code as a headless fallback) — Paseo does
-// not reimplement the OAuth protocol.
+// in a Paseo-controlled file and are managed through Pi's own AuthStorage, so Pi
+// refreshes tokens and persists rotation back into Paseo's file. Login flows reuse
+// Pi's OAuth registry; Paseo does not reimplement OAuth protocols.
 
-export interface CodexDeviceCodeInfo {
-  userCode: string;
-  verificationUri: string;
-  intervalSeconds: number;
-  expiresInSeconds: number;
-}
-
-type DeviceCodeLogin = (options: {
-  onDeviceCode: (info: CodexDeviceCodeInfo) => void;
-  signal?: AbortSignal;
-}) => Promise<OAuthCredentials>;
-
-type BrowserLogin = (options: {
-  onAuth: (info: { url: string; instructions?: string }) => void;
-  onPrompt: (prompt: { message: string }) => Promise<string>;
-  onProgress?: (message: string) => void;
-}) => Promise<OAuthCredentials>;
-
-export type StoredCodexOAuthCredential = {
-  type: "oauth";
-  access: string;
-  refresh: string;
-  expires: number;
-  accountId?: string;
-} & Record<string, unknown>;
+export type OAuthDeviceCodeInfo = PiOAuthDeviceCodeInfo;
+type OAuthLogin = (callbacks: OAuthLoginCallbacks) => Promise<OAuthCredentials>;
+type OAuthLoginPreference = "browser" | "device";
 
 /** Path to the Paseo-owned auth store. Uses PASEO_HOME; falls back to ~/.paseo. */
 export function paseoAgentAuthStoragePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -80,12 +62,12 @@ export function hasStoredOAuthCredential(
 
 /**
  * Store a credential obtained by a remote-safe client-side OAuth flow into the
- * daemon's Paseo-owned AuthStorage. The caller supplies a stable wire shape, not
- * Pi types, and this helper never reads or writes foreign auth files.
+ * daemon's Paseo-owned AuthStorage. The caller supplies the protocol credential
+ * shape, and this helper never reads or writes foreign auth files.
  */
-export function storeCodexOAuthCredential(options: {
+export function storeOAuthCredential(options: {
   providerInstance: string;
-  credential: StoredCodexOAuthCredential;
+  credential: PaseoAgentOAuthCredential;
   env?: NodeJS.ProcessEnv;
 }): { path: string } {
   const path = paseoAgentAuthStoragePath(options.env);
@@ -94,62 +76,42 @@ export function storeCodexOAuthCredential(options: {
   return { path };
 }
 
-/**
- * Run Pi's ChatGPT/Codex device-code OAuth login and persist the resulting credential
- * into the Paseo-owned store under `providerInstance`. The `login` dependency defaults
- * to Pi's helper and is injectable for tests (no network). Never reads foreign files.
- */
-export async function loginAndStoreCodex(options: {
+export async function loginAndStoreOAuth(options: {
+  flow: string;
   providerInstance: string;
-  onDeviceCode: (info: CodexDeviceCodeInfo) => void;
+  onDeviceCode: (info: OAuthDeviceCodeInfo) => void;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
-  login?: DeviceCodeLogin;
+  login?: OAuthLogin;
 }): Promise<{ path: string }> {
-  const login = options.login ?? (loginOpenAICodexDeviceCode as DeviceCodeLogin);
-  const credentials = await login({ onDeviceCode: options.onDeviceCode, signal: options.signal });
-  const path = paseoAgentAuthStoragePath(options.env);
-  const authStorage = AuthStorage.create(path);
-  authStorage.set(options.providerInstance, { type: "oauth", ...credentials });
-  return { path };
+  const login = resolveOAuthLogin(options.flow, options.login);
+  const credentials = await login({
+    onAuth: () => {},
+    onDeviceCode: options.onDeviceCode,
+    onPrompt: async () => {
+      throw new Error("OAuth login requested manual input, but no prompt handler is available.");
+    },
+    onSelect: (prompt) => selectOAuthOption(prompt, "device"),
+    signal: options.signal,
+  });
+  return storeOAuthCredential({
+    providerInstance: options.providerInstance,
+    credential: { type: "oauth", ...credentials },
+    env: options.env,
+  });
 }
 
-/**
- * Run Pi's ChatGPT/Codex **browser** OAuth login (PKCE + local callback on
- * 127.0.0.1:1455) and persist the resulting credential into the Paseo-owned store.
- * This is the default, first-class login UX. `onAuthUrl` receives the authorization
- * URL (the caller opens it / prints it); `promptForCode` is a fallback used only if
- * the browser callback can't complete (manual code paste). The `login` dependency
- * defaults to Pi's helper and is injectable for tests. Never reads foreign files.
- */
-export async function loginAndStoreCodexBrowser(options: {
-  providerInstance: string;
+export async function loginOAuthBrowser(options: {
+  flow: string;
   onAuthUrl: (url: string, instructions?: string) => void;
   promptForCode?: (message: string) => Promise<string>;
   onProgress?: (message: string) => void;
-  env?: NodeJS.ProcessEnv;
-  login?: BrowserLogin;
-}): Promise<{ path: string }> {
-  const credential = await loginCodexBrowser(options);
-  const path = paseoAgentAuthStoragePath(options.env);
-  const authStorage = AuthStorage.create(path);
-  authStorage.set(options.providerInstance, credential);
-  return { path };
-}
-
-/**
- * Run Pi's browser OAuth flow and return the credential without storing it locally.
- * CLI remote login uses this so the selected daemon remains the owner of persisted auth.
- */
-export async function loginCodexBrowser(options: {
-  onAuthUrl: (url: string, instructions?: string) => void;
-  promptForCode?: (message: string) => Promise<string>;
-  onProgress?: (message: string) => void;
-  login?: BrowserLogin;
-}): Promise<StoredCodexOAuthCredential> {
-  const login = options.login ?? (loginOpenAICodex as BrowserLogin);
+  login?: OAuthLogin;
+}): Promise<PaseoAgentOAuthCredential> {
+  const login = resolveOAuthLogin(options.flow, options.login);
   const credentials = await login({
     onAuth: (info) => options.onAuthUrl(info.url, info.instructions),
+    onDeviceCode: () => {},
     onProgress: options.onProgress,
     onPrompt: async (prompt) => {
       if (!options.promptForCode) {
@@ -157,6 +119,28 @@ export async function loginCodexBrowser(options: {
       }
       return options.promptForCode(prompt.message);
     },
+    onSelect: (prompt) => selectOAuthOption(prompt, "browser"),
   });
   return { type: "oauth", ...credentials };
+}
+
+function resolveOAuthLogin(flow: string, login: OAuthLogin | undefined): OAuthLogin {
+  if (login) {
+    return login;
+  }
+  const provider = getOAuthProvider(flow);
+  if (!provider) {
+    throw new Error(`Paseo Agent: OAuth flow "${flow}" is not registered by Pi.`);
+  }
+  return (callbacks) => provider.login(callbacks);
+}
+
+function selectOAuthOption(
+  prompt: OAuthSelectPrompt,
+  preference: OAuthLoginPreference,
+): Promise<string | undefined> {
+  const preferred = prompt.options.find((option) =>
+    option.label.toLowerCase().includes(preference),
+  );
+  return Promise.resolve((preferred ?? prompt.options[0])?.id);
 }
