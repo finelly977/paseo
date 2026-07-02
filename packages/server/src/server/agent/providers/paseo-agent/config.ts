@@ -5,18 +5,18 @@ import {
   isRefreshTokenExpressionConfigured,
   resolveRefreshTokenExpression,
 } from "./oauth-credentials.js";
-import type { PaseoAgentInferenceProvider, PaseoAgentModelReference } from "./pi-services.js";
+import type { PaseoAgentModelProvider, PaseoAgentModelReference } from "./pi-services.js";
 import { findEnvReferences } from "./env-references.js";
 
 export const PASEO_AGENT_PROVIDER = "paseo";
 
 // Dedicated Paseo-owned config for the Paseo Agent provider. This is the single
-// schema for `agents.paseo`; inference-provider fields are intentionally NOT
+// schema for `agents.paseo`; model-provider fields are intentionally NOT
 // merged into the shared strict ProviderOverrideSchema, and only this provider
 // (via the helpers below) consumes it. This module imports no Pi runtime code so
 // it stays cheap to load from persisted-config parsing.
 //
-// Inference providers are typed by `type`. Each known type carries sensible
+// Model providers are typed by `type`. Each known type carries sensible
 // defaults (base URL, Pi wire `api`, and the env var its API key is read from),
 // so a user only needs to give an `apiKey` (or the env var) and one or more model
 // ids. `openai-compatible` covers any OpenAI Chat Completions endpoint (incl.
@@ -139,7 +139,7 @@ const PaseoAgentProviderOptionsSchema = z
   })
   .strict();
 
-const PaseoAgentInferenceProviderSchema = z
+const PaseoAgentModelProviderSchema = z
   .object({
     type: z.enum(PROVIDER_TYPES),
     options: PaseoAgentProviderOptionsSchema,
@@ -151,14 +151,14 @@ const PaseoAgentInferenceProviderSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["options", "baseUrl"],
-        message: `Inference provider type "${entry.type}" requires options.baseUrl.`,
+        message: `Model provider type "${entry.type}" requires options.baseUrl.`,
       });
     }
     if (!defaults.api && !entry.options.api) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["options", "api"],
-        message: `Inference provider type "${entry.type}" requires options.api.`,
+        message: `Model provider type "${entry.type}" requires options.api.`,
       });
     }
     // `openai-codex` needs no credential field here: auth comes from the Paseo-owned
@@ -168,20 +168,20 @@ const PaseoAgentInferenceProviderSchema = z
 
 export const PaseoAgentConfigSchema = z
   .object({
-    // Optional default model as "<inferenceProviderName>/<modelId>".
+    // Optional default model as "<modelProviderName>/<modelId>".
     defaultModel: z.string().min(1).optional(),
     // Optional default agent definition from $PASEO_HOME/agents/<name>.md.
     defaultAgent: z.string().min(1).optional(),
     // Legacy alias for defaultAgent.
     defaultProfile: z.string().min(1).optional(),
-    // Inference providers keyed by instance name. Multiple entries may share a
+    // Model providers keyed by instance name. Multiple entries may share a
     // type while pointing at different APIs/base URLs/models.
-    providers: z.record(z.string(), PaseoAgentInferenceProviderSchema).optional(),
+    providers: z.record(z.string(), PaseoAgentModelProviderSchema).optional(),
   })
   .strict();
 
 export type PaseoAgentConfig = z.infer<typeof PaseoAgentConfigSchema>;
-type PaseoAgentInferenceProviderEntry = z.infer<typeof PaseoAgentInferenceProviderSchema>;
+type PaseoAgentModelProviderEntry = z.infer<typeof PaseoAgentModelProviderSchema>;
 
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 16_384;
@@ -194,14 +194,12 @@ interface ResolvedProviderSettings {
   authHeader?: boolean;
 }
 
-function entries(config: PaseoAgentConfig): [string, PaseoAgentInferenceProviderEntry][] {
+function entries(config: PaseoAgentConfig): [string, PaseoAgentModelProviderEntry][] {
   return Object.entries(config.providers ?? {});
 }
 
-/** Apply per-type defaults to a raw inference provider entry. */
-function resolveProviderSettings(
-  entry: PaseoAgentInferenceProviderEntry,
-): ResolvedProviderSettings {
+/** Apply per-type defaults to a raw model provider entry. */
+function resolveProviderSettings(entry: PaseoAgentModelProviderEntry): ResolvedProviderSettings {
   const defaults = resolvePaseoAgentProviderTypeDefaults(entry.type);
   const apiKey = entry.options.apiKey ?? (defaults.envVar ? `$${defaults.envVar}` : undefined);
   return {
@@ -232,12 +230,12 @@ function isAuthConfigured(value: string | undefined, env: NodeJS.ProcessEnv): bo
   return referencedVars.every((name) => Boolean(env[name]));
 }
 
-/** Encode the Paseo-facing model id from an inference provider + Pi model id. */
+/** Encode the Paseo-facing model id from an model provider + Pi model id. */
 export function encodePaseoAgentModelId(providerName: string, modelId: string): string {
   return `${providerName}/${modelId}`;
 }
 
-/** Parse a Paseo-facing model id back into its inference provider + Pi model id. */
+/** Parse a Paseo-facing model id back into its model provider + Pi model id. */
 export function parsePaseoAgentModelId(modelId: string): PaseoAgentModelReference | null {
   const slash = modelId.indexOf("/");
   if (slash <= 0 || slash === modelId.length - 1) {
@@ -246,7 +244,7 @@ export function parsePaseoAgentModelId(modelId: string): PaseoAgentModelReferenc
   return { provider: modelId.slice(0, slash), id: modelId.slice(slash + 1) };
 }
 
-function toPiModels(entry: PaseoAgentInferenceProviderEntry, settings: ResolvedProviderSettings) {
+function toPiModels(entry: PaseoAgentModelProviderEntry, settings: ResolvedProviderSettings) {
   return entry.options.models.map((model) => {
     const api = model.api ?? settings.api;
     return {
@@ -263,16 +261,16 @@ function toPiModels(entry: PaseoAgentInferenceProviderEntry, settings: ResolvedP
 }
 
 /**
- * Map Paseo-owned config into the in-memory inference providers the Pi seam expects.
+ * Map Paseo-owned config into the in-memory model providers the Pi seam expects.
  * `openai-codex` entries carry an oauth marker instead of an API key. Their credential
  * normally lives in the Paseo-owned store (populated by `paseo login chatgpt`); an
  * advanced `options.refreshToken` may supply the user's own token instead.
  */
-export async function paseoAgentInferenceProviders(
+export async function paseoAgentModelProviders(
   config: PaseoAgentConfig,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<PaseoAgentInferenceProvider[]> {
-  const providers: PaseoAgentInferenceProvider[] = [];
+): Promise<PaseoAgentModelProvider[]> {
+  const providers: PaseoAgentModelProvider[] = [];
 
   for (const [name, entry] of entries(config)) {
     const settings = resolveProviderSettings(entry);
@@ -329,7 +327,7 @@ export function listPaseoAgentModels(config: PaseoAgentConfig): AgentModelDefini
 }
 
 /**
- * An inference provider is usable when it has at least one model and auth is configured.
+ * An model provider is usable when it has at least one model and auth is configured.
  * For API-key types that means a resolvable key (literal, set env var, or command). For
  * `openai-codex`, auth comes from the Paseo-owned store (checked via `isOAuthAuthed`,
  * keyed by provider instance name) or, as an advanced override, a resolvable
@@ -364,7 +362,7 @@ export function paseoAgentHasUsableModel(
 export function resolvePaseoAgentModel(
   config: PaseoAgentConfig,
   requestedModelId: string | null | undefined,
-  registeredProviders: PaseoAgentInferenceProvider[] = paseoAgentModelInventory(config),
+  registeredProviders: PaseoAgentModelProvider[] = paseoAgentModelInventory(config),
   agentDefaultModelId?: string | null,
 ): PaseoAgentModelReference | undefined {
   if (requestedModelId) {
@@ -384,7 +382,7 @@ export function resolvePaseoAgentModel(
   return firstRegisteredModel(registeredProviders);
 }
 
-function paseoAgentModelInventory(config: PaseoAgentConfig): PaseoAgentInferenceProvider[] {
+function paseoAgentModelInventory(config: PaseoAgentConfig): PaseoAgentModelProvider[] {
   return entries(config).map(([name, entry]) => {
     const settings = resolveProviderSettings(entry);
     return { name, config: { models: toPiModels(entry, settings) } };
@@ -402,7 +400,7 @@ function firstModelId(config: PaseoAgentConfig): string | undefined {
 }
 
 function hasRegisteredModel(
-  providers: PaseoAgentInferenceProvider[],
+  providers: PaseoAgentModelProvider[],
   model: PaseoAgentModelReference,
 ): boolean {
   return providers.some(
@@ -413,7 +411,7 @@ function hasRegisteredModel(
 }
 
 function firstRegisteredModel(
-  providers: PaseoAgentInferenceProvider[],
+  providers: PaseoAgentModelProvider[],
 ): PaseoAgentModelReference | undefined {
   for (const provider of providers) {
     const first = provider.config.models?.[0];

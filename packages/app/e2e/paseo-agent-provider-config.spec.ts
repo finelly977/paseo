@@ -2,7 +2,7 @@ import { test } from "./fixtures";
 import {
   addOpenRouterProvider,
   cleanupPaseoAgentProviders,
-  expectInferenceProviderListed,
+  expectModelProviderListed,
   openPaseoAgentSettings,
   seedChatGptProvider,
 } from "./helpers/paseo-agent";
@@ -18,7 +18,7 @@ test.describe("Paseo Agent provider configuration", () => {
     providerNamesToCleanup.clear();
   });
 
-  test("adds an OpenRouter inference provider from Settings", async ({ page }) => {
+  test("adds an OpenRouter model provider from Settings", async ({ page }) => {
     providerNamesToCleanup.add(OPENROUTER_PROVIDER);
 
     await openPaseoAgentSettings(page);
@@ -28,7 +28,7 @@ test.describe("Paseo Agent provider configuration", () => {
       models: ["openai/gpt-4o-mini", "anthropic/claude-3.7-sonnet"],
     });
 
-    await expectInferenceProviderListed(page, {
+    await expectModelProviderListed(page, {
       name: OPENROUTER_PROVIDER,
       providerType: "openrouter",
       modelCount: 2,
@@ -36,13 +36,13 @@ test.describe("Paseo Agent provider configuration", () => {
     });
   });
 
-  test("shows a stored ChatGPT login as a read-only inference provider row", async ({ page }) => {
+  test("shows a stored ChatGPT login as a read-only model provider row", async ({ page }) => {
     providerNamesToCleanup.add(CHATGPT_PROVIDER);
 
     await seedChatGptProvider(CHATGPT_PROVIDER);
     await openPaseoAgentSettings(page);
 
-    await expectInferenceProviderListed(page, {
+    await expectModelProviderListed(page, {
       name: CHATGPT_PROVIDER,
       providerType: "openai-codex",
       modelCount: 1,

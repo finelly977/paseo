@@ -1,8 +1,8 @@
 # Paseo Agent provider
 
-Paseo Agent is a built-in provider that runs Pi's coding-agent harness **in process** (no `pi` CLI, no `~/.pi` discovery). It is configured entirely by Paseo-owned config under `agents.paseo` in `$PASEO_HOME/config.json`. The model backends are "inference providers": one or more typed entries, each pointing at an API with its own key and models.
+Paseo Agent is a built-in agent provider that runs Pi's coding-agent harness **in process** (no `pi` CLI, no `~/.pi` discovery). It is configured entirely by Paseo-owned config under `agents.paseo` in `$PASEO_HOME/config.json`. The model backends are **model providers** (see [glossary.md](glossary.md)): one or more typed entries, each pointing at an API with its own key and models.
 
-The provider id is **`paseo`** (the display name is "Paseo Agent"). Use it like any other provider, e.g. `paseo run --provider paseo --model <inferenceProviderName>/<modelId> ...`.
+The provider id is **`paseo`** (the display name is "Paseo Agent"). Use it like any other agent provider, e.g. `paseo run --provider paseo --model <modelProviderName>/<modelId> ...`.
 
 This is a prototype. There is no app UI yet. OpenRouter and ChatGPT setup have CLI
 paths; other provider setup is still config-file based.
@@ -102,7 +102,7 @@ is not present in the session's `mcpServers`, Paseo Agent logs a warning and con
 {
   "agents": {
     "paseo": {
-      // Optional. "<inferenceProviderName>/<modelId>". Used when an agent is
+      // Optional. "<modelProviderName>/<modelId>". Used when an agent is
       // started without an explicit model.
       "defaultModel": "openrouter-main/anthropic/claude-3.7-sonnet",
 
@@ -113,7 +113,7 @@ is not present in the session's `mcpServers`, Paseo Agent logs a warning and con
       // Legacy alias for defaultAgent. Still accepted for old configs.
       "defaultProfile": "orchestrator",
 
-      // Inference providers, keyed by instance name. Names are free-form; you may
+      // Model providers, keyed by instance name. Names are free-form; you may
       // run several entries of the same type against different APIs/keys/models.
       "providers": {
         "openrouter-main": {

@@ -83,7 +83,7 @@ export interface BuildProviderRegistryOptions {
   paseoHome?: string;
   /**
    * Opaque Paseo Agent config blob. The registry only forwards it to the
-   * paseo-agent client factory; it never reads the nested inference providers.
+   * paseo-agent client factory; it never reads the nested model providers.
    */
   paseoAgentConfig?: PaseoAgentConfig;
 }

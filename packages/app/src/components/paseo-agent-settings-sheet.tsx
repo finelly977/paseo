@@ -246,7 +246,7 @@ export function PaseoAgentSettingsSheet({
   } else if (providers.length === 0) {
     body = (
       <View style={styles.stateBox}>
-        <Text style={styles.stateText}>No inference providers configured yet.</Text>
+        <Text style={styles.stateText}>No model providers configured yet.</Text>
       </View>
     );
   } else {

@@ -30,7 +30,7 @@ import {
   type PaseoAgentConfig,
   listPaseoAgentModels,
   paseoAgentHasUsableModel,
-  paseoAgentInferenceProviders,
+  paseoAgentModelProviders,
   parsePaseoAgentModelId,
   resolvePaseoAgentModel,
 } from "./config.js";
@@ -534,22 +534,17 @@ export class PaseoAgentClient implements AgentClient {
     config: AgentSessionConfig,
     _launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
-    const inferenceProviders = await paseoAgentInferenceProviders(this.config);
-    if (inferenceProviders.length === 0) {
+    const modelProviders = await paseoAgentModelProviders(this.config);
+    if (modelProviders.length === 0) {
       throw new Error(
-        "Paseo Agent has no configured inference providers. Add agents.paseo.providers to your Paseo config.",
+        "Paseo Agent has no configured model providers. Add agents.paseo.providers to your Paseo config.",
       );
     }
 
     const availableAgents = this.loadAvailableAgentModes();
     const agent = this.loadSelectedAgent(config.modeId);
     this.verifyExpectedMcpServers(agent, config.mcpServers);
-    const model = resolvePaseoAgentModel(
-      this.config,
-      config.model,
-      inferenceProviders,
-      agent?.model,
-    );
+    const model = resolvePaseoAgentModel(this.config, config.model, modelProviders, agent?.model);
     const thinkingLevel = normalizeThinkingLevel(config.thinkingOptionId) ?? undefined;
     const composedPrompt = composePromptParts({
       agent,
@@ -567,7 +562,7 @@ export class PaseoAgentClient implements AgentClient {
 
     // OAuth providers (ChatGPT/Codex) use a Paseo-owned, file-backed AuthStorage so Pi
     // reads the stored credential and persists refreshed tokens (rotation) back to it.
-    const usesOAuth = inferenceProviders.some((provider) => provider.oauth);
+    const usesOAuth = modelProviders.some((provider) => provider.oauth);
     const authStorage = usesOAuth
       ? createPaseoAgentAuthStorage(envForPaseoHome(this.paseoHome))
       : undefined;
@@ -583,7 +578,7 @@ export class PaseoAgentClient implements AgentClient {
       const handle = await createPaseoAgentSession({
         cwd: config.cwd,
         agentDir: resolveIsolatedAgentDir(),
-        inferenceProviders,
+        modelProviders,
         ...(model ? { model } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
         ...(authStorage ? { authStorage } : {}),

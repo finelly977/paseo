@@ -36,7 +36,7 @@ export type PiProviderConfig = Parameters<ModelRegistry["registerProvider"]>[1];
 type PiAuthData = Parameters<typeof AuthStorage.inMemory>[0];
 type PiSettings = Parameters<typeof SettingsManager.inMemory>[0];
 
-/** OAuth wiring for an inference provider (currently only ChatGPT/Codex). */
+/** OAuth wiring for an model provider (currently only ChatGPT/Codex). */
 export interface PaseoAgentOAuth {
   kind: "openai-codex";
   /**
@@ -47,7 +47,7 @@ export interface PaseoAgentOAuth {
   refreshToken?: string;
 }
 
-export interface PaseoAgentInferenceProvider {
+export interface PaseoAgentModelProvider {
   /** Instance name, e.g. "openrouter-main". Used as the Pi provider key. */
   name: string;
   /** Typed Pi provider config: baseUrl, apiKey, models, api, etc. */
@@ -70,8 +70,8 @@ export interface CreatePaseoAgentSessionOptions {
    * from or written to it during creation.
    */
   agentDir: string;
-  /** Inference providers (model backends) registered entirely in memory. */
-  inferenceProviders: PaseoAgentInferenceProvider[];
+  /** Model providers (model backends) registered entirely in memory. */
+  modelProviders: PaseoAgentModelProvider[];
   /** Explicit model selection. When omitted, Pi falls back to its own resolution. */
   model?: PaseoAgentModelReference;
   thinkingLevel?: ThinkingLevel;
@@ -187,7 +187,7 @@ export async function createPaseoAgentSession(
   // Seed any oauth marker that carries a refresh token (the advanced/manual override).
   // The product path leaves this empty — the credential is already in the Paseo store.
   // Empty `access` + `expires: 0` forces a refresh on the first request.
-  for (const provider of options.inferenceProviders) {
+  for (const provider of options.modelProviders) {
     if (provider.oauth?.kind === "openai-codex" && provider.oauth.refreshToken) {
       authStorage.set(provider.name, {
         type: "oauth",
@@ -200,7 +200,7 @@ export async function createPaseoAgentSession(
 
   const modelRegistry = ModelRegistry.inMemory(authStorage);
 
-  for (const provider of options.inferenceProviders) {
+  for (const provider of options.modelProviders) {
     const config =
       provider.oauth?.kind === "openai-codex"
         ? { ...provider.config, oauth: openaiCodexOAuthProvider }
@@ -222,7 +222,7 @@ export async function createPaseoAgentSession(
     : undefined;
   if (options.model && !model) {
     throw new Error(
-      `Paseo Agent: model ${options.model.provider}/${options.model.id} is not registered by any inference provider`,
+      `Paseo Agent: model ${options.model.provider}/${options.model.id} is not registered by any model provider`,
     );
   }
 

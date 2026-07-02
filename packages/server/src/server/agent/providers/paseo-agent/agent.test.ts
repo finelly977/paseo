@@ -163,7 +163,7 @@ describe("PaseoAgentClient", () => {
     }
   });
 
-  it("is available only when config has a usable inference provider", async () => {
+  it("is available only when config has a usable model provider", async () => {
     const withConfig = new PaseoAgentClient({ logger: createTestLogger(), config: makeConfig() });
     expect(await withConfig.isAvailable()).toBe(true);
 

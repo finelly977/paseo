@@ -242,7 +242,7 @@ describe("PersistedConfigSchema agent provider runtime settings", () => {
     });
   });
 
-  test("accepts the dedicated agents.paseo inference provider config", () => {
+  test("accepts the dedicated agents.paseo model provider config", () => {
     const parsed = PersistedConfigSchema.parse({
       agents: {
         paseo: {

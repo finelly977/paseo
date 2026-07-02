@@ -8,11 +8,11 @@ import { createToolPermissionPolicy } from "./agent-permissions.js";
 
 import {
   type CreatePaseoAgentSessionOptions,
-  type PaseoAgentInferenceProvider,
+  type PaseoAgentModelProvider,
   createPaseoAgentSession,
 } from "./pi-services.js";
 
-function codexInferenceProvider(): PaseoAgentInferenceProvider {
+function codexModelProvider(): PaseoAgentModelProvider {
   return {
     name: "chatgpt",
     config: {
@@ -46,7 +46,7 @@ function toolCallContext(toolName: string): BeforeToolCallContext {
   } as BeforeToolCallContext;
 }
 
-function fakeInferenceProvider(): PaseoAgentInferenceProvider {
+function fakeModelProvider(): PaseoAgentModelProvider {
   return {
     name: FAKE_PROVIDER,
     config: {
@@ -101,12 +101,12 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
     return {
       cwd,
       agentDir,
-      inferenceProviders: [fakeInferenceProvider()],
+      modelProviders: [fakeModelProvider()],
       model: { provider: FAKE_PROVIDER, id: FAKE_MODEL_ID },
     };
   }
 
-  it("creates a session from an in-memory inference provider and selects its model", async () => {
+  it("creates a session from an in-memory model provider and selects its model", async () => {
     const { session, modelRegistry } = await createPaseoAgentSession(baseOptions());
 
     expect(session).toBeDefined();
@@ -160,11 +160,11 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
     expect(existsSync(join(cwd, ".pi"))).toBe(false);
   });
 
-  it("rejects a model that no inference provider registered", async () => {
+  it("rejects a model that no model provider registered", async () => {
     await expect(
       createPaseoAgentSession({
         ...baseOptions(),
-        inferenceProviders: [],
+        modelProviders: [],
       }),
     ).rejects.toThrow(/not registered/);
   });
@@ -261,14 +261,12 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
   });
 
   it("registers a codex provider and seeds the advanced refresh-token override", async () => {
-    const codex = codexInferenceProvider();
+    const codex = codexModelProvider();
     const { session, modelRegistry } = await createPaseoAgentSession({
       cwd,
       agentDir,
       model: { provider: "chatgpt", id: "gpt-5.3-codex" },
-      inferenceProviders: [
-        { ...codex, oauth: { kind: "openai-codex", refreshToken: "rt-test-only" } },
-      ],
+      modelProviders: [{ ...codex, oauth: { kind: "openai-codex", refreshToken: "rt-test-only" } }],
     });
 
     expect(session.model?.provider).toBe("chatgpt");
@@ -289,7 +287,7 @@ describe("createPaseoAgentSession (no-discovery spike)", () => {
       authStorage,
       model: { provider: "chatgpt", id: "gpt-5.3-codex" },
       // No oauth.refreshToken marker — the credential comes from the Paseo store.
-      inferenceProviders: [{ ...codexInferenceProvider(), oauth: { kind: "openai-codex" } }],
+      modelProviders: [{ ...codexModelProvider(), oauth: { kind: "openai-codex" } }],
     });
 
     const available = modelRegistry.getAvailable();

@@ -58,7 +58,7 @@ export async function addOpenRouterProvider(
   await expect(page.getByText(provider.apiKey, { exact: true })).toHaveCount(0);
 }
 
-export async function expectInferenceProviderListed(
+export async function expectModelProviderListed(
   page: Page,
   expected: ExpectedProvider,
 ): Promise<void> {
