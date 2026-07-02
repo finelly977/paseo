@@ -345,6 +345,10 @@ interface LoggerLike {
   info(...args: unknown[]): void;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function getConfigPath(paseoHome: string): string {
   return path.join(paseoHome, CONFIG_FILENAME);
 }
@@ -392,6 +396,90 @@ function stripRemovedConfigFields(parsed: unknown): unknown {
   return root;
 }
 
+function cloneConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneConfigValue);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, cloneConfigValue(entry)]),
+  );
+}
+
+function getValueAtPath(value: unknown, pathSegments: readonly PropertyKey[]): unknown {
+  let current = value;
+  for (const segment of pathSegments) {
+    if (typeof segment === "symbol") {
+      return undefined;
+    }
+    if (Array.isArray(current)) {
+      if (typeof segment !== "number") {
+        return undefined;
+      }
+      current = current[segment];
+      continue;
+    }
+    if (!isRecord(current)) {
+      return undefined;
+    }
+    current = current[String(segment)];
+  }
+  return current;
+}
+
+function deleteKeysAtPath(
+  config: unknown,
+  pathSegments: readonly PropertyKey[],
+  keys: readonly string[],
+): boolean {
+  const target = getValueAtPath(config, pathSegments);
+  if (!isRecord(target)) {
+    return false;
+  }
+
+  let deleted = false;
+  for (const key of keys) {
+    if (Object.hasOwn(target, key)) {
+      delete target[key];
+      deleted = true;
+    }
+  }
+  return deleted;
+}
+
+function stripUnrecognizedConfigFields(config: unknown): unknown {
+  let current = config;
+
+  while (true) {
+    const result = PersistedConfigSchema.safeParse(current);
+    if (result.success) {
+      return current;
+    }
+
+    const unrecognizedKeyIssues = result.error.issues.filter(
+      (issue) => issue.code === "unrecognized_keys",
+    );
+    if (unrecognizedKeyIssues.length === 0) {
+      return current;
+    }
+
+    const next = cloneConfigValue(current);
+    let deletedAny = false;
+    for (const issue of unrecognizedKeyIssues) {
+      deletedAny = deleteKeysAtPath(next, issue.path, issue.keys) || deletedAny;
+    }
+    if (!deletedAny) {
+      return current;
+    }
+
+    current = next;
+  }
+}
+
 export function loadPersistedConfig(paseoHome: string, logger?: LoggerLike): PersistedConfig {
   const log = getLogger(logger);
   const configPath = getConfigPath(paseoHome);
@@ -430,7 +518,7 @@ export function loadPersistedConfig(paseoHome: string, logger?: LoggerLike): Per
     });
   }
 
-  const migrated = stripRemovedConfigFields(parsed);
+  const migrated = stripUnrecognizedConfigFields(stripRemovedConfigFields(parsed));
   const result = PersistedConfigSchema.safeParse(migrated);
   if (!result.success) {
     const issues = result.error.issues

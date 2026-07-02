@@ -669,6 +669,42 @@ describe("loadPersistedConfig", () => {
     }
   });
 
+  test("loads a config with unrecognized persisted fields", () => {
+    const home = createTempHome();
+    const configPath = path.join(home, "config.json");
+    try {
+      writeFileSync(
+        configPath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            daemon: {
+              listen: "127.0.0.1:6767",
+              futureDaemonSetting: { enabled: true },
+              relay: {
+                enabled: true,
+                futureRelaySetting: "enabled",
+              },
+            },
+            futureRootSetting: true,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+
+      const config = loadPersistedConfig(home);
+
+      expect(config.daemon?.listen).toBe("127.0.0.1:6767");
+      expect(config.daemon?.relay?.enabled).toBe(true);
+      expect((config.daemon as Record<string, unknown>)?.futureDaemonSetting).toBeUndefined();
+      expect((config.daemon?.relay as Record<string, unknown>)?.futureRelaySetting).toBeUndefined();
+      expect((config as Record<string, unknown>).futureRootSetting).toBeUndefined();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("loads a config that still uses the removed providers.openai.voice block", () => {
     const home = createTempHome();
     const configPath = path.join(home, "config.json");
