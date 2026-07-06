@@ -127,7 +127,7 @@ function toStatusRows(status: DaemonStatus): StatusRow[] {
     { key: "Owner", value: status.owner ?? "-" },
     { key: "Logs", value: status.logPath },
     { key: "Daemon Node", value: status.daemonNode },
-    { key: "Daemon Executable", value: status.daemonExecutablePath ?? "-" },
+    { key: "PID Lock Executable", value: status.daemonExecutablePath ?? "-" },
     { key: "CLI Node", value: status.cliNode },
     { key: "CLI", value: status.cliVersion },
     { key: "Daemon Version", value: status.daemonVersion ?? "-" },
