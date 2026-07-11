@@ -119,6 +119,7 @@ describe("Live relay (relay.paseo.sh) E2E", () => {
         // === Connect ===
         const daemonControlWs = new WebSocket(serverControlUrl);
         const clientWs = new WebSocket(clientUrl);
+        const connected = waitForConnected(daemonControlWs, connectionId);
         let daemonWs: WebSocket | null = null;
 
         try {
@@ -127,7 +128,7 @@ describe("Live relay (relay.paseo.sh) E2E", () => {
             waitOpen(clientWs, "client"),
           ]);
 
-          await waitForConnected(daemonControlWs, connectionId);
+          await connected;
 
           daemonWs = new WebSocket(serverDataUrl);
           await waitOpen(daemonWs, "server-data");
