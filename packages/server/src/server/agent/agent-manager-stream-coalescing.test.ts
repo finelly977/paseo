@@ -473,6 +473,27 @@ describe("target coalesced behavior", () => {
     }
   });
 
+  test("bounds failed shell output carried in the error", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+      const content = `${"a".repeat(512 * 1024)}${"z".repeat(512 * 1024)}`;
+      const expectedItem = toolCall({
+        status: "failed",
+        error: { content: "a".repeat(TOOL_CALL_CONTENT_MAX_LENGTH) },
+      });
+
+      session.pushEvent(timelineEvent(toolCall({ status: "failed", error: { content } })));
+      await waitForSessionEventQueue();
+
+      expect(getTimelineItems(await harness.manager.getTimelineRows(agentId))).toEqual([
+        expectedItem,
+      ]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
   test(`coalesces a same-tick assistant burst after the ${COALESCE_WINDOW_MS}ms window`, async () => {
     vi.useFakeTimers();
     const harness = createHarness();

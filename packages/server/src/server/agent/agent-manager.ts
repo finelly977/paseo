@@ -494,7 +494,7 @@ function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): A
     rows.push({
       seq: rows.length + 1,
       timestamp: entry.timestamp ?? new Date().toISOString(),
-      item: entry.item,
+      item: limitAgentTimelineItemContent(entry.item),
     });
   }
   return rows;
