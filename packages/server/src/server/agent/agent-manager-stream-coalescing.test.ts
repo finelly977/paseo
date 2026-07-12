@@ -30,6 +30,8 @@ import type {
 
 const COALESCE_WINDOW_MS = AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS;
 const BEFORE_COALESCE_WINDOW_MS = Math.max(COALESCE_WINDOW_MS - 1, 0);
+const TOOL_CALL_CONTENT_MAX_BYTES = 64 * 1024;
+const TOOL_CALL_CONTENT_TRUNCATION_MARKER = "\n...<tool output truncated in the middle>...\n";
 
 const TEST_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
@@ -81,6 +83,15 @@ function toolCall(options?: {
       exitCode: status === "completed" ? 0 : null,
     },
   };
+}
+
+function boundedToolCallOutput(head: string, tail: string): string {
+  const availableBytes =
+    TOOL_CALL_CONTENT_MAX_BYTES - Buffer.byteLength(TOOL_CALL_CONTENT_TRUNCATION_MARKER);
+  const headBytes = Math.floor(availableBytes / 2);
+  return `${head.repeat(headBytes)}${TOOL_CALL_CONTENT_TRUNCATION_MARKER}${tail.repeat(
+    availableBytes - headBytes,
+  )}`;
 }
 
 class TestAgentSession implements AgentSession {
@@ -377,6 +388,101 @@ afterEach(() => {
 });
 
 describe("target coalesced behavior", () => {
+  test("bounds tool output before persisting and streaming it", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+      const output = `${"a".repeat(512 * 1024)}${"z".repeat(512 * 1024)}`;
+      const expectedItem = toolCall({
+        status: "completed",
+        output: boundedToolCallOutput("a", "z"),
+      });
+
+      session.pushEvent(timelineEvent(toolCall({ status: "completed", output })));
+      await waitForSessionEventQueue();
+
+      const rows = await harness.manager.getTimelineRows(agentId);
+      const events = getTimelineStreamEvents(harness.events, agentId);
+
+      expect(getTimelineItems(rows)).toEqual([expectedItem]);
+      expect(
+        events.map((event) => (event.type === "agent_stream" ? event.event.item : null)),
+      ).toEqual([expectedItem]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  test("bounds appended tool output before persisting and streaming it", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId } = await createManagedSession(harness);
+      const output = `${"a".repeat(512 * 1024)}${"z".repeat(512 * 1024)}`;
+      const expectedItem = toolCall({
+        status: "completed",
+        output: boundedToolCallOutput("a", "z"),
+      });
+
+      await harness.manager.appendTimelineItem(agentId, toolCall({ status: "completed", output }));
+
+      const rows = await harness.manager.getTimelineRows(agentId);
+      const events = getTimelineStreamEvents(harness.events, agentId);
+
+      expect(getTimelineItems(rows)).toEqual([expectedItem]);
+      expect(
+        events.map((event) => (event.type === "agent_stream" ? event.event.item : null)),
+      ).toEqual([expectedItem]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  test("bounds tool output while hydrating provider history", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+      const output = `${"a".repeat(512 * 1024)}${"z".repeat(512 * 1024)}`;
+      const expectedItem = toolCall({
+        status: "completed",
+        output: boundedToolCallOutput("a", "z"),
+      });
+      session.setHistory([timelineEvent(toolCall({ status: "completed", output }))]);
+
+      await harness.manager.hydrateTimelineFromProvider(agentId);
+
+      expect(getTimelineItems(await harness.manager.getTimelineRows(agentId))).toEqual([
+        expectedItem,
+      ]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  test("bounds tool output emitted only to the live stream", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId } = await createManagedSession(harness);
+      const output = `${"a".repeat(512 * 1024)}${"z".repeat(512 * 1024)}`;
+      const expectedItem = toolCall({
+        status: "completed",
+        output: boundedToolCallOutput("a", "z"),
+      });
+
+      await harness.manager.emitLiveTimelineItem(
+        agentId,
+        toolCall({ status: "completed", output }),
+      );
+
+      const events = getTimelineStreamEvents(harness.events, agentId);
+      expect(await harness.manager.getTimelineRows(agentId)).toEqual([]);
+      expect(
+        events.map((event) => (event.type === "agent_stream" ? event.event.item : null)),
+      ).toEqual([expectedItem]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
   test(`coalesces a same-tick assistant burst after the ${COALESCE_WINDOW_MS}ms window`, async () => {
     vi.useFakeTimers();
     const harness = createHarness();
