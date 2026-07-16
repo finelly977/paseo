@@ -141,22 +141,26 @@ jobs:
             fi
           done
 
-          mkdir -p packages/app/.secrets packages/app/credentials/android
-          printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > packages/app/.secrets/google-services.prod.json
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > packages/app/credentials/android/keystore.jks
+          google_services_file="$RUNNER_TEMP/google-services.prod.json"
+          keystore_file="$RUNNER_TEMP/paseo-upload.jks"
+
+          printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > "$google_services_file"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_file"
           jq -n \
+            --arg keystorePath "$keystore_file" \
             --arg keystorePassword "$ANDROID_KEYSTORE_PASSWORD" \
             --arg keyAlias "$ANDROID_KEY_ALIAS" \
             --arg keyPassword "$ANDROID_KEY_PASSWORD" \
-            '{android: {keystore: {keystorePath: "credentials/android/keystore.jks", keystorePassword: $keystorePassword, keyAlias: $keyAlias, keyPassword: $keyPassword}}}' \
+            '{android: {keystore: {keystorePath: $keystorePath, keystorePassword: $keystorePassword, keyAlias: $keyAlias, keyPassword: $keyPassword}}}' \
             > packages/app/credentials.json
+
+          echo "GOOGLE_SERVICES_FILE_PROD=$google_services_file" >> "$GITHUB_ENV"
 
       - name: Build signed production APK on GitHub
         env:
           APP_VARIANT: production
-          EAS_LOCAL_BUILD_ARTIFACTS_DIR: ${{ runner.temp }}/eas-artifacts
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          GOOGLE_SERVICES_FILE_PROD: ./.secrets/google-services.prod.json
+          EAS_BUILD: "1"
+          EXPO_UPDATES_CHANNEL: production
           GRADLE_OPTS: >-
             -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
             -Dorg.gradle.parallel=false
@@ -165,13 +169,43 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          npm run build:app-deps
+          npm --prefix packages/app run build:terminal-webview
+
           cd packages/app
-          npx eas build \
-            --platform android \
-            --profile production-apk \
-            --local \
-            --non-interactive \
-            --output "$RUNNER_TEMP/${{ steps.mode.outputs.artifact-name }}"
+          npx expo prebuild --platform android --clean --non-interactive
+          node -e '(async () => require("expo/node_modules/@expo/config-plugins").AndroidConfig.EasBuild.configureEasBuildAsync(process.cwd()))().catch((error) => { console.error(error); process.exitCode = 1; })'
+
+          cd android
+          ./gradlew \
+            :app:assembleRelease \
+            --no-daemon \
+            --max-workers=1 \
+            -Dorg.gradle.parallel=false \
+            -x lint \
+            -x lintVitalAnalyzeRelease \
+            -x lintVitalRelease \
+            -x generateReleaseLintModel \
+            -x generateReleaseLintVitalModel
+
+          artifact="$RUNNER_TEMP/${{ steps.mode.outputs.artifact-name }}"
+          cp app/build/outputs/apk/release/app-release.apk "$artifact"
+
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [[ -z "$apksigner" ]]; then
+            echo "::error::Unable to locate apksigner."
+            exit 1
+          fi
+
+          expected_sha256="421698bdca5bb9168c970e24539781509b5aa23fab8ab406a15b3f9c5f04c647"
+          actual_sha256="$($apksigner verify --print-certs "$artifact" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            echo "::error::APK signing certificate does not match the production key."
+            exit 1
+          fi
+
+          echo "Verified production signing certificate: $actual_sha256"
 
       - name: Upload APK to workflow artifacts
         uses: actions/upload-artifact@v4

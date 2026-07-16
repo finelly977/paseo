@@ -130,6 +130,13 @@ export default {
     },
     updates: {
       url: "https://u.expo.dev/0e7f65ce-0367-46c8-a238-2b65963d235a",
+      ...(process.env.EXPO_UPDATES_CHANNEL
+        ? {
+            requestHeaders: {
+              "expo-channel-name": process.env.EXPO_UPDATES_CHANNEL,
+            },
+          }
+        : {}),
       ...buildProfile.updates,
     },
     ios: {
