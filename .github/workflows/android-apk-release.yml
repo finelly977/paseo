@@ -7,34 +7,195 @@ on:
       - "android-v*"
   workflow_dispatch:
     inputs:
+      ref:
+        description: "Branch, tag, or commit to build. Leave blank to build the selected workflow ref."
+        required: false
+        default: ""
+        type: string
+      publish:
+        description: "Upload the APK to an existing or new GitHub release."
+        required: false
+        default: false
+        type: boolean
       tag:
-        description: "Existing tag to build (e.g. v0.1.0)"
-        required: true
+        description: "Release tag to rebuild and publish. Required when publish is enabled."
+        required: false
+        default: ""
         type: string
 
 concurrency:
-  group: android-apk-release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+  group: android-apk-release-${{ github.event_name == 'workflow_dispatch' && (inputs.ref || inputs.tag || github.ref) || github.ref }}
   cancel-in-progress: false
 
-env:
-  SOURCE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
-
 jobs:
-  publish-android-apk:
+  build-apk:
     permissions:
-      contents: write
+      contents: read
       packages: read
     runs-on: ubuntu-latest
-
+    outputs:
+      artifact-name: ${{ steps.mode.outputs.artifact-name }}
+      publish: ${{ steps.mode.outputs.publish }}
+      release-tag: ${{ steps.mode.outputs.release-tag }}
+      source-tag: ${{ steps.mode.outputs.source-tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish && inputs.tag || inputs.ref || github.ref) || github.ref }}
 
-      - name: Resolve release tag
+      - name: Resolve build mode
+        id: mode
+        env:
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_TAG: ${{ inputs.tag }}
         shell: bash
-        run: node scripts/emit-release-env.mjs --source-tag "$SOURCE_TAG" >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+
+          publish=false
+          release_tag=""
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            publish=true
+            source_tag="${GITHUB_REF_NAME}"
+          elif [[ "${INPUT_PUBLISH:-false}" == "true" ]]; then
+            if [[ -z "${INPUT_TAG:-}" ]]; then
+              echo "::error::tag is required when publish is enabled."
+              exit 1
+            fi
+            if [[ -n "${INPUT_REF:-}" ]]; then
+              echo "::error::ref cannot be combined with publish; the release tag is always the source."
+              exit 1
+            fi
+            publish=true
+            source_tag="${INPUT_TAG}"
+          fi
+
+          if [[ "${publish}" == "true" ]]; then
+            release_env="$(node scripts/emit-release-env.mjs --source-tag "${source_tag}")"
+            printf '%s\n' "${release_env}" >> "$GITHUB_ENV"
+            release_tag="$(printf '%s\n' "${release_env}" | sed -n 's/^RELEASE_TAG=//p')"
+            artifact_name="paseo-${release_tag}-android.apk"
+          else
+            package_version="$(node -p "require('./package.json').version")"
+            short_sha="$(git rev-parse --short=12 HEAD)"
+            artifact_name="paseo-v${package_version}-${short_sha}-android.apk"
+          fi
+
+          {
+            echo "artifact-name=${artifact_name}"
+            echo "publish=${publish}"
+            echo "release-tag=${release_tag}"
+            echo "source-tag=${source_tag:-}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building ${artifact_name}; publish=${publish}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@boudra"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        run: node scripts/npm-retry.mjs ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore production Android credentials
+        env:
+          ANDROID_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            ANDROID_GOOGLE_SERVICES_JSON_BASE64
+            ANDROID_KEY_ALIAS
+            ANDROID_KEY_PASSWORD
+            ANDROID_KEYSTORE_BASE64
+            ANDROID_KEYSTORE_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required repository secret: ${name}"
+              exit 1
+            fi
+          done
+
+          mkdir -p packages/app/.secrets packages/app/credentials/android
+          printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > packages/app/.secrets/google-services.prod.json
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > packages/app/credentials/android/keystore.jks
+          jq -n \
+            --arg keystorePassword "$ANDROID_KEYSTORE_PASSWORD" \
+            --arg keyAlias "$ANDROID_KEY_ALIAS" \
+            --arg keyPassword "$ANDROID_KEY_PASSWORD" \
+            '{android: {keystore: {keystorePath: "credentials/android/keystore.jks", keystorePassword: $keystorePassword, keyAlias: $keyAlias, keyPassword: $keyPassword}}}' \
+            > packages/app/credentials.json
+
+      - name: Build signed production APK on GitHub
+        env:
+          APP_VARIANT: production
+          EAS_LOCAL_BUILD_ARTIFACTS_DIR: ${{ runner.temp }}/eas-artifacts
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GOOGLE_SERVICES_FILE_PROD: ./.secrets/google-services.prod.json
+          GRADLE_OPTS: >-
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8"
+            -Dorg.gradle.parallel=false
+            -Dorg.gradle.workers.max=1
+            -Dorg.gradle.daemon=false
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd packages/app
+          npx eas build \
+            --platform android \
+            --profile production-apk \
+            --local \
+            --non-interactive \
+            --output "$RUNNER_TEMP/${{ steps.mode.outputs.artifact-name }}"
+
+      - name: Upload APK to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.mode.outputs.artifact-name }}
+          path: ${{ runner.temp }}/${{ steps.mode.outputs.artifact-name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-apk:
+    needs: build-apk
+    if: needs.build-apk.outputs.publish == 'true'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          ref: ${{ needs.build-apk.outputs.source-tag }}
+
+      - name: Resolve release metadata
+        shell: bash
+        run: node scripts/emit-release-env.mjs --source-tag "${{ needs.build-apk.outputs.source-tag }}" >> "$GITHUB_ENV"
 
       - name: Ensure GitHub release exists
         env:
@@ -62,71 +223,19 @@ jobs:
             echo "Release creation raced with another workflow; continuing."
           fi
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Download APK workflow artifact
+        uses: actions/download-artifact@v4
         with:
-          node-version: "22"
-          cache: "npm"
-          registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
-
-      - name: Install JS dependencies
-        run: node scripts/npm-retry.mjs ci
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Build Android APK on EAS
-        id: eas_build
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd packages/app
-
-          build_json="$(npx eas build --platform android --profile production-apk --non-interactive --wait --json)"
-          echo "$build_json" > "$RUNNER_TEMP/eas-build.json"
-
-          build_id="$(jq -r 'if type == "array" then .[0].id // empty else .id // empty end' "$RUNNER_TEMP/eas-build.json")"
-          if [ -z "$build_id" ]; then
-            echo "Failed to determine EAS build ID."
-            cat "$RUNNER_TEMP/eas-build.json"
-            exit 1
-          fi
-
-          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve APK artifact URL
-        id: artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd packages/app
-
-          build_view_json="$(npx eas build:view '${{ steps.eas_build.outputs.build_id }}' --json)"
-          echo "$build_view_json" > "$RUNNER_TEMP/eas-build-view.json"
-
-          artifact_url="$(jq -r '.artifacts.buildUrl // .artifacts.applicationArchiveUrl // empty' "$RUNNER_TEMP/eas-build-view.json")"
-          if [ -z "$artifact_url" ]; then
-            echo "Failed to determine APK artifact URL."
-            cat "$RUNNER_TEMP/eas-build-view.json"
-            exit 1
-          fi
-
-          asset_name="paseo-${RELEASE_TAG}-android.apk"
-          asset_path="$RUNNER_TEMP/$asset_name"
-
-          curl --fail --location --output "$asset_path" "$artifact_url"
-
-          echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
-          echo "asset_path=$asset_path" >> "$GITHUB_OUTPUT"
+          name: ${{ needs.build-apk.outputs.artifact-name }}
+          path: ${{ runner.temp }}/apk
 
       - name: Upload APK to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          gh release upload "$RELEASE_TAG" "${{ steps.artifact.outputs.asset_path }}" --clobber --repo "${{ github.repository }}"
+          gh release upload \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/apk/${{ needs.build-apk.outputs.artifact-name }}" \
+            --clobber \
+            --repo "${{ github.repository }}"

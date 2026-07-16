@@ -137,13 +137,20 @@ adb exec-out screencap -p > screenshot.png
 Stable tag pushes like `v0.1.0` trigger:
 
 - The EAS GitHub app on Expo servers (iOS + Android production builds + store submit). There is no workflow file in this repo for it.
-- `.github/workflows/android-apk-release.yml` on GitHub Actions (APK asset on GitHub Release).
+- `.github/workflows/android-apk-release.yml` on GitHub Actions (locally built, production-signed APK asset on GitHub Release). The APK build uses EAS local tooling for build parity but runs entirely on the GitHub runner, so it does not consume an EAS cloud build.
 
 iOS auto-submits to App Store review via a Fastlane lane after EAS uploads to TestFlight. Android auto-submits to the Play Store via EAS-managed credentials.
 
 Beta tags like `v0.1.1-beta.1` only trigger the GitHub APK workflow. They publish a GitHub prerelease APK for testing and do not submit to the stores.
 
-`android-v*` tags also trigger only the GitHub APK workflow — useful when you want to ship an APK without going through stores. The GitHub APK workflow supports `workflow_dispatch` with an existing `tag` input so you can rebuild without cutting a new tag.
+`android-v*` tags also trigger only the GitHub APK workflow — useful when you want to ship an APK without going through stores.
+
+The GitHub APK workflow also supports `workflow_dispatch`:
+
+- Leave `publish` disabled and optionally provide `ref` to build any branch, tag, or commit as a workflow artifact without changing a GitHub release.
+- Enable `publish` and provide an existing `tag` to rebuild that tag and upload the APK to its GitHub release. Manual publishes always build the tag itself; they cannot publish an arbitrary ref under a release tag.
+
+The workflow restores the production keystore and Firebase configuration from protected GitHub repository secrets. Keep those values synchronized with the production Android credentials in EAS. The APK profile uses `credentialsSource: local`; the AAB profile continues using EAS-managed credentials and store submission.
 
 ### Useful commands
 

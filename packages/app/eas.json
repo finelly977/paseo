@@ -23,6 +23,7 @@
     },
     "production-apk": {
       "extends": "production",
+      "credentialsSource": "local",
       "distribution": "internal",
       "android": {
         "buildType": "apk",
