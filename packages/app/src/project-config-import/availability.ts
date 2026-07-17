@@ -1,4 +1,13 @@
+import type {
+  ProjectConfigImportPreview,
+  ProjectConfigRpcError,
+} from "@getpaseo/protocol/messages";
+
 export type ProjectConfigImportAvailabilityStatus = "loading" | "none" | "one" | "many";
+
+type ProjectConfigImportOpenablePreview =
+  | ({ ok: true } & Pick<ProjectConfigImportPreview, "items" | "status">)
+  | { ok: false; error: Pick<ProjectConfigRpcError, "code"> };
 
 export function projectConfigImportAvailabilityStatus(input: {
   availableCount: number;
@@ -14,9 +23,19 @@ export function projectConfigImportAvailabilityStatus(input: {
 }
 
 export function projectConfigImportPreviewIsOpenable(
-  preview: { ok: true; status: string } | { ok: false; error: { code: string } } | null | undefined,
+  preview: ProjectConfigImportOpenablePreview | null | undefined,
 ): boolean {
-  return preview?.ok === true
-    ? preview.status === "available"
-    : preview?.error.code === "invalid_source_config";
+  if (!preview) {
+    return false;
+  }
+  if (!preview.ok) {
+    return preview.error.code === "invalid_source_config";
+  }
+  if (preview.status === "available") {
+    return true;
+  }
+  if (preview.status === "nothing_to_import") {
+    return preview.items.length > 0;
+  }
+  return false;
 }

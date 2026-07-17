@@ -217,6 +217,61 @@ describe("project config import preview cache keys", () => {
     );
   });
 
+  it("refetches a stale availability preview when the settings page remounts", () => {
+    const calls: string[] = [];
+    const client = {
+      getProjectConfigImport: async (): Promise<
+        ProjectConfigImportPreview & { ok: true; requestId: string }
+      > => {
+        calls.push("preview");
+        return {
+          ok: true,
+          requestId: "preview-current",
+          repoRoot: "/repo",
+          source: protocolSource,
+          status: "available",
+          sourceRevision: "source-current",
+          paseoRevision: null,
+          inputs: [],
+          items: [],
+          preview: {},
+        };
+      },
+    };
+    const input = projectConfigImportPreviewQueryInput({
+      client,
+      serverId: "server",
+      repoRoot: "/repo",
+      source: fakeSource,
+      protocolSource,
+      enabled: true,
+    });
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      input.queryKey,
+      {
+        ok: true,
+        requestId: "preview-stale",
+        repoRoot: "/repo",
+        source: protocolSource,
+        status: "not_found",
+        sourceRevision: null,
+        paseoRevision: null,
+        inputs: [],
+        items: [],
+        preview: null,
+      },
+      { updatedAt: Date.now() - 6_000 },
+    );
+    const options = fetchQueryOptions(input);
+    const observer = new QueryObserver(queryClient, queryClient.defaultQueryOptions(options));
+
+    const unsubscribe = observer.subscribe(() => {});
+
+    expect(calls).toEqual(["preview"]);
+    unsubscribe();
+  });
+
   it("keeps advertised identity separate from the protocol source after opening", async () => {
     const sameKindRegistry = createProjectConfigImportSourceRegistry([
       {
@@ -316,6 +371,25 @@ describe("project config import availability", () => {
       projectConfigImportPreviewIsOpenable({
         ok: false,
         error: { code: "source_config_not_found" },
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps warning-only advertised sources openable", () => {
+    expect(
+      projectConfigImportPreviewIsOpenable({
+        ok: true,
+        status: "nothing_to_import",
+        items: [
+          { key: "environment_variables", label: "Environment variables", outcome: "unsupported" },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      projectConfigImportPreviewIsOpenable({
+        ok: true,
+        status: "nothing_to_import",
+        items: [],
       }),
     ).toBe(false);
   });

@@ -39,7 +39,7 @@ export function projectConfigImportPreviewQueryInput(input: {
     enabled:
       input.enabled &&
       Boolean(input.client && input.serverId && input.repoRoot && input.protocolSource),
-    refetchOnMount: false,
+    refetchOnMount: true,
     retry: false,
     staleTimeMs: PROJECT_CONFIG_IMPORT_PREVIEW_STALE_MS,
     dataShape: "value",
