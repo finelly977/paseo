@@ -14,7 +14,9 @@ import {
 import {
   createProjectConfigImportIntentFromRegistration,
   parseProjectConfigImportIntent,
+  stripProjectConfigImportSearchParams,
 } from "./route";
+import { projectConfigImportApplyFailureRetryAction } from "./retry";
 import {
   createProjectConfigImportSourceRegistry,
   type ProjectConfigImportSourceDescriptor,
@@ -105,6 +107,25 @@ describe("project config import intent", () => {
       protocolSource: fakeSource,
       intentId: "intent-1",
     });
+  });
+
+  it("strips consumed import params from browser routes", () => {
+    expect(
+      stripProjectConfigImportSearchParams(
+        "/settings/projects/repo?keep=yes&importSource=conductor&importServerId=host&importIntentId=1#section",
+      ),
+    ).toBe("/settings/projects/repo?keep=yes#section");
+  });
+});
+
+describe("project config import retries", () => {
+  it("refreshes the preview when the source disappears during apply", () => {
+    expect(
+      projectConfigImportApplyFailureRetryAction({
+        code: "source_config_not_found",
+        source: protocolSource,
+      }),
+    ).toBe("refresh");
   });
 });
 

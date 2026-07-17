@@ -37,6 +37,7 @@ interface ConductorSettings {
 interface ConductorRunScript {
   command: string;
   args?: string[];
+  hide?: boolean;
   options?: {
     cwd?: string;
   };
@@ -218,6 +219,7 @@ function normalizeRunScript(entry: Record<string, unknown>, command: string): Co
   return {
     command,
     ...(args ? { args } : {}),
+    ...(typeof entry.hide === "boolean" ? { hide: entry.hide } : {}),
     ...(options && typeof options.cwd === "string" ? { options: { cwd: options.cwd } } : {}),
     ...(availableIn ? { available_in: availableIn } : {}),
   };
@@ -229,6 +231,16 @@ function mapRunScript(
   patch: PaseoConfigRaw,
   items: ProjectConfigImportItem[],
 ): void {
+  if (script.hide) {
+    items.push({
+      key: `scripts.${scriptId}`,
+      label: `Script ${scriptId}`,
+      outcome: "unsupported",
+      detail: "Hidden scripts are not imported.",
+    });
+    return;
+  }
+
   if (isCloudOnly(script.available_in)) {
     items.push({
       key: `scripts.${scriptId}`,
@@ -409,7 +421,7 @@ function safeCwdPrefix(cwd: string): string | null {
   ) {
     return null;
   }
-  return `cd -- ${shellQuote(cwd)} && `;
+  return `cd -- ${shellQuote(normalized)} && `;
 }
 
 function isCloudOnly(availableIn: string | string[] | undefined): boolean {
@@ -432,7 +444,8 @@ function normalizeAvailableIn(value: unknown): string | string[] | undefined {
 }
 
 function shellQuoteArgument(value: string): string {
-  const variablePattern = /\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
+  const variablePattern =
+    /\$(?:\{[A-Za-z_][A-Za-z0-9_]*(?:(?:[^{}])|\{[^{}]*\})*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
   const parts: string[] = [];
   let offset = 0;
   for (const match of value.matchAll(variablePattern)) {

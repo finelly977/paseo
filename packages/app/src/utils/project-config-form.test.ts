@@ -365,4 +365,14 @@ describe("hasProjectConfigDraftChanges", () => {
     expect(hasProjectConfigDraftChanges({ draft: untouched, base })).toBe(false);
     expect(hasProjectConfigDraftChanges({ draft: edited, base })).toBe(true);
   });
+
+  it("treats empty config containers as an untouched canonical form", () => {
+    const base: PaseoConfigRaw = {
+      worktree: {},
+      scripts: {},
+      metadataGeneration: {},
+    };
+
+    expect(hasProjectConfigDraftChanges({ draft: configToDraft(base), base })).toBe(false);
+  });
 });

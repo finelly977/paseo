@@ -80,7 +80,6 @@ auto_run_after_setup = true
 [scripts.run.dev]
 command = "npm run dev -- --port $CONDUCTOR_PORT"
 args = ["--host", "0.0.0.0"]
-hide = true
 
 [scripts.run.dev.options]
 cwd = "apps/web"
@@ -260,6 +259,28 @@ args = ["--port", "$CONDUCTOR_PORT", "--label=$WORKSPACE_NAME"]
     });
   });
 
+  test("preserves shell parameter expansion in script arguments", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev"
+args = ["--port=\${CONDUCTOR_PORT:-3000}"]
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: {
+          type: "service",
+          port: "$PASEO_PORT",
+          command: `npm run dev '--port='"\${PASEO_PORT:-3000}"`,
+        },
+      },
+    });
+  });
+
   test("rejects normalized working directories that escape the project root", () => {
     const repo = makeRepo();
     writeSharedToml(
@@ -298,6 +319,23 @@ cwd = '\\\\server\\share'
         expect.objectContaining({ key: "scripts.unc.cwd", outcome: "unsupported" }),
       ]),
     );
+  });
+
+  test("emits normalized relative working directories", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm test"
+[scripts.run.dev.options]
+cwd = 'apps\\web'
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: { dev: { command: "cd -- 'apps/web' && npm test" } },
+    });
   });
 
   test("rewrites Conductor ports inside shell parameter expansions", () => {
@@ -348,6 +386,31 @@ available_in = ["local", "cloud"]
           key: "scripts.cloud",
           outcome: "unsupported",
           detail: "Cloud-only scripts are not imported.",
+        }),
+      ]),
+    );
+  });
+
+  test("does not import hidden Conductor run scripts", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.helper]
+command = "npm run helper"
+hide = true
+`,
+    );
+
+    const preview = inspect(repo);
+
+    expect(preview.preview?.scripts ?? {}).not.toHaveProperty("helper");
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "scripts.helper",
+          outcome: "unsupported",
+          detail: "Hidden scripts are not imported.",
         }),
       ]),
     );

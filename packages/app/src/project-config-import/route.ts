@@ -76,6 +76,23 @@ export function createProjectConfigImportIntentFromRegistration(input: {
     : null;
 }
 
+export function stripProjectConfigImportSearchParams(route: string): string {
+  const hashIndex = route.indexOf("#");
+  const hash = hashIndex >= 0 ? route.slice(hashIndex) : "";
+  const routeWithoutHash = hashIndex >= 0 ? route.slice(0, hashIndex) : route;
+  const searchIndex = routeWithoutHash.indexOf("?");
+  if (searchIndex < 0) {
+    return route;
+  }
+  const pathname = routeWithoutHash.slice(0, searchIndex);
+  const params = new URLSearchParams(routeWithoutHash.slice(searchIndex + 1));
+  params.delete("importSource");
+  params.delete("importServerId");
+  params.delete("importIntentId");
+  const search = params.toString();
+  return `${pathname}${search ? `?${search}` : ""}${hash}`;
+}
+
 function parseProtocolSource(
   source: ProjectConfigImportSourceDescriptor,
 ): ProjectConfigImportSource | null {

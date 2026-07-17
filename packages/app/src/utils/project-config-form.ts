@@ -247,5 +247,9 @@ export function applyDraftToConfig(input: ApplyDraftInput): PaseoConfigRaw {
 }
 
 export function hasProjectConfigDraftChanges(input: ApplyDraftInput): boolean {
-  return !equal(applyDraftToConfig(input), input.base ?? {});
+  const canonicalBase = applyDraftToConfig({
+    draft: configToDraft(input.base),
+    base: input.base,
+  });
+  return !equal(applyDraftToConfig(input), canonicalBase);
 }

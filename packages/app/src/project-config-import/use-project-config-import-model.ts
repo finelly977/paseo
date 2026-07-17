@@ -29,6 +29,10 @@ import {
   projectConfigImportSourceRegistry,
   type ProjectConfigImportSourceRegistry,
 } from "./sources";
+import {
+  projectConfigImportApplyFailureRetryAction,
+  type ProjectConfigImportRetryAction,
+} from "./retry";
 
 const EMPTY_IMPORT_SOURCES: readonly ProjectConfigImportAdvertisedSource[] = [];
 type ProjectConfigImportPreviewSuccess = Extract<ProjectConfigImportPreviewResult, { ok: true }>;
@@ -385,18 +389,6 @@ function useProjectConfigImportPreviewQuery(input: {
   enabled: boolean;
 }) {
   return useFetchQuery(projectConfigImportPreviewQueryInput(input));
-}
-
-type ProjectConfigImportRetryAction = "refresh" | "apply";
-
-function projectConfigImportApplyFailureRetryAction(
-  error: ProjectConfigImportVisibleError,
-): ProjectConfigImportRetryAction {
-  return error.code === "stale_source_config" ||
-    error.code === "stale_project_config" ||
-    error.code === "nothing_to_import"
-    ? "refresh"
-    : "apply";
 }
 
 function normalizeProjectConfigImportError(

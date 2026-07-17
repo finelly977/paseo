@@ -1,8 +1,12 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo } from "react";
 import SettingsScreen from "@/screens/settings-screen";
-import { parseProjectConfigImportIntent } from "@/project-config-import/route";
+import {
+  parseProjectConfigImportIntent,
+  stripProjectConfigImportSearchParams,
+} from "@/project-config-import/route";
 import { projectConfigImportSourceRegistry } from "@/project-config-import/sources";
+import { isWeb } from "@/constants/platform";
 
 export default function SettingsProjectDetailRoute() {
   const router = useRouter();
@@ -24,6 +28,10 @@ export default function SettingsProjectDetailRoute() {
       importServerId: undefined,
       importIntentId: undefined,
     });
+    if (isWeb && typeof window !== "undefined") {
+      const route = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.history.replaceState(null, "", stripProjectConfigImportSearchParams(route));
+    }
   }, [router]);
   const view = useMemo(
     () => ({
