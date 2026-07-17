@@ -77,6 +77,29 @@ test("underlying relay backpressure rejects binary before encryption and termina
   expect(terminations).toBe(1);
 });
 
+test("pending encryption and underlying relay backpressure share one hard bound", () => {
+  const channel = new BlockingChannel();
+  let transportBufferedAmount = 3 * 1024 * 1024;
+  let terminations = 0;
+  const socket = createEncryptedRelaySocket({
+    channel,
+    emitter: new EventEmitter(),
+    getTransportBufferedAmount: () => transportBufferedAmount,
+    terminateTransport: () => {
+      terminations += 1;
+    },
+  });
+
+  socket.send(new Uint8Array(3 * 1024 * 1024));
+  expect(channel.sent).toHaveLength(1);
+
+  transportBufferedAmount = 4 * 1024 * 1024;
+  socket.send(new Uint8Array(1));
+
+  expect(channel.sent).toHaveLength(1);
+  expect(terminations).toBe(1);
+});
+
 test("explicit encrypted-socket termination forcibly terminates the relay transport", () => {
   const channel = new BlockingChannel();
   let terminations = 0;

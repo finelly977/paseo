@@ -53,13 +53,13 @@ export function createEncryptedRelaySocket(params: {
       return readyState;
     },
     get bufferedAmount() {
-      return Math.max(pendingEncryptedBytes, getTransportBufferedAmount() ?? 0);
+      return pendingEncryptedBytes + (getTransportBufferedAmount() ?? 0);
     },
     send: (data) => {
       if (readyState !== 1) return;
       const outbound = normalizeRelaySendPayload(data);
       const outboundBytes = encryptedRelayFrameByteLength(outbound);
-      const queuedBytes = Math.max(pendingEncryptedBytes, getTransportBufferedAmount() ?? 0);
+      const queuedBytes = pendingEncryptedBytes + (getTransportBufferedAmount() ?? 0);
       if (queuedBytes + outboundBytes > MAX_PHYSICAL_SOCKET_BUFFERED_BYTES) {
         terminate();
         return;

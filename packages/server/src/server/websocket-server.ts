@@ -1008,7 +1008,7 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private sendMessageToSockets(sockets: Iterable<WebSocketLike>, message: WSOutboundMessage): void {
-    const writableSockets = [...sockets].filter((ws) => this.canBufferOutbound(ws, 0));
+    const writableSockets = [...sockets].filter((ws) => this.ensureOutboundCapacity(ws, 0));
     if (writableSockets.length === 0) {
       return;
     }
@@ -1054,7 +1054,7 @@ export class VoiceAssistantWebSocketServer {
     }
   }
 
-  private canBufferOutbound(ws: WebSocketLike, frameBytes: number): boolean {
+  private ensureOutboundCapacity(ws: WebSocketLike, frameBytes: number): boolean {
     if (ws.readyState !== 1) return false;
     if (physicalSocketHasCapacity(ws, frameBytes)) return true;
 
@@ -1077,8 +1077,8 @@ export class VoiceAssistantWebSocketServer {
 
   private closePhysicalSocket(params: ClosePhysicalSocketParams): void {
     const { ws, code, reason, logMessage, logFields } = params;
+    this.applicationSocketLease.release(ws);
     if (ws.readyState !== 1) {
-      this.applicationSocketLease.release(ws);
       return;
     }
     const identity = this.socketIdentities.get(ws);
