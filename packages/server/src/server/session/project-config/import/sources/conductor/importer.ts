@@ -17,6 +17,7 @@ interface SourceFile {
   relativePath: string;
   path: string;
   bytes: string;
+  containsSettings: boolean;
 }
 
 interface ConductorSettings {
@@ -30,6 +31,9 @@ interface ConductorSettings {
   file_include_globs?: unknown;
   environment_variables?: unknown;
   environment_variables_forward?: unknown;
+  runScriptMode?: unknown;
+  enterprise_data_privacy?: unknown;
+  enterpriseDataPrivacy?: unknown;
   prompts?: unknown;
   git?: unknown;
   spotlight_testing?: unknown;
@@ -103,29 +107,42 @@ function discoverConductorSources(repoRoot: string): SourceFile[] {
   const sharedTomlPath = join(repoRoot, ".conductor", "settings.toml");
   const sharedJsonPath = join(repoRoot, ".conductor", "settings.json");
   const rootLegacyPath = join(repoRoot, "conductor.json");
+  const worktreeIncludePath = join(repoRoot, ".worktreeinclude");
   const files: SourceFile[] = [];
 
+  if (existsSync(sharedJsonPath)) {
+    files.push(readSourceFile(repoRoot, sharedJsonPath, "shared", true));
+  }
   if (existsSync(sharedTomlPath)) {
-    files.push(readSourceFile(repoRoot, sharedTomlPath, "shared"));
-  } else if (existsSync(sharedJsonPath)) {
-    files.push(readSourceFile(repoRoot, sharedJsonPath, "shared"));
-  } else if (existsSync(rootLegacyPath)) {
-    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy"));
+    files.push(readSourceFile(repoRoot, sharedTomlPath, "shared", true));
+  }
+  if (!existsSync(sharedJsonPath) && !existsSync(sharedTomlPath) && existsSync(rootLegacyPath)) {
+    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy", true));
+  }
+  if (existsSync(localJsonPath)) {
+    files.push(readSourceFile(repoRoot, localJsonPath, "local", true));
   }
   if (existsSync(localTomlPath)) {
-    files.push(readSourceFile(repoRoot, localTomlPath, "local"));
-  } else if (existsSync(localJsonPath)) {
-    files.push(readSourceFile(repoRoot, localJsonPath, "local"));
+    files.push(readSourceFile(repoRoot, localTomlPath, "local", true));
+  }
+  if (existsSync(worktreeIncludePath)) {
+    files.push(readSourceFile(repoRoot, worktreeIncludePath, "include", false));
   }
   return files;
 }
 
-function readSourceFile(repoRoot: string, path: string, role: string): SourceFile {
+function readSourceFile(
+  repoRoot: string,
+  path: string,
+  role: string,
+  containsSettings: boolean,
+): SourceFile {
   return {
     role,
     relativePath: relative(repoRoot, path).replaceAll("\\", "/"),
     path,
     bytes: readFileSync(path, "utf8"),
+    containsSettings,
   };
 }
 
@@ -135,6 +152,9 @@ function loadConductorSettings(
 ): ConductorSettings {
   let merged: ConductorSettings = {};
   for (const file of sourceFiles) {
+    if (!file.containsSettings) {
+      continue;
+    }
     let parsed: unknown;
     try {
       parsed = file.relativePath.endsWith(".json") ? JSON.parse(file.bytes) : parseToml(file.bytes);
@@ -158,7 +178,26 @@ function mergeSettings(base: ConductorSettings, override: ConductorSettings): Co
       ...(isRecord(override.scripts) ? override.scripts : {}),
       run: mergeRunScripts(base.scripts?.run, override.scripts?.run),
     },
+    environment_variables: mergeNestedSettings(
+      base.environment_variables,
+      override.environment_variables,
+    ),
+    environment_variables_forward: mergeNestedSettings(
+      base.environment_variables_forward,
+      override.environment_variables_forward,
+    ),
   };
+}
+
+function mergeNestedSettings(base: unknown, override: unknown): unknown {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override ?? base;
+  }
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    merged[key] = mergeNestedSettings(base[key], value);
+  }
+  return merged;
 }
 
 function mergeRunScripts(base: unknown, override: unknown): unknown {
@@ -326,6 +365,9 @@ function reportUnsupported(
   if (scripts?.run_mode !== undefined) {
     unsupported(items, "scripts.run_mode", "Paseo has no project-wide run mode.");
   }
+  if (settings.runScriptMode !== undefined) {
+    unsupported(items, "runScriptMode", "Paseo has no project-wide run mode.");
+  }
   if (scripts?.auto_run_after_setup !== undefined) {
     unsupported(
       items,
@@ -367,6 +409,23 @@ function reportUnsupported(
   }
   if (settings.git !== undefined) {
     unsupported(items, "git", "Conductor Git settings are not imported.");
+  }
+  for (const key of ["enterprise_data_privacy", "enterpriseDataPrivacy"] as const) {
+    if (settings[key] !== undefined) {
+      unsupported(items, key, "Conductor enterprise data privacy settings are not imported.");
+    }
+  }
+  for (const key of [
+    "claude_code_executable_path",
+    "codex_executable_path",
+    "claude_provider",
+    "bedrock_region",
+    "vertex_project_id",
+    "ssh_key_path",
+  ] as const) {
+    if (settings[key] !== undefined) {
+      unsupported(items, key, "Conductor harness and provider settings are not imported.");
+    }
   }
 }
 

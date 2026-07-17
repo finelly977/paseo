@@ -141,7 +141,7 @@ enabled = true
     expect(JSON.stringify(preview.items)).not.toContain("do-not-return");
   });
 
-  test("local TOML overrides shared scripts and legacy JSON is ignored when shared TOML exists", () => {
+  test("merges legacy scoped JSON before TOML and lets local TOML win", () => {
     const repo = makeRepo();
     writeSharedToml(
       repo,
@@ -161,7 +161,9 @@ setup = "local setup"
 command = "local dev"
 `,
     );
-    writeSharedJson(repo, { scripts: { setup: "scoped legacy shared setup" } });
+    writeSharedJson(repo, {
+      scripts: { setup: "scoped legacy shared setup", archive: "scoped legacy archive" },
+    });
     writeLocalJson(repo, { scripts: { setup: "scoped legacy local setup" } });
     writeFileSync(
       join(repo, "conductor.json"),
@@ -171,11 +173,13 @@ command = "local dev"
     const preview = inspect(repo);
 
     expect(preview.inputs).toEqual([
+      { role: "shared", relativePath: ".conductor/settings.json" },
       { role: "shared", relativePath: ".conductor/settings.toml" },
+      { role: "local", relativePath: ".conductor/settings.local.json" },
       { role: "local", relativePath: ".conductor/settings.local.toml" },
     ]);
     expect(preview.preview).toMatchObject({
-      worktree: { setup: "local setup" },
+      worktree: { setup: "local setup", teardown: "scoped legacy archive" },
       scripts: { dev: { command: "local dev" } },
     });
   });
@@ -508,6 +512,75 @@ default_branch = "develop"
     );
   });
 
+  test("preserves shared environment variable names under local scoped overrides", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[environment_variables.local]
+SHARED_TOKEN = "shared-secret"
+`,
+    );
+    writeLocalToml(
+      repo,
+      `
+[environment_variables.cloud]
+CLOUD_TOKEN = "cloud-secret"
+`,
+    );
+
+    expect(inspect(repo).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "environment_variables",
+          detail: "Environment variable values are not imported. Found: CLOUD_TOKEN, SHARED_TOKEN.",
+        }),
+      ]),
+    );
+  });
+
+  test("reports legacy run mode, privacy, and harness settings", () => {
+    const repo = makeRepo();
+    writeFileSync(
+      join(repo, "conductor.json"),
+      JSON.stringify({
+        scripts: { setup: "npm ci" },
+        runScriptMode: "nonconcurrent",
+        enterpriseDataPrivacy: true,
+        claude_code_executable_path: "/opt/claude",
+        codex_executable_path: "/opt/codex",
+        claude_provider: "bedrock",
+        bedrock_region: "eu-west-1",
+        vertex_project_id: "project",
+        ssh_key_path: "~/.ssh/id_ed25519",
+      }),
+    );
+
+    expect(inspect(repo).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "runScriptMode", outcome: "unsupported" }),
+        expect.objectContaining({ key: "enterpriseDataPrivacy", outcome: "unsupported" }),
+        expect.objectContaining({ key: "claude_code_executable_path", outcome: "unsupported" }),
+        expect.objectContaining({ key: "codex_executable_path", outcome: "unsupported" }),
+        expect.objectContaining({ key: "claude_provider", outcome: "unsupported" }),
+        expect.objectContaining({ key: "bedrock_region", outcome: "unsupported" }),
+        expect.objectContaining({ key: "vertex_project_id", outcome: "unsupported" }),
+        expect.objectContaining({ key: "ssh_key_path", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
+  test("reports snake-case enterprise data privacy settings", () => {
+    const repo = makeRepo();
+    writeSharedToml(repo, "enterprise_data_privacy = true\n");
+
+    expect(inspect(repo).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "enterprise_data_privacy", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
   test("reports default and icon fields on imported run scripts", () => {
     const repo = makeRepo();
     writeSharedToml(
@@ -588,7 +661,12 @@ command = "npm run other -- --port $CONDUCTOR_PORT"
     writeSharedToml(repo, '[scripts]\nsetup = "npm ci"\n');
     writeFileSync(join(repo, ".worktreeinclude"), "config/*.local\n");
 
-    expect(inspect(repo).items).toEqual(
+    const initialPreview = inspect(repo);
+    expect(initialPreview.inputs).toEqual([
+      { role: "shared", relativePath: ".conductor/settings.toml" },
+      { role: "include", relativePath: ".worktreeinclude" },
+    ]);
+    expect(initialPreview.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           key: ".worktreeinclude",
@@ -597,5 +675,7 @@ command = "npm run other -- --port $CONDUCTOR_PORT"
         }),
       ]),
     );
+    writeFileSync(join(repo, ".worktreeinclude"), "config/*.local\nsecrets/*.local\n");
+    expect(inspect(repo).sourceRevision).not.toBe(initialPreview.sourceRevision);
   });
 });
