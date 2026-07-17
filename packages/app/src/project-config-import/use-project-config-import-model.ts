@@ -33,6 +33,7 @@ import {
   projectConfigImportApplyFailureRetryAction,
   type ProjectConfigImportRetryAction,
 } from "./retry";
+import { projectConfigImportAvailabilityStatus } from "./availability";
 
 const EMPTY_IMPORT_SOURCES: readonly ProjectConfigImportAdvertisedSource[] = [];
 type ProjectConfigImportPreviewSuccess = Extract<ProjectConfigImportPreviewResult, { ok: true }>;
@@ -309,21 +310,18 @@ export function useProjectConfigImportAvailability(input: {
   const availableSourceKeys = new Set(
     availableSources.map((source) => stableProjectConfigImportSourceKey(source.source)),
   );
+  const isLoading = previews.some((preview) => preview.isLoading || preview.isPending);
 
   return {
-    status: projectConfigImportAvailabilityStatus(availableSources.length),
+    status: projectConfigImportAvailabilityStatus({
+      availableCount: availableSources.length,
+      isLoading,
+    }),
     source: availableSources.length === 1 ? availableSources[0] : null,
     sources: availableSources,
     availableKinds,
     availableSourceKeys,
   };
-}
-
-function projectConfigImportAvailabilityStatus(count: number): "none" | "one" | "many" {
-  if (count === 0) {
-    return "none";
-  }
-  return count === 1 ? "one" : "many";
 }
 
 function isRouteIntentCapabilityMissing(input: {

@@ -53,6 +53,9 @@ export function WorktreeSetupCalloutSource() {
     if (!activeProject || !shouldShowWorktreeSetupCallout(readQuery.data)) {
       return null;
     }
+    if (importAvailability.status === "loading") {
+      return null;
+    }
     if (importAvailability.status === "one" && importAvailability.source) {
       return buildProjectConfigImportCalloutPolicy(activeProject, {
         status: "one",

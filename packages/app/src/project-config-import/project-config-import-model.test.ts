@@ -18,6 +18,7 @@ import {
   stripProjectConfigImportSearchParams,
 } from "./route";
 import { projectConfigImportApplyFailureRetryAction } from "./retry";
+import { projectConfigImportAvailabilityStatus } from "./availability";
 import {
   createProjectConfigImportSourceRegistry,
   type ProjectConfigImportSourceDescriptor,
@@ -288,5 +289,16 @@ describe("project config import preview cache keys", () => {
     await queryClient.fetchQuery(fetchQueryOptions(alphaInput));
     await queryClient.fetchQuery(fetchQueryOptions(betaInput));
     expect(calls).toEqual([protocolSource, protocolSource]);
+  });
+});
+
+describe("project config import availability", () => {
+  it("waits for advertised source previews before reporting no imports", () => {
+    expect(projectConfigImportAvailabilityStatus({ availableCount: 0, isLoading: true })).toBe(
+      "loading",
+    );
+    expect(projectConfigImportAvailabilityStatus({ availableCount: 0, isLoading: false })).toBe(
+      "none",
+    );
   });
 });
