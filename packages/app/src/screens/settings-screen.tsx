@@ -98,7 +98,7 @@ import {
 } from "@/screens/settings/host-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
-import type { ProjectConfigImportIntent } from "@/project-config-import/project-config-import-model";
+import type { ProjectConfigImportIntent } from "@/project-config-import/route";
 import { SETTINGS_DESKTOP_SIDEBAR_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import {
@@ -124,7 +124,12 @@ export type SettingsView =
   | { kind: "section"; section: SettingsSectionSlug }
   | { kind: "host"; serverId: string; section: HostSectionSlug }
   | { kind: "projects" }
-  | { kind: "project"; projectKey: string; importIntent?: ProjectConfigImportIntent | null };
+  | {
+      kind: "project";
+      projectKey: string;
+      importIntent?: ProjectConfigImportIntent | null;
+      onImportIntentConsumed?: () => void;
+    };
 
 interface SidebarSectionItem {
   id: SettingsSectionSlug;
@@ -1387,7 +1392,11 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     }
     if (view.kind === "project") {
       return (
-        <ProjectSettingsScreen projectKey={view.projectKey} importIntent={view.importIntent} />
+        <ProjectSettingsScreen
+          projectKey={view.projectKey}
+          importIntent={view.importIntent}
+          onImportIntentConsumed={view.onImportIntentConsumed}
+        />
       );
     }
     if (view.kind === "section") {

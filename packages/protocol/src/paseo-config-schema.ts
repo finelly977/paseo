@@ -83,6 +83,10 @@ export const ProjectConfigImportSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("conductor") }),
 ]);
 
+export const ProjectConfigImportAdvertisedSourceSchema = z
+  .object({ kind: z.string().min(1) })
+  .passthrough();
+
 export const ProjectConfigImportInputSchema = z.object({
   role: z.string(),
   relativePath: z.string(),
@@ -150,6 +154,9 @@ export type PaseoConfigRaw = z.infer<typeof PaseoConfigRawSchema>;
 export type PaseoConfig = z.infer<typeof PaseoConfigSchema>;
 export type PaseoConfigRevision = z.infer<typeof PaseoConfigRevisionSchema>;
 export type ProjectConfigImportSource = z.infer<typeof ProjectConfigImportSourceSchema>;
+export type ProjectConfigImportAdvertisedSource = z.infer<
+  typeof ProjectConfigImportAdvertisedSourceSchema
+>;
 export type ProjectConfigImportInput = z.infer<typeof ProjectConfigImportInputSchema>;
 export type ProjectConfigImportItem = z.infer<typeof ProjectConfigImportItemSchema>;
 export type ProjectConfigImportPreview = z.infer<typeof ProjectConfigImportPreviewSchema>;

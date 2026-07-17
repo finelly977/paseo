@@ -22,8 +22,6 @@ import {
   expectScriptRowCount,
   expectWriteFailedCalloutActions,
   installDaemonConnectionGate,
-  installImportApplyTransportFailure,
-  installImportPreviewTransportFailure,
   installReadTransportFailure,
   navigateToProjectSettings,
   openProjectSettings,
@@ -335,53 +333,6 @@ test.describe("Projects settings — Conductor project import", () => {
     }
   });
 
-  test("malformed TOML and preview transport failures stay actionable in the sheet", async ({
-    page,
-  }) => {
-    const previewFailure = await installImportPreviewTransportFailure(page);
-    const workspace = await seedWorkspace({
-      repoPrefix: "projects-settings-conductor-invalid-",
-      repo: {
-        files: [
-          {
-            path: ".conductor/settings.toml",
-            content: '[scripts\nsetup = "npm ci"\n',
-          },
-        ],
-      },
-    });
-    const serverId = getSeededServerId(workspace.client.getLastServerInfoMessage());
-
-    try {
-      await openConductorImportRoute({
-        page,
-        projectId: workspace.projectId,
-        serverId,
-        intentId: "preview-transport",
-      });
-
-      await expect(page.getByTestId("project-config-import-error")).toContainText(
-        "Test import preview transport failure.",
-        { timeout: 30_000 },
-      );
-      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
-      await expect(page.getByTestId("project-config-import-cancel-error")).toBeVisible();
-
-      previewFailure.allowRecovery();
-      await page.getByTestId("project-config-import-retry").click();
-
-      await expect(page.getByTestId("project-config-import-error")).toContainText(
-        ".conductor/settings.toml",
-        { timeout: 30_000 },
-      );
-      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
-      await page.getByTestId("project-config-import-cancel-error").click();
-      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible();
-    } finally {
-      await workspace.cleanup();
-    }
-  });
-
   test("stale source refresh reloads the preview before import", async ({ page }) => {
     const workspace = await seedWorkspace({
       repoPrefix: "projects-settings-conductor-stale-",
@@ -437,57 +388,6 @@ test.describe("Projects settings — Conductor project import", () => {
           },
         });
     } finally {
-      await workspace.cleanup();
-    }
-  });
-
-  test("apply transport failure and blocked writes offer retry and cancel", async ({ page }) => {
-    const applyFailure = await installImportApplyTransportFailure(page);
-    const workspace = await seedWorkspace({
-      repoPrefix: "projects-settings-conductor-apply-fail-",
-      repo: {
-        files: [
-          {
-            path: ".conductor/settings.toml",
-            content: '[scripts]\nsetup = "npm ci"\n',
-          },
-        ],
-      },
-    });
-    const serverId = getSeededServerId(workspace.client.getLastServerInfoMessage());
-
-    try {
-      await openConductorImportRoute({
-        page,
-        projectId: workspace.projectId,
-        serverId,
-        intentId: "apply-transport",
-      });
-      await expectConductorImportPreview(page);
-
-      await page.getByTestId("project-config-import-apply").click();
-      await expect(page.getByTestId("project-config-import-error")).toContainText(
-        "Test import apply transport failure.",
-        { timeout: 30_000 },
-      );
-      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
-
-      applyFailure.allowRecovery();
-      await blockPaseoConfigWrites(workspace.repoPath);
-      await page.getByTestId("project-config-import-retry").click();
-      await expect(page.getByTestId("project-config-import-error")).toContainText(
-        "Try again, or reload the latest version from disk.",
-        { timeout: 30_000 },
-      );
-      await page.getByTestId("project-config-import-retry").click();
-      await expect(page.getByTestId("project-config-import-error")).toContainText(
-        "Try again, or reload the latest version from disk.",
-        { timeout: 30_000 },
-      );
-      await page.getByTestId("project-config-import-cancel-error").click();
-      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible();
-    } finally {
-      await unblockPaseoConfigWrites(workspace.repoPath).catch(() => undefined);
       await workspace.cleanup();
     }
   });

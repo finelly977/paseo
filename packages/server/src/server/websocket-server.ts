@@ -66,6 +66,7 @@ import {
   type WebSocketRuntimeDiagnosticSnapshot,
 } from "./websocket/runtime-metrics.js";
 import { ProviderUsageService } from "../services/quota-fetcher/service.js";
+import { projectConfigImportRegistry } from "./session/project-config/import/registry.js";
 import { getProcessMemoryDiagnostics, getProcessUptimeSeconds } from "./process-diagnostics.js";
 import {
   CLIENT_SHUTDOWN_RPC_REASON,
@@ -1279,8 +1280,8 @@ export class VoiceAssistantWebSocketServer {
         providerRemoval: true,
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: true,
-        // COMPAT(projectConfigImportConductor): added in v0.1.110, drop the gate when floor >= v0.1.110.
-        projectConfigImportConductor: true,
+        // COMPAT(projectConfigImportSources): added in v0.1.110, remove the gate after 2027-01-17.
+        projectConfigImportSources: projectConfigImportRegistry.sources(),
         // COMPAT(forgeProviders): added in v0.1.106, drop the gate when daemon floor >= v0.1.106.
         forgeProviders: true,
       },

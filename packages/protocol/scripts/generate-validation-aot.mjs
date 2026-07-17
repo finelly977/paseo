@@ -34,94 +34,37 @@ async function ensureZodAotRuntimeImportExtensionPatch() {
 
 async function ensureZodAotDiscriminatedUnionOutputPatch() {
   let discriminatedUnionEmitter = await readFile(discriminatedUnionPath, "utf8");
-  let changed = false;
-
   if (
-    !discriminatedUnionEmitter.includes(
+    discriminatedUnionEmitter.includes(
       "const needsOutputPropagation = ir.options.some(hasMutation);",
     )
   ) {
-    const importBefore = 'import { escapeString } from "../context.js";';
-    const importAfter = 'import { escapeString, hasMutation } from "../context.js";';
-    const outputFlagBefore =
-      "const discKey = escapeString(ir.discriminator);\n    let code = emit `";
-    const outputFlagAfter =
-      "const discKey = escapeString(ir.discriminator);\n    const needsOutputPropagation = ir.options.some(hasMutation);\n    let code = emit `";
-    const propagationBefore =
-      "        ${g.visit(option, { input: objVar, output: objVar })}\n        break;`;";
-    const propagationAfter =
-      '        ${g.visit(option, { input: objVar, output: objVar })}\n        ${needsOutputPropagation ? `${g.output}=${objVar};` : ""}\n        break;`;';
-
-    if (
-      !discriminatedUnionEmitter.includes(importBefore) ||
-      !discriminatedUnionEmitter.includes(outputFlagBefore) ||
-      !discriminatedUnionEmitter.includes(propagationBefore)
-    ) {
-      throw new Error("zod-aot discriminated-union emitter shape changed; update the output patch");
-    }
-
-    discriminatedUnionEmitter = discriminatedUnionEmitter
-      .replace(importBefore, importAfter)
-      .replace(outputFlagBefore, outputFlagAfter)
-      .replace(propagationBefore, propagationAfter);
-    changed = true;
+    return;
   }
 
-  if (!discriminatedUnionEmitter.includes("function discriminatorValueLiteral(")) {
-    const helperBefore = 'import { invalidType } from "../emit-issue.js";\n';
-    const helperAfter = `${helperBefore}function discriminatorValueLiteral(value, option, discriminator) {
-    const property = option?.type === "object" ? option.properties?.[discriminator] : undefined;
-    if (property?.type === "literal" && property.values.length === 1) {
-        return JSON.stringify(property.values[0]);
-    }
-    return escapeString(value);
-}
-`;
-    const slowCaseBefore = "        const option = ir.options[index];\n        code += emit `";
-    const slowCaseAfter =
-      "        const option = ir.options[index];\n        const caseValue = discriminatorValueLiteral(value, option, ir.discriminator);\n        code += emit `";
-    const slowCaseValueBefore = "      case ${escapeString(value)}:";
-    const slowCaseValueAfter = "      case ${caseValue}:";
-    const validValuesBefore = `const validValues = Object.keys(ir.mapping)
-        .map((v) => escapeString(v))
-        .join(",");`;
-    const validValuesAfter = `const validValues = Object.entries(ir.mapping)
-        .map(([v, i]) => discriminatorValueLiteral(v, ir.options[i], ir.discriminator))
-        .join(",");`;
-    const fastCaseBefore =
-      "        const option = ir.options[index];\n        const check = g.visit(option, { input: helperParam });";
-    const fastCaseAfter =
-      "        const option = ir.options[index];\n        const caseValue = discriminatorValueLiteral(value, option, ir.discriminator);\n        const check = g.visit(option, { input: helperParam });";
-    const fastCaseValueBefore =
-      "        cases.push(`case ${escapeString(value)}:return ${check};`);";
-    const fastCaseValueAfter = "        cases.push(`case ${caseValue}:return ${check};`);";
+  const importBefore = 'import { escapeString } from "../context.js";';
+  const importAfter = 'import { escapeString, hasMutation } from "../context.js";';
+  const outputFlagBefore = "const discKey = escapeString(ir.discriminator);\n    let code = emit `";
+  const outputFlagAfter =
+    "const discKey = escapeString(ir.discriminator);\n    const needsOutputPropagation = ir.options.some(hasMutation);\n    let code = emit `";
+  const propagationBefore =
+    "        ${g.visit(option, { input: objVar, output: objVar })}\n        break;`;";
+  const propagationAfter =
+    '        ${g.visit(option, { input: objVar, output: objVar })}\n        ${needsOutputPropagation ? `${g.output}=${objVar};` : ""}\n        break;`;';
 
-    if (
-      !discriminatedUnionEmitter.includes(helperBefore) ||
-      !discriminatedUnionEmitter.includes(slowCaseBefore) ||
-      !discriminatedUnionEmitter.includes(slowCaseValueBefore) ||
-      !discriminatedUnionEmitter.includes(validValuesBefore) ||
-      !discriminatedUnionEmitter.includes(fastCaseBefore) ||
-      !discriminatedUnionEmitter.includes(fastCaseValueBefore)
-    ) {
-      throw new Error(
-        "zod-aot discriminated-union emitter shape changed; update the literal patch",
-      );
-    }
-
-    discriminatedUnionEmitter = discriminatedUnionEmitter
-      .replace(helperBefore, helperAfter)
-      .replace(slowCaseBefore, slowCaseAfter)
-      .replace(slowCaseValueBefore, slowCaseValueAfter)
-      .replace(validValuesBefore, validValuesAfter)
-      .replace(fastCaseBefore, fastCaseAfter)
-      .replace(fastCaseValueBefore, fastCaseValueAfter);
-    changed = true;
+  if (
+    !discriminatedUnionEmitter.includes(importBefore) ||
+    !discriminatedUnionEmitter.includes(outputFlagBefore) ||
+    !discriminatedUnionEmitter.includes(propagationBefore)
+  ) {
+    throw new Error("zod-aot discriminated-union emitter shape changed; update the output patch");
   }
 
-  if (changed) {
-    await writeFile(discriminatedUnionPath, discriminatedUnionEmitter);
-  }
+  discriminatedUnionEmitter = discriminatedUnionEmitter
+    .replace(importBefore, importAfter)
+    .replace(outputFlagBefore, outputFlagAfter)
+    .replace(propagationBefore, propagationAfter);
+  await writeFile(discriminatedUnionPath, discriminatedUnionEmitter);
 }
 
 await Promise.all([

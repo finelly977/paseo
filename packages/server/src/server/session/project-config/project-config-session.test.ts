@@ -1,21 +1,25 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import pino from "pino";
+import {
+  ProjectConfigImportSourceSchema,
+  type ProjectConfigImportSource,
+} from "@getpaseo/protocol/messages";
 import { ProjectConfigSession, type ProjectConfigSessionHost } from "./project-config-session.js";
 import type { PersistedProjectRecord } from "../../workspace-registry.js";
 import type { SessionOutboundMessage } from "../../messages.js";
+import {
+  InvalidProjectConfigImportSourceError,
+  type ProjectConfigImportService,
+} from "./import/service.js";
 
 const tempDirs: string[] = [];
+const PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE: ProjectConfigImportSource =
+  ProjectConfigImportSourceSchema.options[0].parse({
+    kind: ProjectConfigImportSourceSchema.options[0].shape.kind.value,
+  });
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -41,32 +45,19 @@ function projectRecord(rootPath: string, archivedAt: string | null = null): Pers
   };
 }
 
-function makeSubsystem(records: PersistedProjectRecord[]) {
+function makeSubsystem(
+  records: PersistedProjectRecord[],
+  importService?: ProjectConfigImportService,
+) {
   const emitted: SessionOutboundMessage[] = [];
   const host: ProjectConfigSessionHost = { emit: (msg) => emitted.push(msg) };
   const subsystem = new ProjectConfigSession({
     host,
     projectRegistry: { list: async () => records },
+    ...(importService ? { importService } : {}),
     logger: pino({ level: "silent" }),
   });
   return { subsystem, emitted };
-}
-
-function expectImportPreview(
-  emitted: SessionOutboundMessage[],
-  index: number,
-): Extract<SessionOutboundMessage, { type: "project.config.get_import.response" }>["payload"] & {
-  ok: true;
-} {
-  const message = emitted[index];
-  expect(message).toMatchObject({
-    type: "project.config.get_import.response",
-    payload: { ok: true },
-  });
-  if (message.type !== "project.config.get_import.response" || !message.payload.ok) {
-    throw new Error("Expected import preview response");
-  }
-  return message.payload;
 }
 
 describe("ProjectConfigSession", () => {
@@ -253,24 +244,35 @@ describe("ProjectConfigSession", () => {
     ]);
   });
 
-  test("import preview rejects archived and unknown roots with project_not_found", async () => {
+  test("import preview rejects archived and unknown roots without touching the import service", async () => {
     const archivedRoot = makeRoot();
     const unknownRoot = makeRoot();
-    const { subsystem, emitted } = makeSubsystem([
-      projectRecord(archivedRoot, "2026-01-02T00:00:00.000Z"),
-    ]);
+    const serviceCalls: string[] = [];
+    const { subsystem, emitted } = makeSubsystem(
+      [projectRecord(archivedRoot, "2026-01-02T00:00:00.000Z")],
+      {
+        inspect: () => {
+          serviceCalls.push("inspect");
+          throw new Error("unexpected import inspect");
+        },
+        apply: () => {
+          serviceCalls.push("apply");
+          throw new Error("unexpected import apply");
+        },
+      },
+    );
 
     await subsystem.handleGetProjectConfigImportRequest({
       type: "project.config.get_import.request",
       requestId: "import-archived-1",
       repoRoot: archivedRoot,
-      source: { kind: "conductor" },
+      source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
     });
     await subsystem.handleGetProjectConfigImportRequest({
       type: "project.config.get_import.request",
       requestId: "import-unknown-1",
       repoRoot: unknownRoot,
-      source: { kind: "conductor" },
+      source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
     });
 
     expect(emitted).toEqual([
@@ -293,135 +295,114 @@ describe("ProjectConfigSession", () => {
         },
       },
     ]);
+    expect(serviceCalls).toEqual([]);
   });
 
-  test("import preview reports malformed Conductor config with a safe relative path", async () => {
+  test("import preview emits a fake service preview", async () => {
     const repoRoot = makeRoot();
-    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
-    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), "[scripts\nsetup = nope");
-    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
-
-    await subsystem.handleGetProjectConfigImportRequest({
-      type: "project.config.get_import.request",
-      requestId: "import-invalid-1",
-      repoRoot,
-      source: { kind: "conductor" },
-    });
-
-    expect(emitted).toEqual([
-      {
-        type: "project.config.get_import.response",
-        payload: {
-          requestId: "import-invalid-1",
-          repoRoot,
-          ok: false,
-          error: {
-            code: "invalid_source_config",
-            source: { kind: "conductor" },
-            relativePath: ".conductor/settings.toml",
-          },
-        },
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)], {
+      inspect: (input) => ({
+        repoRoot: input.repoRoot,
+        source: input.source,
+        status: "available",
+        sourceRevision: "source-revision-1",
+        paseoRevision: input.paseoRevision,
+        inputs: [{ role: "shared", relativePath: "source/config.json" }],
+        items: [{ key: "worktree.setup", label: "Worktree setup", outcome: "import" }],
+        preview: { worktree: { setup: "npm ci" } },
+      }),
+      apply: () => {
+        throw new Error("unexpected import apply");
       },
-    ]);
-  });
-
-  test("apply import recomputes from disk and writes formatted paseo.json", async () => {
-    const repoRoot = makeRoot();
-    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
-    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
-    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
+    });
 
     await subsystem.handleGetProjectConfigImportRequest({
       type: "project.config.get_import.request",
       requestId: "import-preview-1",
       repoRoot,
-      source: { kind: "conductor" },
+      source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
     });
-    const preview = expectImportPreview(emitted, 0);
+
+    expect(emitted[0]).toMatchObject({
+      type: "project.config.get_import.response",
+      payload: {
+        requestId: "import-preview-1",
+        repoRoot,
+        ok: true,
+        sourceRevision: "source-revision-1",
+        inputs: [{ role: "shared", relativePath: "source/config.json" }],
+      },
+    });
+  });
+
+  test("import preview reports invalid source errors from the injected service", async () => {
+    const repoRoot = makeRoot();
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)], {
+      inspect: () => {
+        throw new InvalidProjectConfigImportSourceError(
+          PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
+          "source/config.json",
+        );
+      },
+      apply: () => {
+        throw new Error("unexpected import apply");
+      },
+    });
+
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-invalid-1",
+      repoRoot,
+      source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
+    });
+
+    expect(emitted[0]).toMatchObject({
+      type: "project.config.get_import.response",
+      payload: {
+        requestId: "import-invalid-1",
+        repoRoot,
+        ok: false,
+        error: {
+          code: "invalid_source_config",
+          source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
+          relativePath: "source/config.json",
+        },
+      },
+    });
+  });
+
+  test("apply import returns the injected service result", async () => {
+    const repoRoot = makeRoot();
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)], {
+      inspect: () => {
+        throw new Error("unexpected import inspect");
+      },
+      apply: (input) => ({
+        ok: true,
+        repoRoot: input.repoRoot,
+        source: input.source,
+        config: { worktree: { setup: "npm ci" } },
+        revision: { mtimeMs: 2, size: 42 },
+        items: [{ key: "worktree.setup", label: "Worktree setup", outcome: "import" }],
+      }),
+    });
 
     await subsystem.handleApplyProjectConfigImportRequest({
       type: "project.config.apply_import.request",
       requestId: "import-apply-1",
       repoRoot,
-      source: { kind: "conductor" },
-      expectedSourceRevision: preview.sourceRevision ?? "",
-      expectedPaseoRevision: preview.paseoRevision,
+      source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
+      expectedSourceRevision: "source-revision-1",
+      expectedPaseoRevision: null,
     });
 
-    expect(emitted[1]).toMatchObject({
+    expect(emitted[0]).toMatchObject({
       type: "project.config.apply_import.response",
       payload: {
         requestId: "import-apply-1",
         repoRoot,
         ok: true,
         config: { worktree: { setup: "npm ci" } },
-      },
-    });
-    expect(readFileSync(join(repoRoot, "paseo.json"), "utf8")).toBe(
-      '{\n  "worktree": {\n    "setup": "npm ci"\n  }\n}\n',
-    );
-  });
-
-  test("apply import rejects stale source digest", async () => {
-    const repoRoot = makeRoot();
-    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
-    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
-    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
-
-    await subsystem.handleApplyProjectConfigImportRequest({
-      type: "project.config.apply_import.request",
-      requestId: "import-stale-source-1",
-      repoRoot,
-      source: { kind: "conductor" },
-      expectedSourceRevision: "old",
-      expectedPaseoRevision: null,
-    });
-
-    expect(emitted).toEqual([
-      {
-        type: "project.config.apply_import.response",
-        payload: {
-          requestId: "import-stale-source-1",
-          repoRoot,
-          ok: false,
-          error: { code: "stale_source_config", source: { kind: "conductor" } },
-        },
-      },
-    ]);
-  });
-
-  test("apply import rejects stale paseo.json revision", async () => {
-    const repoRoot = makeRoot();
-    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
-    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
-    writeFileSync(join(repoRoot, "paseo.json"), '{"custom":true}\n');
-    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
-
-    await subsystem.handleGetProjectConfigImportRequest({
-      type: "project.config.get_import.request",
-      requestId: "import-preview-stale-project-1",
-      repoRoot,
-      source: { kind: "conductor" },
-    });
-    const preview = expectImportPreview(emitted, 0);
-    writeFileSync(join(repoRoot, "paseo.json"), '{"custom":false}\n');
-
-    await subsystem.handleApplyProjectConfigImportRequest({
-      type: "project.config.apply_import.request",
-      requestId: "import-stale-project-1",
-      repoRoot,
-      source: { kind: "conductor" },
-      expectedSourceRevision: preview.sourceRevision ?? "",
-      expectedPaseoRevision: preview.paseoRevision,
-    });
-
-    expect(emitted[1]).toMatchObject({
-      type: "project.config.apply_import.response",
-      payload: {
-        requestId: "import-stale-project-1",
-        repoRoot,
-        ok: false,
-        error: { code: "stale_project_config" },
       },
     });
   });

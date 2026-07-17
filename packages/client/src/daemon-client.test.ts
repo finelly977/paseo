@@ -4,6 +4,10 @@ import { DaemonClient, type DaemonTransport, type Logger } from "./daemon-client
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import {
+  ProjectConfigImportSourceSchema,
+  type ProjectConfigImportSource,
+} from "@getpaseo/protocol/messages";
+import {
   decodeFileTransferFrame,
   encodeFileTransferFrame,
   FileTransferOpcode,
@@ -24,6 +28,11 @@ expectTypeOf<
 expectTypeOf<
   "exploreFileSystem" extends keyof DaemonClient ? true : false
 >().toEqualTypeOf<false>();
+
+const PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE: ProjectConfigImportSource =
+  ProjectConfigImportSourceSchema.options[0].parse({
+    kind: ProjectConfigImportSourceSchema.options[0].shape.kind.value,
+  });
 
 function createMockLogger() {
   return {
@@ -3128,14 +3137,14 @@ test("previews and applies project config import via correlated RPC", async () =
   const previewPromise = client.getProjectConfigImport({
     requestId: "get-import-1",
     repoRoot: "/repo/app",
-    source: { kind: "conductor" },
+    source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
   });
 
   expect(parseSentFrame(mock.sent[0])).toEqual({
     type: "project.config.get_import.request",
     requestId: "get-import-1",
     repoRoot: "/repo/app",
-    source: { kind: "conductor" },
+    source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
   });
 
   mock.triggerMessage(
@@ -3144,12 +3153,12 @@ test("previews and applies project config import via correlated RPC", async () =
       payload: {
         requestId: "get-import-1",
         repoRoot: "/repo/app",
-        source: { kind: "conductor" },
+        source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
         ok: true,
         status: "available",
         sourceRevision: "source-1",
         paseoRevision: null,
-        inputs: [{ role: "shared", relativePath: ".conductor/settings.toml" }],
+        inputs: [{ role: "shared", relativePath: "source/config.json" }],
         items: [{ key: "worktree.setup", label: "Setup", outcome: "import" }],
         preview: { worktree: { setup: "npm ci" } },
       },
@@ -3165,7 +3174,7 @@ test("previews and applies project config import via correlated RPC", async () =
   const applyPromise = client.applyProjectConfigImport({
     requestId: "apply-import-1",
     repoRoot: "/repo/app",
-    source: { kind: "conductor" },
+    source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
     expectedSourceRevision: "source-1",
     expectedPaseoRevision: null,
   });
@@ -3174,7 +3183,7 @@ test("previews and applies project config import via correlated RPC", async () =
     type: "project.config.apply_import.request",
     requestId: "apply-import-1",
     repoRoot: "/repo/app",
-    source: { kind: "conductor" },
+    source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE,
     expectedSourceRevision: "source-1",
     expectedPaseoRevision: null,
   });
@@ -3186,7 +3195,7 @@ test("previews and applies project config import via correlated RPC", async () =
         requestId: "apply-import-1",
         repoRoot: "/repo/app",
         ok: false,
-        error: { code: "stale_source_config", source: { kind: "conductor" } },
+        error: { code: "stale_source_config", source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE },
       },
     }),
   );
@@ -3195,7 +3204,7 @@ test("previews and applies project config import via correlated RPC", async () =
     requestId: "apply-import-1",
     repoRoot: "/repo/app",
     ok: false,
-    error: { code: "stale_source_config", source: { kind: "conductor" } },
+    error: { code: "stale_source_config", source: PROTOCOL_PROJECT_CONFIG_IMPORT_SOURCE },
   });
 });
 

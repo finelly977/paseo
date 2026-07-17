@@ -66,6 +66,7 @@ import {
   PaseoScriptEntryRawSchema,
   PaseoWorktreeConfigRawSchema,
   PaseoConfigRevisionSchema,
+  ProjectConfigImportAdvertisedSourceSchema,
   ProjectConfigImportItemSchema,
   ProjectConfigImportPreviewSchema,
   ProjectConfigImportSourceSchema,
@@ -76,6 +77,7 @@ import {
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
   type ProjectConfigImportInput,
+  type ProjectConfigImportAdvertisedSource,
   type ProjectConfigImportItem,
   type ProjectConfigImportPreview,
   type ProjectConfigImportSource,
@@ -88,6 +90,7 @@ export {
   PaseoMetadataGenerationSchema,
   PaseoScriptEntryRawSchema,
   PaseoWorktreeConfigRawSchema,
+  ProjectConfigImportAdvertisedSourceSchema,
   ProjectConfigImportItemSchema,
   ProjectConfigImportPreviewSchema,
   ProjectConfigImportSourceSchema,
@@ -97,6 +100,7 @@ export {
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
   type ProjectConfigImportInput,
+  type ProjectConfigImportAdvertisedSource,
   type ProjectConfigImportItem,
   type ProjectConfigImportPreview,
   type ProjectConfigImportSource,
@@ -2706,8 +2710,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerRemoval: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
-        // COMPAT(projectConfigImportConductor): added in v0.1.110, drop the gate when floor >= v0.1.110.
-        projectConfigImportConductor: z.boolean().optional(),
+        // COMPAT(projectConfigImportSources): added in v0.1.110, remove the gate after 2027-01-17.
+        projectConfigImportSources: z.array(ProjectConfigImportAdvertisedSourceSchema).optional(),
         // COMPAT(forgeProviders): added in v0.1.106, drop the gate when daemon floor >= v0.1.106.
         // Daemon advertises pluggable non-GitHub forge support (the forge registry);
         // the client gates non-GitHub setup UI on it.
@@ -3660,7 +3664,7 @@ export const WriteProjectConfigResponseMessageSchema = z.object({
 
 export const GetProjectConfigImportResponseMessageSchema = z.object({
   type: z.literal("project.config.get_import.response"),
-  payload: z.discriminatedUnion("ok", [
+  payload: z.union([
     ProjectConfigImportPreviewSchema.extend({
       requestId: z.string(),
       ok: z.literal(true),
@@ -3676,7 +3680,7 @@ export const GetProjectConfigImportResponseMessageSchema = z.object({
 
 export const ApplyProjectConfigImportResponseMessageSchema = z.object({
   type: z.literal("project.config.apply_import.response"),
-  payload: z.discriminatedUnion("ok", [
+  payload: z.union([
     z.object({
       requestId: z.string(),
       repoRoot: z.string(),

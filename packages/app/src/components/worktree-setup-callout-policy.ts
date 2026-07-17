@@ -73,25 +73,46 @@ export function buildWorktreeSetupCalloutPolicy(
   };
 }
 
-export function buildConductorMigrationCalloutPolicy(
+export function buildProjectConfigImportCalloutPolicy(
   project: ActiveGitWorkspaceProject,
-  intentId: string,
+  input:
+    | {
+        status: "one";
+        sourceDisplayName: string;
+        sourceRouteValue: string;
+        intentId: string;
+      }
+    | { status: "many" },
 ): WorktreeSetupCalloutPolicy {
   const calloutKey = `worktree-setup-missing:${project.projectKey}`;
+  const title =
+    input.status === "one"
+      ? i18n.t("sidebar.worktreeSetup.importTitle", { source: input.sourceDisplayName })
+      : i18n.t("sidebar.worktreeSetup.importManyTitle");
+  const description =
+    input.status === "one"
+      ? i18n.t("sidebar.worktreeSetup.importDescription", {
+          source: input.sourceDisplayName,
+        })
+      : i18n.t("sidebar.worktreeSetup.importManyDescription");
+  const projectSettingsRoute =
+    input.status === "one"
+      ? buildProjectSettingsImportRoute({
+          projectKey: project.projectKey,
+          source: input.sourceRouteValue,
+          serverId: project.serverId,
+          intentId: input.intentId,
+        })
+      : buildProjectSettingsRoute(project.projectKey);
 
   return {
     id: calloutKey,
     dismissalKey: calloutKey,
     priority: 100,
-    title: i18n.t("sidebar.worktreeSetup.conductorTitle"),
-    description: i18n.t("sidebar.worktreeSetup.conductorDescription"),
+    title,
+    description,
     actionLabel: i18n.t("sidebar.worktreeSetup.reviewMigration"),
-    projectSettingsRoute: buildProjectSettingsImportRoute({
-      projectKey: project.projectKey,
-      source: "conductor",
-      serverId: project.serverId,
-      intentId,
-    }),
+    projectSettingsRoute,
     testID: `worktree-setup-callout-${project.projectKey}`,
   };
 }

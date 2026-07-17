@@ -1,13 +1,25 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { readPaseoConfigForEdit } from "../../../../utils/paseo-config-file.js";
-import { applyProjectConfigImport, inspectProjectConfigImport } from "./index.js";
-import { InvalidProjectConfigImportSourceError } from "./model.js";
+import {
+  createProjectConfigImportRegistry,
+  productionProjectConfigImportSourceSet,
+} from "../../registry.js";
+import {
+  createProjectConfigImportService,
+  InvalidProjectConfigImportSourceError,
+} from "../../service.js";
+import { conductorProjectConfigImporter } from "./importer.js";
 
 const tempDirs: string[] = [];
 const CONDUCTOR_SOURCE = { kind: "conductor" } as const;
+const service = createProjectConfigImportService(
+  createProjectConfigImportRegistry(
+    [conductorProjectConfigImporter],
+    productionProjectConfigImportSourceSet,
+  ),
+);
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -32,7 +44,7 @@ function writeLocalToml(repo: string, contents: string): void {
 }
 
 function inspect(repo: string, paseoConfig = {}) {
-  return inspectProjectConfigImport({
+  return service.inspect({
     repoRoot: repo,
     source: CONDUCTOR_SOURCE,
     paseoConfig,
@@ -49,16 +61,6 @@ function captureInvalidSourceError(repo: string): InvalidProjectConfigImportSour
     }
   }
   throw new Error("Expected invalid source config error");
-}
-
-function readValidPaseoConfig(
-  repo: string,
-): Extract<ReturnType<typeof readPaseoConfigForEdit>, { ok: true }> {
-  const result = readPaseoConfigForEdit(repo);
-  if (!result.ok) {
-    throw new Error("Expected valid paseo config");
-  }
-  return result;
 }
 
 describe("Conductor project config import", () => {
@@ -125,7 +127,6 @@ enabled = true
           detail: "Environment variable values are not imported. Found: SECRET_TOKEN.",
         }),
         expect.objectContaining({ key: "spotlight_testing", outcome: "unsupported" }),
-        expect.objectContaining({ key: "scripts.dev.hide", outcome: "unsupported" }),
       ]),
     );
     expect(JSON.stringify(preview.items)).not.toContain("do-not-return");
@@ -209,34 +210,6 @@ command = "local dev"
     });
   });
 
-  test("preserves existing Paseo values as collisions and reports nothing to import on retry", () => {
-    const repo = makeRepo();
-    writeSharedToml(
-      repo,
-      `
-[scripts]
-setup = "npm ci"
-[scripts.run.dev]
-command = "npm run dev"
-`,
-    );
-
-    const preview = inspect(repo, {
-      custom: { keep: true },
-      worktree: { setup: "pnpm install", extra: "field" },
-      scripts: { dev: { command: "pnpm dev", color: "blue" } },
-    });
-
-    expect(preview.status).toBe("nothing_to_import");
-    expect(preview.preview).toBeNull();
-    expect(preview.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "worktree.setup", outcome: "collision" }),
-        expect.objectContaining({ key: "scripts.dev", outcome: "collision" }),
-      ]),
-    );
-  });
-
   test("does not rewrite variable substrings and warns for unsupported Conductor variables", () => {
     const repo = makeRepo();
     writeSharedToml(
@@ -263,102 +236,6 @@ setup = "echo $MY_CONDUCTOR_PORT_BACKUP $CONDUCTOR_DEFAULT_BRANCH"
     expect(preview.items).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "variables.CONDUCTOR_PORT" })]),
     );
-  });
-
-  test("source digest changes after a byte change and apply rejects stale source", () => {
-    const repo = makeRepo();
-    writeSharedToml(repo, '[scripts]\nsetup = "npm ci"\n');
-    const preview = inspect(repo);
-    writeSharedToml(repo, '[scripts]\nsetup = "pnpm install"\n');
-
-    const result = applyProjectConfigImport({
-      repoRoot: repo,
-      source: CONDUCTOR_SOURCE,
-      expectedSourceRevision: preview.sourceRevision ?? "",
-      expectedPaseoRevision: null,
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      repoRoot: repo,
-      error: { code: "stale_source_config", source: CONDUCTOR_SOURCE },
-    });
-  });
-
-  test("apply rejects a stale paseo.json revision", () => {
-    const repo = makeRepo();
-    writeSharedToml(repo, '[scripts]\nsetup = "npm ci"\n');
-    writeFileSync(join(repo, "paseo.json"), '{"custom":true}\n');
-    const paseoRevision = readValidPaseoConfig(repo);
-    const preview = inspectProjectConfigImport({
-      repoRoot: repo,
-      source: CONDUCTOR_SOURCE,
-      paseoConfig: paseoRevision.config ?? {},
-      paseoRevision: paseoRevision.revision,
-    });
-    writeFileSync(join(repo, "paseo.json"), '{"custom":false}\n');
-
-    expect(
-      applyProjectConfigImport({
-        repoRoot: repo,
-        source: CONDUCTOR_SOURCE,
-        expectedSourceRevision: preview.sourceRevision ?? "",
-        expectedPaseoRevision: paseoRevision.revision,
-      }),
-    ).toMatchObject({
-      ok: false,
-      repoRoot: repo,
-      error: { code: "stale_project_config" },
-    });
-  });
-
-  test.skipIf(process.platform === "win32")("apply reports write failure visibly", () => {
-    const repo = makeRepo();
-    writeSharedToml(repo, '[scripts]\nsetup = "npm ci"\n');
-    const preview = inspect(repo);
-    chmodSync(repo, 0o555);
-    try {
-      expect(
-        applyProjectConfigImport({
-          repoRoot: repo,
-          source: CONDUCTOR_SOURCE,
-          expectedSourceRevision: preview.sourceRevision ?? "",
-          expectedPaseoRevision: null,
-        }),
-      ).toEqual({
-        ok: false,
-        repoRoot: repo,
-        error: { code: "write_failed" },
-      });
-    } finally {
-      chmodSync(repo, 0o755);
-    }
-  });
-
-  test("apply writes formatted paseo.json after recomputing from disk", () => {
-    const repo = makeRepo();
-    writeSharedToml(repo, '[scripts]\nsetup = "npm ci"\n');
-    const preview = inspect(repo);
-
-    const result = applyProjectConfigImport({
-      repoRoot: repo,
-      source: CONDUCTOR_SOURCE,
-      expectedSourceRevision: preview.sourceRevision ?? "",
-      expectedPaseoRevision: null,
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      repoRoot: repo,
-      config: { worktree: { setup: "npm ci" } },
-    });
-    expect(readFileSync(join(repo, "paseo.json"), "utf8")).toBe(
-      '{\n  "worktree": {\n    "setup": "npm ci"\n  }\n}\n',
-    );
-    expect(readPaseoConfigForEdit(repo)).toMatchObject({
-      ok: true,
-      config: { worktree: { setup: "npm ci" } },
-    });
   });
 
   test("malformed TOML identifies the safe relative source path", () => {

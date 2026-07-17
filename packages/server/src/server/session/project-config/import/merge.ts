@@ -1,5 +1,5 @@
 import type { PaseoConfigRaw } from "@getpaseo/protocol/messages";
-import type { ProjectConfigImportCandidate, ProjectConfigImportPreview } from "./model.js";
+import type { ProjectConfigImportCandidate, ProjectConfigImportPreview } from "./service.js";
 
 interface MergeProjectConfigImportInput {
   repoRoot: string;
@@ -31,28 +31,21 @@ export function mergeProjectConfigImport(
   let importedCount = 0;
 
   const patchWorktree = input.candidate.patch.worktree ?? {};
-  if (Object.hasOwn(patchWorktree, "setup")) {
-    if (hasLifecycle(base.worktree?.setup)) {
-      setOutcome(items, "worktree.setup", "collision", "Paseo already has setup commands.");
-    } else {
-      merged.worktree = { ...merged.worktree, setup: patchWorktree.setup };
-      importedCount += 1;
+  for (const key of ["setup", "teardown"] as const) {
+    if (!Object.hasOwn(patchWorktree, key)) continue;
+    if (hasLifecycle(base.worktree?.[key])) {
+      setOutcome(items, `worktree.${key}`, `Paseo already has ${key} commands.`);
+      continue;
     }
-  }
-  if (Object.hasOwn(patchWorktree, "teardown")) {
-    if (hasLifecycle(base.worktree?.teardown)) {
-      setOutcome(items, "worktree.teardown", "collision", "Paseo already has teardown commands.");
-    } else {
-      merged.worktree = { ...merged.worktree, teardown: patchWorktree.teardown };
-      importedCount += 1;
-    }
+    merged.worktree = { ...merged.worktree, [key]: patchWorktree[key] };
+    importedCount += 1;
   }
 
   const patchScripts = input.candidate.patch.scripts ?? {};
   for (const [scriptId, script] of Object.entries(patchScripts)) {
     const key = `scripts.${scriptId}`;
     if (base.scripts && Object.hasOwn(base.scripts, scriptId)) {
-      setOutcome(items, key, "collision", `Paseo already has a "${scriptId}" script.`);
+      setOutcome(items, key, `Paseo already has a "${scriptId}" script.`);
       continue;
     }
     merged.scripts = { ...merged.scripts, [scriptId]: script };
@@ -61,7 +54,7 @@ export function mergeProjectConfigImport(
 
   return {
     repoRoot: input.repoRoot,
-    source: input.candidate.source,
+    source: input.source,
     status: importedCount > 0 ? "available" : "nothing_to_import",
     sourceRevision: input.candidate.sourceRevision,
     paseoRevision: input.paseoRevision,
@@ -81,22 +74,17 @@ function hasLifecycle(value: unknown): boolean {
   return false;
 }
 
-function setOutcome(
-  items: ProjectConfigImportPreview["items"],
-  key: string,
-  outcome: "collision",
-  detail: string,
-): void {
+function setOutcome(items: ProjectConfigImportPreview["items"], key: string, detail: string): void {
   const item = items.find((entry) => entry.key === key);
   if (!item) {
     items.push({
       key,
       label: key,
-      outcome,
+      outcome: "collision",
       detail,
     });
     return;
   }
-  item.outcome = outcome;
+  item.outcome = "collision";
   item.detail = detail;
 }

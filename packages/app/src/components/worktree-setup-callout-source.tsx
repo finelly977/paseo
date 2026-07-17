@@ -3,13 +3,12 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { useSidebarCallouts } from "@/contexts/sidebar-callout-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { useProjectConfigImportPreview } from "@/project-config-import/project-config-import-preview";
+import { useProjectConfigImportAvailability } from "@/project-config-import/use-project-config-import-model";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
-import { useHostFeature } from "@/runtime/host-features";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { useWorkspaceFields } from "@/stores/session-store-hooks";
 import {
-  buildConductorMigrationCalloutPolicy,
+  buildProjectConfigImportCalloutPolicy,
   buildWorktreeSetupCalloutPolicy,
   selectActiveGitWorkspaceProject,
   shouldShowWorktreeSetupCallout,
@@ -23,10 +22,6 @@ export function WorktreeSetupCalloutSource() {
     (workspace) => selectActiveGitWorkspaceProject(selection?.serverId ?? "", workspace),
   );
   const client = useHostRuntimeClient(activeProject?.serverId ?? "");
-  const supportsConductorImport = useHostFeature(
-    activeProject?.serverId,
-    "projectConfigImportConductor",
-  );
   const callouts = useSidebarCallouts();
   const router = useRouter();
   const openProjectSettings = useStableEvent(
@@ -48,24 +43,29 @@ export function WorktreeSetupCalloutSource() {
   });
 
   const shouldConsiderSetup = activeProject && shouldShowWorktreeSetupCallout(readQuery.data);
-  const importPreviewQuery = useProjectConfigImportPreview({
+  const importAvailability = useProjectConfigImportAvailability({
     client,
-    serverId: activeProject?.serverId ?? "",
-    repoRoot: activeProject?.repoRoot ?? "",
-    source: { kind: "conductor" },
-    enabled: Boolean(shouldConsiderSetup && supportsConductorImport),
+    serverId: activeProject?.serverId,
+    repoRoot: activeProject?.repoRoot,
+    enabled: Boolean(shouldConsiderSetup),
   });
-
   const calloutPolicy = useMemo(() => {
     if (!activeProject || !shouldShowWorktreeSetupCallout(readQuery.data)) {
       return null;
     }
-    const preview = importPreviewQuery.data;
-    if (supportsConductorImport && preview?.ok === true && preview.status === "available") {
-      return buildConductorMigrationCalloutPolicy(activeProject, String(Date.now()));
+    if (importAvailability.status === "one" && importAvailability.source) {
+      return buildProjectConfigImportCalloutPolicy(activeProject, {
+        status: "one",
+        sourceDisplayName: importAvailability.source.module.displayName,
+        sourceRouteValue: importAvailability.source.module.routeValue,
+        intentId: String(Date.now()),
+      });
+    }
+    if (importAvailability.status === "many") {
+      return buildProjectConfigImportCalloutPolicy(activeProject, { status: "many" });
     }
     return buildWorktreeSetupCalloutPolicy(activeProject);
-  }, [activeProject, importPreviewQuery.data, readQuery.data, supportsConductorImport]);
+  }, [activeProject, importAvailability.source, importAvailability.status, readQuery.data]);
 
   useEffect(() => {
     if (!calloutPolicy) {

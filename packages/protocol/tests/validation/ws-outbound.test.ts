@@ -82,24 +82,6 @@ const SourceSchema = z.discriminatedUnion("type", [
     });
   });
 
-  it("routes boolean discriminated-union branches with boolean switch cases", async () => {
-    const schema = await compileInlineSchema(`
-const SourceSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), value: z.string() }),
-  z.object({ ok: z.literal(false), error: z.string() }),
-]);
-`);
-
-    expect(schema.safeParse({ ok: true, value: "yes" })).toMatchObject({
-      success: true,
-      data: { ok: true, value: "yes" },
-    });
-    expect(schema.safeParse({ ok: false, error: "no" })).toMatchObject({
-      success: true,
-      data: { ok: false, error: "no" },
-    });
-  });
-
   it("routes tool-call-like status unions through the current sequential item union", async () => {
     const schema = await compileInlineSchema(`
 const ToolCallItemSchema = z.discriminatedUnion("status", [

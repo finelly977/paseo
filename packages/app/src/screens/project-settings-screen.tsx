@@ -26,15 +26,8 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Switch } from "@/components/ui/switch";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
-import { ConductorIcon } from "@/project-config-import/conductor-icon";
-import {
-  normalizeProjectConfigImportError,
-  type ProjectConfigImportIntent,
-} from "@/project-config-import/project-config-import-model";
-import { ProjectConfigImportSheet } from "@/project-config-import/project-config-import-sheet";
-import { useProjectConfigImportPreview } from "@/project-config-import/project-config-import-preview";
-import { useProjectConfigImportModel } from "@/project-config-import/use-project-config-import-model";
-import { useHostFeature } from "@/runtime/host-features";
+import type { ProjectConfigImportIntent } from "@/project-config-import/route";
+import { ProjectConfigImportSection } from "@/project-config-import/project-config-import-section";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/screens/settings/settings-group";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -95,11 +88,13 @@ type ReadProjectConfigData = Awaited<ReturnType<DaemonClient["readProjectConfig"
 export interface ProjectSettingsScreenProps {
   projectKey: string;
   importIntent?: ProjectConfigImportIntent | null;
+  onImportIntentConsumed?: () => void;
 }
 
 export default function ProjectSettingsScreen({
   projectKey,
   importIntent = null,
+  onImportIntentConsumed,
 }: ProjectSettingsScreenProps) {
   const { projects } = useProjects();
   const project = useMemo(
@@ -148,6 +143,7 @@ export default function ProjectSettingsScreen({
       client={client}
       isHostGone={isHostGone}
       importIntent={importIntent}
+      onImportIntentConsumed={onImportIntentConsumed}
     />
   );
 }
@@ -206,6 +202,7 @@ interface ProjectSettingsBodyProps {
   client: DaemonClient;
   isHostGone: boolean;
   importIntent: ProjectConfigImportIntent | null;
+  onImportIntentConsumed?: () => void;
 }
 
 function ProjectSettingsBody({
@@ -216,12 +213,8 @@ function ProjectSettingsBody({
   client,
   isHostGone,
   importIntent,
+  onImportIntentConsumed,
 }: ProjectSettingsBodyProps) {
-  const [openImportIntent, setOpenImportIntent] = useState<ProjectConfigImportIntent | null>(null);
-  const supportsConductorImport = useHostFeature(
-    selectedHost.serverId,
-    "projectConfigImportConductor",
-  );
   const queryKey = useMemo(
     () => ["project-config", selectedHost.serverId, selectedHost.repoRoot] as const,
     [selectedHost.serverId, selectedHost.repoRoot],
@@ -248,54 +241,11 @@ function ProjectSettingsBody({
     projects: projectIconTargets,
   });
   const projectIconDataUri = projectIconDataByKey.get(project.projectKey) ?? null;
-  const loadedConfig: PaseoConfigRaw | null = data?.ok ? (data.config ?? {}) : null;
-  const loadedRevision: PaseoConfigRevision | null = data?.ok ? data.revision : null;
-  const readError: ProjectConfigRpcError | null = data && !data.ok ? data.error : null;
-  const importPreviewQuery = useProjectConfigImportPreview({
-    client,
-    serverId: selectedHost.serverId,
-    repoRoot: selectedHost.repoRoot,
-    source: { kind: "conductor" },
-    enabled: supportsConductorImport && readQuery.data?.ok === true,
-  });
-
-  useEffect(() => {
-    if (!importIntent) {
-      return;
-    }
-    if (importIntent.serverId !== selectedHost.serverId) {
-      return;
-    }
-    setOpenImportIntent(importIntent);
-  }, [importIntent, selectedHost.serverId]);
+  const readState = resolveProjectConfigReadState(data);
 
   const handleReload = useCallback(() => {
     void readQuery.refetch();
   }, [readQuery]);
-  const handleCloseImport = useCallback(() => {
-    setOpenImportIntent(null);
-  }, []);
-  const handleRefreshImport = useCallback(() => {
-    void importPreviewQuery.refetch();
-  }, [importPreviewQuery]);
-  const importModel = useProjectConfigImportModel({
-    intent: openImportIntent ?? {
-      serverId: selectedHost.serverId,
-      source: { kind: "conductor" },
-      intentId: "closed",
-    },
-    repoRoot: selectedHost.repoRoot,
-    client,
-    preview: importPreviewQuery.data?.ok ? importPreviewQuery.data : null,
-    isPreviewLoading: importPreviewQuery.isLoading || importPreviewQuery.isFetching,
-    previewError: normalizeProjectConfigImportError(
-      importPreviewQuery.data && !importPreviewQuery.data.ok
-        ? importPreviewQuery.data.error
-        : importPreviewQuery.error,
-    ),
-    projectConfigQueryKey: queryKey,
-    onClose: handleCloseImport,
-  });
 
   const hasMultipleHosts = hosts.length > 1;
 
@@ -317,30 +267,38 @@ function ProjectSettingsBody({
 
       {renderContent({
         readQuery,
-        loadedConfig,
-        loadedRevision,
-        readError,
+        loadedConfig: readState.loadedConfig,
+        loadedRevision: readState.loadedRevision,
+        readError: readState.readError,
         selectedHost,
         queryKey,
         client,
         onReload: handleReload,
         hasMultipleHosts,
         isHostGone,
-        importPreviewQuery,
-        importIntent: openImportIntent,
-        onOpenImport: setOpenImportIntent,
+        importIntent,
+        onImportIntentConsumed,
       })}
-      {openImportIntent ? (
-        <ProjectConfigImportSheet
-          visible
-          state={importModel.state}
-          onClose={handleCloseImport}
-          onRefresh={handleRefreshImport}
-          onApply={importModel.apply}
-        />
-      ) : null}
     </View>
   );
+}
+
+function resolveProjectConfigReadState(data: ReadProjectConfigData | undefined): {
+  loadedConfig: PaseoConfigRaw | null;
+  loadedRevision: PaseoConfigRevision | null;
+  readError: ProjectConfigRpcError | null;
+} {
+  if (!data) {
+    return { loadedConfig: null, loadedRevision: null, readError: null };
+  }
+  if (!data.ok) {
+    return { loadedConfig: null, loadedRevision: null, readError: data.error };
+  }
+  return {
+    loadedConfig: data.config ?? {},
+    loadedRevision: data.revision,
+    readError: null,
+  };
 }
 
 interface RenderContentInput {
@@ -354,9 +312,8 @@ interface RenderContentInput {
   onReload: () => void;
   hasMultipleHosts: boolean;
   isHostGone: boolean;
-  importPreviewQuery: ReturnType<typeof useProjectConfigImportPreview>;
   importIntent: ProjectConfigImportIntent | null;
-  onOpenImport: (intent: ProjectConfigImportIntent | null) => void;
+  onImportIntentConsumed?: () => void;
 }
 
 function renderContent({
@@ -370,9 +327,8 @@ function renderContent({
   onReload,
   hasMultipleHosts,
   isHostGone,
-  importPreviewQuery,
   importIntent,
-  onOpenImport,
+  onImportIntentConsumed,
 }: RenderContentInput) {
   if (readQuery.isLoading) {
     return (
@@ -427,9 +383,8 @@ function renderContent({
       queryKey={queryKey}
       client={client}
       onReload={onReload}
-      importPreviewQuery={importPreviewQuery}
       importIntent={importIntent}
-      onOpenImport={onOpenImport}
+      onImportIntentConsumed={onImportIntentConsumed}
     />
   );
 }
@@ -516,9 +471,8 @@ interface ProjectConfigFormProps {
   queryKey: readonly [string, string, string];
   client: DaemonClient;
   onReload: () => void;
-  importPreviewQuery: ReturnType<typeof useProjectConfigImportPreview>;
   importIntent: ProjectConfigImportIntent | null;
-  onOpenImport: (intent: ProjectConfigImportIntent | null) => void;
+  onImportIntentConsumed?: () => void;
 }
 
 function ProjectConfigForm({
@@ -529,9 +483,8 @@ function ProjectConfigForm({
   queryKey,
   client,
   onReload,
-  importPreviewQuery,
   importIntent,
-  onOpenImport,
+  onImportIntentConsumed,
 }: ProjectConfigFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -736,11 +689,14 @@ function ProjectConfigForm({
         info={t("settings.project.worktree.info")}
         testID="worktree-group"
       >
-        <ConductorImportRow
-          previewQuery={importPreviewQuery}
+        <ProjectConfigImportSection
+          client={client}
           serverId={serverId}
-          onOpenImport={onOpenImport}
-          importIntent={importIntent}
+          repoRoot={repoRoot}
+          routeIntent={importIntent}
+          onRouteIntentConsumed={onImportIntentConsumed}
+          projectConfigLoaded
+          projectConfigQueryKey={queryKey}
         />
 
         <SettingsSection
@@ -892,62 +848,6 @@ function ProjectConfigForm({
 
 function ResolveSpinnerColor(): string {
   return styles.spinnerColor.color;
-}
-
-interface ConductorImportRowProps {
-  previewQuery: ReturnType<typeof useProjectConfigImportPreview>;
-  serverId: string;
-  importIntent: ProjectConfigImportIntent | null;
-  onOpenImport: (intent: ProjectConfigImportIntent | null) => void;
-}
-
-function ConductorImportRow({
-  previewQuery,
-  serverId,
-  importIntent,
-  onOpenImport,
-}: ConductorImportRowProps) {
-  const { t } = useTranslation();
-  const preview = previewQuery.data?.ok ? previewQuery.data : null;
-  const shouldShow = preview?.status === "available" || importIntent?.source.kind === "conductor";
-  const handlePress = useCallback(() => {
-    onOpenImport({
-      serverId,
-      source: { kind: "conductor" },
-      intentId: String(Date.now()),
-    });
-  }, [onOpenImport, serverId]);
-
-  if (!shouldShow) {
-    return null;
-  }
-
-  return (
-    <SettingsSection
-      title={t("settings.project.import.rowTitle")}
-      testID="conductor-import-section"
-    >
-      <Pressable
-        testID="conductor-import-row"
-        accessibilityRole="button"
-        accessibilityLabel={t("settings.project.import.rowTitle")}
-        onPress={handlePress}
-        style={settingsStyles.card}
-      >
-        <View style={styles.importRow}>
-          <View style={styles.importIconWrap}>
-            <ConductorIcon size={16} color={styles.iconColor.color} />
-          </View>
-          <View style={styles.importText}>
-            <Text style={settingsStyles.rowTitle}>{t("settings.project.import.rowTitle")}</Text>
-            <Text style={settingsStyles.rowHint} numberOfLines={2}>
-              {t("settings.project.import.rowDescription")}
-            </Text>
-          </View>
-        </View>
-      </Pressable>
-    </SettingsSection>
-  );
 }
 
 interface ProjectNameEditorProps {
@@ -1482,26 +1382,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   iconColor: {
     color: theme.colors.foregroundMuted,
-  },
-  importRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[3],
-    padding: theme.spacing[3],
-  },
-  importIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: theme.colors.surface2,
-  },
-  importText: {
-    flex: 1,
-    minWidth: 0,
   },
   hostIndicator: {
     flexDirection: "row",

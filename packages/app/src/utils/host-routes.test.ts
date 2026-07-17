@@ -213,12 +213,12 @@ describe("projects settings routes", () => {
     expect(
       buildProjectSettingsImportRoute({
         projectKey: "remote:github.com/acme/app",
-        source: "conductor",
+        source: "fake",
         serverId: "server-1",
         intentId: "intent 1",
       }),
     ).toBe(
-      "/settings/projects/remote%3Agithub.com%2Facme%2Fapp?importSource=conductor&importServerId=server-1&importIntentId=intent+1",
+      "/settings/projects/remote%3Agithub.com%2Facme%2Fapp?importSource=fake&importServerId=server-1&importIntentId=intent+1",
     );
   });
 

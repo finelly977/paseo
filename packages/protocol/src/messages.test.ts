@@ -308,6 +308,23 @@ describe("agent detach RPC", () => {
     }
     expect(parsed.features?.importSessionWorkspaceTarget).toBe(true);
   });
+
+  test("parses future project config import source advertisements", () => {
+    const parsed = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: {
+        projectConfigImportSources: [{ kind: "future-source", extra: { version: 2 } }],
+      },
+    });
+
+    if (!parsed) {
+      throw new Error("Expected server info payload to parse");
+    }
+    expect(parsed.features?.projectConfigImportSources).toEqual([
+      { kind: "future-source", extra: { version: 2 } },
+    ]);
+  });
 });
 
 describe("agent setting action responses", () => {

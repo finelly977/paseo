@@ -1,136 +1,253 @@
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
-  normalizeProjectConfigImportError,
-  openProjectConfigImport,
+  ProjectConfigImportSourceSchema,
+  type ProjectConfigImportPreview,
+  type ProjectConfigImportSource,
+} from "@getpaseo/protocol/messages";
+import { fetchQueryOptions } from "@/data/query";
+import {
+  projectConfigImportPreviewQueryInput,
+  projectConfigImportPreviewQueryKey,
+  stableProjectConfigImportSourceKey,
+} from "./preview-cache";
+import {
+  createProjectConfigImportIntentFromRegistration,
   parseProjectConfigImportIntent,
-  projectConfigImportApplyFailureRetryAction,
-  projectConfigImportCanApply,
-  projectConfigImportNeedsRefresh,
-  projectConfigImportSourceFeature,
-} from "./project-config-import-model";
+} from "./route";
+import {
+  createProjectConfigImportSourceRegistry,
+  type ProjectConfigImportSourceDescriptor,
+} from "./sources";
+
+interface FakeImportSource extends ProjectConfigImportSourceDescriptor {
+  kind: "fake-source";
+  profile: "alpha";
+}
+const fakeSource: FakeImportSource = { kind: "fake-source", profile: "alpha" };
+const protocolSource: ProjectConfigImportSource = ProjectConfigImportSourceSchema.options[0].parse({
+  kind: ProjectConfigImportSourceSchema.options[0].shape.kind.value,
+});
+
+const registry = createProjectConfigImportSourceRegistry([
+  {
+    kind: fakeSource.kind,
+    source: fakeSource,
+    displayName: "Test Source",
+    routeValue: "test-source",
+  },
+]);
+
+function parseFakeSource(source: ProjectConfigImportSourceDescriptor): FakeImportSource | null {
+  return source.kind === fakeSource.kind ? fakeSource : null;
+}
 
 describe("project config import intent", () => {
-  it("parses a Conductor host-bound route intent", () => {
+  it("parses a host-bound route intent through the source registry", () => {
     expect(
-      parseProjectConfigImportIntent({
-        importSource: "conductor",
-        importServerId: "server-1",
-        importIntentId: "intent-1",
-      }),
+      parseProjectConfigImportIntent(
+        {
+          importSource: "test-source",
+          importServerId: "server-1",
+          importIntentId: "intent-1",
+        },
+        registry,
+        parseFakeSource,
+      ),
     ).toEqual({
       serverId: "server-1",
-      source: { kind: "conductor" },
+      source: fakeSource,
+      protocolSource: fakeSource,
       intentId: "intent-1",
     });
   });
 
   it("rejects missing or unknown sources", () => {
     expect(
-      parseProjectConfigImportIntent({
-        importSource: "other",
-        importServerId: "server-1",
-        importIntentId: "intent-1",
-      }),
+      parseProjectConfigImportIntent(
+        {
+          importSource: "other",
+          importServerId: "server-1",
+          importIntentId: "intent-1",
+        },
+        registry,
+        parseFakeSource,
+      ),
     ).toBeNull();
-    expect(parseProjectConfigImportIntent({ importSource: "conductor" })).toBeNull();
+    expect(
+      parseProjectConfigImportIntent({ importSource: "test-source" }, registry, parseFakeSource),
+    ).toBeNull();
   });
 
-  it("maps Conductor to its source-specific feature flag", () => {
-    expect(projectConfigImportSourceFeature({ kind: "conductor" })).toBe(
-      "projectConfigImportConductor",
-    );
+  it("uses the supplied registry instead of a hardcoded route map", () => {
+    const alternateRegistry = createProjectConfigImportSourceRegistry([
+      {
+        kind: fakeSource.kind,
+        source: fakeSource,
+        displayName: "Fake Second",
+        routeValue: "fake",
+      },
+    ]);
+
+    expect(
+      parseProjectConfigImportIntent(
+        {
+          importSource: "fake",
+          importServerId: "server-1",
+          importIntentId: "intent-1",
+        },
+        alternateRegistry,
+        parseFakeSource,
+      ),
+    ).toEqual({
+      serverId: "server-1",
+      source: fakeSource,
+      protocolSource: fakeSource,
+      intentId: "intent-1",
+    });
   });
 });
 
-describe("project config import state model", () => {
-  const intent = {
-    serverId: "server-1",
-    source: { kind: "conductor" as const },
-    intentId: "intent-1",
-  };
-  const preview = {
-    requestId: "preview-1",
-    repoRoot: "/repo/app",
-    source: { kind: "conductor" as const },
-    ok: true as const,
-    status: "available" as const,
-    sourceRevision: "source-1",
-    paseoRevision: null,
-    inputs: [],
-    items: [],
-    preview: { worktree: { setup: "npm ci" } },
-  };
+describe("project config import preview cache keys", () => {
+  it("uses the full source descriptor instead of kind alone", () => {
+    const alpha = { kind: "variant-source", profile: "alpha" };
+    const beta = { profile: "beta", kind: "variant-source" };
 
-  it("projects loading, ready, applying, and error states", () => {
-    expect(
-      openProjectConfigImport({
-        intent,
-        preview: null,
-        isLoading: true,
-        error: null,
-        isApplying: false,
-      }),
-    ).toEqual({ status: "loading", intent, preview: null, error: null });
-
-    const ready = openProjectConfigImport({
-      intent,
-      preview,
-      isLoading: false,
-      error: null,
-      isApplying: false,
-    });
-    expect(ready).toEqual({ status: "ready", intent, preview, error: null });
-    expect(projectConfigImportCanApply(ready)).toBe(true);
-
-    expect(
-      openProjectConfigImport({
-        intent,
-        preview,
-        isLoading: false,
-        error: null,
-        isApplying: true,
-      }),
-    ).toEqual({ status: "applying", intent, preview, error: null });
-
-    expect(
-      openProjectConfigImport({
-        intent,
-        preview,
-        isLoading: false,
-        error: { code: "stale_source_config", source: { kind: "conductor" } },
-        isApplying: false,
-      }),
-    ).toEqual({
-      status: "error",
-      intent,
-      preview,
-      error: { code: "stale_source_config", source: { kind: "conductor" } },
-      retryAction: "refresh",
-    });
+    expect(projectConfigImportPreviewQueryKey("server", "/repo", alpha)).not.toEqual(
+      projectConfigImportPreviewQueryKey("server", "/repo", beta),
+    );
   });
 
-  it("normalizes transport errors and identifies refresh-required domain errors", () => {
-    expect(normalizeProjectConfigImportError(new Error("socket closed"))).toEqual({
-      code: "transport",
-      message: "socket closed",
-    });
-    expect(
-      projectConfigImportNeedsRefresh({
-        code: "stale_project_config",
-        currentRevision: null,
-      }),
-    ).toBe(true);
-    expect(projectConfigImportNeedsRefresh({ code: "nothing_to_import" })).toBe(true);
-    expect(projectConfigImportNeedsRefresh({ code: "write_failed" })).toBe(false);
-    expect(projectConfigImportApplyFailureRetryAction({ code: "write_failed" })).toBe("apply");
-    expect(projectConfigImportApplyFailureRetryAction({ code: "nothing_to_import" })).toBe(
-      "refresh",
+  it("serializes source descriptors deterministically", () => {
+    expect(stableProjectConfigImportSourceKey({ profile: "alpha", kind: "variant-source" })).toBe(
+      stableProjectConfigImportSourceKey({ kind: "variant-source", profile: "alpha" }),
     );
-    expect(
-      projectConfigImportApplyFailureRetryAction({
-        code: "stale_source_config",
-        source: { kind: "conductor" },
+  });
+
+  it("does not refetch a current availability preview when the sheet opens", async () => {
+    const calls: string[] = [];
+    const rpcSources: ProjectConfigImportSource[] = [];
+    const client = {
+      getProjectConfigImport: async (input: {
+        source: ProjectConfigImportSource;
+      }): Promise<ProjectConfigImportPreview & { ok: true; requestId: string }> => {
+        calls.push("preview");
+        rpcSources.push(input.source);
+        return {
+          ok: true,
+          requestId: "preview-1",
+          repoRoot: "/repo",
+          source: protocolSource,
+          status: "available",
+          sourceRevision: "source-1",
+          paseoRevision: null,
+          inputs: [],
+          items: [],
+          preview: {},
+        };
+      },
+    };
+    const queryClient = new QueryClient();
+    const input = projectConfigImportPreviewQueryInput({
+      client,
+      serverId: "server",
+      repoRoot: "/repo",
+      source: { ...protocolSource, profile: "alpha" },
+      protocolSource,
+      enabled: true,
+    });
+
+    const options = fetchQueryOptions(input);
+    await queryClient.fetchQuery(options);
+    const observer = new QueryObserver(queryClient, queryClient.defaultQueryOptions(options));
+    const unsubscribe = observer.subscribe(() => {});
+    observer.getOptimisticResult(queryClient.defaultQueryOptions(options));
+    unsubscribe();
+
+    expect(calls).toEqual(["preview"]);
+    expect(rpcSources).toEqual([protocolSource]);
+    expect(input.queryKey).toEqual(
+      projectConfigImportPreviewQueryKey("server", "/repo", {
+        ...protocolSource,
+        profile: "alpha",
       }),
-    ).toBe("refresh");
+    );
+  });
+
+  it("keeps advertised identity separate from the protocol source after opening", async () => {
+    const sameKindRegistry = createProjectConfigImportSourceRegistry([
+      {
+        kind: protocolSource.kind,
+        source: protocolSource,
+        displayName: "Protocol Source",
+        routeValue: "protocol-source",
+      },
+    ]);
+    const [alphaRegistration, betaRegistration] = sameKindRegistry.advertised([
+      { kind: protocolSource.kind, profile: "alpha" },
+      { kind: protocolSource.kind, profile: "beta" },
+    ]);
+    const alphaIntent = alphaRegistration
+      ? createProjectConfigImportIntentFromRegistration({
+          serverId: "server",
+          registration: alphaRegistration,
+          intentId: "alpha",
+        })
+      : null;
+    const betaIntent = betaRegistration
+      ? createProjectConfigImportIntentFromRegistration({
+          serverId: "server",
+          registration: betaRegistration,
+          intentId: "beta",
+        })
+      : null;
+    const calls: ProjectConfigImportSource[] = [];
+    const client = {
+      getProjectConfigImport: async (input: {
+        source: ProjectConfigImportSource;
+      }): Promise<ProjectConfigImportPreview & { ok: true; requestId: string }> => {
+        calls.push(input.source);
+        return {
+          ok: true,
+          requestId: `preview-${calls.length}`,
+          repoRoot: "/repo",
+          source: input.source,
+          status: "available",
+          sourceRevision: `source-${calls.length}`,
+          paseoRevision: null,
+          inputs: [],
+          items: [],
+          preview: {},
+        };
+      },
+    };
+    const queryClient = new QueryClient();
+
+    expect(alphaIntent?.source).toEqual({ kind: protocolSource.kind, profile: "alpha" });
+    expect(betaIntent?.source).toEqual({ kind: protocolSource.kind, profile: "beta" });
+    expect(alphaIntent?.protocolSource).toEqual(protocolSource);
+    expect(betaIntent?.protocolSource).toEqual(protocolSource);
+
+    const alphaInput = projectConfigImportPreviewQueryInput({
+      client,
+      serverId: "server",
+      repoRoot: "/repo",
+      source: alphaIntent?.source ?? null,
+      protocolSource: alphaIntent?.protocolSource ?? null,
+      enabled: true,
+    });
+    const betaInput = projectConfigImportPreviewQueryInput({
+      client,
+      serverId: "server",
+      repoRoot: "/repo",
+      source: betaIntent?.source ?? null,
+      protocolSource: betaIntent?.protocolSource ?? null,
+      enabled: true,
+    });
+
+    expect(alphaInput.queryKey).not.toEqual(betaInput.queryKey);
+    await queryClient.fetchQuery(fetchQueryOptions(alphaInput));
+    await queryClient.fetchQuery(fetchQueryOptions(betaInput));
+    expect(calls).toEqual([protocolSource, protocolSource]);
   });
 });

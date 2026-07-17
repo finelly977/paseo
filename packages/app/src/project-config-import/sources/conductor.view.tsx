@@ -1,4 +1,5 @@
 import Svg, { Path } from "react-native-svg";
+import type { ProjectConfigImportViewModule } from "./view-registry";
 
 const PATHS = [
   "M4.57422 63.6992H22.373V37.251H4.57422C3.58785 37.2511 2.78711 38.0517 2.78711 39.0381V61.9121C2.78725 62.8984 3.58794 63.6991 4.57422 63.6992Z",
@@ -31,3 +32,8 @@ export function ConductorIcon({ size = 18, color = "#282423" }: { size?: number;
     </Svg>
   );
 }
+
+export const conductorProjectConfigImportView = {
+  kind: "conductor",
+  Icon: ConductorIcon,
+} satisfies ProjectConfigImportViewModule;

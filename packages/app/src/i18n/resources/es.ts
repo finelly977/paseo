@@ -898,8 +898,10 @@ export const es: TranslationResources = {
       description:
         "Agregue comandos de configuración para que los nuevos árboles de trabajo puedan instalar dependencias y prepararse automáticamente.",
       openProjectSettings: "Abrir la configuración del proyecto",
-      conductorTitle: "Conductor setup found",
-      conductorDescription: "Import its workspace setup and run scripts into Paseo.",
+      importTitle: "{{source}} setup found",
+      importDescription: "Import workspace setup and run scripts from {{source}}.",
+      importManyTitle: "Project setup imports found",
+      importManyDescription: "Review available project setup imports in Project Settings.",
       reviewMigration: "Review migration",
     },
     project: {
@@ -2120,8 +2122,9 @@ export const es: TranslationResources = {
         teardownAccessibility: "Comandos de desmontaje del árbol de trabajo",
       },
       import: {
-        rowTitle: "Import from Conductor",
-        rowDescription: "Review workspace setup and run scripts before writing paseo.json.",
+        rowTitle: "Import from {{source}}",
+        rowDescription:
+          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
         sheetTitle: "Import from {{source}}",
         sources: "Source files",
         willImport: "Will import",
@@ -2130,12 +2133,12 @@ export const es: TranslationResources = {
         import: "Import",
         importing: "Importing...",
         refreshPreview: "Refresh preview",
-        success: "Conductor settings imported",
+        success: "{{source}} settings imported",
         errorTitle: "Couldn't import settings",
         errors: {
-          notFound: "No Conductor project config was found.",
+          notFound: "No {{source}} project config was found.",
           invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The Conductor config changed. Refresh the preview before importing.",
+          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
           staleProject: "paseo.json changed. Refresh the preview before importing.",
           nothing: "There is nothing new to import.",
         },

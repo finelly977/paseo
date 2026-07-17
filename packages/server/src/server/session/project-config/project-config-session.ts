@@ -8,8 +8,12 @@ import {
   writePaseoConfigForEdit,
   type ProjectConfigRpcError,
 } from "../../../utils/paseo-config-file.js";
-import { applyProjectConfigImport, inspectProjectConfigImport } from "./import/index.js";
-import { InvalidProjectConfigImportSourceError } from "./import/model.js";
+import { projectConfigImportRegistry } from "./import/registry.js";
+import {
+  createProjectConfigImportService,
+  InvalidProjectConfigImportSourceError,
+  type ProjectConfigImportService,
+} from "./import/service.js";
 
 export interface ProjectConfigSessionHost {
   emit(msg: SessionOutboundMessage): void;
@@ -18,6 +22,7 @@ export interface ProjectConfigSessionHost {
 export interface ProjectConfigSessionOptions {
   host: ProjectConfigSessionHost;
   projectRegistry: Pick<ProjectRegistry, "list">;
+  importService?: ProjectConfigImportService;
   logger: pino.Logger;
 }
 
@@ -31,11 +36,14 @@ export interface ProjectConfigSessionOptions {
 export class ProjectConfigSession {
   private readonly host: ProjectConfigSessionHost;
   private readonly projectRegistry: Pick<ProjectRegistry, "list">;
+  private readonly importService: ProjectConfigImportService;
   private readonly logger: pino.Logger;
 
   constructor(options: ProjectConfigSessionOptions) {
     this.host = options.host;
     this.projectRegistry = options.projectRegistry;
+    this.importService =
+      options.importService ?? createProjectConfigImportService(projectConfigImportRegistry);
     this.logger = options.logger;
   }
 
@@ -136,7 +144,7 @@ export class ProjectConfigSession {
     }
 
     try {
-      const preview = inspectProjectConfigImport({
+      const preview = this.importService.inspect({
         repoRoot,
         source: msg.source,
         paseoConfig: config.config ?? {},
@@ -176,7 +184,7 @@ export class ProjectConfigSession {
       return;
     }
 
-    const result = applyProjectConfigImport({
+    const result = this.importService.apply({
       repoRoot,
       source: msg.source,
       expectedSourceRevision: msg.expectedSourceRevision,

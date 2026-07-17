@@ -1,67 +1,124 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import type { ProjectConfigImportPreview } from "@getpaseo/protocol/messages";
-import { useToast } from "@/contexts/toast-context";
 import {
-  normalizeProjectConfigImportError,
-  openProjectConfigImport,
-  projectConfigImportApplyFailureRetryAction,
+  type ProjectConfigImportAdvertisedSource,
+  type ProjectConfigImportSource,
+  type ProjectConfigRpcError,
+} from "@getpaseo/protocol/messages";
+import { useToast } from "@/contexts/toast-context";
+import { useFetchQueries, useFetchQuery } from "@/data/query";
+import { useSessionStore } from "@/stores/session-store";
+import {
+  projectConfigImportPreviewQueryInput,
+  stableProjectConfigImportSourceKey,
+  type ProjectConfigImportPreviewResult,
+} from "./preview-cache";
+import type {
+  ProjectConfigImportState,
+  ProjectConfigImportVisibleError,
+} from "./project-config-import-sheet";
+import {
+  createProjectConfigImportIntentFromRegistration,
   type ProjectConfigImportIntent,
-  type ProjectConfigImportRetryAction,
-  type ProjectConfigImportState,
-  type ProjectConfigImportVisibleError,
-} from "./project-config-import-model";
+} from "./route";
+import {
+  type ProjectConfigImportSourceRegistration,
+  projectConfigImportSourceRegistry,
+  type ProjectConfigImportSourceRegistry,
+} from "./sources";
 
-export interface ProjectConfigImportModel {
-  state: ProjectConfigImportState;
-  apply: () => void;
-}
+const EMPTY_IMPORT_SOURCES: readonly ProjectConfigImportAdvertisedSource[] = [];
 
 export function useProjectConfigImportModel(input: {
-  intent: ProjectConfigImportIntent;
+  routeIntent: ProjectConfigImportIntent | null;
   repoRoot: string;
-  client: DaemonClient;
-  preview: ProjectConfigImportPreview | null;
-  isPreviewLoading: boolean;
-  previewError: ProjectConfigImportVisibleError | null;
+  serverId: string;
+  client: DaemonClient | null;
+  projectConfigLoaded: boolean;
   projectConfigQueryKey: readonly [string, string, string];
-  onClose: () => void;
-}): ProjectConfigImportModel {
-  const { t } = useTranslation();
+  registry?: ProjectConfigImportSourceRegistry;
+  onRouteIntentConsumed?: () => void;
+}) {
+  const registry = input.registry ?? projectConfigImportSourceRegistry;
+  const onRouteIntentConsumed = input.onRouteIntentConsumed;
+  const sources = useAdvertisedProjectConfigImportSources(input.serverId, registry);
+  const [intent, setIntent] = useState<ProjectConfigImportIntent | null>(null);
+  const consumedRouteIntentKeyRef = useRef<string | null>(null);
+  const acknowledgedRouteIntentKeyRef = useRef<string | null>(null);
+  const [applyError, setApplyError] = useState<ProjectConfigImportVisibleError | null>(null);
+  const [retryAction, setRetryAction] = useState<ProjectConfigImportRetryAction>("apply");
+  const activeSource = intent ? registry.get(intent.source) : null;
+  const activePreview = useProjectConfigImportPreviewQuery({
+    client: input.client,
+    serverId: input.serverId,
+    repoRoot: input.repoRoot,
+    source: intent?.source ?? null,
+    protocolSource: intent?.protocolSource ?? null,
+    enabled: Boolean(intent && input.projectConfigLoaded),
+  });
+  const preview = activePreview.data?.ok ? activePreview.data : null;
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [applyError, setApplyError] = useState<ProjectConfigImportVisibleError | null>(null);
-  const [applyErrorRetryAction, setApplyErrorRetryAction] =
-    useState<ProjectConfigImportRetryAction>("apply");
-  const previewRevisionKey = [
-    input.intent.intentId,
-    input.preview?.sourceRevision ?? "",
-    input.preview?.paseoRevision?.mtimeMs ?? "",
-    input.preview?.paseoRevision?.size ?? "",
-  ].join(":");
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    const routeIntentKey = input.routeIntent
+      ? `${input.routeIntent.serverId}:${stableProjectConfigImportSourceKey(input.routeIntent.source)}:${input.routeIntent.intentId}`
+      : null;
+    if (
+      input.routeIntent?.serverId === input.serverId &&
+      routeIntentKey &&
+      consumedRouteIntentKeyRef.current !== routeIntentKey
+    ) {
+      consumedRouteIntentKeyRef.current = routeIntentKey;
+      setIntent(input.routeIntent);
+    }
+  }, [input.routeIntent, input.serverId]);
+
+  useEffect(() => {
+    const routeIntentKey = input.routeIntent
+      ? `${input.routeIntent.serverId}:${stableProjectConfigImportSourceKey(input.routeIntent.source)}:${input.routeIntent.intentId}`
+      : null;
+    const openIntentKey = intent
+      ? `${intent.serverId}:${stableProjectConfigImportSourceKey(intent.source)}:${intent.intentId}`
+      : null;
+    if (
+      routeIntentKey &&
+      routeIntentKey === openIntentKey &&
+      acknowledgedRouteIntentKeyRef.current !== routeIntentKey
+    ) {
+      acknowledgedRouteIntentKeyRef.current = routeIntentKey;
+      onRouteIntentConsumed?.();
+    }
+  }, [input.routeIntent, intent, onRouteIntentConsumed]);
 
   useEffect(() => {
     setApplyError(null);
-  }, [previewRevisionKey]);
+  }, [
+    intent?.intentId,
+    preview?.sourceRevision,
+    preview?.paseoRevision?.mtimeMs,
+    preview?.paseoRevision?.size,
+  ]);
 
   const applyMutation = useMutation({
     mutationFn: async () => {
-      if (!input.preview?.sourceRevision) {
+      if (!input.client || !intent || !preview?.sourceRevision) {
         throw new Error("Import preview is not available");
       }
       return input.client.applyProjectConfigImport({
         repoRoot: input.repoRoot,
-        source: input.intent.source,
-        expectedSourceRevision: input.preview.sourceRevision,
-        expectedPaseoRevision: input.preview.paseoRevision,
+        source: intent.protocolSource,
+        expectedSourceRevision: preview.sourceRevision,
+        expectedPaseoRevision: preview.paseoRevision,
       });
     },
     onSuccess: (result) => {
       if (!result.ok) {
         setApplyError(result.error);
-        setApplyErrorRetryAction(projectConfigImportApplyFailureRetryAction(result.error));
+        setRetryAction(projectConfigImportApplyFailureRetryAction(result.error));
         return;
       }
       queryClient.setQueryData(input.projectConfigQueryKey, {
@@ -72,48 +129,211 @@ export function useProjectConfigImportModel(input: {
         repoRoot: input.repoRoot,
       });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
-      toast.show(t("settings.project.import.success"), { variant: "success" });
-      setApplyError(null);
-      input.onClose();
+      const appliedSource = registry.get(result.source);
+      toast.show(
+        t("settings.project.import.success", {
+          source: appliedSource?.displayName ?? result.source.kind,
+        }),
+        { variant: "success" },
+      );
+      setIntent(null);
     },
-    onError: (error) => {
+    onError: (cause) => {
       setApplyError(
         normalizeProjectConfigImportError(
-          error instanceof Error ? error : new Error(String(error)),
+          cause instanceof Error ? cause : new Error(String(cause)),
         ),
       );
-      setApplyErrorRetryAction("apply");
+      setRetryAction("apply");
     },
   });
 
-  const apply = useCallback(() => {
-    if (applyMutation.isPending) {
-      return;
+  const availability = useProjectConfigImportAvailability({
+    client: input.client,
+    serverId: input.serverId,
+    repoRoot: input.repoRoot,
+    enabled: input.projectConfigLoaded,
+    registry,
+  });
+  const state = useMemo<ProjectConfigImportState | null>(() => {
+    if (!intent) {
+      return null;
     }
-    setApplyError(null);
-    applyMutation.mutate();
-  }, [applyMutation]);
+    const error =
+      applyError ??
+      normalizeProjectConfigImportError(
+        activePreview.data && !activePreview.data.ok
+          ? activePreview.data.error
+          : activePreview.error,
+      );
+    if (error) {
+      return {
+        status: "error",
+        intent,
+        preview,
+        error,
+        retryAction: applyError ? retryAction : "refresh",
+      };
+    }
+    if (preview && applyMutation.isPending) {
+      return { status: "applying", intent, preview, error: null };
+    }
+    if (preview) {
+      return { status: "ready", intent, preview, error: null };
+    }
+    return { status: "loading", intent, preview: null, error: null };
+  }, [
+    activePreview.data,
+    activePreview.error,
+    applyError,
+    applyMutation.isPending,
+    intent,
+    preview,
+    retryAction,
+  ]);
 
-  const state = useMemo(
-    () =>
-      openProjectConfigImport({
-        intent: input.intent,
-        preview: input.preview,
-        isLoading: input.isPreviewLoading,
-        error: applyError ?? input.previewError,
-        errorRetryAction: applyError ? applyErrorRetryAction : "refresh",
-        isApplying: applyMutation.isPending,
-      }),
-    [
-      applyError,
-      applyErrorRetryAction,
-      applyMutation.isPending,
-      input.intent,
-      input.isPreviewLoading,
-      input.preview,
-      input.previewError,
-    ],
+  return {
+    sources,
+    intent,
+    state,
+    activeSourceName: activeSource?.displayName ?? null,
+    availability,
+    open: (source: ProjectConfigImportSourceRegistration) => {
+      const nextIntent = createProjectConfigImportIntentFromRegistration({
+        serverId: input.serverId,
+        registration: source,
+        intentId: String(Date.now()),
+      });
+      if (nextIntent) {
+        setIntent(nextIntent);
+      }
+    },
+    close: () => setIntent(null),
+    refresh: () => {
+      void activePreview.refetch();
+    },
+    apply: () => {
+      if (!applyMutation.isPending) {
+        setApplyError(null);
+        applyMutation.mutate();
+      }
+    },
+  };
+}
+
+export function useProjectConfigImportAvailability(input: {
+  client: DaemonClient | null;
+  serverId: string | null | undefined;
+  repoRoot: string | null | undefined;
+  enabled: boolean;
+  registry?: ProjectConfigImportSourceRegistry;
+}) {
+  const registry = input.registry ?? projectConfigImportSourceRegistry;
+  const serverId = input.serverId ?? "";
+  const repoRoot = input.repoRoot ?? "";
+  const sources = useAdvertisedProjectConfigImportSources(serverId, registry);
+  const previews = useProjectConfigImportPreviewQueries({
+    client: input.client,
+    serverId,
+    repoRoot,
+    sources,
+    enabled: input.enabled,
+  });
+  const availableSources = sources.filter((_, index) => {
+    const data = previews[index]?.data;
+    return data?.ok === true && data.status === "available";
+  });
+  const availableKinds = new Set(availableSources.map((source) => source.kind));
+  const availableSourceKeys = new Set(
+    availableSources.map((source) => stableProjectConfigImportSourceKey(source.source)),
   );
 
-  return { state, apply };
+  return {
+    status: projectConfigImportAvailabilityStatus(availableSources.length),
+    source: availableSources.length === 1 ? availableSources[0] : null,
+    sources: availableSources,
+    availableKinds,
+    availableSourceKeys,
+  };
+}
+
+function projectConfigImportAvailabilityStatus(count: number): "none" | "one" | "many" {
+  if (count === 0) {
+    return "none";
+  }
+  return count === 1 ? "one" : "many";
+}
+
+function useAdvertisedProjectConfigImportSources(
+  serverId: string | null | undefined,
+  registry: ProjectConfigImportSourceRegistry,
+): ProjectConfigImportSourceRegistration[] {
+  const advertised = useSessionStore(
+    useCallback(
+      (state) => {
+        const id = serverId?.trim();
+        return id
+          ? (state.sessions[id]?.serverInfo?.features?.projectConfigImportSources ??
+              EMPTY_IMPORT_SOURCES)
+          : EMPTY_IMPORT_SOURCES;
+      },
+      [serverId],
+    ),
+  );
+  return useMemo(() => registry.advertised(advertised), [advertised, registry]);
+}
+
+function useProjectConfigImportPreviewQueries(input: {
+  client: DaemonClient | null;
+  serverId: string;
+  repoRoot: string;
+  sources: readonly ProjectConfigImportSourceRegistration[];
+  enabled: boolean;
+}) {
+  return useFetchQueries<ProjectConfigImportPreviewResult>(
+    input.sources.map((source) =>
+      projectConfigImportPreviewQueryInput({
+        client: input.client,
+        serverId: input.serverId,
+        repoRoot: input.repoRoot,
+        source: source.source,
+        protocolSource: source.protocolSource,
+        enabled: input.enabled,
+      }),
+    ),
+  );
+}
+
+function useProjectConfigImportPreviewQuery(input: {
+  client: DaemonClient | null;
+  serverId: string;
+  repoRoot: string;
+  source: ProjectConfigImportSourceRegistration["source"] | null;
+  protocolSource: ProjectConfigImportSource | null;
+  enabled: boolean;
+}) {
+  return useFetchQuery(projectConfigImportPreviewQueryInput(input));
+}
+
+type ProjectConfigImportRetryAction = "refresh" | "apply";
+
+function projectConfigImportApplyFailureRetryAction(
+  error: ProjectConfigImportVisibleError,
+): ProjectConfigImportRetryAction {
+  return error.code === "stale_source_config" ||
+    error.code === "stale_project_config" ||
+    error.code === "nothing_to_import"
+    ? "refresh"
+    : "apply";
+}
+
+function normalizeProjectConfigImportError(
+  error: ProjectConfigRpcError | Error | null,
+): ProjectConfigImportVisibleError | null {
+  if (!error) {
+    return null;
+  }
+  return error instanceof Error
+    ? { code: "transport", message: error.message || "The host did not respond." }
+    : error;
 }

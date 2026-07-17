@@ -571,7 +571,7 @@ export function buildProjectSettingsRoute(projectKey: string) {
 
 export function buildProjectSettingsImportRoute(input: {
   projectKey: string;
-  source: "conductor";
+  source: string;
   serverId: string;
   intentId: string;
 }) {

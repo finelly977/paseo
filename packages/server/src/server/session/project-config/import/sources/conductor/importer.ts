@@ -3,13 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { PaseoConfigRaw, PaseoScriptEntryRaw } from "@getpaseo/protocol/messages";
+import type { ProjectConfigImportAdapter } from "../../registry.js";
 import {
   InvalidProjectConfigImportSourceError,
   type ProjectConfigImportCandidate,
   type ProjectConfigImportInput,
   type ProjectConfigImportItem,
   type ProjectConfigImportSource,
-} from "../model.js";
+} from "../../service.js";
 
 interface SourceFile {
   role: string;
@@ -40,14 +41,16 @@ interface ConductorRunScript {
     cwd?: string;
   };
   available_in?: string;
-  hide?: boolean;
-  icon?: unknown;
-  default?: unknown;
 }
 
 type RewriteContext = "lifecycle" | "run";
 
-export function inspectConductorImport(input: {
+export const conductorProjectConfigImporter = {
+  source: { kind: "conductor" },
+  inspect: inspectConductorImport,
+} satisfies ProjectConfigImportAdapter<{ kind: "conductor" }>;
+
+function inspectConductorImport(input: {
   repoRoot: string;
   source: ProjectConfigImportSource;
 }): ProjectConfigImportCandidate | null {
@@ -82,7 +85,6 @@ export function inspectConductorImport(input: {
   reportUnsupported(input.repoRoot, settings, items);
 
   return {
-    source: input.source,
     sourceRevision: hashSourceFiles(sourceFiles),
     inputs,
     items,
@@ -217,9 +219,6 @@ function normalizeRunScript(entry: Record<string, unknown>, command: string): Co
     ...(args ? { args } : {}),
     ...(options && typeof options.cwd === "string" ? { options: { cwd: options.cwd } } : {}),
     ...(typeof entry.available_in === "string" ? { available_in: entry.available_in } : {}),
-    ...(typeof entry.hide === "boolean" ? { hide: entry.hide } : {}),
-    ...(Object.hasOwn(entry, "icon") ? { icon: entry.icon } : {}),
-    ...(Object.hasOwn(entry, "default") ? { default: entry.default } : {}),
   };
 }
 
@@ -269,15 +268,6 @@ function mapRunScript(
     outcome: "import",
     detail: rewritten.command,
   });
-
-  if (script.hide === true) {
-    items.push({
-      key: `scripts.${scriptId}.hide`,
-      label: `Script ${scriptId} hidden flag`,
-      outcome: "unsupported",
-      detail: "Paseo does not hide imported scripts.",
-    });
-  }
 }
 
 function reportUnsupported(
