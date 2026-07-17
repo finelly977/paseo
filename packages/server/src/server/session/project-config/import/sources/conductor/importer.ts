@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, posix, relative } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import type { PaseoConfigRaw, PaseoScriptEntryRaw } from "@getpaseo/protocol/messages";
 import type { ProjectConfigImportAdapter } from "../../registry.js";
@@ -40,7 +40,7 @@ interface ConductorRunScript {
   options?: {
     cwd?: string;
   };
-  available_in?: string;
+  available_in?: string | string[];
 }
 
 type RewriteContext = "lifecycle" | "run";
@@ -214,11 +214,12 @@ function normalizeRunScript(entry: Record<string, unknown>, command: string): Co
     ? entry.args.filter((arg): arg is string => typeof arg === "string")
     : undefined;
   const options = isRecord(entry.options) ? entry.options : undefined;
+  const availableIn = normalizeAvailableIn(entry.available_in);
   return {
     command,
     ...(args ? { args } : {}),
     ...(options && typeof options.cwd === "string" ? { options: { cwd: options.cwd } } : {}),
-    ...(typeof entry.available_in === "string" ? { available_in: entry.available_in } : {}),
+    ...(availableIn ? { available_in: availableIn } : {}),
   };
 }
 
@@ -228,7 +229,7 @@ function mapRunScript(
   patch: PaseoConfigRaw,
   items: ProjectConfigImportItem[],
 ): void {
-  if (script.available_in === "cloud") {
+  if (isCloudOnly(script.available_in)) {
     items.push({
       key: `scripts.${scriptId}`,
       label: `Script ${scriptId}`,
@@ -395,22 +396,52 @@ function appendArgs(command: string, args: string[]): string {
   if (args.length === 0) {
     return command;
   }
-  return `${command} ${args.map(shellQuote).join(" ")}`;
+  return `${command} ${args.map(shellQuoteArgument).join(" ")}`;
 }
 
 function safeCwdPrefix(cwd: string): string | null {
-  if (
-    /^(?:\/|[A-Za-z]:[\\/])/.test(cwd) ||
-    cwd === ".." ||
-    cwd.startsWith("../") ||
-    cwd.startsWith("..\\")
-  ) {
-    return null;
-  }
-  if (cwd.includes("/../") || cwd.includes("\\..\\")) {
+  const normalized = posix.normalize(cwd.replaceAll("\\", "/"));
+  if (/^(?:\/|[A-Za-z]:[\\/])/.test(cwd) || normalized === ".." || normalized.startsWith("../")) {
     return null;
   }
   return `cd -- ${shellQuote(cwd)} && `;
+}
+
+function isCloudOnly(availableIn: string | string[] | undefined): boolean {
+  return (
+    availableIn === "cloud" ||
+    (Array.isArray(availableIn) &&
+      availableIn.length > 0 &&
+      availableIn.every((target) => target === "cloud"))
+  );
+}
+
+function normalizeAvailableIn(value: unknown): string | string[] | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string");
+  }
+  return undefined;
+}
+
+function shellQuoteArgument(value: string): string {
+  const variablePattern = /\$(?:\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
+  const parts: string[] = [];
+  let offset = 0;
+  for (const match of value.matchAll(variablePattern)) {
+    const index = match.index;
+    if (index > offset) {
+      parts.push(shellQuote(value.slice(offset, index)));
+    }
+    parts.push(`"${match[0]}"`);
+    offset = index + match[0].length;
+  }
+  if (offset < value.length) {
+    parts.push(shellQuote(value.slice(offset)));
+  }
+  return parts.length > 0 ? parts.join("") : shellQuote(value);
 }
 
 function shellQuote(value: string): string {

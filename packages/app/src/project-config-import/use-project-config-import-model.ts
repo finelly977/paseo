@@ -50,13 +50,18 @@ export function useProjectConfigImportModel(input: {
   const [applyError, setApplyError] = useState<ProjectConfigImportVisibleError | null>(null);
   const [retryAction, setRetryAction] = useState<ProjectConfigImportRetryAction>("apply");
   const activeSource = intent ? registry.get(intent.source) : null;
+  const routeIntentCapabilityMissing = isRouteIntentCapabilityMissing({
+    intent,
+    routeIntent: input.routeIntent,
+    sources,
+  });
   const activePreview = useProjectConfigImportPreviewQuery({
     client: input.client,
     serverId: input.serverId,
     repoRoot: input.repoRoot,
     source: intent?.source ?? null,
     protocolSource: intent?.protocolSource ?? null,
-    enabled: Boolean(intent && input.projectConfigLoaded),
+    enabled: Boolean(intent && input.projectConfigLoaded && !routeIntentCapabilityMissing),
   });
   const preview = activePreview.data?.ok ? activePreview.data : null;
   const queryClient = useQueryClient();
@@ -159,13 +164,14 @@ export function useProjectConfigImportModel(input: {
     if (!intent) {
       return null;
     }
-    const error =
-      applyError ??
-      normalizeProjectConfigImportError(
-        activePreview.data && !activePreview.data.ok
-          ? activePreview.data.error
-          : activePreview.error,
-      );
+    const error = routeIntentCapabilityMissing
+      ? ({ code: "capability_missing" } as const)
+      : (applyError ??
+        normalizeProjectConfigImportError(
+          activePreview.data && !activePreview.data.ok
+            ? activePreview.data.error
+            : activePreview.error,
+        ));
     if (error) {
       return {
         status: "error",
@@ -190,6 +196,7 @@ export function useProjectConfigImportModel(input: {
     intent,
     preview,
     retryAction,
+    routeIntentCapabilityMissing,
   ]);
 
   return {
@@ -262,6 +269,20 @@ function projectConfigImportAvailabilityStatus(count: number): "none" | "one" | 
     return "none";
   }
   return count === 1 ? "one" : "many";
+}
+
+function isRouteIntentCapabilityMissing(input: {
+  intent: ProjectConfigImportIntent | null;
+  routeIntent: ProjectConfigImportIntent | null;
+  sources: ProjectConfigImportSourceRegistration[];
+}): boolean {
+  if (!input.intent || input.routeIntent?.intentId !== input.intent.intentId) {
+    return false;
+  }
+  const intentSourceKey = stableProjectConfigImportSourceKey(input.intent.source);
+  return !input.sources.some(
+    (source) => stableProjectConfigImportSourceKey(source.source) === intentSourceKey,
+  );
 }
 
 function useAdvertisedProjectConfigImportSources(

@@ -16,6 +16,7 @@ import type { ProjectConfigImportIntent } from "./route";
 
 export type ProjectConfigImportVisibleError =
   | ProjectConfigRpcError
+  | { code: "capability_missing" }
   | { code: "transport"; message: string };
 
 export type ProjectConfigImportState =
@@ -58,12 +59,7 @@ export function ProjectConfigImportSheet({
   );
   const preview = state.preview;
   const visibleError = state.status === "error" ? state.error : null;
-  const needsRefresh =
-    visibleError?.code === "stale_source_config" ||
-    visibleError?.code === "stale_project_config" ||
-    visibleError?.code === "nothing_to_import";
   const retryAction = state.status === "error" ? state.retryAction : "refresh";
-  const handleRetry = retryAction === "apply" ? onApply : onRefresh;
   const canImport =
     state.status === "ready" &&
     state.preview.status === "available" &&
@@ -93,25 +89,12 @@ export function ProjectConfigImportSheet({
             title={t("settings.project.import.errorTitle")}
             description={projectConfigImportErrorText(visibleError, t, sourceName)}
           >
-            {needsRefresh ? (
-              <Button
-                testID="project-config-import-refresh"
-                onPress={onRefresh}
-                variant="outline"
-                size="sm"
-              >
-                {t("settings.project.import.refreshPreview")}
-              </Button>
-            ) : (
-              <Button
-                testID="project-config-import-retry"
-                onPress={handleRetry}
-                variant="outline"
-                size="sm"
-              >
-                {t("settings.project.actions.tryAgain")}
-              </Button>
-            )}
+            <ImportErrorRetryButton
+              error={visibleError}
+              retryAction={retryAction}
+              onRefresh={onRefresh}
+              onApply={onApply}
+            />
             <Button
               testID="project-config-import-cancel-error"
               onPress={onClose}
@@ -144,6 +127,44 @@ export function ProjectConfigImportSheet({
         </View>
       </View>
     </AdaptiveModalSheet>
+  );
+}
+
+function ImportErrorRetryButton(input: {
+  error: ProjectConfigImportVisibleError;
+  retryAction: "refresh" | "apply";
+  onRefresh: () => void;
+  onApply: () => void;
+}) {
+  const { t } = useTranslation();
+  if (input.error.code === "capability_missing") {
+    return null;
+  }
+  const needsRefresh =
+    input.error.code === "stale_source_config" ||
+    input.error.code === "stale_project_config" ||
+    input.error.code === "nothing_to_import";
+  if (needsRefresh) {
+    return (
+      <Button
+        testID="project-config-import-refresh"
+        onPress={input.onRefresh}
+        variant="outline"
+        size="sm"
+      >
+        {t("settings.project.import.refreshPreview")}
+      </Button>
+    );
+  }
+  return (
+    <Button
+      testID="project-config-import-retry"
+      onPress={input.retryAction === "apply" ? input.onApply : input.onRefresh}
+      variant="outline"
+      size="sm"
+    >
+      {t("settings.project.actions.tryAgain")}
+    </Button>
   );
 }
 
@@ -214,6 +235,8 @@ function projectConfigImportErrorText(
   switch (error.code) {
     case "transport":
       return error.message;
+    case "capability_missing":
+      return t("settings.project.import.errors.capabilityMissing");
     case "source_config_not_found":
       return t("settings.project.import.errors.notFound", { source: sourceName });
     case "invalid_source_config":

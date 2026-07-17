@@ -2136,6 +2136,7 @@ export const es: TranslationResources = {
         success: "{{source}} settings imported",
         errorTitle: "Couldn't import settings",
         errors: {
+          capabilityMissing: "Update the host to use this.",
           notFound: "No {{source}} project config was found.",
           invalid: "{{path}} couldn't be parsed.",
           staleSource: "The {{source}} config changed. Refresh the preview before importing.",

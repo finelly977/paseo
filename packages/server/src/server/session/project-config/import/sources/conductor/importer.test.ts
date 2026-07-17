@@ -238,6 +238,93 @@ setup = "echo $MY_CONDUCTOR_PORT_BACKUP $CONDUCTOR_DEFAULT_BRANCH"
     );
   });
 
+  test("preserves shell expansion for environment variables in script arguments", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev"
+args = ["--port", "$CONDUCTOR_PORT", "--label=$WORKSPACE_NAME"]
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: {
+          type: "service",
+          port: "$PASEO_PORT",
+          command: `npm run dev '--port' "$PASEO_PORT" '--label='"$WORKSPACE_NAME"`,
+        },
+      },
+    });
+  });
+
+  test("rejects normalized working directories that escape the project root", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.parent]
+command = "npm test"
+[scripts.run.parent.options]
+cwd = "./.."
+
+[scripts.run.nested]
+command = "npm test"
+[scripts.run.nested.options]
+cwd = "apps/web/../../.."
+`,
+    );
+
+    const preview = inspect(repo);
+
+    expect(preview.preview).toMatchObject({
+      scripts: {
+        parent: { command: "npm test" },
+        nested: { command: "npm test" },
+      },
+    });
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "scripts.parent.cwd", outcome: "unsupported" }),
+        expect.objectContaining({ key: "scripts.nested.cwd", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
+  test("does not import scripts available only in Conductor cloud", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.cloud]
+command = "npm run cloud"
+available_in = ["cloud"]
+
+[scripts.run.everywhere]
+command = "npm run everywhere"
+available_in = ["local", "cloud"]
+`,
+    );
+
+    const preview = inspect(repo);
+
+    expect(preview.preview).toMatchObject({
+      scripts: { everywhere: { command: "npm run everywhere" } },
+    });
+    expect(preview.preview?.scripts).not.toHaveProperty("cloud");
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "scripts.cloud",
+          outcome: "unsupported",
+          detail: "Cloud-only scripts are not imported.",
+        }),
+      ]),
+    );
+  });
+
   test("malformed TOML identifies the safe relative source path", () => {
     const repo = makeRepo();
     writeSharedToml(repo, "[scripts\nsetup = nope");
