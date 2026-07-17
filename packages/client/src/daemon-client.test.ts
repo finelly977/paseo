@@ -3109,6 +3109,96 @@ test("writes project config via correlated RPC and returns inline failures", asy
   });
 });
 
+test("previews and applies project config import via correlated RPC", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const previewPromise = client.getProjectConfigImport({
+    requestId: "get-import-1",
+    repoRoot: "/repo/app",
+    source: { kind: "conductor" },
+  });
+
+  expect(parseSentFrame(mock.sent[0])).toEqual({
+    type: "project.config.get_import.request",
+    requestId: "get-import-1",
+    repoRoot: "/repo/app",
+    source: { kind: "conductor" },
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "project.config.get_import.response",
+      payload: {
+        requestId: "get-import-1",
+        repoRoot: "/repo/app",
+        source: { kind: "conductor" },
+        ok: true,
+        status: "available",
+        sourceRevision: "source-1",
+        paseoRevision: null,
+        inputs: [{ role: "shared", relativePath: ".conductor/settings.toml" }],
+        items: [{ key: "worktree.setup", label: "Setup", outcome: "import" }],
+        preview: { worktree: { setup: "npm ci" } },
+      },
+    }),
+  );
+
+  await expect(previewPromise).resolves.toMatchObject({
+    ok: true,
+    sourceRevision: "source-1",
+    preview: { worktree: { setup: "npm ci" } },
+  });
+
+  const applyPromise = client.applyProjectConfigImport({
+    requestId: "apply-import-1",
+    repoRoot: "/repo/app",
+    source: { kind: "conductor" },
+    expectedSourceRevision: "source-1",
+    expectedPaseoRevision: null,
+  });
+
+  expect(parseSentFrame(mock.sent[1])).toEqual({
+    type: "project.config.apply_import.request",
+    requestId: "apply-import-1",
+    repoRoot: "/repo/app",
+    source: { kind: "conductor" },
+    expectedSourceRevision: "source-1",
+    expectedPaseoRevision: null,
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "project.config.apply_import.response",
+      payload: {
+        requestId: "apply-import-1",
+        repoRoot: "/repo/app",
+        ok: false,
+        error: { code: "stale_source_config", source: { kind: "conductor" } },
+      },
+    }),
+  );
+
+  await expect(applyPromise).resolves.toEqual({
+    requestId: "apply-import-1",
+    repoRoot: "/repo/app",
+    ok: false,
+    error: { code: "stale_source_config", source: { kind: "conductor" } },
+  });
+});
+
 test("requests directory suggestions via RPC", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

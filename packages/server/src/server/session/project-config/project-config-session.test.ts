@@ -1,4 +1,12 @@
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -42,6 +50,23 @@ function makeSubsystem(records: PersistedProjectRecord[]) {
     logger: pino({ level: "silent" }),
   });
   return { subsystem, emitted };
+}
+
+function expectImportPreview(
+  emitted: SessionOutboundMessage[],
+  index: number,
+): Extract<SessionOutboundMessage, { type: "project.config.get_import.response" }>["payload"] & {
+  ok: true;
+} {
+  const message = emitted[index];
+  expect(message).toMatchObject({
+    type: "project.config.get_import.response",
+    payload: { ok: true },
+  });
+  if (message.type !== "project.config.get_import.response" || !message.payload.ok) {
+    throw new Error("Expected import preview response");
+  }
+  return message.payload;
 }
 
 describe("ProjectConfigSession", () => {
@@ -226,5 +251,178 @@ describe("ProjectConfigSession", () => {
         },
       },
     ]);
+  });
+
+  test("import preview rejects archived and unknown roots with project_not_found", async () => {
+    const archivedRoot = makeRoot();
+    const unknownRoot = makeRoot();
+    const { subsystem, emitted } = makeSubsystem([
+      projectRecord(archivedRoot, "2026-01-02T00:00:00.000Z"),
+    ]);
+
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-archived-1",
+      repoRoot: archivedRoot,
+      source: { kind: "conductor" },
+    });
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-unknown-1",
+      repoRoot: unknownRoot,
+      source: { kind: "conductor" },
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "project.config.get_import.response",
+        payload: {
+          requestId: "import-archived-1",
+          repoRoot: archivedRoot,
+          ok: false,
+          error: { code: "project_not_found" },
+        },
+      },
+      {
+        type: "project.config.get_import.response",
+        payload: {
+          requestId: "import-unknown-1",
+          repoRoot: unknownRoot,
+          ok: false,
+          error: { code: "project_not_found" },
+        },
+      },
+    ]);
+  });
+
+  test("import preview reports malformed Conductor config with a safe relative path", async () => {
+    const repoRoot = makeRoot();
+    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
+    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), "[scripts\nsetup = nope");
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
+
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-invalid-1",
+      repoRoot,
+      source: { kind: "conductor" },
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "project.config.get_import.response",
+        payload: {
+          requestId: "import-invalid-1",
+          repoRoot,
+          ok: false,
+          error: {
+            code: "invalid_source_config",
+            source: { kind: "conductor" },
+            relativePath: ".conductor/settings.toml",
+          },
+        },
+      },
+    ]);
+  });
+
+  test("apply import recomputes from disk and writes formatted paseo.json", async () => {
+    const repoRoot = makeRoot();
+    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
+    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
+
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-preview-1",
+      repoRoot,
+      source: { kind: "conductor" },
+    });
+    const preview = expectImportPreview(emitted, 0);
+
+    await subsystem.handleApplyProjectConfigImportRequest({
+      type: "project.config.apply_import.request",
+      requestId: "import-apply-1",
+      repoRoot,
+      source: { kind: "conductor" },
+      expectedSourceRevision: preview.sourceRevision ?? "",
+      expectedPaseoRevision: preview.paseoRevision,
+    });
+
+    expect(emitted[1]).toMatchObject({
+      type: "project.config.apply_import.response",
+      payload: {
+        requestId: "import-apply-1",
+        repoRoot,
+        ok: true,
+        config: { worktree: { setup: "npm ci" } },
+      },
+    });
+    expect(readFileSync(join(repoRoot, "paseo.json"), "utf8")).toBe(
+      '{\n  "worktree": {\n    "setup": "npm ci"\n  }\n}\n',
+    );
+  });
+
+  test("apply import rejects stale source digest", async () => {
+    const repoRoot = makeRoot();
+    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
+    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
+
+    await subsystem.handleApplyProjectConfigImportRequest({
+      type: "project.config.apply_import.request",
+      requestId: "import-stale-source-1",
+      repoRoot,
+      source: { kind: "conductor" },
+      expectedSourceRevision: "old",
+      expectedPaseoRevision: null,
+    });
+
+    expect(emitted).toEqual([
+      {
+        type: "project.config.apply_import.response",
+        payload: {
+          requestId: "import-stale-source-1",
+          repoRoot,
+          ok: false,
+          error: { code: "stale_source_config", source: { kind: "conductor" } },
+        },
+      },
+    ]);
+  });
+
+  test("apply import rejects stale paseo.json revision", async () => {
+    const repoRoot = makeRoot();
+    mkdirSync(join(repoRoot, ".conductor"), { recursive: true });
+    writeFileSync(join(repoRoot, ".conductor", "settings.toml"), '[scripts]\nsetup = "npm ci"\n');
+    writeFileSync(join(repoRoot, "paseo.json"), '{"custom":true}\n');
+    const { subsystem, emitted } = makeSubsystem([projectRecord(repoRoot)]);
+
+    await subsystem.handleGetProjectConfigImportRequest({
+      type: "project.config.get_import.request",
+      requestId: "import-preview-stale-project-1",
+      repoRoot,
+      source: { kind: "conductor" },
+    });
+    const preview = expectImportPreview(emitted, 0);
+    writeFileSync(join(repoRoot, "paseo.json"), '{"custom":false}\n');
+
+    await subsystem.handleApplyProjectConfigImportRequest({
+      type: "project.config.apply_import.request",
+      requestId: "import-stale-project-1",
+      repoRoot,
+      source: { kind: "conductor" },
+      expectedSourceRevision: preview.sourceRevision ?? "",
+      expectedPaseoRevision: preview.paseoRevision,
+    });
+
+    expect(emitted[1]).toMatchObject({
+      type: "project.config.apply_import.response",
+      payload: {
+        requestId: "import-stale-project-1",
+        repoRoot,
+        ok: false,
+        error: { code: "stale_project_config" },
+      },
+    });
   });
 });

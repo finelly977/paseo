@@ -1,6 +1,6 @@
 import type { PaseoConfigRaw } from "@getpaseo/protocol/messages";
 import { i18n } from "@/i18n/i18next";
-import { buildProjectSettingsRoute } from "@/utils/host-routes";
+import { buildProjectSettingsImportRoute, buildProjectSettingsRoute } from "@/utils/host-routes";
 
 export interface WorktreeSetupWorkspaceInput {
   projectId: string;
@@ -69,6 +69,29 @@ export function buildWorktreeSetupCalloutPolicy(
     description: i18n.t("sidebar.worktreeSetup.description"),
     actionLabel: i18n.t("sidebar.worktreeSetup.openProjectSettings"),
     projectSettingsRoute: buildProjectSettingsRoute(project.projectKey),
+    testID: `worktree-setup-callout-${project.projectKey}`,
+  };
+}
+
+export function buildConductorMigrationCalloutPolicy(
+  project: ActiveGitWorkspaceProject,
+  intentId: string,
+): WorktreeSetupCalloutPolicy {
+  const calloutKey = `worktree-setup-missing:${project.projectKey}`;
+
+  return {
+    id: calloutKey,
+    dismissalKey: calloutKey,
+    priority: 100,
+    title: i18n.t("sidebar.worktreeSetup.conductorTitle"),
+    description: i18n.t("sidebar.worktreeSetup.conductorDescription"),
+    actionLabel: i18n.t("sidebar.worktreeSetup.reviewMigration"),
+    projectSettingsRoute: buildProjectSettingsImportRoute({
+      projectKey: project.projectKey,
+      source: "conductor",
+      serverId: project.serverId,
+      intentId,
+    }),
     testID: `worktree-setup-callout-${project.projectKey}`,
   };
 }

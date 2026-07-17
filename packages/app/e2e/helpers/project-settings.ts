@@ -251,6 +251,81 @@ export async function installReadTransportFailure(
   };
 }
 
+export async function installImportPreviewTransportFailure(
+  page: Page,
+): Promise<{ allowRecovery: () => void }> {
+  return installSessionRpcTransportFailure(
+    page,
+    "project.config.get_import.request",
+    "Test import preview transport failure.",
+  );
+}
+
+export async function installImportApplyTransportFailure(
+  page: Page,
+): Promise<{ allowRecovery: () => void }> {
+  return installSessionRpcTransportFailure(
+    page,
+    "project.config.apply_import.request",
+    "Test import apply transport failure.",
+  );
+}
+
+async function installSessionRpcTransportFailure(
+  page: Page,
+  requestType: string,
+  error: string,
+): Promise<{ allowRecovery: () => void }> {
+  let shouldFail = true;
+
+  await page.routeWebSocket(daemonWsRoutePattern(), (ws) => {
+    const server = ws.connectToServer();
+
+    ws.onMessage((message) => {
+      const sessionMessage = getSessionMessage(message);
+      if (shouldFail && sessionMessage?.type === requestType) {
+        const requestId = sessionMessage.requestId;
+        if (typeof requestId === "string") {
+          ws.send(
+            JSON.stringify({
+              type: "session",
+              message: {
+                type: "rpc_error",
+                payload: {
+                  requestId,
+                  requestType,
+                  error,
+                  code: "transport",
+                },
+              },
+            }),
+          );
+        }
+        return;
+      }
+      try {
+        server.send(message);
+      } catch {
+        // server socket already closed
+      }
+    });
+
+    server.onMessage((message) => {
+      try {
+        ws.send(message);
+      } catch {
+        // client socket already closed
+      }
+    });
+  });
+
+  return {
+    allowRecovery() {
+      shouldFail = false;
+    },
+  };
+}
+
 // Installs a transparent WS proxy that can later drop all active daemon connections
 // and block new ones. Code 1001 (Going Away) without reason triggers "error" state
 // in DaemonClient due to describeTransportClose returning a non-empty string.

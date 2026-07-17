@@ -137,6 +137,7 @@ export interface SeedDaemonClient {
     agentId: string;
   }): Promise<{ agent: { id: string; archivedAt?: string | null } } | null>;
   getLastServerInfoMessage(): {
+    serverId: string;
     features?: {
       projectAdd?: boolean;
       workspaceRecovery?: boolean;

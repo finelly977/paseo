@@ -1,4 +1,4 @@
-import { chmod, readFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test as base, type Page } from "./fixtures";
 import { connectSeedClient, seedWorkspace } from "./helpers/seed-client";
@@ -22,6 +22,8 @@ import {
   expectScriptRowCount,
   expectWriteFailedCalloutActions,
   installDaemonConnectionGate,
+  installImportApplyTransportFailure,
+  installImportPreviewTransportFailure,
   installReadTransportFailure,
   navigateToProjectSettings,
   openProjectSettings,
@@ -43,6 +45,7 @@ const updatedSetup = ["npm install", "npm run build"];
 interface ProjectsSettingsProject {
   name: string;
   path: string;
+  projectId?: string;
 }
 
 interface ProjectsSettingsFixtures {
@@ -134,8 +137,45 @@ async function expectProjectConfigSaved(project: ProjectsSettingsProject): Promi
   expect(savedConfig).toBe(`${JSON.stringify(JSON.parse(savedConfig), null, 2)}\n`);
 }
 
-async function readProjectConfigFile(project: ProjectsSettingsProject): Promise<string> {
+async function readProjectConfigFile(
+  project: Pick<ProjectsSettingsProject, "path">,
+): Promise<string> {
   return readFile(path.join(project.path, "paseo.json"), "utf8");
+}
+
+async function writeConductorSharedToml(
+  project: Pick<ProjectsSettingsProject, "path">,
+  contents: string,
+): Promise<void> {
+  const conductorDir = path.join(project.path, ".conductor");
+  await mkdir(conductorDir, { recursive: true });
+  await writeFile(path.join(conductorDir, "settings.toml"), contents);
+}
+
+async function openConductorImportRoute(input: {
+  page: Page;
+  projectId: string;
+  serverId: string;
+  intentId: string;
+}): Promise<void> {
+  const query = new URLSearchParams({
+    importSource: "conductor",
+    importServerId: input.serverId,
+    importIntentId: input.intentId,
+  });
+  await input.page.goto(`/settings/projects/${encodeURIComponent(input.projectId)}?${query}`);
+}
+
+async function expectConductorImportPreview(page: Page): Promise<void> {
+  const sheet = page.getByTestId("project-config-import-sheet");
+  await expect(sheet).toBeVisible({ timeout: 30_000 });
+  await expect(sheet.getByText("Will import")).toBeVisible({ timeout: 30_000 });
+}
+
+function getSeededServerId(serverInfo: { serverId: string } | null): string {
+  const serverId = serverInfo?.serverId;
+  expect(serverId).toBeTruthy();
+  return serverId!;
 }
 
 async function addProjectFromSidebar(page: Page, projectPath: string): Promise<string> {
@@ -214,6 +254,242 @@ test.describe("Projects settings", () => {
     await editWorktreeSetup(page, updatedSetup);
     await clickSaveProjectSettings(page);
     await expectProjectConfigSaved(gitlabRemoteProject);
+  });
+});
+
+test.describe("Projects settings — Conductor project import", () => {
+  test("callout opens the review sheet, discloses collisions, and imports available items", async ({
+    page,
+  }) => {
+    const workspace = await seedWorkspace({
+      repoPrefix: "projects-settings-conductor-",
+      repo: {
+        paseoConfig: {
+          scripts: {
+            dev: {
+              command: "pnpm dev",
+              customScriptField: "preserved",
+            },
+          },
+        },
+        files: [
+          {
+            path: ".conductor/settings.toml",
+            content: [
+              "[scripts]",
+              'setup = "npm ci"',
+              'run_mode = "tmux"',
+              "",
+              "[scripts.run.dev]",
+              'command = "npm run dev -- --port $CONDUCTOR_PORT"',
+              "",
+              "[scripts.run.lint]",
+              'command = "npm run lint"',
+              "",
+            ].join("\n"),
+          },
+        ],
+      },
+    });
+
+    try {
+      await gotoAppShell(page);
+      await page.getByRole("button", { name: "main" }).click();
+
+      const callout = page.getByTestId(`worktree-setup-callout-${workspace.projectId}`);
+      await expect(callout.getByText("Conductor setup found")).toBeVisible({ timeout: 30_000 });
+      await callout.getByRole("button", { name: "Review migration" }).click();
+
+      await expectConductorImportPreview(page);
+      await expect(page.getByText("Worktree setup")).toBeVisible();
+      await expect(page.getByText("Script lint")).toBeVisible();
+      await expect(page.getByText("Needs attention")).toBeVisible();
+      await expect(page.getByText('Paseo already has a "dev" script.')).toBeVisible();
+      await expect(page.getByText("Not supported")).toBeVisible();
+      await expect(page.getByText("Paseo has no project-wide run mode.")).toBeVisible();
+
+      await page.getByTestId("project-config-import-apply").click();
+      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(callout).not.toBeVisible({ timeout: 30_000 });
+
+      await expect
+        .poll(async () => JSON.parse(await readProjectConfigFile({ path: workspace.repoPath })))
+        .toMatchObject({
+          worktree: {
+            setup: "npm ci",
+          },
+          scripts: {
+            dev: {
+              command: "pnpm dev",
+              customScriptField: "preserved",
+            },
+            lint: {
+              command: "npm run lint",
+            },
+          },
+        });
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  test("malformed TOML and preview transport failures stay actionable in the sheet", async ({
+    page,
+  }) => {
+    const previewFailure = await installImportPreviewTransportFailure(page);
+    const workspace = await seedWorkspace({
+      repoPrefix: "projects-settings-conductor-invalid-",
+      repo: {
+        files: [
+          {
+            path: ".conductor/settings.toml",
+            content: '[scripts\nsetup = "npm ci"\n',
+          },
+        ],
+      },
+    });
+    const serverId = getSeededServerId(workspace.client.getLastServerInfoMessage());
+
+    try {
+      await openConductorImportRoute({
+        page,
+        projectId: workspace.projectId,
+        serverId,
+        intentId: "preview-transport",
+      });
+
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        "Test import preview transport failure.",
+        { timeout: 30_000 },
+      );
+      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
+      await expect(page.getByTestId("project-config-import-cancel-error")).toBeVisible();
+
+      previewFailure.allowRecovery();
+      await page.getByTestId("project-config-import-retry").click();
+
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        ".conductor/settings.toml",
+        { timeout: 30_000 },
+      );
+      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
+      await page.getByTestId("project-config-import-cancel-error").click();
+      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible();
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  test("stale source refresh reloads the preview before import", async ({ page }) => {
+    const workspace = await seedWorkspace({
+      repoPrefix: "projects-settings-conductor-stale-",
+      repo: {
+        files: [
+          {
+            path: ".conductor/settings.toml",
+            content: '[scripts]\nsetup = "npm ci"\n',
+          },
+        ],
+      },
+    });
+    const serverId = getSeededServerId(workspace.client.getLastServerInfoMessage());
+
+    try {
+      await openConductorImportRoute({
+        page,
+        projectId: workspace.projectId,
+        serverId,
+        intentId: "stale-source",
+      });
+      await expectConductorImportPreview(page);
+
+      await writeConductorSharedToml(
+        { path: workspace.repoPath },
+        '[scripts]\nsetup = "pnpm install"\n',
+      );
+      await page.getByTestId("project-config-import-apply").click();
+
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        "The Conductor config changed",
+        { timeout: 30_000 },
+      );
+      await page.getByTestId("project-config-import-refresh").click();
+
+      await expect(page.getByText("pnpm install")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("project-config-import-error")).not.toBeVisible({
+        timeout: 30_000,
+      });
+      await expect(page.getByTestId("project-config-import-apply")).toBeEnabled({
+        timeout: 30_000,
+      });
+      await page.getByTestId("project-config-import-apply").click();
+
+      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => JSON.parse(await readProjectConfigFile({ path: workspace.repoPath })))
+        .toMatchObject({
+          worktree: {
+            setup: "pnpm install",
+          },
+        });
+    } finally {
+      await workspace.cleanup();
+    }
+  });
+
+  test("apply transport failure and blocked writes offer retry and cancel", async ({ page }) => {
+    const applyFailure = await installImportApplyTransportFailure(page);
+    const workspace = await seedWorkspace({
+      repoPrefix: "projects-settings-conductor-apply-fail-",
+      repo: {
+        files: [
+          {
+            path: ".conductor/settings.toml",
+            content: '[scripts]\nsetup = "npm ci"\n',
+          },
+        ],
+      },
+    });
+    const serverId = getSeededServerId(workspace.client.getLastServerInfoMessage());
+
+    try {
+      await openConductorImportRoute({
+        page,
+        projectId: workspace.projectId,
+        serverId,
+        intentId: "apply-transport",
+      });
+      await expectConductorImportPreview(page);
+
+      await page.getByTestId("project-config-import-apply").click();
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        "Test import apply transport failure.",
+        { timeout: 30_000 },
+      );
+      await expect(page.getByTestId("project-config-import-retry")).toBeVisible();
+
+      applyFailure.allowRecovery();
+      await blockPaseoConfigWrites(workspace.repoPath);
+      await page.getByTestId("project-config-import-retry").click();
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        "Try again, or reload the latest version from disk.",
+        { timeout: 30_000 },
+      );
+      await page.getByTestId("project-config-import-retry").click();
+      await expect(page.getByTestId("project-config-import-error")).toContainText(
+        "Try again, or reload the latest version from disk.",
+        { timeout: 30_000 },
+      );
+      await page.getByTestId("project-config-import-cancel-error").click();
+      await expect(page.getByTestId("project-config-import-sheet")).not.toBeVisible();
+    } finally {
+      await unblockPaseoConfigWrites(workspace.repoPath).catch(() => undefined);
+      await workspace.cleanup();
+    }
   });
 });
 

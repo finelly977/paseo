@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildConductorMigrationCalloutPolicy,
   buildWorktreeSetupCalloutPolicy,
   selectActiveGitWorkspaceProject,
   shouldShowWorktreeSetupCallout,
@@ -98,6 +99,29 @@ describe("buildWorktreeSetupCalloutPolicy", () => {
       actionLabel: "Open project settings",
       projectSettingsRoute: "/settings/projects/project-1",
       testID: "worktree-setup-callout-project-1",
+    });
+  });
+
+  it("builds a host-bound Conductor migration route with a single-use intent", () => {
+    expect(
+      buildConductorMigrationCalloutPolicy(
+        {
+          serverId: "server-1",
+          projectKey: "remote:github.com/acme/app",
+          repoRoot: "/repo/project-1",
+        },
+        "intent-1",
+      ),
+    ).toEqual({
+      id: "worktree-setup-missing:remote:github.com/acme/app",
+      dismissalKey: "worktree-setup-missing:remote:github.com/acme/app",
+      priority: 100,
+      title: "Conductor setup found",
+      description: "Import its workspace setup and run scripts into Paseo.",
+      actionLabel: "Review migration",
+      projectSettingsRoute:
+        "/settings/projects/remote%3Agithub.com%2Facme%2Fapp?importSource=conductor&importServerId=server-1&importIntentId=intent-1",
+      testID: "worktree-setup-callout-remote:github.com/acme/app",
     });
   });
 });

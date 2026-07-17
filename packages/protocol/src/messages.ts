@@ -66,12 +66,19 @@ import {
   PaseoScriptEntryRawSchema,
   PaseoWorktreeConfigRawSchema,
   PaseoConfigRevisionSchema,
+  ProjectConfigImportItemSchema,
+  ProjectConfigImportPreviewSchema,
+  ProjectConfigImportSourceSchema,
   ProjectConfigRpcErrorSchema,
   type PaseoConfigRaw,
   type PaseoConfigRevision,
   type PaseoMetadataGeneration,
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
+  type ProjectConfigImportInput,
+  type ProjectConfigImportItem,
+  type ProjectConfigImportPreview,
+  type ProjectConfigImportSource,
   type ProjectConfigRpcError,
 } from "./paseo-config-schema.js";
 export {
@@ -81,11 +88,18 @@ export {
   PaseoMetadataGenerationSchema,
   PaseoScriptEntryRawSchema,
   PaseoWorktreeConfigRawSchema,
+  ProjectConfigImportItemSchema,
+  ProjectConfigImportPreviewSchema,
+  ProjectConfigImportSourceSchema,
   type PaseoConfigRaw,
   type PaseoConfigRevision,
   type PaseoMetadataGeneration,
   type PaseoMetadataGenerationEntry,
   type PaseoScriptEntryRaw,
+  type ProjectConfigImportInput,
+  type ProjectConfigImportItem,
+  type ProjectConfigImportPreview,
+  type ProjectConfigImportSource,
   type ProjectConfigRpcError,
 };
 // ---------------------------------------------------------------------------
@@ -1163,6 +1177,22 @@ export const WriteProjectConfigRequestMessageSchema = z.object({
   repoRoot: z.string(),
   config: PaseoConfigRawSchema,
   expectedRevision: PaseoConfigRevisionSchema.nullable(),
+});
+
+export const GetProjectConfigImportRequestMessageSchema = z.object({
+  type: z.literal("project.config.get_import.request"),
+  requestId: z.string(),
+  repoRoot: z.string(),
+  source: ProjectConfigImportSourceSchema,
+});
+
+export const ApplyProjectConfigImportRequestMessageSchema = z.object({
+  type: z.literal("project.config.apply_import.request"),
+  requestId: z.string(),
+  repoRoot: z.string(),
+  source: ProjectConfigImportSourceSchema,
+  expectedSourceRevision: z.string(),
+  expectedPaseoRevision: PaseoConfigRevisionSchema.nullable(),
 });
 
 // ============================================================================
@@ -2336,6 +2366,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetDaemonConfigRequestMessageSchema,
   ReadProjectConfigRequestMessageSchema,
   WriteProjectConfigRequestMessageSchema,
+  GetProjectConfigImportRequestMessageSchema,
+  ApplyProjectConfigImportRequestMessageSchema,
   DictationStreamStartMessageSchema,
   DictationStreamChunkMessageSchema,
   DictationStreamFinishMessageSchema,
@@ -2674,6 +2706,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerRemoval: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
+        // COMPAT(projectConfigImportConductor): added in v0.1.X, drop the gate when floor >= v0.1.X.
+        projectConfigImportConductor: z.boolean().optional(),
         // COMPAT(forgeProviders): added in v0.1.106, drop the gate when daemon floor >= v0.1.106.
         // Daemon advertises pluggable non-GitHub forge support (the forge registry);
         // the client gates non-GitHub setup UI on it.
@@ -3614,6 +3648,43 @@ export const WriteProjectConfigResponseMessageSchema = z.object({
       ok: z.literal(true),
       config: PaseoConfigRawSchema,
       revision: PaseoConfigRevisionSchema,
+    }),
+    z.object({
+      requestId: z.string(),
+      repoRoot: z.string(),
+      ok: z.literal(false),
+      error: ProjectConfigRpcErrorSchema,
+    }),
+  ]),
+});
+
+export const GetProjectConfigImportResponseMessageSchema = z.object({
+  type: z.literal("project.config.get_import.response"),
+  payload: z.discriminatedUnion("ok", [
+    ProjectConfigImportPreviewSchema.extend({
+      requestId: z.string(),
+      ok: z.literal(true),
+    }),
+    z.object({
+      requestId: z.string(),
+      repoRoot: z.string(),
+      ok: z.literal(false),
+      error: ProjectConfigRpcErrorSchema,
+    }),
+  ]),
+});
+
+export const ApplyProjectConfigImportResponseMessageSchema = z.object({
+  type: z.literal("project.config.apply_import.response"),
+  payload: z.discriminatedUnion("ok", [
+    z.object({
+      requestId: z.string(),
+      repoRoot: z.string(),
+      source: ProjectConfigImportSourceSchema,
+      ok: z.literal(true),
+      config: PaseoConfigRawSchema,
+      revision: PaseoConfigRevisionSchema,
+      items: z.array(ProjectConfigImportItemSchema),
     }),
     z.object({
       requestId: z.string(),
@@ -4846,6 +4917,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetDaemonConfigResponseMessageSchema,
   ReadProjectConfigResponseMessageSchema,
   WriteProjectConfigResponseMessageSchema,
+  GetProjectConfigImportResponseMessageSchema,
+  ApplyProjectConfigImportResponseMessageSchema,
   SetAgentModeResponseMessageSchema,
   SetAgentModelResponseMessageSchema,
   SetAgentThinkingResponseMessageSchema,

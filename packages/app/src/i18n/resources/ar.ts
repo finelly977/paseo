@@ -867,6 +867,9 @@ export const ar: TranslationResources = {
       description:
         "أضف أوامر الإعداد حتى تتمكن أشجار العمل الجديدة من تثبيت التبعيات وإعداد نفسها تلقائيًا.",
       openProjectSettings: "افتح إعدادات المشروع",
+      conductorTitle: "Conductor setup found",
+      conductorDescription: "Import its workspace setup and run scripts into Paseo.",
+      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -2063,6 +2066,27 @@ export const ar: TranslationResources = {
         setupAccessibility: "أوامر إعداد شجرة العمل",
         teardown: "هدم",
         teardownAccessibility: "أوامر هدم شجرة العمل",
+      },
+      import: {
+        rowTitle: "Import from Conductor",
+        rowDescription: "Review workspace setup and run scripts before writing paseo.json.",
+        sheetTitle: "Import from {{source}}",
+        sources: "Source files",
+        willImport: "Will import",
+        needsAttention: "Needs attention",
+        notSupported: "Not supported",
+        import: "Import",
+        importing: "Importing...",
+        refreshPreview: "Refresh preview",
+        success: "Conductor settings imported",
+        errorTitle: "Couldn't import settings",
+        errors: {
+          notFound: "No Conductor project config was found.",
+          invalid: "{{path}} couldn't be parsed.",
+          staleSource: "The Conductor config changed. Refresh the preview before importing.",
+          staleProject: "paseo.json changed. Refresh the preview before importing.",
+          nothing: "There is nothing new to import.",
+        },
       },
       scripts: {
         title: "البرامج النصية",

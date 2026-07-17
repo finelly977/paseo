@@ -568,3 +568,18 @@ export function buildProjectSettingsRoute(projectKey: string) {
   }
   return `/settings/projects/${encodeSegment(normalized)}` as const;
 }
+
+export function buildProjectSettingsImportRoute(input: {
+  projectKey: string;
+  source: "conductor";
+  serverId: string;
+  intentId: string;
+}) {
+  const base = buildProjectSettingsRoute(input.projectKey);
+  const query = new URLSearchParams({
+    importSource: input.source,
+    importServerId: input.serverId,
+    importIntentId: input.intentId,
+  });
+  return `${base}?${query.toString()}` as const;
+}

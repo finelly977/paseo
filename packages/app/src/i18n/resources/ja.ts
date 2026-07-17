@@ -880,6 +880,9 @@ export const ja: TranslationResources = {
       description:
         "新しいワークツリーが依存関係をインストールして自動的に準備できるようにセットアップコマンドを追加してください。",
       openProjectSettings: "プロジェクト設定を開く",
+      conductorTitle: "Conductor setup found",
+      conductorDescription: "Import its workspace setup and run scripts into Paseo.",
+      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -2088,6 +2091,27 @@ export const ja: TranslationResources = {
         setupAccessibility: "ワークツリーセットアップコマンド",
         teardown: "削除時",
         teardownAccessibility: "ワークツリー削除時のコマンド",
+      },
+      import: {
+        rowTitle: "Import from Conductor",
+        rowDescription: "Review workspace setup and run scripts before writing paseo.json.",
+        sheetTitle: "Import from {{source}}",
+        sources: "Source files",
+        willImport: "Will import",
+        needsAttention: "Needs attention",
+        notSupported: "Not supported",
+        import: "Import",
+        importing: "Importing...",
+        refreshPreview: "Refresh preview",
+        success: "Conductor settings imported",
+        errorTitle: "Couldn't import settings",
+        errors: {
+          notFound: "No Conductor project config was found.",
+          invalid: "{{path}} couldn't be parsed.",
+          staleSource: "The Conductor config changed. Refresh the preview before importing.",
+          staleProject: "paseo.json changed. Refresh the preview before importing.",
+          nothing: "There is nothing new to import.",
+        },
       },
       scripts: {
         title: "スクリプト",

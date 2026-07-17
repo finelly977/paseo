@@ -860,6 +860,9 @@ export const zhCN: TranslationResources = {
       title: "设置 worktree scripts",
       description: "添加 setup 命令，让新的 worktree 自动安装依赖并完成准备。",
       openProjectSettings: "打开 project 设置",
+      conductorTitle: "Conductor setup found",
+      conductorDescription: "Import its workspace setup and run scripts into Paseo.",
+      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -2039,6 +2042,27 @@ export const zhCN: TranslationResources = {
         setupAccessibility: "Worktree setup 命令",
         teardown: "Teardown",
         teardownAccessibility: "Worktree teardown 命令",
+      },
+      import: {
+        rowTitle: "Import from Conductor",
+        rowDescription: "Review workspace setup and run scripts before writing paseo.json.",
+        sheetTitle: "Import from {{source}}",
+        sources: "Source files",
+        willImport: "Will import",
+        needsAttention: "Needs attention",
+        notSupported: "Not supported",
+        import: "Import",
+        importing: "Importing...",
+        refreshPreview: "Refresh preview",
+        success: "Conductor settings imported",
+        errorTitle: "Couldn't import settings",
+        errors: {
+          notFound: "No Conductor project config was found.",
+          invalid: "{{path}} couldn't be parsed.",
+          staleSource: "The Conductor config changed. Refresh the preview before importing.",
+          staleProject: "paseo.json changed. Refresh the preview before importing.",
+          nothing: "There is nothing new to import.",
+        },
       },
       scripts: {
         title: "Scripts",

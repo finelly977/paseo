@@ -896,6 +896,9 @@ export const fr: TranslationResources = {
       description:
         "Ajoutez des commandes de configuration pour que les nouveaux arbres de travail puissent installer des dépendances et se préparer automatiquement.",
       openProjectSettings: "Ouvrir les paramètres du projet",
+      conductorTitle: "Conductor setup found",
+      conductorDescription: "Import its workspace setup and run scripts into Paseo.",
+      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -2118,6 +2121,27 @@ export const fr: TranslationResources = {
         setupAccessibility: "Commandes de configuration de Worktree",
         teardown: "Démolir",
         teardownAccessibility: "Commandes de démontage de Worktree",
+      },
+      import: {
+        rowTitle: "Import from Conductor",
+        rowDescription: "Review workspace setup and run scripts before writing paseo.json.",
+        sheetTitle: "Import from {{source}}",
+        sources: "Source files",
+        willImport: "Will import",
+        needsAttention: "Needs attention",
+        notSupported: "Not supported",
+        import: "Import",
+        importing: "Importing...",
+        refreshPreview: "Refresh preview",
+        success: "Conductor settings imported",
+        errorTitle: "Couldn't import settings",
+        errors: {
+          notFound: "No Conductor project config was found.",
+          invalid: "{{path}} couldn't be parsed.",
+          staleSource: "The Conductor config changed. Refresh the preview before importing.",
+          staleProject: "paseo.json changed. Refresh the preview before importing.",
+          nothing: "There is nothing new to import.",
+        },
       },
       scripts: {
         title: "Scripts",

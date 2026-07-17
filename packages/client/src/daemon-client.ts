@@ -94,6 +94,7 @@ import type {
   SendAgentMessageRequest,
   PaseoConfigRaw,
   PaseoConfigRevision,
+  ProjectConfigImportSource,
   WorkspaceCreateRequest,
   WorkspaceRecoveryState,
 } from "@getpaseo/protocol/messages";
@@ -430,6 +431,14 @@ type WriteProjectConfigPayload = Extract<
   SessionOutboundMessage,
   { type: "write_project_config_response" }
 >["payload"];
+type GetProjectConfigImportPayload = Extract<
+  SessionOutboundMessage,
+  { type: "project.config.get_import.response" }
+>["payload"];
+type ApplyProjectConfigImportPayload = Extract<
+  SessionOutboundMessage,
+  { type: "project.config.apply_import.response" }
+>["payload"];
 
 type ListCommandsPayload = ListCommandsResponse["payload"];
 type ListCommandsDraftConfig = Pick<
@@ -440,6 +449,18 @@ export interface WriteProjectConfigInput {
   repoRoot: string;
   config: PaseoConfigRaw;
   expectedRevision: PaseoConfigRevision | null;
+  requestId?: string;
+}
+export interface GetProjectConfigImportInput {
+  repoRoot: string;
+  source: ProjectConfigImportSource;
+  requestId?: string;
+}
+export interface ApplyProjectConfigImportInput {
+  repoRoot: string;
+  source: ProjectConfigImportSource;
+  expectedSourceRevision: string;
+  expectedPaseoRevision: PaseoConfigRevision | null;
   requestId?: string;
 }
 interface ListCommandsOptions {
@@ -4263,6 +4284,36 @@ export class DaemonClient {
         expectedRevision: input.expectedRevision,
       },
       responseType: "write_project_config_response",
+    });
+  }
+
+  async getProjectConfigImport(
+    input: GetProjectConfigImportInput,
+  ): Promise<GetProjectConfigImportPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "project.config.get_import.request",
+        repoRoot: input.repoRoot,
+        source: input.source,
+      },
+      responseType: "project.config.get_import.response",
+    });
+  }
+
+  async applyProjectConfigImport(
+    input: ApplyProjectConfigImportInput,
+  ): Promise<ApplyProjectConfigImportPayload> {
+    return this.sendCorrelatedSessionRequest({
+      requestId: input.requestId,
+      message: {
+        type: "project.config.apply_import.request",
+        repoRoot: input.repoRoot,
+        source: input.source,
+        expectedSourceRevision: input.expectedSourceRevision,
+        expectedPaseoRevision: input.expectedPaseoRevision,
+      },
+      responseType: "project.config.apply_import.response",
     });
   }
 

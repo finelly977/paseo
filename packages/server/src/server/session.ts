@@ -1611,6 +1611,10 @@ export class Session {
         return this.projectConfigSession.handleReadProjectConfigRequest(msg);
       case "write_project_config_request":
         return this.projectConfigSession.handleWriteProjectConfigRequest(msg);
+      case "project.config.get_import.request":
+        return this.projectConfigSession.handleGetProjectConfigImportRequest(msg);
+      case "project.config.apply_import.request":
+        return this.projectConfigSession.handleApplyProjectConfigImportRequest(msg);
       default:
         return undefined;
     }
