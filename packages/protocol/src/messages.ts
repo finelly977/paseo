@@ -3664,6 +3664,8 @@ export const WriteProjectConfigResponseMessageSchema = z.object({
 
 export const GetProjectConfigImportResponseMessageSchema = z.object({
   type: z.literal("project.config.get_import.response"),
+  // zod-aot 0.2.0 miscompiles boolean discriminators as string options
+  // (`"true"`/`"false"`), so keep this sequential until upstream fixes it.
   payload: z.union([
     ProjectConfigImportPreviewSchema.extend({
       requestId: z.string(),
@@ -3680,6 +3682,8 @@ export const GetProjectConfigImportResponseMessageSchema = z.object({
 
 export const ApplyProjectConfigImportResponseMessageSchema = z.object({
   type: z.literal("project.config.apply_import.response"),
+  // zod-aot 0.2.0 miscompiles boolean discriminators as string options
+  // (`"true"`/`"false"`), so keep this sequential until upstream fixes it.
   payload: z.union([
     z.object({
       requestId: z.string(),

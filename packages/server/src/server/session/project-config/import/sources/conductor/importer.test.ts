@@ -476,6 +476,91 @@ hide = true
     );
   });
 
+  test("reports nested environment variables, prompts, and Git settings", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[environment_variables.local]
+LOCAL_TOKEN = "local-secret"
+
+[environment_variables.cloud]
+CLOUD_TOKEN = "cloud-secret"
+
+[prompts]
+system = "custom prompt"
+
+[git]
+default_branch = "develop"
+`,
+    );
+
+    expect(inspect(repo).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "environment_variables",
+          outcome: "unsupported",
+          detail: "Environment variable values are not imported. Found: CLOUD_TOKEN, LOCAL_TOKEN.",
+        }),
+        expect.objectContaining({ key: "prompts", outcome: "unsupported" }),
+        expect.objectContaining({ key: "git", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
+  test("reports default and icon fields on imported run scripts", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev"
+default = true
+icon = "play"
+`,
+    );
+
+    const preview = inspect(repo);
+
+    expect(preview.preview).toMatchObject({ scripts: { dev: { command: "npm run dev" } } });
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "scripts.dev.default", outcome: "unsupported" }),
+        expect.objectContaining({ key: "scripts.dev.icon", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
+  test("does not import services with colliding normalized environment names", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.app-server]
+command = "npm run app -- --port $CONDUCTOR_PORT"
+
+[scripts.run."app.server"]
+command = "npm run other -- --port $CONDUCTOR_PORT"
+`,
+    );
+
+    const preview = inspect(repo);
+
+    expect(preview.preview?.scripts).toMatchObject({
+      "app-server": { type: "service", port: "$PASEO_PORT" },
+    });
+    expect(preview.preview?.scripts).not.toHaveProperty("app.server");
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "scripts.app.server",
+          outcome: "collision",
+          detail: 'Service environment name collides with "app-server" (APP_SERVER).',
+        }),
+      ]),
+    );
+  });
+
   test("malformed TOML identifies the safe relative source path", () => {
     const repo = makeRepo();
     writeSharedToml(repo, "[scripts\nsetup = nope");

@@ -30,6 +30,8 @@ interface ConductorSettings {
   file_include_globs?: unknown;
   environment_variables?: unknown;
   environment_variables_forward?: unknown;
+  prompts?: unknown;
+  git?: unknown;
   spotlight_testing?: unknown;
   [key: string]: unknown;
 }
@@ -37,7 +39,9 @@ interface ConductorSettings {
 interface ConductorRunScript {
   command: string;
   args?: string[];
+  default?: boolean;
   hide?: boolean;
+  icon?: string;
   options?: {
     cwd?: string;
   };
@@ -240,7 +244,9 @@ function normalizeRunScript(entry: Record<string, unknown>, command: string): Co
   return {
     command,
     ...(args ? { args } : {}),
+    ...(typeof entry.default === "boolean" ? { default: entry.default } : {}),
     ...(typeof entry.hide === "boolean" ? { hide: entry.hide } : {}),
+    ...(typeof entry.icon === "string" ? { icon: entry.icon } : {}),
     ...(options && typeof options.cwd === "string" ? { options: { cwd: options.cwd } } : {}),
     ...(availableIn ? { available_in: availableIn } : {}),
   };
@@ -270,6 +276,13 @@ function mapRunScript(
       detail: "Cloud-only scripts are not imported.",
     });
     return;
+  }
+
+  if (script.default !== undefined) {
+    unsupported(items, `scripts.${scriptId}.default`, "Default script selection is not imported.");
+  }
+  if (script.icon !== undefined) {
+    unsupported(items, `scripts.${scriptId}.icon`, "Script icons are not imported.");
   }
 
   let command = appendArgs(script.command, script.args ?? []);
@@ -349,25 +362,41 @@ function reportUnsupported(
       "Paseo spotlight is a separate workflow, not project config.",
     );
   }
+  if (settings.prompts !== undefined) {
+    unsupported(items, "prompts", "Custom agent prompts are not imported.");
+  }
+  if (settings.git !== undefined) {
+    unsupported(items, "git", "Conductor Git settings are not imported.");
+  }
 }
 
 function collectEnvironmentVariableNames(settings: ConductorSettings): string[] {
   const names = new Set<string>();
   for (const key of ["environment_variables", "environment_variables_forward"] as const) {
-    const value = settings[key];
-    if (isRecord(value)) {
-      for (const name of Object.keys(value).sort()) {
-        names.add(name);
-      }
-    } else if (Array.isArray(value)) {
-      for (const name of value) {
-        if (typeof name === "string") {
-          names.add(name);
-        }
-      }
-    }
+    collectEnvironmentVariableNamesFromValue(settings[key], names);
   }
   return Array.from(names).sort();
+}
+
+function collectEnvironmentVariableNamesFromValue(value: unknown, names: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const name of value) {
+      if (typeof name === "string") {
+        names.add(name);
+      }
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+  for (const [name, nestedValue] of Object.entries(value)) {
+    if (isRecord(nestedValue)) {
+      collectEnvironmentVariableNamesFromValue(nestedValue, names);
+    } else {
+      names.add(name);
+    }
+  }
 }
 
 function unsupported(items: ProjectConfigImportItem[], key: string, detail: string): void {

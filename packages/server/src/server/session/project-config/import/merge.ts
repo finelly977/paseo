@@ -1,4 +1,5 @@
 import type { PaseoConfigRaw } from "@getpaseo/protocol/messages";
+import { normalizeServiceEnvName } from "../../../workspace-service-env.js";
 import type { ProjectConfigImportCandidate, ProjectConfigImportPreview } from "./service.js";
 
 interface MergeProjectConfigImportInput {
@@ -42,11 +43,25 @@ export function mergeProjectConfigImport(
   }
 
   const patchScripts = input.candidate.patch.scripts ?? {};
+  const serviceScriptByEnvName = collectServiceScriptsByEnvName(base.scripts ?? {});
   for (const [scriptId, script] of Object.entries(patchScripts)) {
     const key = `scripts.${scriptId}`;
     if (base.scripts && Object.hasOwn(base.scripts, scriptId)) {
       setOutcome(items, key, `Paseo already has a "${scriptId}" script.`);
       continue;
+    }
+    if (isServiceScript(script)) {
+      const envName = normalizeServiceEnvName(scriptId);
+      const existingScriptId = serviceScriptByEnvName.get(envName);
+      if (existingScriptId) {
+        setOutcome(
+          items,
+          key,
+          `Service environment name collides with "${existingScriptId}" (${envName}).`,
+        );
+        continue;
+      }
+      serviceScriptByEnvName.set(envName, scriptId);
     }
     merged.scripts = { ...merged.scripts, [scriptId]: script };
     importedCount += 1;
@@ -62,6 +77,24 @@ export function mergeProjectConfigImport(
     items,
     preview: importedCount > 0 ? merged : null,
   };
+}
+
+function collectServiceScriptsByEnvName(
+  scripts: NonNullable<PaseoConfigRaw["scripts"]>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const [scriptId, script] of Object.entries(scripts)) {
+    if (isServiceScript(script)) {
+      result.set(normalizeServiceEnvName(scriptId), scriptId);
+    }
+  }
+  return result;
+}
+
+function isServiceScript(script: unknown): boolean {
+  return Boolean(
+    script && typeof script === "object" && "type" in script && script.type === "service",
+  );
 }
 
 function hasLifecycle(value: unknown): boolean {
