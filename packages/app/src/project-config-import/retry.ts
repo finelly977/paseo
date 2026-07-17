@@ -8,7 +8,8 @@ export function projectConfigImportApplyFailureRetryAction(
   return error.code === "stale_source_config" ||
     error.code === "stale_project_config" ||
     error.code === "nothing_to_import" ||
-    error.code === "source_config_not_found"
+    error.code === "source_config_not_found" ||
+    error.code === "invalid_source_config"
     ? "refresh"
     : "apply";
 }

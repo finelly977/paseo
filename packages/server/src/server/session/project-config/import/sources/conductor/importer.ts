@@ -94,18 +94,24 @@ function inspectConductorImport(input: {
 }
 
 function discoverConductorSources(repoRoot: string): SourceFile[] {
-  const localPath = join(repoRoot, ".conductor", "settings.local.toml");
-  const sharedPath = join(repoRoot, ".conductor", "settings.toml");
-  const legacyPath = join(repoRoot, "conductor.json");
+  const localTomlPath = join(repoRoot, ".conductor", "settings.local.toml");
+  const localJsonPath = join(repoRoot, ".conductor", "settings.local.json");
+  const sharedTomlPath = join(repoRoot, ".conductor", "settings.toml");
+  const sharedJsonPath = join(repoRoot, ".conductor", "settings.json");
+  const rootLegacyPath = join(repoRoot, "conductor.json");
   const files: SourceFile[] = [];
 
-  if (existsSync(sharedPath)) {
-    files.push(readSourceFile(repoRoot, sharedPath, "shared"));
-  } else if (existsSync(legacyPath)) {
-    files.push(readSourceFile(repoRoot, legacyPath, "legacy"));
+  if (existsSync(sharedTomlPath)) {
+    files.push(readSourceFile(repoRoot, sharedTomlPath, "shared"));
+  } else if (existsSync(sharedJsonPath)) {
+    files.push(readSourceFile(repoRoot, sharedJsonPath, "shared"));
+  } else if (existsSync(rootLegacyPath)) {
+    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy"));
   }
-  if (existsSync(localPath)) {
-    files.push(readSourceFile(repoRoot, localPath, "local"));
+  if (existsSync(localTomlPath)) {
+    files.push(readSourceFile(repoRoot, localTomlPath, "local"));
+  } else if (existsSync(localJsonPath)) {
+    files.push(readSourceFile(repoRoot, localJsonPath, "local"));
   }
   return files;
 }
@@ -127,8 +133,7 @@ function loadConductorSettings(
   for (const file of sourceFiles) {
     let parsed: unknown;
     try {
-      parsed =
-        file.relativePath === "conductor.json" ? JSON.parse(file.bytes) : parseToml(file.bytes);
+      parsed = file.relativePath.endsWith(".json") ? JSON.parse(file.bytes) : parseToml(file.bytes);
     } catch {
       throw new InvalidProjectConfigImportSourceError(source, file.relativePath);
     }
@@ -159,7 +164,23 @@ function mergeRunScripts(base: unknown, override: unknown): unknown {
   if (!isRecord(base) || !isRecord(override)) {
     return override ?? base;
   }
-  return { ...base, ...override };
+  const merged: Record<string, unknown> = { ...base };
+  for (const [scriptId, overrideEntry] of Object.entries(override)) {
+    const baseEntry = base[scriptId];
+    merged[scriptId] = mergeRunScriptEntry(baseEntry, overrideEntry);
+  }
+  return merged;
+}
+
+function mergeRunScriptEntry(base: unknown, override: unknown): unknown {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override ?? base;
+  }
+  const merged: Record<string, unknown> = { ...base, ...override };
+  if (isRecord(base.options) && isRecord(override.options)) {
+    merged.options = { ...base.options, ...override.options };
+  }
+  return merged;
 }
 
 function mapLifecycle(

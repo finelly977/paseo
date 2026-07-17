@@ -52,11 +52,13 @@ export function projectConfigImportPreviewQueryKey(
   source: ProjectConfigImportSourceDescriptor | null,
 ): ProjectConfigImportPreviewQueryKey {
   return [
-    "project-config-import",
-    serverId,
-    repoRoot,
+    ...projectConfigImportPreviewQueryRoot(serverId, repoRoot),
     source ? stableProjectConfigImportSourceKey(source) : "none",
   ] as const;
+}
+
+export function projectConfigImportPreviewQueryRoot(serverId: string, repoRoot: string) {
+  return ["project-config-import", serverId, repoRoot] as const;
 }
 
 export function stableProjectConfigImportSourceKey(

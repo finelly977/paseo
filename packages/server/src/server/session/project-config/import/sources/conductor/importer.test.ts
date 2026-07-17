@@ -43,6 +43,16 @@ function writeLocalToml(repo: string, contents: string): void {
   writeFileSync(join(repo, ".conductor", "settings.local.toml"), contents);
 }
 
+function writeSharedJson(repo: string, value: unknown): void {
+  mkdirSync(join(repo, ".conductor"), { recursive: true });
+  writeFileSync(join(repo, ".conductor", "settings.json"), JSON.stringify(value));
+}
+
+function writeLocalJson(repo: string, value: unknown): void {
+  mkdirSync(join(repo, ".conductor"), { recursive: true });
+  writeFileSync(join(repo, ".conductor", "settings.local.json"), JSON.stringify(value));
+}
+
 function inspect(repo: string, paseoConfig = {}) {
   return service.inspect({
     repoRoot: repo,
@@ -151,6 +161,8 @@ setup = "local setup"
 command = "local dev"
 `,
     );
+    writeSharedJson(repo, { scripts: { setup: "scoped legacy shared setup" } });
+    writeLocalJson(repo, { scripts: { setup: "scoped legacy local setup" } });
     writeFileSync(
       join(repo, "conductor.json"),
       JSON.stringify({ scripts: { setup: "legacy setup", run: "legacy run" } }),
@@ -165,6 +177,54 @@ command = "local dev"
     expect(preview.preview).toMatchObject({
       worktree: { setup: "local setup" },
       scripts: { dev: { command: "local dev" } },
+    });
+  });
+
+  test("deep-merges local run-script fields with shared commands", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev"
+args = ["--shared"]
+[scripts.run.dev.options]
+cwd = "apps/web"
+`,
+    );
+    writeLocalToml(
+      repo,
+      `
+[scripts.run.dev]
+args = ["--local"]
+[scripts.run.dev.options]
+cwd = "apps/local-web"
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: { command: "cd -- 'apps/local-web' && npm run dev '--local'" },
+      },
+    });
+  });
+
+  test("imports legacy scoped JSON settings with local overrides", () => {
+    const repo = makeRepo();
+    writeSharedJson(repo, {
+      scripts: { setup: "shared setup", run: { dev: { command: "npm run dev" } } },
+    });
+    writeLocalJson(repo, { scripts: { run: { dev: { args: ["--local"] } } } });
+
+    const preview = inspect(repo);
+
+    expect(preview.inputs).toEqual([
+      { role: "shared", relativePath: ".conductor/settings.json" },
+      { role: "local", relativePath: ".conductor/settings.local.json" },
+    ]);
+    expect(preview.preview).toMatchObject({
+      worktree: { setup: "shared setup" },
+      scripts: { dev: { command: "npm run dev '--local'" } },
     });
   });
 

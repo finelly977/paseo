@@ -28,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import type { ProjectConfigImportIntent } from "@/project-config-import/route";
 import { ProjectConfigImportSection } from "@/project-config-import/project-config-import-section";
+import { projectConfigImportPreviewQueryRoot } from "@/project-config-import/preview-cache";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/screens/settings/settings-group";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -216,6 +217,7 @@ function ProjectSettingsBody({
   importIntent,
   onImportIntentConsumed,
 }: ProjectSettingsBodyProps) {
+  const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => ["project-config", selectedHost.serverId, selectedHost.repoRoot] as const,
     [selectedHost.serverId, selectedHost.repoRoot],
@@ -245,8 +247,11 @@ function ProjectSettingsBody({
   const readState = resolveProjectConfigReadState(data);
 
   const handleReload = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: projectConfigImportPreviewQueryRoot(selectedHost.serverId, selectedHost.repoRoot),
+    });
     void readQuery.refetch();
-  }, [readQuery]);
+  }, [queryClient, readQuery, selectedHost.repoRoot, selectedHost.serverId]);
 
   const hasMultipleHosts = hosts.length > 1;
 
@@ -517,6 +522,9 @@ function ProjectConfigForm({
         });
         setWriteError(null);
         queryClient.invalidateQueries({ queryKey: ["projects"] });
+        void queryClient.invalidateQueries({
+          queryKey: projectConfigImportPreviewQueryRoot(serverId, repoRoot),
+        });
         toast.show(t("settings.project.actions.saved"), { variant: "success" });
       } else {
         setWriteError(result.error);

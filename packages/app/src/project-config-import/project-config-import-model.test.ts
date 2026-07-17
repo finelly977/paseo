@@ -9,6 +9,7 @@ import { fetchQueryOptions } from "@/data/query";
 import {
   projectConfigImportPreviewQueryInput,
   projectConfigImportPreviewQueryKey,
+  projectConfigImportPreviewQueryRoot,
   stableProjectConfigImportSourceKey,
 } from "./preview-cache";
 import {
@@ -127,9 +128,26 @@ describe("project config import retries", () => {
       }),
     ).toBe("refresh");
   });
+
+  it("refreshes the preview after an apply-time source parse failure", () => {
+    expect(
+      projectConfigImportApplyFailureRetryAction({
+        code: "invalid_source_config",
+        source: protocolSource,
+        relativePath: ".conductor/settings.toml",
+      }),
+    ).toBe("refresh");
+  });
 });
 
 describe("project config import preview cache keys", () => {
+  it("groups source previews under a repository cache root", () => {
+    expect(projectConfigImportPreviewQueryKey("server", "/repo", fakeSource)).toEqual([
+      ...projectConfigImportPreviewQueryRoot("server", "/repo"),
+      stableProjectConfigImportSourceKey(fakeSource),
+    ]);
+  });
+
   it("uses the full source descriptor instead of kind alone", () => {
     const alpha = { kind: "variant-source", profile: "alpha" };
     const beta = { profile: "beta", kind: "variant-source" };
