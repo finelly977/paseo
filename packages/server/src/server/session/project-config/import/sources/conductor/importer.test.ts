@@ -445,45 +445,61 @@ command = "npm run dev -- --port \${CONDUCTOR_PORT:-3000}"
     });
   });
 
-  test("rewrites bare Conductor ports inside shell arithmetic", () => {
+  test("reports Conductor port arithmetic as unsupported instead of importing it", () => {
     const repo = makeRepo();
     writeSharedToml(
       repo,
       `
 [scripts.run.dev]
 command = "npm run dev -- --hmr-port $((CONDUCTOR_PORT + 1))"
-`,
-    );
 
-    expect(inspect(repo).preview).toMatchObject({
-      scripts: {
-        dev: {
-          type: "service",
-          command: "npm run dev -- --hmr-port $((PASEO_PORT + 1))",
-        },
-      },
-    });
-  });
-
-  test("preserves shell arithmetic expansion in script arguments", () => {
-    const repo = makeRepo();
-    writeSharedToml(
-      repo,
-      `
-[scripts.run.dev]
+[scripts.run.args]
 command = "npm run dev"
 args = ["--hmr-port=$((CONDUCTOR_PORT + 1))"]
+
+[scripts.run.plain]
+command = "npm run dev -- --port $((CONDUCTOR_PORT))"
 `,
     );
 
-    expect(inspect(repo).preview).toMatchObject({
+    const preview = inspect(repo);
+
+    expect(preview.preview).toEqual({
       scripts: {
-        dev: {
+        plain: {
+          command: "npm run dev -- --port $((PASEO_PORT))",
           type: "service",
-          command: `npm run dev '--hmr-port='"$((PASEO_PORT + 1))"`,
         },
       },
     });
+    expect(preview.items).toEqual([
+      {
+        key: "scripts.args.port_arithmetic",
+        label: "Script args port arithmetic",
+        outcome: "unsupported",
+        detail:
+          "Conductor port arithmetic is not imported because Paseo reserves one service port.",
+      },
+      {
+        key: "scripts.dev.port_arithmetic",
+        label: "Script dev port arithmetic",
+        outcome: "unsupported",
+        detail:
+          "Conductor port arithmetic is not imported because Paseo reserves one service port.",
+      },
+      {
+        key: "variables.CONDUCTOR_PORT",
+        label: "CONDUCTOR_PORT",
+        outcome: "rewrite",
+        detail: "CONDUCTOR_PORT -> PASEO_PORT",
+      },
+      {
+        key: "scripts.plain",
+        label: "Script plain",
+        outcome: "import",
+        detail: "npm run dev -- --port $((PASEO_PORT))",
+      },
+    ]);
   });
 
   test("does not import scripts available only in Conductor cloud", () => {

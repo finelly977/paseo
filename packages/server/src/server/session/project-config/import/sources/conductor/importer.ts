@@ -336,6 +336,15 @@ function mapRunScript(
   }
 
   let command = appendArgs(script.command, script.args ?? []);
+  if (containsArithmeticVariableOperation(command, "CONDUCTOR_PORT")) {
+    items.push({
+      key: `scripts.${scriptId}.port_arithmetic`,
+      label: `Script ${scriptId} port arithmetic`,
+      outcome: "unsupported",
+      detail: "Conductor port arithmetic is not imported because Paseo reserves one service port.",
+    });
+    return;
+  }
   if (script.options?.cwd) {
     const cwdPrefix = safeCwdPrefix(script.options.cwd);
     if (!cwdPrefix) {
@@ -540,6 +549,17 @@ function containsArithmeticVariable(command: string, name: string): boolean {
   const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
   for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
     if (identifier.test(match[1])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function containsArithmeticVariableOperation(command: string, name: string): boolean {
+  const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
+  for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
+    const body = match[1].trim();
+    if (identifier.test(body) && body !== name) {
       return true;
     }
   }
