@@ -113,14 +113,14 @@ function discoverConductorSources(
   const worktreeIncludePath = join(repoRoot, ".worktreeinclude");
   const files: SourceFile[] = [];
 
+  if (!existsSync(sharedTomlPath) && existsSync(rootLegacyPath)) {
+    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy", true, source));
+  }
   if (existsSync(sharedJsonPath)) {
     files.push(readSourceFile(repoRoot, sharedJsonPath, "shared", true, source));
   }
   if (existsSync(sharedTomlPath)) {
     files.push(readSourceFile(repoRoot, sharedTomlPath, "shared", true, source));
-  }
-  if (!existsSync(sharedJsonPath) && !existsSync(sharedTomlPath) && existsSync(rootLegacyPath)) {
-    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy", true, source));
   }
   if (existsSync(localJsonPath)) {
     files.push(readSourceFile(repoRoot, localJsonPath, "local", true, source));
@@ -516,12 +516,34 @@ function rewriteVariables(
 
 function replaceShellVariable(command: string, from: string, to: string): string {
   const pattern = new RegExp(`\\$\\{${from}(?=[}:#%+\\-=?])|\\$${from}(?![A-Za-z0-9_])`, "g");
-  return command.replace(pattern, (match) => (match.startsWith("${") ? `\${${to}` : `$${to}`));
+  return replaceArithmeticVariable(
+    command.replace(pattern, (match) => (match.startsWith("${") ? `\${${to}` : `$${to}`)),
+    from,
+    to,
+  );
 }
 
 function containsShellVariable(command: string, name: string): boolean {
   const pattern = new RegExp(`\\$\\{${name}(?=[}:#%+\\-=?])|\\$${name}(?![A-Za-z0-9_])`);
-  return pattern.test(command);
+  return pattern.test(command) || containsArithmeticVariable(command, name);
+}
+
+function replaceArithmeticVariable(command: string, from: string, to: string): string {
+  return command.replace(/\$\(\(([\s\S]*?)\)\)/g, (expression, body: string) => {
+    const identifier = new RegExp(`(^|[^A-Za-z0-9_])${from}(?![A-Za-z0-9_])`, "g");
+    const rewrittenBody = body.replace(identifier, (_match, prefix: string) => `${prefix}${to}`);
+    return rewrittenBody === body ? expression : `$((` + rewrittenBody + `))`;
+  });
+}
+
+function containsArithmeticVariable(command: string, name: string): boolean {
+  const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
+  for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
+    if (identifier.test(match[1])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function appendArgs(command: string, args: string[]): string {
@@ -565,7 +587,7 @@ function normalizeAvailableIn(value: unknown): string | string[] | undefined {
 
 function shellQuoteArgument(value: string): string {
   const variablePattern =
-    /\$(?:\{[A-Za-z_][A-Za-z0-9_]*(?:(?:[^{}])|\{[^{}]*\})*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
+    /\$\(\([\s\S]*?\)\)|\$(?:\{[A-Za-z_][A-Za-z0-9_]*(?:(?:[^{}])|\{[^{}]*\})*\}|[A-Za-z_][A-Za-z0-9_]*)/g;
   const parts: string[] = [];
   let offset = 0;
   for (const match of value.matchAll(variablePattern)) {

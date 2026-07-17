@@ -12,3 +12,11 @@ export function projectConfigImportAvailabilityStatus(input: {
   }
   return input.availableCount === 1 ? "one" : "many";
 }
+
+export function projectConfigImportPreviewIsOpenable(
+  preview: { ok: true; status: string } | { ok: false; error: { code: string } } | null | undefined,
+): boolean {
+  return preview?.ok === true
+    ? preview.status === "available"
+    : preview?.error.code === "invalid_source_config";
+}

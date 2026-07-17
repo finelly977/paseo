@@ -18,7 +18,10 @@ import {
   stripProjectConfigImportSearchParams,
 } from "./route";
 import { projectConfigImportApplyFailureRetryAction } from "./retry";
-import { projectConfigImportAvailabilityStatus } from "./availability";
+import {
+  projectConfigImportAvailabilityStatus,
+  projectConfigImportPreviewIsOpenable,
+} from "./availability";
 import {
   createProjectConfigImportSourceRegistry,
   type ProjectConfigImportSourceDescriptor,
@@ -300,5 +303,20 @@ describe("project config import availability", () => {
     expect(projectConfigImportAvailabilityStatus({ availableCount: 0, isLoading: false })).toBe(
       "none",
     );
+  });
+
+  it("keeps invalid advertised sources openable", () => {
+    expect(
+      projectConfigImportPreviewIsOpenable({
+        ok: false,
+        error: { code: "invalid_source_config" },
+      }),
+    ).toBe(true);
+    expect(
+      projectConfigImportPreviewIsOpenable({
+        ok: false,
+        error: { code: "source_config_not_found" },
+      }),
+    ).toBe(false);
   });
 });

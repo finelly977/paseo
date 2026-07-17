@@ -248,6 +248,31 @@ cwd = "apps/local-web"
     });
   });
 
+  test("merges root conductor.json before scoped JSON until TOML migration", () => {
+    const repo = makeRepo();
+    writeFileSync(
+      join(repo, "conductor.json"),
+      JSON.stringify({ scripts: { setup: "legacy setup" }, runScriptMode: "nonconcurrent" }),
+    );
+    writeSharedJson(repo, { scripts: { run: { dev: { command: "npm run dev" } } } });
+
+    const preview = inspect(repo);
+
+    expect(preview.inputs).toEqual([
+      { role: "legacy", relativePath: "conductor.json" },
+      { role: "shared", relativePath: ".conductor/settings.json" },
+    ]);
+    expect(preview.preview).toMatchObject({
+      worktree: { setup: "legacy setup" },
+      scripts: { dev: { command: "npm run dev" } },
+    });
+    expect(preview.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "runScriptMode", outcome: "unsupported" }),
+      ]),
+    );
+  });
+
   test("reports missing and empty repository-local Conductor configs", () => {
     const missingRepo = makeRepo();
     const emptyRepo = makeRepo();
@@ -415,6 +440,47 @@ command = "npm run dev -- --port \${CONDUCTOR_PORT:-3000}"
         dev: {
           type: "service",
           command: "npm run dev -- --port ${PASEO_PORT:-3000}",
+        },
+      },
+    });
+  });
+
+  test("rewrites bare Conductor ports inside shell arithmetic", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev -- --hmr-port $((CONDUCTOR_PORT + 1))"
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: {
+          type: "service",
+          command: "npm run dev -- --hmr-port $((PASEO_PORT + 1))",
+        },
+      },
+    });
+  });
+
+  test("preserves shell arithmetic expansion in script arguments", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev"
+args = ["--hmr-port=$((CONDUCTOR_PORT + 1))"]
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: {
+          type: "service",
+          command: `npm run dev '--hmr-port='"$((PASEO_PORT + 1))"`,
         },
       },
     });

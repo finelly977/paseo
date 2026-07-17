@@ -33,7 +33,10 @@ import {
   projectConfigImportApplyFailureRetryAction,
   type ProjectConfigImportRetryAction,
 } from "./retry";
-import { projectConfigImportAvailabilityStatus } from "./availability";
+import {
+  projectConfigImportAvailabilityStatus,
+  projectConfigImportPreviewIsOpenable,
+} from "./availability";
 
 const EMPTY_IMPORT_SOURCES: readonly ProjectConfigImportAdvertisedSource[] = [];
 type ProjectConfigImportPreviewSuccess = Extract<ProjectConfigImportPreviewResult, { ok: true }>;
@@ -302,23 +305,22 @@ export function useProjectConfigImportAvailability(input: {
     sources,
     enabled: input.enabled,
   });
-  const availableSources = sources.filter((_, index) => {
-    const data = previews[index]?.data;
-    return data?.ok === true && data.status === "available";
-  });
-  const availableKinds = new Set(availableSources.map((source) => source.kind));
+  const openableSources = sources.filter((_, index) =>
+    projectConfigImportPreviewIsOpenable(previews[index]?.data),
+  );
+  const availableKinds = new Set(openableSources.map((source) => source.kind));
   const availableSourceKeys = new Set(
-    availableSources.map((source) => stableProjectConfigImportSourceKey(source.source)),
+    openableSources.map((source) => stableProjectConfigImportSourceKey(source.source)),
   );
   const isLoading = previews.some((preview) => preview.isLoading || preview.isPending);
 
   return {
     status: projectConfigImportAvailabilityStatus({
-      availableCount: availableSources.length,
+      availableCount: openableSources.length,
       isLoading,
     }),
-    source: availableSources.length === 1 ? availableSources[0] : null,
-    sources: availableSources,
+    source: openableSources.length === 1 ? openableSources[0] : null,
+    sources: openableSources,
     availableKinds,
     availableSourceKeys,
   };
