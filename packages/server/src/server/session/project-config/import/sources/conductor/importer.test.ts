@@ -114,11 +114,11 @@ enabled = true
       scripts: {
         dev: {
           type: "service",
-          port: "$PASEO_PORT",
           command: "cd -- 'apps/web' && npm run dev -- --port $PASEO_PORT '--host' '0.0.0.0'",
         },
       },
     });
+    expect(preview.preview?.scripts?.dev).not.toHaveProperty("port");
     expect(preview.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "worktree.setup", outcome: "import" }),
@@ -316,7 +316,6 @@ args = ["--port", "$CONDUCTOR_PORT", "--label=$WORKSPACE_NAME"]
       scripts: {
         dev: {
           type: "service",
-          port: "$PASEO_PORT",
           command: `npm run dev '--port' "$PASEO_PORT" '--label='"$WORKSPACE_NAME"`,
         },
       },
@@ -338,7 +337,6 @@ args = ["--port=\${CONDUCTOR_PORT:-3000}"]
       scripts: {
         dev: {
           type: "service",
-          port: "$PASEO_PORT",
           command: `npm run dev '--port='"\${PASEO_PORT:-3000}"`,
         },
       },
@@ -416,7 +414,6 @@ command = "npm run dev -- --port \${CONDUCTOR_PORT:-3000}"
       scripts: {
         dev: {
           type: "service",
-          port: "$PASEO_PORT",
           command: "npm run dev -- --port ${PASEO_PORT:-3000}",
         },
       },
@@ -550,6 +547,7 @@ CLOUD_TOKEN = "cloud-secret"
         claude_code_executable_path: "/opt/claude",
         codex_executable_path: "/opt/codex",
         claude_provider: "bedrock",
+        codex_provider: "custom",
         bedrock_region: "eu-west-1",
         vertex_project_id: "project",
         ssh_key_path: "~/.ssh/id_ed25519",
@@ -563,6 +561,7 @@ CLOUD_TOKEN = "cloud-secret"
         expect.objectContaining({ key: "claude_code_executable_path", outcome: "unsupported" }),
         expect.objectContaining({ key: "codex_executable_path", outcome: "unsupported" }),
         expect.objectContaining({ key: "claude_provider", outcome: "unsupported" }),
+        expect.objectContaining({ key: "codex_provider", outcome: "unsupported" }),
         expect.objectContaining({ key: "bedrock_region", outcome: "unsupported" }),
         expect.objectContaining({ key: "vertex_project_id", outcome: "unsupported" }),
         expect.objectContaining({ key: "ssh_key_path", outcome: "unsupported" }),
@@ -620,7 +619,7 @@ command = "npm run other -- --port $CONDUCTOR_PORT"
     const preview = inspect(repo);
 
     expect(preview.preview?.scripts).toMatchObject({
-      "app-server": { type: "service", port: "$PASEO_PORT" },
+      "app-server": { type: "service" },
     });
     expect(preview.preview?.scripts).not.toHaveProperty("app.server");
     expect(preview.items).toEqual(
@@ -653,6 +652,16 @@ command = "npm run other -- --port $CONDUCTOR_PORT"
     expect(captureInvalidSourceError(repo)).toMatchObject({
       source: CONDUCTOR_SOURCE,
       relativePath: ".conductor/settings.local.toml",
+    });
+  });
+
+  test("unreadable source paths identify the invalid relative file", () => {
+    const repo = makeRepo();
+    mkdirSync(join(repo, ".conductor", "settings.toml"), { recursive: true });
+
+    expect(captureInvalidSourceError(repo)).toMatchObject({
+      source: CONDUCTOR_SOURCE,
+      relativePath: ".conductor/settings.toml",
     });
   });
 

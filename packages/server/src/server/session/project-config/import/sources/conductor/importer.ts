@@ -63,7 +63,7 @@ function inspectConductorImport(input: {
   repoRoot: string;
   source: ProjectConfigImportSource;
 }): ProjectConfigImportCandidate | null {
-  const sourceFiles = discoverConductorSources(input.repoRoot);
+  const sourceFiles = discoverConductorSources(input.repoRoot, input.source);
   if (sourceFiles.length === 0) {
     return null;
   }
@@ -101,7 +101,10 @@ function inspectConductorImport(input: {
   };
 }
 
-function discoverConductorSources(repoRoot: string): SourceFile[] {
+function discoverConductorSources(
+  repoRoot: string,
+  source: ProjectConfigImportSource,
+): SourceFile[] {
   const localTomlPath = join(repoRoot, ".conductor", "settings.local.toml");
   const localJsonPath = join(repoRoot, ".conductor", "settings.local.json");
   const sharedTomlPath = join(repoRoot, ".conductor", "settings.toml");
@@ -111,22 +114,22 @@ function discoverConductorSources(repoRoot: string): SourceFile[] {
   const files: SourceFile[] = [];
 
   if (existsSync(sharedJsonPath)) {
-    files.push(readSourceFile(repoRoot, sharedJsonPath, "shared", true));
+    files.push(readSourceFile(repoRoot, sharedJsonPath, "shared", true, source));
   }
   if (existsSync(sharedTomlPath)) {
-    files.push(readSourceFile(repoRoot, sharedTomlPath, "shared", true));
+    files.push(readSourceFile(repoRoot, sharedTomlPath, "shared", true, source));
   }
   if (!existsSync(sharedJsonPath) && !existsSync(sharedTomlPath) && existsSync(rootLegacyPath)) {
-    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy", true));
+    files.push(readSourceFile(repoRoot, rootLegacyPath, "legacy", true, source));
   }
   if (existsSync(localJsonPath)) {
-    files.push(readSourceFile(repoRoot, localJsonPath, "local", true));
+    files.push(readSourceFile(repoRoot, localJsonPath, "local", true, source));
   }
   if (existsSync(localTomlPath)) {
-    files.push(readSourceFile(repoRoot, localTomlPath, "local", true));
+    files.push(readSourceFile(repoRoot, localTomlPath, "local", true, source));
   }
   if (existsSync(worktreeIncludePath)) {
-    files.push(readSourceFile(repoRoot, worktreeIncludePath, "include", false));
+    files.push(readSourceFile(repoRoot, worktreeIncludePath, "include", false, source));
   }
   return files;
 }
@@ -136,12 +139,20 @@ function readSourceFile(
   path: string,
   role: string,
   containsSettings: boolean,
+  source: ProjectConfigImportSource,
 ): SourceFile {
+  const relativePath = relative(repoRoot, path).replaceAll("\\", "/");
+  let bytes: string;
+  try {
+    bytes = readFileSync(path, "utf8");
+  } catch {
+    throw new InvalidProjectConfigImportSourceError(source, relativePath);
+  }
   return {
     role,
-    relativePath: relative(repoRoot, path).replaceAll("\\", "/"),
+    relativePath,
     path,
-    bytes: readFileSync(path, "utf8"),
+    bytes,
     containsSettings,
   };
 }
@@ -344,7 +355,6 @@ function mapRunScript(
   const entry: PaseoScriptEntryRaw = { command: rewritten.command };
   if (isService) {
     entry.type = "service";
-    entry.port = "$PASEO_PORT";
   }
 
   patch.scripts = { ...patch.scripts, [scriptId]: entry };
@@ -419,6 +429,7 @@ function reportUnsupported(
     "claude_code_executable_path",
     "codex_executable_path",
     "claude_provider",
+    "codex_provider",
     "bedrock_region",
     "vertex_project_id",
     "ssh_key_path",
