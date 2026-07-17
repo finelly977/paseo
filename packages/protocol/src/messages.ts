@@ -2706,7 +2706,7 @@ export const ServerInfoStatusPayloadSchema = z
         providerRemoval: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
-        // COMPAT(projectConfigImportConductor): added in v0.1.X, drop the gate when floor >= v0.1.X.
+        // COMPAT(projectConfigImportConductor): added in v0.1.110, drop the gate when floor >= v0.1.110.
         projectConfigImportConductor: z.boolean().optional(),
         // COMPAT(forgeProviders): added in v0.1.106, drop the gate when daemon floor >= v0.1.106.
         // Daemon advertises pluggable non-GitHub forge support (the forge registry);

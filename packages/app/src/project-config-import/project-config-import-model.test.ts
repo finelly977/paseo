@@ -120,8 +120,12 @@ describe("project config import state model", () => {
         currentRevision: null,
       }),
     ).toBe(true);
+    expect(projectConfigImportNeedsRefresh({ code: "nothing_to_import" })).toBe(true);
     expect(projectConfigImportNeedsRefresh({ code: "write_failed" })).toBe(false);
     expect(projectConfigImportApplyFailureRetryAction({ code: "write_failed" })).toBe("apply");
+    expect(projectConfigImportApplyFailureRetryAction({ code: "nothing_to_import" })).toBe(
+      "refresh",
+    );
     expect(
       projectConfigImportApplyFailureRetryAction({
         code: "stale_source_config",

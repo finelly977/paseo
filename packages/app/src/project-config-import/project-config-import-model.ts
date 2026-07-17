@@ -92,7 +92,11 @@ export function projectConfigImportCanApply(state: ProjectConfigImportState): bo
 }
 
 export function projectConfigImportNeedsRefresh(error: ProjectConfigImportVisibleError): boolean {
-  return error.code === "stale_source_config" || error.code === "stale_project_config";
+  return (
+    error.code === "stale_source_config" ||
+    error.code === "stale_project_config" ||
+    error.code === "nothing_to_import"
+  );
 }
 
 export function projectConfigImportApplyFailureRetryAction(
