@@ -21,6 +21,7 @@ export const CLIENT_CAPS = {
   // COMPAT(projectUpdates): added in v0.1.109, remove gate after 2027-01-15.
   projectUpdates: "project_updates",
   browserHost: "browser_host",
+  applicationSocketLease: "application_socket_lease",
 } as const;
 
 export type ClientCapability = (typeof CLIENT_CAPS)[keyof typeof CLIENT_CAPS];
