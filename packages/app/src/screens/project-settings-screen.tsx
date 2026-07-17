@@ -40,6 +40,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import {
   applyDraftToConfig,
   configToDraft,
+  hasProjectConfigDraftChanges,
   METADATA_PROMPT_KEYS,
   type LifecycleOriginalKind,
   type MetadataPromptKey,
@@ -681,6 +682,10 @@ function ProjectConfigForm({
   const isStale = writeError?.code === "stale_project_config";
   const isWriteFailed = writeError?.code === "write_failed";
   const saveDisabled = saveMutation.isPending || isStale || hasInvalidScripts;
+  const hasUnsavedChanges = useMemo(
+    () => hasProjectConfigDraftChanges({ draft, base: baseConfig }),
+    [baseConfig, draft],
+  );
 
   return (
     <View>
@@ -697,6 +702,7 @@ function ProjectConfigForm({
           onRouteIntentConsumed={onImportIntentConsumed}
           projectConfigLoaded
           projectConfigQueryKey={queryKey}
+          hasUnsavedChanges={hasUnsavedChanges}
         />
 
         <SettingsSection

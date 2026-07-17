@@ -274,6 +274,11 @@ cwd = "./.."
 command = "npm test"
 [scripts.run.nested.options]
 cwd = "apps/web/../../.."
+
+[scripts.run.unc]
+command = "npm test"
+[scripts.run.unc.options]
+cwd = '\\\\server\\share'
 `,
     );
 
@@ -283,14 +288,37 @@ cwd = "apps/web/../../.."
       scripts: {
         parent: { command: "npm test" },
         nested: { command: "npm test" },
+        unc: { command: "npm test" },
       },
     });
     expect(preview.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: "scripts.parent.cwd", outcome: "unsupported" }),
         expect.objectContaining({ key: "scripts.nested.cwd", outcome: "unsupported" }),
+        expect.objectContaining({ key: "scripts.unc.cwd", outcome: "unsupported" }),
       ]),
     );
+  });
+
+  test("rewrites Conductor ports inside shell parameter expansions", () => {
+    const repo = makeRepo();
+    writeSharedToml(
+      repo,
+      `
+[scripts.run.dev]
+command = "npm run dev -- --port \${CONDUCTOR_PORT:-3000}"
+`,
+    );
+
+    expect(inspect(repo).preview).toMatchObject({
+      scripts: {
+        dev: {
+          type: "service",
+          port: "$PASEO_PORT",
+          command: "npm run dev -- --port ${PASEO_PORT:-3000}",
+        },
+      },
+    });
   });
 
   test("does not import scripts available only in Conductor cloud", () => {

@@ -20,6 +20,7 @@ export function ProjectConfigImportSection(input: {
   onRouteIntentConsumed?: () => void;
   projectConfigLoaded: boolean;
   projectConfigQueryKey: readonly [string, string, string];
+  hasUnsavedChanges: boolean;
 }) {
   const model = useProjectConfigImportModel(input);
 

@@ -2128,6 +2128,7 @@ export const ru: TranslationResources = {
         errorTitle: "Couldn't import settings",
         errors: {
           capabilityMissing: "Update the host to use this.",
+          unsavedChanges: "Save or discard your project changes before importing.",
           notFound: "No {{source}} project config was found.",
           invalid: "{{path}} couldn't be parsed.",
           staleSource: "The {{source}} config changed. Refresh the preview before importing.",

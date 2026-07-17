@@ -17,6 +17,7 @@ import type { ProjectConfigImportIntent } from "./route";
 export type ProjectConfigImportVisibleError =
   | ProjectConfigRpcError
   | { code: "capability_missing" }
+  | { code: "unsaved_changes" }
   | { code: "transport"; message: string };
 
 export type ProjectConfigImportState =
@@ -137,7 +138,7 @@ function ImportErrorRetryButton(input: {
   onApply: () => void;
 }) {
   const { t } = useTranslation();
-  if (input.error.code === "capability_missing") {
+  if (input.error.code === "capability_missing" || input.error.code === "unsaved_changes") {
     return null;
   }
   const needsRefresh =
@@ -237,6 +238,8 @@ function projectConfigImportErrorText(
       return error.message;
     case "capability_missing":
       return t("settings.project.import.errors.capabilityMissing");
+    case "unsaved_changes":
+      return t("settings.project.import.errors.unsavedChanges");
     case "source_config_not_found":
       return t("settings.project.import.errors.notFound", { source: sourceName });
     case "invalid_source_config":

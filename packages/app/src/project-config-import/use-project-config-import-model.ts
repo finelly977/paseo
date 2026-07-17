@@ -11,6 +11,7 @@ import { useToast } from "@/contexts/toast-context";
 import { useFetchQueries, useFetchQuery } from "@/data/query";
 import { useSessionStore } from "@/stores/session-store";
 import {
+  projectConfigImportPreviewQueryKey,
   projectConfigImportPreviewQueryInput,
   stableProjectConfigImportSourceKey,
   type ProjectConfigImportPreviewResult,
@@ -30,6 +31,7 @@ import {
 } from "./sources";
 
 const EMPTY_IMPORT_SOURCES: readonly ProjectConfigImportAdvertisedSource[] = [];
+type ProjectConfigImportPreviewSuccess = Extract<ProjectConfigImportPreviewResult, { ok: true }>;
 
 export function useProjectConfigImportModel(input: {
   routeIntent: ProjectConfigImportIntent | null;
@@ -38,6 +40,7 @@ export function useProjectConfigImportModel(input: {
   client: DaemonClient | null;
   projectConfigLoaded: boolean;
   projectConfigQueryKey: readonly [string, string, string];
+  hasUnsavedChanges: boolean;
   registry?: ProjectConfigImportSourceRegistry;
   onRouteIntentConsumed?: () => void;
 }) {
@@ -61,7 +64,12 @@ export function useProjectConfigImportModel(input: {
     repoRoot: input.repoRoot,
     source: intent?.source ?? null,
     protocolSource: intent?.protocolSource ?? null,
-    enabled: Boolean(intent && input.projectConfigLoaded && !routeIntentCapabilityMissing),
+    enabled: Boolean(
+      intent &&
+      input.projectConfigLoaded &&
+      !routeIntentCapabilityMissing &&
+      !input.hasUnsavedChanges,
+    ),
   });
   const preview = activePreview.data?.ok ? activePreview.data : null;
   const queryClient = useQueryClient();
@@ -134,6 +142,14 @@ export function useProjectConfigImportModel(input: {
         repoRoot: input.repoRoot,
       });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({
+        queryKey: projectConfigImportPreviewQueryKey(
+          input.serverId,
+          input.repoRoot,
+          intent?.source ?? result.source,
+        ),
+        exact: true,
+      });
       const appliedSource = registry.get(result.source);
       toast.show(
         t("settings.project.import.success", {
@@ -164,14 +180,16 @@ export function useProjectConfigImportModel(input: {
     if (!intent) {
       return null;
     }
-    const error = routeIntentCapabilityMissing
-      ? ({ code: "capability_missing" } as const)
-      : (applyError ??
-        normalizeProjectConfigImportError(
-          activePreview.data && !activePreview.data.ok
-            ? activePreview.data.error
-            : activePreview.error,
-        ));
+    const error = projectConfigImportVisibleError({
+      routeIntentCapabilityMissing,
+      hasUnsavedChanges: input.hasUnsavedChanges,
+      applyError,
+      preview,
+      requestError:
+        activePreview.data && !activePreview.data.ok
+          ? activePreview.data.error
+          : activePreview.error,
+    });
     if (error) {
       return {
         status: "error",
@@ -194,6 +212,7 @@ export function useProjectConfigImportModel(input: {
     applyError,
     applyMutation.isPending,
     intent,
+    input.hasUnsavedChanges,
     preview,
     retryAction,
     routeIntentCapabilityMissing,
@@ -220,12 +239,44 @@ export function useProjectConfigImportModel(input: {
       void activePreview.refetch();
     },
     apply: () => {
-      if (!applyMutation.isPending) {
+      if (!applyMutation.isPending && !input.hasUnsavedChanges) {
         setApplyError(null);
         applyMutation.mutate();
       }
     },
   };
+}
+
+function projectConfigImportPreviewError(
+  preview: ProjectConfigImportPreviewSuccess | null,
+): ProjectConfigRpcError | null {
+  if (preview?.status === "not_found") {
+    return { code: "source_config_not_found", source: preview.source };
+  }
+  if (preview?.status === "nothing_to_import") {
+    return { code: "nothing_to_import" };
+  }
+  return null;
+}
+
+function projectConfigImportVisibleError(input: {
+  routeIntentCapabilityMissing: boolean;
+  hasUnsavedChanges: boolean;
+  applyError: ProjectConfigImportVisibleError | null;
+  preview: ProjectConfigImportPreviewSuccess | null;
+  requestError: ProjectConfigRpcError | Error | null;
+}): ProjectConfigImportVisibleError | null {
+  if (input.routeIntentCapabilityMissing) {
+    return { code: "capability_missing" };
+  }
+  if (input.hasUnsavedChanges) {
+    return { code: "unsaved_changes" };
+  }
+  return (
+    input.applyError ??
+    projectConfigImportPreviewError(input.preview) ??
+    normalizeProjectConfigImportError(input.requestError)
+  );
 }
 
 export function useProjectConfigImportAvailability(input: {

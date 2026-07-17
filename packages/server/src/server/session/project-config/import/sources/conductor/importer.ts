@@ -383,12 +383,12 @@ function rewriteVariables(
 }
 
 function replaceShellVariable(command: string, from: string, to: string): string {
-  const pattern = new RegExp(`\\$(?:\\{${from}\\}|${from}(?![A-Za-z0-9_]))`, "g");
-  return command.replace(pattern, (match) => (match.startsWith("${") ? `\${${to}}` : `$${to}`));
+  const pattern = new RegExp(`\\$\\{${from}(?=[}:#%+\\-=?])|\\$${from}(?![A-Za-z0-9_])`, "g");
+  return command.replace(pattern, (match) => (match.startsWith("${") ? `\${${to}` : `$${to}`));
 }
 
 function containsShellVariable(command: string, name: string): boolean {
-  const pattern = new RegExp(`\\$(?:\\{${name}\\}|${name}(?![A-Za-z0-9_]))`);
+  const pattern = new RegExp(`\\$\\{${name}(?=[}:#%+\\-=?])|\\$${name}(?![A-Za-z0-9_])`);
   return pattern.test(command);
 }
 
@@ -401,7 +401,12 @@ function appendArgs(command: string, args: string[]): string {
 
 function safeCwdPrefix(cwd: string): string | null {
   const normalized = posix.normalize(cwd.replaceAll("\\", "/"));
-  if (/^(?:\/|[A-Za-z]:[\\/])/.test(cwd) || normalized === ".." || normalized.startsWith("../")) {
+  if (
+    normalized.startsWith("/") ||
+    /^(?:\/|[A-Za-z]:[\\/])/.test(cwd) ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+  ) {
     return null;
   }
   return `cd -- ${shellQuote(cwd)} && `;
