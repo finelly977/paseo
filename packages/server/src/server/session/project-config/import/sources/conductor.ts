@@ -110,7 +110,7 @@ function discoverConductorSources(repoRoot: string): SourceFile[] {
 function readSourceFile(repoRoot: string, path: string, role: string): SourceFile {
   return {
     role,
-    relativePath: relative(repoRoot, path),
+    relativePath: relative(repoRoot, path).replaceAll("\\", "/"),
     path,
     bytes: readFileSync(path, "utf8"),
   };
