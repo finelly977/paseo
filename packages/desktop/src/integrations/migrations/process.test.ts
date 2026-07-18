@@ -121,6 +121,15 @@ test.each([
   });
 });
 
+test.each(["[::1]:6767", "::1:6767"])("accepts local IPv6 listen address %s", async (listen) => {
+  const migrations = createMigrations({ ...eligibleTarget, listen }, fakeChild().process);
+
+  await expect(migrations.availability("source-fixture")).resolves.toEqual({
+    available: true,
+    reason: null,
+  });
+});
+
 test("reports a bundled package version mismatch before spawn", async () => {
   const child = fakeChild();
   const migrations = createMigrations(eligibleTarget, child.process, undefined, "0.1.109");

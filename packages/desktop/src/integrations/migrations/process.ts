@@ -177,7 +177,7 @@ function isLocalListen(listen: string | null): boolean {
     return true;
   }
   const endpoint = listen.replace(/^tcp:\/\//, "").toLowerCase();
-  if (endpoint.startsWith("[::1]:")) return true;
+  if (endpoint.startsWith("[::1]:") || endpoint.startsWith("::1:")) return true;
   const host = endpoint.split(":")[0];
   return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
 }

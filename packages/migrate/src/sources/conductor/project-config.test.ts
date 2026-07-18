@@ -118,6 +118,42 @@ run = 42
   });
 });
 
+test("reports a malformed top-level scripts value", () => {
+  const repo = emptyRepo("malformed-top-level-scripts");
+  writeSettings(repo, 'scripts = "npm run dev"\n');
+
+  const inspected = inspectConductorProjectConfig(repo);
+
+  expect(inspected.config).toBeNull();
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-malformed",
+    level: "warning",
+    message: "scripts: Expected a scripts table.",
+  });
+});
+
+test("does not rewrite literal or escaped Conductor variables", () => {
+  const inspected = inspectConductorProjectConfig(emptyRepo("literal-variables"), {
+    scripts: {
+      setup: "printf '%s\\n' '$CONDUCTOR_WORKSPACE_PATH'",
+      run: {
+        escaped: { command: "printf \\$CONDUCTOR_PORT" },
+        active: { command: "printf \"'$CONDUCTOR_PORT'\"" },
+      },
+    },
+  });
+
+  expect(inspected.config).toEqual({
+    scripts: { active: { command: "printf \"'$PASEO_PORT'\"", type: "service" } },
+  });
+  expect(inspected.notices.map((notice) => notice.message)).toEqual(
+    expect.arrayContaining([
+      "worktree.setup: Literal or escaped Conductor variables: CONDUCTOR_WORKSPACE_PATH. Command was not imported.",
+      "scripts.escaped: Literal or escaped Conductor variables: CONDUCTOR_PORT. Command was not imported.",
+    ]),
+  );
+});
+
 test("skips cwd scripts on Windows instead of emitting POSIX shell syntax", () => {
   const repo = emptyRepo("windows-cwd");
   writeSettings(

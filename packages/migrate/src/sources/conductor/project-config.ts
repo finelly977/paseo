@@ -16,14 +16,7 @@ interface SourceFile {
 }
 
 export interface ConductorSettings {
-  scripts?: {
-    setup?: unknown;
-    archive?: unknown;
-    run?: unknown;
-    run_mode?: unknown;
-    auto_run_after_setup?: unknown;
-    [key: string]: unknown;
-  };
+  scripts?: unknown;
   file_include_globs?: unknown;
   environment_variables?: unknown;
   environment_variables_forward?: unknown;
@@ -59,10 +52,15 @@ export function inspectConductorProjectConfig(
   );
   const config: PaseoConfigRaw = {};
   const notices: MigrationNotice[] = [];
+  const scripts = isRecord(settings.scripts) ? settings.scripts : null;
 
-  mapLifecycle(settings.scripts?.setup, "worktree.setup", "setup", config, notices);
-  mapLifecycle(settings.scripts?.archive, "worktree.teardown", "teardown", config, notices);
-  mapRunScripts(settings.scripts?.run, config, notices, platform);
+  if (settings.scripts !== undefined && !scripts) {
+    notices.push(malformedSetting("scripts", "Expected a scripts table."));
+  }
+
+  mapLifecycle(scripts?.setup, "worktree.setup", "setup", config, notices);
+  mapLifecycle(scripts?.archive, "worktree.teardown", "teardown", config, notices);
+  mapRunScripts(scripts?.run, config, notices, platform);
   mapMetadataPrompts(settings.prompts, config, notices);
   reportUnsupported(repoRoot, settings, notices);
 
@@ -107,17 +105,25 @@ function mergeSettings(base: ConductorSettings, override: ConductorSettings): Co
   return {
     ...base,
     ...override,
-    scripts: {
-      ...(isRecord(base.scripts) ? base.scripts : {}),
-      ...(isRecord(override.scripts) ? override.scripts : {}),
-      run: mergeRunScripts(base.scripts?.run, override.scripts?.run),
-    },
+    scripts: mergeScripts(base.scripts, override.scripts),
     environment_variables: mergeNested(base.environment_variables, override.environment_variables),
     environment_variables_forward: mergeNested(
       base.environment_variables_forward,
       override.environment_variables_forward,
     ),
     prompts: mergeNested(base.prompts, override.prompts),
+  };
+}
+
+function mergeScripts(base: unknown, override: unknown): unknown {
+  if (override !== undefined && !isRecord(override)) return override;
+  if (override === undefined && !isRecord(base)) return base;
+  const baseScripts = isRecord(base) ? base : {};
+  const overrideScripts = isRecord(override) ? override : {};
+  return {
+    ...baseScripts,
+    ...overrideScripts,
+    run: mergeRunScripts(baseScripts.run, overrideScripts.run),
   };
 }
 
@@ -329,11 +335,14 @@ function mapRunScript(
       );
       return;
     }
-    serviceNames.set(environmentName, scriptId);
   }
 
   const rewritten = rewriteExactCommand(command, service ? "run" : "lifecycle", key, notices);
   if (!rewritten) return;
+  if (service) {
+    const environmentName = scriptId.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    serviceNames.set(environmentName, scriptId);
+  }
   const entry: PaseoScriptEntryRaw = { command: rewritten };
   if (service) entry.type = "service";
   config.scripts = { ...config.scripts, [scriptId]: entry };
@@ -345,6 +354,16 @@ function rewriteExactCommand(
   key: string,
   notices: MigrationNotice[],
 ): string | null {
+  const literalVariables = collectLiteralConductorVariables(command);
+  if (literalVariables.length > 0) {
+    notices.push(
+      unsupportedSetting(
+        key,
+        `Literal or escaped Conductor variables: ${literalVariables.join(", ")}. Command was not imported.`,
+      ),
+    );
+    return null;
+  }
   let rewritten = command;
   for (const [from, to] of [
     ["CONDUCTOR_WORKSPACE_PATH", "PASEO_WORKTREE_PATH"],
@@ -371,12 +390,13 @@ function reportUnsupported(
   settings: ConductorSettings,
   notices: MigrationNotice[],
 ): void {
+  const scripts = isRecord(settings.scripts) ? settings.scripts : {};
   const unsupportedValues: Array<[string, unknown, string]> = [
-    ["scripts.run_mode", settings.scripts?.run_mode, "Paseo has no project-wide run mode."],
+    ["scripts.run_mode", scripts.run_mode, "Paseo has no project-wide run mode."],
     ["runScriptMode", settings.runScriptMode, "Paseo has no project-wide run mode."],
     [
       "scripts.auto_run_after_setup",
-      settings.scripts?.auto_run_after_setup,
+      scripts.auto_run_after_setup,
       "Paseo does not auto-run scripts after setup.",
     ],
     [
@@ -572,6 +592,50 @@ function collectConductorVariables(command: string): string[] {
     if (match[1]) names.add(match[1]);
   }
   return [...names].sort();
+}
+
+function collectLiteralConductorVariables(command: string): string[] {
+  const names = new Set<string>();
+  let quote: "single" | "double" | null = null;
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index];
+    if (quote === "single") {
+      if (character === "'") {
+        quote = null;
+        continue;
+      }
+      if (!command.startsWith("CONDUCTOR_", index)) continue;
+      const previous = command[index - 1];
+      if (previous && /[A-Za-z0-9_]/.test(previous)) continue;
+      const name = command.slice(index).match(/^CONDUCTOR_[A-Za-z0-9_]+/)?.[0];
+      if (name) names.add(name);
+      continue;
+    }
+    if (character === "\\") {
+      if (command[index + 1] === "$") {
+        const name = readConductorVariable(command, index + 1);
+        if (name) names.add(name);
+      }
+      index += 1;
+      continue;
+    }
+    if (quote === "double") {
+      if (character === '"') quote = null;
+      continue;
+    }
+    if (character === "'") quote = "single";
+    if (character === '"') quote = "double";
+  }
+  return [...names].sort();
+}
+
+function readConductorVariable(command: string, dollarIndex: number): string | null {
+  const suffix = command.slice(dollarIndex + 1);
+  return (
+    suffix.match(/^\{(CONDUCTOR_[A-Za-z0-9_]+)/)?.[1] ??
+    suffix.match(/^(CONDUCTOR_[A-Za-z0-9_]+)/)?.[1] ??
+    null
+  );
 }
 
 function containsShellVariable(command: string, name: string): boolean {
