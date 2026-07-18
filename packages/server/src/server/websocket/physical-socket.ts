@@ -5,8 +5,6 @@ export const MAX_PHYSICAL_SOCKET_BUFFERED_BYTES = 8 * 1024 * 1024;
 // lease without making an abandoned application socket linger for minutes.
 export const APPLICATION_SOCKET_LEASE_MS = 45_000;
 export const APPLICATION_SOCKET_LEASE_CHECK_INTERVAL_MS = 10_000;
-export const WS_CLOSE_OUTBOUND_HIGH_WATER = 4004;
-export const WS_CLOSE_APPLICATION_LEASE_EXPIRED = 4005;
 
 type Clock = () => number;
 

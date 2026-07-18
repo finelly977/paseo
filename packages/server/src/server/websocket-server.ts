@@ -90,8 +90,6 @@ import {
   outboundFrameByteLength,
   physicalSocketHasCapacity,
   sendBoundedPhysicalFrame,
-  WS_CLOSE_APPLICATION_LEASE_EXPIRED,
-  WS_CLOSE_OUTBOUND_HIGH_WATER,
 } from "./websocket/physical-socket.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
@@ -408,8 +406,6 @@ interface SocketSessionOptions {
 
 interface ClosePhysicalSocketParams {
   ws: WebSocketLike;
-  code: number;
-  reason: string;
   logMessage: string;
   logFields?: Record<string, unknown>;
 }
@@ -745,8 +741,6 @@ export class VoiceAssistantWebSocketServer {
       for (const ws of this.applicationSocketLease.listExpired()) {
         this.closePhysicalSocket({
           ws,
-          code: WS_CLOSE_APPLICATION_LEASE_EXPIRED,
-          reason: "Application heartbeat expired",
           logMessage: "Closing physical WebSocket with expired application lease",
         });
       }
@@ -1065,8 +1059,6 @@ export class VoiceAssistantWebSocketServer {
   private closeAtOutboundHighWater(ws: WebSocketLike): void {
     this.closePhysicalSocket({
       ws,
-      code: WS_CLOSE_OUTBOUND_HIGH_WATER,
-      reason: "Outbound buffer limit exceeded",
       logMessage: "Closing physical WebSocket at outbound high-water mark",
       logFields: {
         bufferedAmount: ws.bufferedAmount,
@@ -1076,7 +1068,7 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private closePhysicalSocket(params: ClosePhysicalSocketParams): void {
-    const { ws, code, reason, logMessage, logFields } = params;
+    const { ws, logMessage, logFields } = params;
     this.applicationSocketLease.release(ws);
     if (ws.readyState !== 1) {
       return;
@@ -1090,10 +1082,12 @@ export class VoiceAssistantWebSocketServer {
       logMessage,
     );
     try {
+      // A close frame queues behind application data, so it cannot enforce a
+      // hard memory cutoff. Production transports expose terminate().
       if (ws.terminate) {
         ws.terminate();
       } else {
-        ws.close(code, reason);
+        ws.close();
       }
     } catch (err) {
       this.logger.warn(
