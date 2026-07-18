@@ -141,10 +141,11 @@ function parseRepo(value: unknown): ConductorRepoRecord {
 
 function parseWorkspace(value: unknown): ConductorWorkspaceRecord {
   const row = record(value);
+  const branch = optionalString(row.branch);
   return {
     id: stringColumn(row, "id"),
     repoId: stringColumn(row, "repo_id"),
-    branch: optionalString(row.branch),
+    branch: branch?.replace(/^refs\/heads\//, "") ?? null,
     state: stringColumn(row, "state"),
     path: optionalString(row.path),
     archiveCommit: optionalString(row.archive_commit),

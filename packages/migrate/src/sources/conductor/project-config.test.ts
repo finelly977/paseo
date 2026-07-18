@@ -76,6 +76,9 @@ cwd = "../outside"
 
 [scripts.run.unknown_variable]
 command = "echo $CONDUCTOR_UNSUPPORTED_VALUE"
+
+[scripts.run.unsupported_substitution]
+command = "serve --port \${CONDUCTOR_PORT/3000/3001}"
 `,
   );
 
@@ -93,6 +96,7 @@ command = "echo $CONDUCTOR_UNSUPPORTED_VALUE"
       "scripts.absolute.cwd: Absolute or escaping cwd values are not imported.",
       "scripts.escape.cwd: Absolute or escaping cwd values are not imported.",
       "scripts.unknown_variable: Unsupported Conductor variables: CONDUCTOR_UNSUPPORTED_VALUE. Command was not imported.",
+      "scripts.unsupported_substitution: Unsupported Conductor variables: CONDUCTOR_PORT. Command was not imported.",
       "settings.unknown_project_setting: Unknown Conductor setting.",
     ]),
   );

@@ -110,6 +110,21 @@ test("reports malformed database JSON and script columns per project", async () 
   ]);
 });
 
+test("normalizes fully qualified local workspace branches", async () => {
+  const databasePath = temporaryDatabase();
+  cpSync(fixturePath, databasePath);
+  const database = await openFixtureDatabase(databasePath);
+  database.run("UPDATE workspaces SET branch = 'refs/heads/feature' WHERE branch IS NOT NULL");
+  saveFixtureDatabase(databasePath, database);
+
+  const branches = (await readConductorCatalog(databasePath)).workspaces
+    .map((workspace) => workspace.branch)
+    .filter((branch): branch is string => branch !== null);
+
+  expect(branches).toContain("feature");
+  expect(branches.some((branch) => branch.startsWith("refs/heads/"))).toBe(false);
+});
+
 function temporaryDatabase(): string {
   const directory = mkdtempSync(path.join(os.tmpdir(), "paseo-migrate-db-"));
   cleanup.push(directory);

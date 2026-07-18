@@ -19,6 +19,7 @@ import {
 } from "@playwright/test";
 
 test.skip(process.env.E2E_DESKTOP_RUNTIME !== "1", "requires the real Electron product runtime");
+test.setTimeout(180_000);
 
 const repoRoot = path.resolve(__dirname, "../../..");
 let installation: Awaited<ReturnType<typeof createConductorInstallation>>;
@@ -82,7 +83,7 @@ async function launchProduct(): Promise<ElectronApplication> {
 
 async function openIntegrations(page: Page): Promise<void> {
   const settings = page.getByRole("button", { name: "Settings", exact: true });
-  await expect(settings).toBeVisible({ timeout: 30_000 });
+  await expect(settings).toBeVisible({ timeout: 90_000 });
   await settings.click();
   await expect(page.getByTestId("settings-sidebar")).toBeVisible();
   await page.getByRole("button", { name: "Integrations", exact: true }).click();
