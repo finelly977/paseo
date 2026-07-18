@@ -43,6 +43,21 @@ test("discovers the running daemon TCP address from its PID record", () => {
   ]);
 });
 
+test("normalizes the daemon's bare IPv6 loopback PID address", () => {
+  const paseoHome = mkdtempSync(path.join(os.tmpdir(), "paseo-node-client-pid-ipv6-"));
+  cleanup.push(paseoHome);
+  writeFileSync(path.join(paseoHome, "paseo.pid"), JSON.stringify({ listen: "::1:7789" }));
+
+  expect(resolveDefaultDaemonHosts({ PASEO_HOME: paseoHome })).toEqual([
+    "[::1]:7789",
+    "localhost:6767",
+  ]);
+  expect(resolveDaemonTarget("::1:7789")).toEqual({
+    type: "tcp",
+    url: "ws://[::1]:7789/ws",
+  });
+});
+
 test("normalizes TCP, Unix, pipe, and Windows path-shaped targets", () => {
   expect(normalizeDaemonHost("tcp://Example.com:6767?ssl=true&password=secret")).toBe(
     "tcp://Example.com:6767?ssl=true&password=secret",

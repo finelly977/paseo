@@ -83,6 +83,41 @@ test("reports an unknown workspace state by its exact value", () => {
   });
 });
 
+test("does not adopt an existing worktree on a different branch", () => {
+  const repo = createRepository("wrong-worktree-branch", null);
+  execFileSync("git", ["commit", "--allow-empty", "-m", "initial"], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Paseo Test",
+      GIT_AUTHOR_EMAIL: "test@paseo.local",
+      GIT_COMMITTER_NAME: "Paseo Test",
+      GIT_COMMITTER_EMAIL: "test@paseo.local",
+    },
+  });
+  execFileSync("git", ["branch", "recorded-branch"], { cwd: repo });
+
+  const inspected = inspectCatalog({
+    repos: [repoRecord("repo", repo)],
+    workspaces: [
+      {
+        id: "workspace-wrong-branch",
+        repoId: "repo",
+        branch: "recorded-branch",
+        state: "ready",
+        path: repo,
+        archiveCommit: null,
+      },
+    ],
+  });
+
+  expect(inspected.projects[0]?.workspaces[0]).toMatchObject({
+    sourceId: "workspace-wrong-branch",
+    disposition: "invalid",
+    notices: [{ code: "invalid-worktree" }],
+  });
+});
+
 function createRepository(name: string, settings: string | null): string {
   const repo = mkdtempSync(path.join(os.tmpdir(), `paseo-inspect-${name}-`));
   cleanup.push(repo);

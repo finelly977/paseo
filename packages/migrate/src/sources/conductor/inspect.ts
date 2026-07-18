@@ -112,7 +112,7 @@ function inspectWorkspace(
   }
 
   if (workspace.path && isDirectory(workspace.path)) {
-    const valid = isLinkedWorktree(repo.rootPath, workspace.path);
+    const valid = isLinkedWorktree(repo.rootPath, workspace.path, workspace.branch);
     return {
       sourceId: workspace.id,
       state: "ready",
@@ -126,7 +126,9 @@ function inspectWorkspace(
         : [
             notice(
               "invalid-worktree",
-              `Skipped ${workspace.path}: not linked to ${repo.rootPath}.`,
+              workspace.branch
+                ? `Skipped ${workspace.path}: not linked to ${repo.rootPath} on recorded branch ${workspace.branch}.`
+                : `Skipped ${workspace.path}: not linked to ${repo.rootPath}.`,
             ),
           ],
     };
@@ -174,14 +176,21 @@ function isGitRepository(rootPath: string): boolean {
   }
 }
 
-function isLinkedWorktree(rootPath: string, workspacePath: string): boolean {
+function isLinkedWorktree(
+  rootPath: string,
+  workspacePath: string,
+  expectedBranch: string | null,
+): boolean {
   try {
     const rootCommon = resolveGitPath(rootPath, git(rootPath, ["rev-parse", "--git-common-dir"]));
     const workspaceCommon = resolveGitPath(
       workspacePath,
       git(workspacePath, ["rev-parse", "--git-common-dir"]),
     );
-    return realpathSync(rootCommon) === realpathSync(workspaceCommon);
+    if (realpathSync(rootCommon) !== realpathSync(workspaceCommon)) return false;
+    if (!expectedBranch) return true;
+    const actualBranch = git(workspacePath, ["symbolic-ref", "--short", "HEAD"]);
+    return actualBranch === expectedBranch.replace(/^refs\/heads\//, "");
   } catch {
     return false;
   }

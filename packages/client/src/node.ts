@@ -89,6 +89,9 @@ export function normalizeDaemonHost(raw: string): string | null {
   if (value.startsWith("/") || value.startsWith("~")) return `unix://${value}`;
   if (/^[A-Za-z]:[/\\]/.test(value)) return null;
   if (/^\d+$/.test(value)) return `127.0.0.1:${value}`;
+  const ipv6Loopback = normalizeBareIpv6Loopback(value);
+  if (ipv6Loopback) return ipv6Loopback;
+  if (value.startsWith("::1:")) return null;
   return value.includes(":") ? value : null;
 }
 
@@ -166,7 +169,18 @@ export function resolveDaemonTarget(host: string): DaemonTarget {
     );
     return { type: "tcp", url: buildDaemonWebSocketUrl(endpoint, { useTls: parsed.useTls }) };
   }
-  return { type: "tcp", url: `ws://${value}/ws` };
+  const endpoint = normalizeBareIpv6Loopback(value) ?? normalizeHostPort(value);
+  return { type: "tcp", url: buildDaemonWebSocketUrl(endpoint, { useTls: false }) };
+}
+
+function normalizeBareIpv6Loopback(value: string): string | null {
+  const match = value.match(/^::1:(\d{1,5})$/);
+  if (!match) return null;
+  try {
+    return normalizeHostPort(`[::1]:${match[1]}`);
+  } catch {
+    return null;
+  }
 }
 
 export function resolveDaemonPassword(
