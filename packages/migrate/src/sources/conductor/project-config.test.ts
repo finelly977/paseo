@@ -138,6 +138,7 @@ test("does not rewrite literal or escaped Conductor variables", () => {
       setup: "printf '%s\\n' '$CONDUCTOR_WORKSPACE_PATH'",
       run: {
         escaped: { command: "printf \\$CONDUCTOR_PORT" },
+        escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
         active: { command: "printf \"'$CONDUCTOR_PORT'\"" },
       },
     },
@@ -150,6 +151,7 @@ test("does not rewrite literal or escaped Conductor variables", () => {
     expect.arrayContaining([
       "worktree.setup: Literal or escaped Conductor variables: CONDUCTOR_WORKSPACE_PATH. Command was not imported.",
       "scripts.escaped: Literal or escaped Conductor variables: CONDUCTOR_PORT. Command was not imported.",
+      "scripts.escapedDouble: Literal or escaped Conductor variables: CONDUCTOR_PORT. Command was not imported.",
     ]),
   );
 });

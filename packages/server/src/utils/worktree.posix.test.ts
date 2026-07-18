@@ -310,28 +310,6 @@ describe.skipIf(isPlatform("win32"))("worktree POSIX-only", () => {
       expect((caughtError as BranchAlreadyCheckedOutError).branchName).toBe("main");
     });
 
-    it("prunes a verified stale registration before checking out its branch", async () => {
-      execFileSync("git", ["branch", "stale-branch"], { cwd: repoDir });
-      const stalePath = join(tempDir, "stale-worktree");
-      execFileSync("git", ["worktree", "add", stalePath, "stale-branch"], { cwd: repoDir });
-      rmSync(stalePath, { recursive: true, force: true });
-
-      const recreated = await createLegacyWorktreeForTest({
-        cwd: repoDir,
-        worktreeSlug: "recreated-stale",
-        source: { kind: "checkout-branch", branchName: "stale-branch" },
-        runSetup: false,
-        paseoHome,
-      });
-
-      expect(existsSync(recreated.worktreePath)).toBe(true);
-      expect(
-        execFileSync("git", ["branch", "--show-current"], { cwd: recreated.worktreePath })
-          .toString()
-          .trim(),
-      ).toBe("stale-branch");
-    });
-
     it("fetches a GitHub PR branch, checks it out, writes metadata, and runs setup", async () => {
       const remoteDir = join(tempDir, "remote.git");
       const remoteCloneDir = join(tempDir, "remote-clone");

@@ -12,7 +12,7 @@ import { resolveMigrationEntrypoint } from "./entrypoint.js";
 import { DesktopMigrationProcess, type MigrationTarget } from "./process.js";
 
 const migrations = new DesktopMigrationProcess({
-  sources: new Map([["conductor", ["conductor"]]]),
+  sources: new Map(process.platform === "darwin" ? [["conductor", ["conductor"]]] : []),
   env: process.env,
   resolveEntrypoint: resolveMigrationEntrypoint,
   createInvocation: ({ entrypoint, args, env }) =>
