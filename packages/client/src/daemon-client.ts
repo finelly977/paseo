@@ -5151,7 +5151,6 @@ export class DaemonClient {
             [CLIENT_CAPS.providerSubagents]: true,
             [CLIENT_CAPS.projectUpdates]: true,
             ...this.config.capabilities,
-            [CLIENT_CAPS.applicationSocketLease]: true,
           },
           ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),
         }),

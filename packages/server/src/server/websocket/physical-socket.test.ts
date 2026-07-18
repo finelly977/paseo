@@ -1,5 +1,4 @@
 import { expect, test } from "vitest";
-import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import {
   APPLICATION_SOCKET_LEASE_MS,
   ApplicationSocketLease,
@@ -7,12 +6,10 @@ import {
   sendBoundedPhysicalFrame,
 } from "./physical-socket.js";
 
-test("legacy sockets without the application lease capability remain exempt", () => {
+test("sockets remain exempt until they send an application ping", () => {
   let now = 0;
   const lease = new ApplicationSocketLease<object>(() => now);
   const legacySocket = {};
-  lease.enroll(legacySocket, undefined);
-
   now = APPLICATION_SOCKET_LEASE_MS * 10;
 
   expect(lease.listExpired()).toEqual([]);
@@ -20,11 +17,11 @@ test("legacy sockets without the application lease capability remain exempt", ()
   expect(lease.listExpired()).toEqual([]);
 });
 
-test("the hello capability enrolls immediately and inbound activity renews the lease", () => {
+test("inbound activity renews a claimed lease", () => {
   let now = 0;
   const lease = new ApplicationSocketLease<object>(() => now);
   const applicationSocket = {};
-  lease.enroll(applicationSocket, { [CLIENT_CAPS.applicationSocketLease]: true });
+  lease.claim(applicationSocket);
 
   now = APPLICATION_SOCKET_LEASE_MS - 1;
   lease.renew(applicationSocket);
@@ -37,7 +34,7 @@ test("the hello capability enrolls immediately and inbound activity renews the l
   expect(lease.listExpired()).toEqual([]);
 });
 
-test("a socket that does not advertise the capability can opt in with an application ping", () => {
+test("an application ping claims a socket lease", () => {
   let now = 0;
   const lease = new ApplicationSocketLease<object>(() => now);
   const rawSocket = {};

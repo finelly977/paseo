@@ -1379,7 +1379,6 @@ export class VoiceAssistantWebSocketServer {
 
     this.clearPendingConnection(ws);
     pending.identity.clientId = clientId;
-    this.applicationSocketLease.enroll(ws, message.capabilities);
     if (message.appVersion) {
       pending.identity.appVersion = message.appVersion;
     }

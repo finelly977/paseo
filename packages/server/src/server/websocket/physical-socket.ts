@@ -1,5 +1,3 @@
-import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
-
 // Terminal streams begin snapshot catch-up at 4 MiB. The physical socket gets
 // another 4 MiB to recover before the daemon enforces the hard memory bound.
 export const MAX_PHYSICAL_SOCKET_BUFFERED_BYTES = 8 * 1024 * 1024;
@@ -19,12 +17,6 @@ export class ApplicationSocketLease<TSocket extends object> {
 
   claim(socket: TSocket): void {
     this.deadlines.set(socket, this.clock() + APPLICATION_SOCKET_LEASE_MS);
-  }
-
-  enroll(socket: TSocket, capabilities: Record<string, unknown> | undefined): void {
-    if (capabilities?.[CLIENT_CAPS.applicationSocketLease] === true) {
-      this.claim(socket);
-    }
   }
 
   renew(socket: TSocket): void {

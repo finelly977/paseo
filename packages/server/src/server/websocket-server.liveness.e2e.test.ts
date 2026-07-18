@@ -2,7 +2,6 @@ import { expect, test } from "vitest";
 import { WebSocket, type RawData } from "ws";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "./test-utils/index.js";
 import { WSOutboundMessageSchema, type WSOutboundMessage } from "./messages.js";
-import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 
 const LARGE_REQUEST_BYTES = 512 * 1024;
 const BURST_MESSAGE_COUNT = 32;
@@ -23,7 +22,7 @@ class ResumedPhysicalSocketSession {
 
   static async launch(): Promise<ResumedPhysicalSocketSession> {
     const daemon = await createTestPaseoDaemon();
-    const original = await connectSocket(daemon.port, "stale-physical-socket", true);
+    const original = await connectSocket(daemon.port, "stale-physical-socket");
     return new ResumedPhysicalSocketSession(daemon, original);
   }
 
@@ -112,11 +111,7 @@ test(
   TEST_TIMEOUT_MS,
 );
 
-async function connectSocket(
-  port: number,
-  clientId: string,
-  applicationSocketLease = false,
-): Promise<WebSocket> {
+async function connectSocket(port: number, clientId: string): Promise<WebSocket> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`);
   await waitForOpen(socket);
   await sendAndWait(
@@ -126,15 +121,13 @@ async function connectSocket(
       clientId,
       clientType: "browser",
       protocolVersion: 1,
-      ...(applicationSocketLease
-        ? { capabilities: { [CLIENT_CAPS.applicationSocketLease]: true } }
-        : {}),
     },
     (message) =>
       message.type === "session" &&
       message.message.type === "status" &&
       message.message.payload.status === "server_info",
   );
+  await sendAndWait(socket, { type: "ping" }, (message) => message.type === "pong");
   return socket;
 }
 

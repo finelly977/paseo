@@ -5565,7 +5565,6 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.providerSubagents]: z.boolean().optional(),
       [CLIENT_CAPS.projectUpdates]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
-      [CLIENT_CAPS.applicationSocketLease]: z.boolean().optional(),
     })
     .passthrough()
     .optional(),
