@@ -14,6 +14,32 @@ export interface BrowserOpener {
   open(url: string): Promise<void>;
 }
 
+type BrowserLaunch = (command: string, args: string[]) => Promise<void>;
+
+interface SystemBrowserOptions {
+  hostPlatform?: NodeJS.Platform;
+  launch?: BrowserLaunch;
+}
+
+export class SystemBrowser implements BrowserOpener {
+  private readonly hostPlatform: NodeJS.Platform;
+  private readonly launch: BrowserLaunch;
+
+  constructor(options: SystemBrowserOptions = {}) {
+    this.hostPlatform = options.hostPlatform ?? platform();
+    this.launch = options.launch ?? launchDetached;
+  }
+
+  async open(url: string): Promise<void> {
+    if (this.hostPlatform === "win32") {
+      await this.launch("rundll32.exe", ["url.dll,FileProtocolHandler", url]);
+      return;
+    }
+
+    await this.launch(this.hostPlatform === "darwin" ? "open" : "xdg-open", [url]);
+  }
+}
+
 export interface AuthorizationReporter {
   instructions(verificationUri: string, userCode: string): void;
 }
@@ -66,7 +92,7 @@ export function createDeviceAuthorizationWorkflow(): DeviceAuthorizationWorkflow
       wait: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
       now: Date.now,
     },
-    browser: { open: openBrowser },
+    browser: new SystemBrowser(),
     reporter: {
       instructions(verificationUri, userCode) {
         process.stderr.write(`Open ${verificationUri} and enter code ${userCode}\n`);
@@ -76,22 +102,17 @@ export function createDeviceAuthorizationWorkflow(): DeviceAuthorizationWorkflow
   });
 }
 
-async function openBrowser(url: string): Promise<void> {
-  const hostPlatform = platform();
-  const command = browserCommand(hostPlatform);
-  const args = hostPlatform === "win32" ? ["/c", "start", "", url] : [url];
+async function launchDetached(command: string, args: string[]): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    const child = spawn(command, args, {
+      detached: true,
+      shell: false,
+      stdio: "ignore",
+    });
     child.once("spawn", () => {
       child.unref();
       resolve();
     });
     child.once("error", reject);
   });
-}
-
-function browserCommand(hostPlatform: NodeJS.Platform): string {
-  if (hostPlatform === "darwin") return "open";
-  if (hostPlatform === "win32") return "cmd";
-  return "xdg-open";
 }

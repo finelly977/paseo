@@ -5,6 +5,24 @@ import { describe, it } from "vitest";
 import { CloudDeviceAuthorizationClient } from "./cloud-device-authorization.js";
 
 describe("Cloud device authorization", () => {
+  it("accepts loopback HTTP activation URLs", async () => {
+    const cloud = await RegistrationCloud.start("loopback-authorization");
+    try {
+      const authorization = await new CloudDeviceAuthorizationClient().start(
+        cloud.origin,
+        "Studio Mac",
+      );
+
+      assert.equal(authorization.verificationUri, `${cloud.origin}/activate`);
+      assert.equal(
+        authorization.verificationUriComplete,
+        `${cloud.origin}/activate?code=ABCD-EFGH-JKLMN`,
+      );
+    } finally {
+      await cloud.stop();
+    }
+  });
+
   it("rejects a non-web activation URL at the Cloud boundary", async () => {
     const cloud = await RegistrationCloud.start("non-web-authorization");
     try {
@@ -46,6 +64,22 @@ describe("Cloud device authorization", () => {
     }
   });
 
+  it("retries when a poll response body resets after headers arrive", async () => {
+    const cloud = await RegistrationCloud.start("reset-poll-body");
+    try {
+      const outcome = await new CloudDeviceAuthorizationClient().poll(
+        cloud.origin,
+        "device-code-with-more-than-thirty-two-characters",
+        1_000,
+      );
+
+      assert.deepEqual(outcome, { status: "retry_later" });
+      assert.deepEqual(cloud.receivedPaths, ["/api/device-authorizations/poll"]);
+    } finally {
+      await cloud.stop();
+    }
+  });
+
   it("rejects a completed malformed poll response", async () => {
     const cloud = await RegistrationCloud.start("malformed-poll-body");
     try {
@@ -55,6 +89,23 @@ describe("Cloud device authorization", () => {
           "device-code-with-more-than-thirty-two-characters",
           1_000,
         ),
+        { name: "SyntaxError" },
+      );
+    } finally {
+      await cloud.stop();
+    }
+  });
+
+  it("rejects a completed poll response with an invalid shape", async () => {
+    const cloud = await RegistrationCloud.start("invalid-poll-body");
+    try {
+      await assert.rejects(
+        new CloudDeviceAuthorizationClient().poll(
+          cloud.origin,
+          "device-code-with-more-than-thirty-two-characters",
+          1_000,
+        ),
+        { name: "ZodError" },
       );
     } finally {
       await cloud.stop();
@@ -63,10 +114,13 @@ describe("Cloud device authorization", () => {
 });
 
 type RegistrationCloudResponse =
+  | "loopback-authorization"
   | "non-web-authorization"
   | "stalled-start-body"
   | "stalled-poll-body"
-  | "malformed-poll-body";
+  | "reset-poll-body"
+  | "malformed-poll-body"
+  | "invalid-poll-body";
 
 class RegistrationCloud {
   readonly receivedPaths: string[] = [];
@@ -85,6 +139,10 @@ class RegistrationCloud {
         response.end("not-json");
         return;
       }
+      if (responseBody === "invalid-poll-body") {
+        response.end('{"status":"pending"}');
+        return;
+      }
       if (responseBody === "non-web-authorization") {
         response.end(
           JSON.stringify({
@@ -98,8 +156,27 @@ class RegistrationCloud {
         );
         return;
       }
+      if (responseBody === "loopback-authorization") {
+        response.end(
+          JSON.stringify({
+            deviceCode: "device-code-with-more-than-thirty-two-characters",
+            userCode: "ABCD-EFGH-JKLMN",
+            verificationUri: `${cloud.origin}/activate`,
+            verificationUriComplete: `${cloud.origin}/activate?code=ABCD-EFGH-JKLMN`,
+            expiresAt: "2026-07-18T12:10:00.000Z",
+            interval: 5,
+          }),
+        );
+        return;
+      }
       if (responseBody === "stalled-start-body") {
         response.write('{"deviceCode":"device-code-with-more-than-thirty-two-characters"');
+        return;
+      }
+      if (responseBody === "reset-poll-body") {
+        response.flushHeaders();
+        response.write('{"status":"pending"');
+        setImmediate(() => response.socket?.destroy());
         return;
       }
       response.write('{"status":"pending","interval":5');

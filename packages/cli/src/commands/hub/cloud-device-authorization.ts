@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const START_TIMEOUT_MS = 15_000;
-const activationUrlSchema = z.httpUrl();
+const activationUrlSchema = z.url({ protocol: /^https?$/u });
 
 const authorizationSchema = z.object({
   deviceCode: z.string().min(32),
@@ -81,12 +81,14 @@ export class CloudDeviceAuthorizationClient implements CloudDeviceAuthorization 
       return { status: "retry_later" };
     }
     if (!response.ok) throw new Error(`Cloud registration poll failed (${response.status})`);
+    let body: unknown;
     try {
-      return pollSchema.parse(await response.json());
+      body = await response.json();
     } catch (error) {
-      if (signal.aborted) return { status: "retry_later" };
+      if (signal.aborted || error instanceof TypeError) return { status: "retry_later" };
       throw error;
     }
+    return pollSchema.parse(body);
   }
 }
 

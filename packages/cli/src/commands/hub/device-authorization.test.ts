@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
-import { DeviceAuthorizationWorkflow } from "./device-authorization.js";
+import { DeviceAuthorizationWorkflow, SystemBrowser } from "./device-authorization.js";
 import type {
   CloudDeviceAuthorization,
   DeviceAuthorizationPoll,
@@ -8,6 +8,26 @@ import type {
 import { createHubCommand } from "./index.js";
 
 describe("Hub device authorization", () => {
+  it("opens activation URLs on Windows without a command shell", async () => {
+    const launches: Array<{ command: string; args: string[] }> = [];
+    const browser = new SystemBrowser({
+      hostPlatform: "win32",
+      launch: async (command, args) => void launches.push({ command, args }),
+    });
+
+    await browser.open("https://cloud.paseo.test/activate?code=ABCD-EFGH-JKLMN");
+
+    assert.deepEqual(launches, [
+      {
+        command: "rundll32.exe",
+        args: [
+          "url.dll,FileProtocolHandler",
+          "https://cloud.paseo.test/activate?code=ABCD-EFGH-JKLMN",
+        ],
+      },
+    ]);
+  });
+
   it("opens the browser, follows Cloud cadence, and returns the approved enrollment token", async () => {
     const cloud = new FakeCloud([
       { status: "pending", interval: 5 },
