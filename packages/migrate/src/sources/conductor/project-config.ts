@@ -51,6 +51,7 @@ type RewriteContext = "lifecycle" | "run";
 export function inspectConductorProjectConfig(
   repoRoot: string,
   databaseSettings: ConductorSettings = {},
+  platform: NodeJS.Platform = process.platform,
 ): { config: PaseoConfigRaw | null; notices: MigrationNotice[] } {
   const settings = mergeSettings(
     databaseSettings,
@@ -61,7 +62,7 @@ export function inspectConductorProjectConfig(
 
   mapLifecycle(settings.scripts?.setup, "worktree.setup", "setup", config, notices);
   mapLifecycle(settings.scripts?.archive, "worktree.teardown", "teardown", config, notices);
-  mapRunScripts(settings.scripts?.run, config, notices);
+  mapRunScripts(settings.scripts?.run, config, notices, platform);
   mapMetadataPrompts(settings.prompts, config, notices);
   reportUnsupported(repoRoot, settings, notices);
 
@@ -168,11 +169,12 @@ function mapRunScripts(
   runConfig: unknown,
   config: PaseoConfigRaw,
   notices: MigrationNotice[],
+  platform: NodeJS.Platform,
 ): void {
   if (runConfig === undefined) return;
   const services = new Map<string, string>();
   if (typeof runConfig === "string") {
-    mapRunScript("run", { command: runConfig }, config, notices, services);
+    mapRunScript("run", { command: runConfig }, config, notices, services, platform);
     return;
   }
   if (!isRecord(runConfig)) {
@@ -186,7 +188,7 @@ function mapRunScripts(
       continue;
     }
     const script = normalizeRunScript(scriptId, value, notices);
-    if (script) mapRunScript(scriptId, script, config, notices, services);
+    if (script) mapRunScript(scriptId, script, config, notices, services, platform);
   }
 }
 
@@ -268,6 +270,7 @@ function mapRunScript(
   config: PaseoConfigRaw,
   notices: MigrationNotice[],
   serviceNames: Map<string, string>,
+  platform: NodeJS.Platform,
 ): void {
   const key = `scripts.${scriptId}`;
   if (script.hide) {
@@ -287,6 +290,12 @@ function mapRunScript(
 
   let command = appendArgs(script.command, script.args ?? []);
   if (script.cwd) {
+    if (platform === "win32") {
+      notices.push(
+        unsupportedSetting(`${key}.cwd`, "Working-directory scripts are not imported on Windows."),
+      );
+      return;
+    }
     const cwdPrefix = safeCwdPrefix(script.cwd);
     if (!cwdPrefix) {
       notices.push(

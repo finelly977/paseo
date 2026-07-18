@@ -118,6 +118,28 @@ run = 42
   });
 });
 
+test("skips cwd scripts on Windows instead of emitting POSIX shell syntax", () => {
+  const repo = emptyRepo("windows-cwd");
+  writeSettings(
+    repo,
+    `
+[scripts.run.dev]
+command = "npm run dev"
+[scripts.run.dev.options]
+cwd = "apps/web"
+`,
+  );
+
+  const inspected = inspectConductorProjectConfig(repo, {}, "win32");
+
+  expect(inspected.config).toBeNull();
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-unsupported",
+    level: "warning",
+    message: "scripts.dev.cwd: Working-directory scripts are not imported on Windows.",
+  });
+});
+
 function fixtureRepo(name: "current" | "legacy"): string {
   const directory = mkdtempSync(path.join(os.tmpdir(), `paseo-migrate-${name}-`));
   cleanup.push(directory);

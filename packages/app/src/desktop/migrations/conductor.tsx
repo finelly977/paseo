@@ -33,7 +33,7 @@ export function ConductorMigration() {
 
   return (
     <>
-      <View style={conductorRowStyle} testID="conductor-migration-row">
+      <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="conductor-migration-row">
         <View style={settingsStyles.rowContent}>
           <View style={styles.titleRow}>
             <Image source={source.icon} style={styles.icon} />
@@ -60,5 +60,3 @@ const styles = StyleSheet.create((theme) => ({
   titleRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   icon: { width: theme.iconSize.md, height: theme.iconSize.md },
 }));
-
-const conductorRowStyle = [settingsStyles.row, settingsStyles.rowBorder];

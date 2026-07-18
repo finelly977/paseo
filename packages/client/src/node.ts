@@ -1,7 +1,10 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
+import { slugify } from "@getpaseo/protocol/branch-slug";
 import {
   buildDaemonWebSocketUrl,
   buildRelayWebSocketUrl,
@@ -19,6 +22,7 @@ import { DaemonClient, type WebSocketLike } from "./daemon-client.js";
 
 const DEFAULT_HOST = "localhost:6767";
 const DEFAULT_TIMEOUT_MS = 15_000;
+const execFileAsync = promisify(execFile);
 
 export interface NodeHostConnectionOptions {
   appVersion: string;
@@ -325,15 +329,21 @@ class DaemonHostAutomation implements HostAutomation {
     refName: string;
     directoryName: string;
   }): Promise<{ path: string; created: boolean }> {
+    const directorySlug = slugify(input.directoryName);
+    if (!directorySlug)
+      throw new Error(`Unable to derive a checkout name from ${input.directoryName}`);
     const listed = await this.client.getPaseoWorktreeList({ repoRoot: input.rootPath });
     if (listed.error)
       throw new Error(`Unable to inspect existing checkouts: ${listed.error.message}`);
     const existing = listed.worktrees.find(
-      (worktree) =>
-        worktree.branchName === input.refName &&
-        path.basename(worktree.worktreePath) === input.directoryName,
+      (worktree) => path.basename(worktree.worktreePath) === directorySlug,
     );
-    if (existing) {
+    if (existing && existing.branchName !== input.refName) {
+      throw new Error(
+        `Checkout name ${directorySlug} is already used by branch ${existing.branchName ?? "unknown"}.`,
+      );
+    }
+    if (existing && existsSync(existing.worktreePath)) {
       const opened = await this.client.openProject(existing.worktreePath);
       if (!opened.workspace) {
         throw new Error(opened.error ?? `Unable to open ${existing.worktreePath}`);
@@ -341,9 +351,11 @@ class DaemonHostAutomation implements HostAutomation {
       return { path: existing.worktreePath, created: false };
     }
 
+    await removeMissingCheckoutRegistration(input.rootPath, input.refName);
+
     const result = await this.client.createPaseoWorktree({
       cwd: input.rootPath,
-      worktreeSlug: input.directoryName,
+      worktreeSlug: directorySlug,
       action: "checkout",
       refName: input.refName,
     });
@@ -355,6 +367,35 @@ class DaemonHostAutomation implements HostAutomation {
   close(): Promise<void> {
     return this.client.close();
   }
+}
+
+async function removeMissingCheckoutRegistration(rootPath: string, refName: string): Promise<void> {
+  const { stdout } = await execFileAsync("git", ["worktree", "list", "--porcelain"], {
+    cwd: rootPath,
+    encoding: "utf8",
+  });
+  const expectedBranch = `refs/heads/${refName.replace(/^refs\/heads\//, "")}`;
+  const stale = parseGitWorktreeList(stdout).find(
+    (worktree) => worktree.branch === expectedBranch && !existsSync(worktree.path),
+  );
+  if (!stale) return;
+
+  // ensureCheckout is the explicit repair boundary: remove only the missing
+  // registration that blocks the requested branch, never unrelated worktrees.
+  await execFileAsync("git", ["worktree", "remove", "--force", stale.path], {
+    cwd: rootPath,
+  });
+}
+
+function parseGitWorktreeList(stdout: string): Array<{ path: string; branch: string | null }> {
+  return stdout
+    .trim()
+    .split(/\n\s*\n/)
+    .flatMap((entry) => {
+      const worktreePath = entry.match(/^worktree (.+)$/m)?.[1];
+      if (!worktreePath) return [];
+      return [{ path: worktreePath, branch: entry.match(/^branch (.+)$/m)?.[1] ?? null }];
+    });
 }
 
 export async function connectHostAutomation(

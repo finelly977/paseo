@@ -94,6 +94,75 @@ test("a different live checkout continues to protect its branch", async () => {
   expect(realpathSync(existingPath)).toBe(existingPath);
 });
 
+test("ensureCheckout repairs only the requested missing registration", async () => {
+  const repoRoot = createRepository();
+  execFileSync("git", ["branch", "unrelated"], { cwd: repoRoot });
+  const staleFeature = path.join(path.dirname(repoRoot), "stale-feature");
+  const staleUnrelated = path.join(path.dirname(repoRoot), "stale-unrelated");
+  execFileSync("git", ["worktree", "add", staleFeature, "feature"], { cwd: repoRoot });
+  execFileSync("git", ["worktree", "add", staleUnrelated, "unrelated"], { cwd: repoRoot });
+  rmSync(staleFeature, { recursive: true, force: true });
+  rmSync(staleUnrelated, { recursive: true, force: true });
+
+  const daemon = await createTestPaseoDaemon();
+  cleanupDaemons.add(daemon);
+  const paseo = await connectHostAutomation({
+    appVersion: "0.1.110",
+    clientId: "migration-stale-registration-e2e",
+    env: {},
+    host: `127.0.0.1:${daemon.port}`,
+  });
+  cleanupConnections.add(paseo);
+
+  const ensured = await paseo.ensureCheckout({
+    rootPath: repoRoot,
+    refName: "feature",
+    directoryName: "imported-feature",
+  });
+
+  expect(path.basename(ensured.path)).toBe("imported-feature");
+  const registrations = execFileSync("git", ["worktree", "list", "--porcelain"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  expect(registrations).not.toContain(staleFeature);
+  expect(registrations).toContain(staleUnrelated);
+});
+
+test("normalized checkout-name collisions cannot reuse another branch", async () => {
+  const repoRoot = createRepository();
+  execFileSync("git", ["branch", "other-feature"], { cwd: repoRoot });
+  const daemon = await createTestPaseoDaemon();
+  cleanupDaemons.add(daemon);
+  const paseo = await connectHostAutomation({
+    appVersion: "0.1.110",
+    clientId: "migration-slug-collision-e2e",
+    env: {},
+    host: `127.0.0.1:${daemon.port}`,
+  });
+  cleanupConnections.add(paseo);
+
+  const first = await paseo.ensureCheckout({
+    rootPath: repoRoot,
+    refName: "feature",
+    directoryName: "Foo.Bar",
+  });
+  await expect(
+    paseo.ensureCheckout({
+      rootPath: repoRoot,
+      refName: "other-feature",
+      directoryName: "foo-bar",
+    }),
+  ).rejects.toThrow(/already used by branch feature/);
+
+  expect(
+    execFileSync("git", ["branch", "--show-current"], {
+      cwd: first.path,
+      encoding: "utf8",
+    }).trim(),
+  ).toBe("feature");
+});
+
 test("the public connector authenticates to a real password-protected daemon and closes cleanly", async () => {
   const daemon = await createTestPaseoDaemon({
     auth: { password: hashDaemonPassword("connector-secret") },
