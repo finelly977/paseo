@@ -114,7 +114,7 @@ export class DesktopMigrationProcess {
       emit({ runId, stream: "stderr", chunk: `${error.message}\n` });
       emit({ runId, stream: "status", exitCode: 1 });
     });
-    child.once("exit", (code) => {
+    child.once("close", (code) => {
       if (settled) return;
       settled = true;
       this.activeRunId = null;

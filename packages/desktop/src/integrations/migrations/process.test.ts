@@ -50,6 +50,8 @@ test("launches the exact version-matched bundled command and streams completion"
   child.stdout.write("Found one project\n");
   child.stderr.write("warning\n");
   child.emitExit(0);
+  child.stdout.write("Migration complete\n");
+  child.emitClose(0);
 
   expect(invocations).toEqual([
     {
@@ -64,6 +66,7 @@ test("launches the exact version-matched bundled command and streams completion"
   expect(outputs).toEqual([
     { runId, stream: "stdout", chunk: "Found one project\n" },
     { runId, stream: "stderr", chunk: "warning\n" },
+    { runId, stream: "stdout", chunk: "Migration complete\n" },
     { runId, stream: "status", exitCode: 0 },
   ]);
   expect(invocations[0]?.env.PASEO_PASSWORD).toBeUndefined();
@@ -81,6 +84,10 @@ test("allows only one migration process at a time", async () => {
     "A migration is already running.",
   );
   child.emitExit(0);
+  await expect(migrations.run("source-fixture", () => undefined)).rejects.toThrow(
+    "A migration is already running.",
+  );
+  child.emitClose(0);
   await expect(migrations.run("source-fixture", () => undefined)).resolves.toEqual(
     expect.any(String),
   );
@@ -186,11 +193,18 @@ function fakeChild(): {
   stdout: PassThrough;
   stderr: PassThrough;
   emitExit(code: number): void;
+  emitClose(code: number): void;
 } {
   const events = new EventEmitter();
   const stdout = new PassThrough();
   const stderr = new PassThrough();
   const process = events as ChildProcess;
   Object.assign(process, { stdout, stderr });
-  return { process, stdout, stderr, emitExit: (code) => events.emit("exit", code, null) };
+  return {
+    process,
+    stdout,
+    stderr,
+    emitExit: (code) => events.emit("exit", code, null),
+    emitClose: (code) => events.emit("close", code, null),
+  };
 }
