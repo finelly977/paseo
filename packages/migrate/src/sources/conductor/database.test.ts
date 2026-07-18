@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +63,16 @@ test("rejects an unsupported schema version before guessing at its contents", as
 
   await expect(readConductorCatalog(databasePath)).rejects.toThrow(
     UnsupportedConductorDatabaseError,
+  );
+});
+
+test("refuses a database with pending WAL changes", async () => {
+  const databasePath = temporaryDatabase();
+  cpSync(fixturePath, databasePath);
+  writeFileSync(`${databasePath}-wal`, "pending");
+
+  await expect(readConductorCatalog(databasePath)).rejects.toThrow(
+    "Quit Conductor before migrating",
   );
 });
 

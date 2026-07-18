@@ -354,16 +354,6 @@ function rewriteExactCommand(
   key: string,
   notices: MigrationNotice[],
 ): string | null {
-  const literalVariables = collectLiteralConductorVariables(command);
-  if (literalVariables.length > 0) {
-    notices.push(
-      unsupportedSetting(
-        key,
-        `Literal or escaped Conductor variables: ${literalVariables.join(", ")}. Command was not imported.`,
-      ),
-    );
-    return null;
-  }
   let rewritten = command;
   for (const [from, to] of [
     ["CONDUCTOR_WORKSPACE_PATH", "PASEO_WORKTREE_PATH"],
@@ -578,9 +568,13 @@ function malformedSetting(key: string, detail: string): MigrationNotice {
 }
 
 function replaceShellVariable(command: string, from: string, to: string): string {
+  const mask = activeShellMask(command);
   const pattern = new RegExp(`\\$\\{${from}(?=[}:#%+\\-=?])|\\$${from}(?![A-Za-z0-9_])`, "g");
   return replaceArithmeticVariable(
-    command.replace(pattern, (match) => (match.startsWith("${") ? `\${${to}` : `$${to}`)),
+    command.replace(pattern, (match, offset: number) => {
+      if (mask[offset] !== "$") return match;
+      return match.startsWith("${") ? `\${${to}` : `$${to}`;
+    }),
     from,
     to,
   );
@@ -588,63 +582,69 @@ function replaceShellVariable(command: string, from: string, to: string): string
 
 function collectConductorVariables(command: string): string[] {
   const names = new Set<string>();
-  for (const match of command.matchAll(/(?:\$\{|\$|[^A-Za-z0-9_])(CONDUCTOR_[A-Za-z0-9_]+)/g)) {
-    if (match[1]) names.add(match[1]);
+  const mask = activeShellMask(command);
+  const direct =
+    /\$\{(CONDUCTOR_[A-Za-z0-9_]+)(?=[}:#%+\-=?])|\$(CONDUCTOR_[A-Za-z0-9_]+)(?![A-Za-z0-9_])/g;
+  for (const match of command.matchAll(direct)) {
+    if (mask[match.index] !== "$") continue;
+    const name = match[1] ?? match[2];
+    if (name) names.add(name);
   }
+  forEachActiveArithmetic(command, (body) => {
+    for (const match of body.matchAll(/(?:^|[^A-Za-z0-9_])(CONDUCTOR_[A-Za-z0-9_]+)/g)) {
+      if (match[1]) names.add(match[1]);
+    }
+  });
   return [...names].sort();
 }
 
-function collectLiteralConductorVariables(command: string): string[] {
-  const names = new Set<string>();
+function activeShellMask(command: string): string {
+  const mask = [...command];
   let quote: "single" | "double" | null = null;
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index];
     if (quote === "single") {
-      if (character === "'") {
-        quote = null;
-        continue;
-      }
-      if (!command.startsWith("CONDUCTOR_", index)) continue;
-      const previous = command[index - 1];
-      if (previous && /[A-Za-z0-9_]/.test(previous)) continue;
-      const name = command.slice(index).match(/^CONDUCTOR_[A-Za-z0-9_]+/)?.[0];
-      if (name) names.add(name);
+      mask[index] = " ";
+      if (character === "'") quote = null;
       continue;
     }
     if (character === "\\") {
-      if (command[index + 1] === "$") {
-        const name = readConductorVariable(command, index + 1);
-        if (name) names.add(name);
-      }
+      mask[index] = " ";
+      if (index + 1 < mask.length) mask[index + 1] = " ";
       index += 1;
       continue;
     }
     if (quote === "double") {
-      if (character === '"') quote = null;
+      if (character === '"') {
+        mask[index] = " ";
+        quote = null;
+      }
       continue;
     }
-    if (character === "'") quote = "single";
-    if (character === '"') quote = "double";
+    if (character === "'") {
+      mask[index] = " ";
+      quote = "single";
+    } else if (character === '"') {
+      mask[index] = " ";
+      quote = "double";
+    }
   }
-  return [...names].sort();
-}
-
-function readConductorVariable(command: string, dollarIndex: number): string | null {
-  const suffix = command.slice(dollarIndex + 1);
-  return (
-    suffix.match(/^\{(CONDUCTOR_[A-Za-z0-9_]+)/)?.[1] ??
-    suffix.match(/^(CONDUCTOR_[A-Za-z0-9_]+)/)?.[1] ??
-    null
-  );
+  return mask.join("");
 }
 
 function containsShellVariable(command: string, name: string): boolean {
-  const pattern = new RegExp(`\\$\\{${name}(?=[}:#%+\\-=?])|\\$${name}(?![A-Za-z0-9_])`);
-  return pattern.test(command) || containsArithmeticVariable(command, name);
+  const mask = activeShellMask(command);
+  const pattern = new RegExp(`\\$\\{${name}(?=[}:#%+\\-=?])|\\$${name}(?![A-Za-z0-9_])`, "g");
+  for (const match of command.matchAll(pattern)) {
+    if (mask[match.index] === "$") return true;
+  }
+  return containsArithmeticVariable(command, name);
 }
 
 function replaceArithmeticVariable(command: string, from: string, to: string): string {
-  return command.replace(/\$\(\(([\s\S]*?)\)\)/g, (expression, body: string) => {
+  const mask = activeShellMask(command);
+  return command.replace(/\$\(\(([\s\S]*?)\)\)/g, (expression, body: string, offset: number) => {
+    if (mask.slice(offset, offset + 3) !== "$((") return expression;
     const identifier = new RegExp(`(^|[^A-Za-z0-9_])${from}(?![A-Za-z0-9_])`, "g");
     const rewritten = body.replace(identifier, (_match, prefix: string) => `${prefix}${to}`);
     return rewritten === body ? expression : `$((` + rewritten + `))`;
@@ -653,19 +653,28 @@ function replaceArithmeticVariable(command: string, from: string, to: string): s
 
 function containsArithmeticVariable(command: string, name: string): boolean {
   const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
-  for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
-    if (identifier.test(match[1])) return true;
-  }
-  return false;
+  let found = false;
+  forEachActiveArithmetic(command, (body) => {
+    if (identifier.test(body)) found = true;
+  });
+  return found;
 }
 
 function containsArithmeticVariableOperation(command: string, name: string): boolean {
   const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
+  let found = false;
+  forEachActiveArithmetic(command, (value) => {
+    const body = value.trim();
+    if (identifier.test(body) && body !== name) found = true;
+  });
+  return found;
+}
+
+function forEachActiveArithmetic(command: string, visit: (body: string) => void): void {
+  const mask = activeShellMask(command);
   for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
-    const body = match[1].trim();
-    if (identifier.test(body) && body !== name) return true;
+    if (mask.slice(match.index, match.index + 3) === "$((") visit(match[1]);
   }
-  return false;
 }
 
 function appendArgs(command: string, args: string[]): string {

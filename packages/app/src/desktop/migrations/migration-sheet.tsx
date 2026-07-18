@@ -70,6 +70,9 @@ export function MigrationSheet({
   const { t } = useTranslation();
   const [state, setState] = useState<MigrationState>({ status: "confirm" });
   const header = useMemo<SheetHeader>(() => ({ title: source.sheetTitle }), [source.sheetTitle]);
+  const close = useCallback(() => {
+    if (state.status !== "running") onClose();
+  }, [onClose, state.status]);
 
   useEffect(() => {
     if (!visible) setState({ status: "confirm" });
@@ -120,17 +123,17 @@ export function MigrationSheet({
       return <Button disabled>{t("desktop.integrations.migration.actions.importing")}</Button>;
     }
     return (
-      <Button onPress={onClose} testID="migration-done">
+      <Button onPress={close} testID="migration-done">
         {t("desktop.integrations.migration.actions.done")}
       </Button>
     );
-  }, [onClose, start, state.status, t]);
+  }, [close, start, state.status, t]);
 
   return (
     <AdaptiveModalSheet
       header={header}
       visible={visible}
-      onClose={onClose}
+      onClose={close}
       footer={footer}
       desktopMaxWidth={640}
       testID="migration-sheet"

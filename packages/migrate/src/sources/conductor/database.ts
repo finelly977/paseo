@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import initSqlJs, { type Database } from "sql.js";
 import type { MigrationNotice } from "../../types.js";
@@ -36,6 +36,12 @@ export interface ConductorCatalog {
 export class UnsupportedConductorDatabaseError extends Error {}
 
 export async function readConductorCatalog(databasePath: string): Promise<ConductorCatalog> {
+  const walPath = `${databasePath}-wal`;
+  if (existsSync(walPath) && statSync(walPath).size > 0) {
+    throw new UnsupportedConductorDatabaseError(
+      "Conductor has pending database changes. Quit Conductor before migrating.",
+    );
+  }
   const SQL = await sqlite;
   const database = new SQL.Database(readFileSync(databasePath));
   try {

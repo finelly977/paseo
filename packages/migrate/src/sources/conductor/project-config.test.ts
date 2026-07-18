@@ -132,28 +132,29 @@ test("reports a malformed top-level scripts value", () => {
   });
 });
 
-test("does not rewrite literal or escaped Conductor variables", () => {
+test("preserves literal or escaped Conductor names and rewrites active variables", () => {
   const inspected = inspectConductorProjectConfig(emptyRepo("literal-variables"), {
     scripts: {
       setup: "printf '%s\\n' '$CONDUCTOR_WORKSPACE_PATH'",
       run: {
         escaped: { command: "printf \\$CONDUCTOR_PORT" },
         escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
+        bare: { command: "printf CONDUCTOR_PORT" },
         active: { command: "printf \"'$CONDUCTOR_PORT'\"" },
       },
     },
   });
 
   expect(inspected.config).toEqual({
-    scripts: { active: { command: "printf \"'$PASEO_PORT'\"", type: "service" } },
+    worktree: { setup: "printf '%s\\n' '$CONDUCTOR_WORKSPACE_PATH'" },
+    scripts: {
+      active: { command: "printf \"'$PASEO_PORT'\"", type: "service" },
+      bare: { command: "printf CONDUCTOR_PORT" },
+      escaped: { command: "printf \\$CONDUCTOR_PORT" },
+      escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
+    },
   });
-  expect(inspected.notices.map((notice) => notice.message)).toEqual(
-    expect.arrayContaining([
-      "worktree.setup: Literal or escaped Conductor variables: CONDUCTOR_WORKSPACE_PATH. Command was not imported.",
-      "scripts.escaped: Literal or escaped Conductor variables: CONDUCTOR_PORT. Command was not imported.",
-      "scripts.escapedDouble: Literal or escaped Conductor variables: CONDUCTOR_PORT. Command was not imported.",
-    ]),
-  );
+  expect(inspected.notices).toEqual([]);
 });
 
 test("skips cwd scripts on Windows instead of emitting POSIX shell syntax", () => {
