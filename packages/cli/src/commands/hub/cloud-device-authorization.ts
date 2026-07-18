@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const START_TIMEOUT_MS = 15_000;
+
 const authorizationSchema = z.object({
   deviceCode: z.string().min(32),
   userCode: z.string().min(1),
@@ -36,14 +38,25 @@ export interface CloudDeviceAuthorization {
 }
 
 export class CloudDeviceAuthorizationClient implements CloudDeviceAuthorization {
+  constructor(private readonly startTimeoutMilliseconds = START_TIMEOUT_MS) {}
+
   async start(hubUrl: string, displayName: string): Promise<DeviceAuthorization> {
-    const response = await fetch(endpoint(hubUrl, "/api/device-authorizations/"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ displayName }),
-    });
-    if (!response.ok) throw new Error(`Cloud registration failed (${response.status})`);
-    return authorizationSchema.parse(await response.json());
+    const signal = AbortSignal.timeout(this.startTimeoutMilliseconds);
+    try {
+      const response = await fetch(endpoint(hubUrl, "/api/device-authorizations/"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ displayName }),
+        signal,
+      });
+      if (!response.ok) throw new Error(`Cloud registration failed (${response.status})`);
+      return authorizationSchema.parse(await response.json());
+    } catch (error) {
+      if (signal.aborted) {
+        throw new Error("Cloud registration start timed out", { cause: error });
+      }
+      throw error;
+    }
   }
 
   async poll(

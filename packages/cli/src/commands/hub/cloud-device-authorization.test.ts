@@ -5,8 +5,21 @@ import { describe, it } from "vitest";
 import { CloudDeviceAuthorizationClient } from "./cloud-device-authorization.js";
 
 describe("Cloud device authorization", () => {
+  it("fails when start headers arrive but the response body stalls", async () => {
+    const cloud = await RegistrationCloud.start("stalled-start-body");
+    try {
+      await assert.rejects(
+        new CloudDeviceAuthorizationClient(100).start(cloud.origin, "Studio Mac"),
+        { message: "Cloud registration start timed out" },
+      );
+      assert.deepEqual(cloud.receivedPaths, ["/api/device-authorizations/"]);
+    } finally {
+      await cloud.stop();
+    }
+  });
+
   it("retries when poll headers arrive but the response body stalls", async () => {
-    const cloud = await RegistrationCloud.start("stalled-body");
+    const cloud = await RegistrationCloud.start("stalled-poll-body");
     try {
       const outcome = await new CloudDeviceAuthorizationClient().poll(
         cloud.origin,
@@ -22,7 +35,7 @@ describe("Cloud device authorization", () => {
   });
 
   it("rejects a completed malformed poll response", async () => {
-    const cloud = await RegistrationCloud.start("malformed-body");
+    const cloud = await RegistrationCloud.start("malformed-poll-body");
     try {
       await assert.rejects(
         new CloudDeviceAuthorizationClient().poll(
@@ -37,7 +50,7 @@ describe("Cloud device authorization", () => {
   });
 });
 
-type RegistrationCloudResponse = "stalled-body" | "malformed-body";
+type RegistrationCloudResponse = "stalled-start-body" | "stalled-poll-body" | "malformed-poll-body";
 
 class RegistrationCloud {
   readonly receivedPaths: string[] = [];
@@ -52,8 +65,12 @@ class RegistrationCloud {
     const server = createServer((request, response) => {
       if (request.url !== undefined) cloud.receivedPaths.push(request.url);
       response.writeHead(200, { "content-type": "application/json" });
-      if (responseBody === "malformed-body") {
+      if (responseBody === "malformed-poll-body") {
         response.end("not-json");
+        return;
+      }
+      if (responseBody === "stalled-start-body") {
+        response.write('{"deviceCode":"device-code-with-more-than-thirty-two-characters"');
         return;
       }
       response.write('{"status":"pending","interval":5');
