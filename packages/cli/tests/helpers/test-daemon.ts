@@ -43,6 +43,7 @@ const TEST_DAEMON_ENV_DEFAULTS: Record<string, string> = {
   PASEO_VOICE_MODE_ENABLED: process.env.PASEO_VOICE_MODE_ENABLED ?? "0",
 };
 const TEST_DAEMON_HOST = "127.0.0.1";
+const TSX_BIN = join(import.meta.dirname, "..", "..", "..", "..", "node_modules", ".bin", "tsx");
 
 const DEFAULT_OUTPUT_CAPTURE_LIMIT = 256 * 1024;
 const TEST_OUTPUT_CAPTURE_LIMIT = Number.parseInt(
@@ -233,7 +234,7 @@ export async function startTestDaemon(options?: {
   const cliSrcPath = join(cliDir, "src", "index.ts");
 
   // Start daemon process using tsx to run TypeScript directly
-  const daemonProcess = spawn("npx", ["tsx", cliSrcPath, "daemon", "start", "--foreground"], {
+  const daemonProcess = spawn(TSX_BIN, [cliSrcPath, "daemon", "start", "--foreground"], {
     env: {
       ...process.env,
       ...TEST_DAEMON_ENV_DEFAULTS,
@@ -345,7 +346,7 @@ export async function runPaseoCli(
   const cliSrcPath = join(cliDir, "src", "index.ts");
 
   return new Promise((resolve, reject) => {
-    const proc = spawn("npx", ["tsx", cliSrcPath, ...args], {
+    const proc = spawn(TSX_BIN, [cliSrcPath, ...args], {
       env: {
         ...process.env,
         ...TEST_DAEMON_ENV_DEFAULTS,
