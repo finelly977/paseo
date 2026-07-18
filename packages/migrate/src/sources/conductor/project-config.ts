@@ -58,8 +58,8 @@ export function inspectConductorProjectConfig(
     notices.push(malformedSetting("scripts", "Expected a scripts table."));
   }
 
-  mapLifecycle(scripts?.setup, "worktree.setup", "setup", config, notices);
-  mapLifecycle(scripts?.archive, "worktree.teardown", "teardown", config, notices);
+  mapLifecycle(scripts?.setup, "worktree.setup", "setup", config, notices, platform);
+  mapLifecycle(scripts?.archive, "worktree.teardown", "teardown", config, notices, platform);
   mapRunScripts(scripts?.run, config, notices, platform);
   mapMetadataPrompts(settings.prompts, config, notices);
   reportUnsupported(repoRoot, settings, notices);
@@ -160,13 +160,14 @@ function mapLifecycle(
   target: "setup" | "teardown",
   config: PaseoConfigRaw,
   notices: MigrationNotice[],
+  platform: NodeJS.Platform,
 ): void {
   if (value === undefined) return;
   if (typeof value !== "string" || value.trim().length === 0) {
     notices.push(malformedSetting(key, "Expected a non-empty command string."));
     return;
   }
-  const command = rewriteExactCommand(value, "lifecycle", key, notices);
+  const command = rewriteExactCommand(value, "lifecycle", key, notices, platform);
   if (!command) return;
   config.worktree = { ...config.worktree, [target]: command };
 }
@@ -337,7 +338,13 @@ function mapRunScript(
     }
   }
 
-  const rewritten = rewriteExactCommand(command, service ? "run" : "lifecycle", key, notices);
+  const rewritten = rewriteExactCommand(
+    command,
+    service ? "run" : "lifecycle",
+    key,
+    notices,
+    platform,
+  );
   if (!rewritten) return;
   if (service) {
     const environmentName = scriptId.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
@@ -353,7 +360,18 @@ function rewriteExactCommand(
   context: RewriteContext,
   key: string,
   notices: MigrationNotice[],
+  platform: NodeJS.Platform,
 ): string | null {
+  const sourceVariables = collectConductorVariables(command);
+  if (platform === "win32" && sourceVariables.length > 0) {
+    notices.push(
+      unsupportedSetting(
+        key,
+        `Conductor variables use unsupported shell syntax on Windows: ${sourceVariables.join(", ")}. Command was not imported.`,
+      ),
+    );
+    return null;
+  }
   let rewritten = command;
   for (const [from, to] of [
     ["CONDUCTOR_WORKSPACE_PATH", "PASEO_WORKTREE_PATH"],

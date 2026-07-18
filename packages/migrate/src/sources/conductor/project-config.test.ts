@@ -179,6 +179,30 @@ cwd = "apps/web"
   });
 });
 
+test("skips variable commands on Windows while preserving ordinary commands", () => {
+  const inspected = inspectConductorProjectConfig(
+    emptyRepo("windows-variables"),
+    {
+      scripts: {
+        setup: "cd $CONDUCTOR_WORKSPACE_PATH",
+        run: {
+          service: { command: "serve --port $CONDUCTOR_PORT" },
+          plain: { command: "npm test" },
+        },
+      },
+    },
+    "win32",
+  );
+
+  expect(inspected.config).toEqual({ scripts: { plain: { command: "npm test" } } });
+  expect(inspected.notices.map((notice) => notice.message)).toEqual(
+    expect.arrayContaining([
+      "worktree.setup: Conductor variables use unsupported shell syntax on Windows: CONDUCTOR_WORKSPACE_PATH. Command was not imported.",
+      "scripts.service: Conductor variables use unsupported shell syntax on Windows: CONDUCTOR_PORT. Command was not imported.",
+    ]),
+  );
+});
+
 function fixtureRepo(name: "current" | "legacy"): string {
   const directory = mkdtempSync(path.join(os.tmpdir(), `paseo-migrate-${name}-`));
   cleanup.push(directory);
