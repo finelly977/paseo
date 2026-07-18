@@ -898,11 +898,6 @@ export const es: TranslationResources = {
       description:
         "Agregue comandos de configuración para que los nuevos árboles de trabajo puedan instalar dependencias y prepararse automáticamente.",
       openProjectSettings: "Abrir la configuración del proyecto",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1159,6 +1154,31 @@ export const es: TranslationResources = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "Comprobando la disponibilidad de la migración…",
+          "unsupported-source": "Esta fuente de migración no está disponible.",
+          "host-not-running": "Inicia el host gestionado por Desktop antes de importar.",
+          "nonlocal-host": "La importación no está disponible para un host no local.",
+          "password-protected":
+            "La importación no está disponible mientras el host local esté protegido con contraseña.",
+          "host-version-mismatch": "Actualiza el host gestionado por Desktop antes de importar.",
+          "migrator-version-mismatch":
+            "El migrador incluido no coincide con esta versión de Desktop.",
+          unavailable: "La migración de Desktop no está disponible.",
+        },
+        actions: { import: "Importar", importing: "Importando…", done: "Listo" },
+        unavailable: "La migración de escritorio no está disponible.",
+        complete: "Importación completada.",
+        failed: "La importación ha fallado.",
+        conductor: {
+          title: "Conductor",
+          description: "Importa proyectos, ajustes y worktrees desde este Mac.",
+          sheetTitle: "Importar desde Conductor",
+          confirmation:
+            "Paseo registrará los repositorios válidos, combinará los ajustes de proyecto compatibles y adoptará o recreará los worktrees preparados. Los datos de Conductor no se modificarán.",
+        },
+      },
       cli: {
         statusFailed: "No se puede verificar el estado de instalación deCLI.",
         installFailed: "No se puede instalar elPaseoCLI.",
@@ -2120,30 +2140,6 @@ export const es: TranslationResources = {
         setupAccessibility: "Comandos de configuración del árbol de trabajo",
         teardown: "Demoler",
         teardownAccessibility: "Comandos de desmontaje del árbol de trabajo",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "Scripts",

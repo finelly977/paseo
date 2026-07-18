@@ -1,0 +1,5 @@
+[scripts]
+setup = "npm ci --prefer-offline"
+
+[scripts.run.test]
+command = "npm test"

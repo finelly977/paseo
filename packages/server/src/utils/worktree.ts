@@ -1202,6 +1202,7 @@ export const createWorktree = async ({
   paseoHome,
   worktreesRoot,
 }: CreateWorktreeOptions): Promise<WorktreeConfig> => {
+  await pruneVerifiedStaleWorktrees(cwd);
   const sourcePlan = await resolveWorktreeSourcePlan({ cwd, source, desiredSlug: worktreeSlug });
   let worktreePath = join(await getPaseoWorktreesRoot(cwd, paseoHome, worktreesRoot), worktreeSlug);
   mkdirSync(dirname(worktreePath), { recursive: true });
@@ -1269,6 +1270,16 @@ export const createWorktree = async ({
     worktreePath,
   };
 };
+
+async function pruneVerifiedStaleWorktrees(cwd: string): Promise<void> {
+  const { stdout } = await runGitCommand(["worktree", "list", "--porcelain"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  const hasStaleRegistration = parseWorktreeList(stdout).some((entry) => !existsSync(entry.path));
+  if (!hasStaleRegistration) return;
+  await runGitCommand(["worktree", "prune"], { cwd, timeout: 30_000 });
+}
 
 interface ResolveWorktreeSourcePlanOptions {
   cwd: string;

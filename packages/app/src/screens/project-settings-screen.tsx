@@ -26,9 +26,6 @@ import { ExternalLink } from "@/components/ui/external-link";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Switch } from "@/components/ui/switch";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
-import type { ProjectConfigImportIntent } from "@/project-config-import/route";
-import { ProjectConfigImportSection } from "@/project-config-import/project-config-import-section";
-import { projectConfigImportPreviewQueryRoot } from "@/project-config-import/preview-cache";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
 import { SettingsGroup } from "@/screens/settings/settings-group";
 import { SettingsSection } from "@/screens/settings/settings-section";
@@ -41,7 +38,6 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import {
   applyDraftToConfig,
   configToDraft,
-  hasProjectConfigDraftChanges,
   METADATA_PROMPT_KEYS,
   type LifecycleOriginalKind,
   type MetadataPromptKey,
@@ -89,15 +85,9 @@ type ReadProjectConfigData = Awaited<ReturnType<DaemonClient["readProjectConfig"
 
 export interface ProjectSettingsScreenProps {
   projectKey: string;
-  importIntent?: ProjectConfigImportIntent | null;
-  onImportIntentConsumed?: () => void;
 }
 
-export default function ProjectSettingsScreen({
-  projectKey,
-  importIntent = null,
-  onImportIntentConsumed,
-}: ProjectSettingsScreenProps) {
+export default function ProjectSettingsScreen({ projectKey }: ProjectSettingsScreenProps) {
   const { projects } = useProjects();
   const project = useMemo(
     () => projects.find((entry) => entry.projectKey === projectKey),
@@ -106,22 +96,15 @@ export default function ProjectSettingsScreen({
   const editableHosts = useMemo(() => filterEditableHosts(project), [project]);
 
   const [selectedServerId, setSelectedServerId] = useState<string>(
-    () =>
-      (importIntent && editableHosts.some((host) => host.serverId === importIntent.serverId)
-        ? importIntent.serverId
-        : editableHosts[0]?.serverId) ?? "",
+    () => editableHosts[0]?.serverId ?? "",
   );
 
   useEffect(() => {
-    if (importIntent && editableHosts.some((host) => host.serverId === importIntent.serverId)) {
-      setSelectedServerId(importIntent.serverId);
-      return;
-    }
     const stillValid = editableHosts.some((host) => host.serverId === selectedServerId);
     if (!stillValid) {
       setSelectedServerId(editableHosts[0]?.serverId ?? "");
     }
-  }, [editableHosts, importIntent, selectedServerId]);
+  }, [editableHosts, selectedServerId]);
 
   const selectedSnapshot = useHostRuntimeSnapshot(selectedServerId);
   const isHostGone =
@@ -144,8 +127,6 @@ export default function ProjectSettingsScreen({
       onSelectHost={setSelectedServerId}
       client={client}
       isHostGone={isHostGone}
-      importIntent={importIntent}
-      onImportIntentConsumed={onImportIntentConsumed}
     />
   );
 }
@@ -203,8 +184,6 @@ interface ProjectSettingsBodyProps {
   onSelectHost: (serverId: string) => void;
   client: DaemonClient;
   isHostGone: boolean;
-  importIntent: ProjectConfigImportIntent | null;
-  onImportIntentConsumed?: () => void;
 }
 
 function ProjectSettingsBody({
@@ -214,10 +193,7 @@ function ProjectSettingsBody({
   onSelectHost,
   client,
   isHostGone,
-  importIntent,
-  onImportIntentConsumed,
 }: ProjectSettingsBodyProps) {
-  const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => ["project-config", selectedHost.serverId, selectedHost.repoRoot] as const,
     [selectedHost.serverId, selectedHost.repoRoot],
@@ -244,14 +220,13 @@ function ProjectSettingsBody({
     projects: projectIconTargets,
   });
   const projectIconDataUri = projectIconDataByKey.get(project.projectKey) ?? null;
-  const readState = resolveProjectConfigReadState(data);
+  const loadedConfig: PaseoConfigRaw | null = data?.ok ? (data.config ?? {}) : null;
+  const loadedRevision: PaseoConfigRevision | null = data?.ok ? data.revision : null;
+  const readError: ProjectConfigRpcError | null = data && !data.ok ? data.error : null;
 
   const handleReload = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: projectConfigImportPreviewQueryRoot(selectedHost.serverId, selectedHost.repoRoot),
-    });
     void readQuery.refetch();
-  }, [queryClient, readQuery, selectedHost.repoRoot, selectedHost.serverId]);
+  }, [readQuery]);
 
   const hasMultipleHosts = hosts.length > 1;
 
@@ -273,38 +248,18 @@ function ProjectSettingsBody({
 
       {renderContent({
         readQuery,
-        loadedConfig: readState.loadedConfig,
-        loadedRevision: readState.loadedRevision,
-        readError: readState.readError,
+        loadedConfig,
+        loadedRevision,
+        readError,
         selectedHost,
         queryKey,
         client,
         onReload: handleReload,
         hasMultipleHosts,
         isHostGone,
-        importIntent,
-        onImportIntentConsumed,
       })}
     </View>
   );
-}
-
-function resolveProjectConfigReadState(data: ReadProjectConfigData | undefined): {
-  loadedConfig: PaseoConfigRaw | null;
-  loadedRevision: PaseoConfigRevision | null;
-  readError: ProjectConfigRpcError | null;
-} {
-  if (!data) {
-    return { loadedConfig: null, loadedRevision: null, readError: null };
-  }
-  if (!data.ok) {
-    return { loadedConfig: null, loadedRevision: null, readError: data.error };
-  }
-  return {
-    loadedConfig: data.config ?? {},
-    loadedRevision: data.revision,
-    readError: null,
-  };
 }
 
 interface RenderContentInput {
@@ -318,8 +273,6 @@ interface RenderContentInput {
   onReload: () => void;
   hasMultipleHosts: boolean;
   isHostGone: boolean;
-  importIntent: ProjectConfigImportIntent | null;
-  onImportIntentConsumed?: () => void;
 }
 
 function renderContent({
@@ -333,8 +286,6 @@ function renderContent({
   onReload,
   hasMultipleHosts,
   isHostGone,
-  importIntent,
-  onImportIntentConsumed,
 }: RenderContentInput) {
   if (readQuery.isLoading) {
     return (
@@ -384,13 +335,10 @@ function renderContent({
       key={formKey}
       baseConfig={loadedConfig}
       revision={loadedRevision}
-      serverId={selectedHost.serverId}
       repoRoot={selectedHost.repoRoot}
       queryKey={queryKey}
       client={client}
       onReload={onReload}
-      importIntent={importIntent}
-      onImportIntentConsumed={onImportIntentConsumed}
     />
   );
 }
@@ -472,25 +420,19 @@ function errorToDetail(error: unknown): string | null {
 interface ProjectConfigFormProps {
   baseConfig: PaseoConfigRaw;
   revision: PaseoConfigRevision | null;
-  serverId: string;
   repoRoot: string;
   queryKey: readonly [string, string, string];
   client: DaemonClient;
   onReload: () => void;
-  importIntent: ProjectConfigImportIntent | null;
-  onImportIntentConsumed?: () => void;
 }
 
 function ProjectConfigForm({
   baseConfig,
   revision,
-  serverId,
   repoRoot,
   queryKey,
   client,
   onReload,
-  importIntent,
-  onImportIntentConsumed,
 }: ProjectConfigFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -522,9 +464,6 @@ function ProjectConfigForm({
         });
         setWriteError(null);
         queryClient.invalidateQueries({ queryKey: ["projects"] });
-        void queryClient.invalidateQueries({
-          queryKey: projectConfigImportPreviewQueryRoot(serverId, repoRoot),
-        });
         toast.show(t("settings.project.actions.saved"), { variant: "success" });
       } else {
         setWriteError(result.error);
@@ -690,10 +629,6 @@ function ProjectConfigForm({
   const isStale = writeError?.code === "stale_project_config";
   const isWriteFailed = writeError?.code === "write_failed";
   const saveDisabled = saveMutation.isPending || isStale || hasInvalidScripts;
-  const hasUnsavedChanges = useMemo(
-    () => hasProjectConfigDraftChanges({ draft, base: baseConfig }),
-    [baseConfig, draft],
-  );
 
   return (
     <View>
@@ -702,17 +637,6 @@ function ProjectConfigForm({
         info={t("settings.project.worktree.info")}
         testID="worktree-group"
       >
-        <ProjectConfigImportSection
-          client={client}
-          serverId={serverId}
-          repoRoot={repoRoot}
-          routeIntent={importIntent}
-          onRouteIntentConsumed={onImportIntentConsumed}
-          projectConfigLoaded
-          projectConfigQueryKey={queryKey}
-          hasUnsavedChanges={hasUnsavedChanges}
-        />
-
         <SettingsSection
           title={t("settings.project.worktree.setup")}
           testID="worktree-setup-section"

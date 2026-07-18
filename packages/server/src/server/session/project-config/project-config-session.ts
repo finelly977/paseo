@@ -8,12 +8,6 @@ import {
   writePaseoConfigForEdit,
   type ProjectConfigRpcError,
 } from "../../../utils/paseo-config-file.js";
-import { projectConfigImportRegistry } from "./import/registry.js";
-import {
-  createProjectConfigImportService,
-  InvalidProjectConfigImportSourceError,
-  type ProjectConfigImportService,
-} from "./import/service.js";
 
 export interface ProjectConfigSessionHost {
   emit(msg: SessionOutboundMessage): void;
@@ -22,7 +16,6 @@ export interface ProjectConfigSessionHost {
 export interface ProjectConfigSessionOptions {
   host: ProjectConfigSessionHost;
   projectRegistry: Pick<ProjectRegistry, "list">;
-  importService?: ProjectConfigImportService;
   logger: pino.Logger;
 }
 
@@ -36,14 +29,11 @@ export interface ProjectConfigSessionOptions {
 export class ProjectConfigSession {
   private readonly host: ProjectConfigSessionHost;
   private readonly projectRegistry: Pick<ProjectRegistry, "list">;
-  private readonly importService: ProjectConfigImportService;
   private readonly logger: pino.Logger;
 
   constructor(options: ProjectConfigSessionOptions) {
     this.host = options.host;
     this.projectRegistry = options.projectRegistry;
-    this.importService =
-      options.importService ?? createProjectConfigImportService(projectConfigImportRegistry);
     this.logger = options.logger;
   }
 
@@ -128,87 +118,6 @@ export class ProjectConfigSession {
     });
   }
 
-  async handleGetProjectConfigImportRequest(
-    msg: Extract<SessionInboundMessage, { type: "project.config.get_import.request" }>,
-  ): Promise<void> {
-    const repoRoot = await this.resolveKnownProjectRoot(msg.repoRoot);
-    if (!repoRoot) {
-      this.emitProjectConfigImportGetFailure(msg, { code: "project_not_found" });
-      return;
-    }
-
-    const config = readPaseoConfigForEdit(repoRoot);
-    if (!config.ok) {
-      this.emitProjectConfigImportGetFailure(msg, config.error, repoRoot);
-      return;
-    }
-
-    try {
-      const preview = this.importService.inspect({
-        repoRoot,
-        source: msg.source,
-        paseoConfig: config.config ?? {},
-        paseoRevision: config.revision,
-      });
-      this.host.emit({
-        type: "project.config.get_import.response",
-        payload: {
-          requestId: msg.requestId,
-          ok: true,
-          ...preview,
-        },
-      });
-    } catch (error) {
-      if (error instanceof InvalidProjectConfigImportSourceError) {
-        this.emitProjectConfigImportGetFailure(
-          msg,
-          {
-            code: "invalid_source_config",
-            source: error.source,
-            relativePath: error.relativePath,
-          },
-          repoRoot,
-        );
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async handleApplyProjectConfigImportRequest(
-    msg: Extract<SessionInboundMessage, { type: "project.config.apply_import.request" }>,
-  ): Promise<void> {
-    const repoRoot = await this.resolveKnownProjectRoot(msg.repoRoot);
-    if (!repoRoot) {
-      this.emitProjectConfigImportApplyFailure(msg, { code: "project_not_found" });
-      return;
-    }
-
-    const result = this.importService.apply({
-      repoRoot,
-      source: msg.source,
-      expectedSourceRevision: msg.expectedSourceRevision,
-      expectedPaseoRevision: msg.expectedPaseoRevision,
-    });
-    if (!result.ok) {
-      this.emitProjectConfigImportApplyFailure(msg, result.error, repoRoot);
-      return;
-    }
-
-    this.host.emit({
-      type: "project.config.apply_import.response",
-      payload: {
-        requestId: msg.requestId,
-        repoRoot,
-        source: result.source,
-        ok: true,
-        config: result.config,
-        revision: result.revision,
-        items: result.items,
-      },
-    });
-  }
-
   private emitProjectConfigReadFailure(
     msg: Extract<SessionInboundMessage, { type: "read_project_config_request" }>,
     error: ProjectConfigRpcError,
@@ -232,38 +141,6 @@ export class ProjectConfigSession {
   ): void {
     this.host.emit({
       type: "write_project_config_response",
-      payload: {
-        requestId: msg.requestId,
-        repoRoot,
-        ok: false,
-        error,
-      },
-    });
-  }
-
-  private emitProjectConfigImportGetFailure(
-    msg: Extract<SessionInboundMessage, { type: "project.config.get_import.request" }>,
-    error: ProjectConfigRpcError,
-    repoRoot = msg.repoRoot,
-  ): void {
-    this.host.emit({
-      type: "project.config.get_import.response",
-      payload: {
-        requestId: msg.requestId,
-        repoRoot,
-        ok: false,
-        error,
-      },
-    });
-  }
-
-  private emitProjectConfigImportApplyFailure(
-    msg: Extract<SessionInboundMessage, { type: "project.config.apply_import.request" }>,
-    error: ProjectConfigRpcError,
-    repoRoot = msg.repoRoot,
-  ): void {
-    this.host.emit({
-      type: "project.config.apply_import.response",
       payload: {
         requestId: msg.requestId,
         repoRoot,

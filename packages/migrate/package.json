@@ -1,0 +1,51 @@
+{
+  "name": "@getpaseo/migrate",
+  "version": "0.1.110",
+  "description": "Import projects from other development environments into Paseo",
+  "bin": {
+    "paseo-migrate": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "!dist/**/*.map"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/migrate.d.ts",
+      "default": "./dist/migrate.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node ../../scripts/clean-package-dist.mjs",
+    "build": "tsc -p tsconfig.json --incremental false",
+    "build:clean": "npm run clean && npm run build",
+    "prepack": "npm run build:clean",
+    "verify:package": "npm run build:clean && node ../../scripts/verify-migrate-package-contents.mjs",
+    "typecheck": "tsgo --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@getpaseo/client": "0.1.110",
+    "@getpaseo/protocol": "0.1.110",
+    "smol-toml": "^1.6.0",
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.9.0",
+    "@types/sql.js": "^1.4.11",
+    "typescript": "^5.2.2",
+    "vitest": "^4.1.6"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

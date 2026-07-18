@@ -24,13 +24,12 @@ type ReplicaQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> 
   pushEvent: string;
 };
 
-export type FetchQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> = Omit<
+type FetchQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> = Omit<
   UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>,
   "initialData" | "placeholderData" | "queryFn" | "refetchOnMount" | "staleTime"
 > & {
   dataShape: "list" | "value";
   queryFn: QueryFnOption<TQueryFnData, TError, TData, TQueryKey>;
-  refetchOnMount?: UseQueryOptions<TQueryFnData, TError, TData, TQueryKey>["refetchOnMount"];
   staleTimeMs: number;
 };
 
@@ -85,7 +84,7 @@ function replicaQueryOptions<
   };
 }
 
-export function fetchQueryOptions<
+function fetchQueryOptions<
   TQueryFnData,
   TError = Error,
   TData = TQueryFnData,
@@ -97,7 +96,7 @@ export function fetchQueryOptions<
     throw new Error("Fetch queries must declare a finite staleTimeMs.");
   }
 
-  const { dataShape, meta, refetchOnMount, staleTimeMs, ...options } = input;
+  const { dataShape, meta, staleTimeMs, ...options } = input;
   return {
     ...options,
     ...(dataShape === "list" ? { placeholderData: keepPreviousData } : {}),
@@ -108,7 +107,7 @@ export function fetchQueryOptions<
         dataShape,
       },
     },
-    refetchOnMount: refetchOnMount ?? "always",
+    refetchOnMount: "always",
     staleTime: staleTimeMs,
   };
 }

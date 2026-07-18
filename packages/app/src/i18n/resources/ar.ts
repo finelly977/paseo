@@ -867,11 +867,6 @@ export const ar: TranslationResources = {
       description:
         "أضف أوامر الإعداد حتى تتمكن أشجار العمل الجديدة من تثبيت التبعيات وإعداد نفسها تلقائيًا.",
       openProjectSettings: "افتح إعدادات المشروع",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1119,6 +1114,29 @@ export const ar: TranslationResources = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "جارٍ التحقق من توفّر الترحيل…",
+          "unsupported-source": "مصدر الترحيل هذا غير متاح.",
+          "host-not-running": "شغّل المضيف المُدار بواسطة تطبيق سطح المكتب قبل الاستيراد.",
+          "nonlocal-host": "الاستيراد غير متاح لمضيف غير محلي.",
+          "password-protected": "الاستيراد غير متاح أثناء حماية المضيف المحلي بكلمة مرور.",
+          "host-version-mismatch": "حدّث المضيف المُدار بواسطة تطبيق سطح المكتب قبل الاستيراد.",
+          "migrator-version-mismatch": "أداة الترحيل المضمّنة لا تطابق إصدار تطبيق سطح المكتب هذا.",
+          unavailable: "ترحيل تطبيق سطح المكتب غير متاح.",
+        },
+        actions: { import: "استيراد", importing: "جارٍ الاستيراد…", done: "تم" },
+        unavailable: "الترحيل عبر تطبيق سطح المكتب غير متاح.",
+        complete: "اكتمل الاستيراد.",
+        failed: "فشل الاستيراد.",
+        conductor: {
+          title: "Conductor",
+          description: "استيراد المشاريع والإعدادات وأشجار العمل من جهاز Mac هذا.",
+          sheetTitle: "الاستيراد من Conductor",
+          confirmation:
+            "سيسجّل Paseo المستودعات الصالحة ويدمج إعدادات المشروع المدعومة ويتبنّى أشجار العمل الجاهزة أو يعيد إنشاءها. لن تتغير بيانات Conductor.",
+        },
+      },
       cli: {
         statusFailed: "غير قادر على التحقق من حالة تثبيت CLI.",
         installFailed: "غير قادر على تثبيت PaseoCLI.",
@@ -2068,30 +2086,6 @@ export const ar: TranslationResources = {
         setupAccessibility: "أوامر إعداد شجرة العمل",
         teardown: "هدم",
         teardownAccessibility: "أوامر هدم شجرة العمل",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "البرامج النصية",

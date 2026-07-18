@@ -889,11 +889,6 @@ export const ru: TranslationResources = {
       description:
         "Добавьте команды настройки, чтобы новые рабочие деревья могли автоматически устанавливать зависимости и готовиться.",
       openProjectSettings: "Открыть настройки проекта",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1149,6 +1144,29 @@ export const ru: TranslationResources = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "Проверка доступности миграции…",
+          "unsupported-source": "Этот источник миграции недоступен.",
+          "host-not-running": "Запустите управляемый Desktop хост перед импортом.",
+          "nonlocal-host": "Импорт недоступен для нелокального хоста.",
+          "password-protected": "Импорт недоступен, пока локальный хост защищён паролем.",
+          "host-version-mismatch": "Обновите управляемый Desktop хост перед импортом.",
+          "migrator-version-mismatch": "Встроенный мигратор не соответствует этой версии Desktop.",
+          unavailable: "Миграция Desktop недоступна.",
+        },
+        actions: { import: "Импортировать", importing: "Импорт…", done: "Готово" },
+        unavailable: "Миграция в настольном приложении недоступна.",
+        complete: "Импорт завершён.",
+        failed: "Не удалось выполнить импорт.",
+        conductor: {
+          title: "Conductor",
+          description: "Импорт проектов, настроек и рабочих деревьев с этого Mac.",
+          sheetTitle: "Импорт из Conductor",
+          confirmation:
+            "Paseo зарегистрирует допустимые репозитории, объединит поддерживаемые настройки проектов и подключит или пересоздаст готовые рабочие деревья. Данные Conductor не изменятся.",
+        },
+      },
       cli: {
         statusFailed: "Невозможно проверить статус установки CLI.",
         installFailed: "Невозможно установить PaseoCLI.",
@@ -2111,30 +2129,6 @@ export const ru: TranslationResources = {
         setupAccessibility: "Команды настройки рабочего дерева",
         teardown: "Срывать",
         teardownAccessibility: "Команды разрушения рабочего дерева",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "Скрипты",

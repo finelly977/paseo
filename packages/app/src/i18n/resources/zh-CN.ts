@@ -860,11 +860,6 @@ export const zhCN: TranslationResources = {
       title: "设置 worktree scripts",
       description: "添加 setup 命令，让新的 worktree 自动安装依赖并完成准备。",
       openProjectSettings: "打开 project 设置",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1105,6 +1100,29 @@ export const zhCN: TranslationResources = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "正在检查迁移是否可用…",
+          "unsupported-source": "此迁移来源不可用。",
+          "host-not-running": "请先启动由桌面端管理的主机再导入。",
+          "nonlocal-host": "非本地主机无法使用导入。",
+          "password-protected": "本地主机受密码保护时无法导入。",
+          "host-version-mismatch": "请先更新由桌面端管理的主机再导入。",
+          "migrator-version-mismatch": "内置迁移工具与当前桌面端版本不匹配。",
+          unavailable: "桌面端迁移不可用。",
+        },
+        actions: { import: "导入", importing: "正在导入…", done: "完成" },
+        unavailable: "桌面端迁移不可用。",
+        complete: "导入完成。",
+        failed: "导入失败。",
+        conductor: {
+          title: "Conductor",
+          description: "从这台 Mac 导入项目、设置和工作树。",
+          sheetTitle: "从 Conductor 导入",
+          confirmation:
+            "Paseo 将注册有效仓库、合并支持的项目设置，并采用或重新创建已就绪的工作树。Conductor 数据不会被修改。",
+        },
+      },
       cli: {
         statusFailed: "无法检查 CLI 安装状态。",
         installFailed: "无法安装 Paseo CLI。",
@@ -2044,30 +2062,6 @@ export const zhCN: TranslationResources = {
         setupAccessibility: "Worktree setup 命令",
         teardown: "Teardown",
         teardownAccessibility: "Worktree teardown 命令",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "Scripts",

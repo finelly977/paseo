@@ -880,11 +880,6 @@ export const ja: TranslationResources = {
       description:
         "新しいワークツリーが依存関係をインストールして自動的に準備できるようにセットアップコマンドを追加してください。",
       openProjectSettings: "プロジェクト設定を開く",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1134,6 +1129,30 @@ export const ja: TranslationResources = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "移行が利用可能か確認しています…",
+          "unsupported-source": "この移行元は利用できません。",
+          "host-not-running": "インポートする前にDesktop管理ホストを起動してください。",
+          "nonlocal-host": "ローカル以外のホストではインポートできません。",
+          "password-protected":
+            "ローカルホストがパスワード保護されている間はインポートできません。",
+          "host-version-mismatch": "インポートする前にDesktop管理ホストを更新してください。",
+          "migrator-version-mismatch": "同梱の移行ツールはこのDesktopバージョンと一致しません。",
+          unavailable: "Desktop移行は利用できません。",
+        },
+        actions: { import: "インポート", importing: "インポート中…", done: "完了" },
+        unavailable: "デスクトップ移行は利用できません。",
+        complete: "インポートが完了しました。",
+        failed: "インポートに失敗しました。",
+        conductor: {
+          title: "Conductor",
+          description: "このMacからプロジェクト、設定、worktreeをインポートします。",
+          sheetTitle: "Conductorからインポート",
+          confirmation:
+            "Paseoは有効なリポジトリを登録し、対応するプロジェクト設定を統合して、準備済みのworktreeを採用または再作成します。Conductorのデータは変更されません。",
+        },
+      },
       cli: {
         statusFailed: "CLIのインストール状態を確認できません。",
         installFailed: "Paseo CLIをインストールできません。",
@@ -2093,30 +2112,6 @@ export const ja: TranslationResources = {
         setupAccessibility: "ワークツリーセットアップコマンド",
         teardown: "削除時",
         teardownAccessibility: "ワークツリー削除時のコマンド",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "スクリプト",

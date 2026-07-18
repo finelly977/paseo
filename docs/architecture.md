@@ -83,7 +83,19 @@ it does not depend on the server.
 Owns the low-level daemon WebSocket driver plus the higher-level `PaseoClient`
 facade. App and CLI may import the low-level driver from
 `@getpaseo/client/internal/daemon-client` during migration, while new SDK-shaped
-code imports from `@getpaseo/client`.
+code imports from `@getpaseo/client`. Node automation uses
+`@getpaseo/client/node`, which owns daemon discovery, authentication, transport
+selection, and the capability-gated host automation facade shared by the CLI and
+published migration tools.
+
+### `packages/migrate` — Installation migration CLI
+
+Published as `@getpaseo/migrate`. It inspects third-party installation metadata
+through source adapters, maps source-neutral projects/config/workspaces, and
+applies them through the public Node host automation client. Source knowledge and
+fixtures stay in this package; the daemon and shared app workflow remain
+source-neutral. Desktop bundles the exact-version CLI and exposes a narrow,
+local-only Electron bridge for supported migrations.
 
 ### `packages/app` — Mobile + web client (Expo)
 

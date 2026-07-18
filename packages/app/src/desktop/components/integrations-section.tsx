@@ -16,6 +16,7 @@ import {
   type SkillsStatus,
 } from "@/desktop/daemon/desktop-daemon";
 import { useCliInstall, useSkillsStatus } from "@/desktop/hooks/use-install-status";
+import { ConductorMigration } from "@/desktop/migrations/conductor";
 
 const CLI_DOCS_URL = "https://paseo.sh/docs/cli";
 const SKILLS_DOCS_URL = "https://paseo.sh/docs/skills";
@@ -203,6 +204,7 @@ export function IntegrationsSection() {
             onUninstall={handleUninstallSkills}
           />
         </View>
+        <ConductorMigration />
       </View>
     </SettingsSection>
   );

@@ -4,7 +4,6 @@ import type {
   PaseoMetadataGenerationEntry,
   PaseoScriptEntryRaw,
 } from "@getpaseo/protocol/messages";
-import equal from "fast-deep-equal";
 
 export type LifecycleOriginalKind = "string" | "array" | "missing";
 
@@ -244,12 +243,4 @@ export function applyDraftToConfig(input: ApplyDraftInput): PaseoConfigRaw {
     result.metadataGeneration = nextMetadataGeneration;
   }
   return result as PaseoConfigRaw;
-}
-
-export function hasProjectConfigDraftChanges(input: ApplyDraftInput): boolean {
-  const canonicalBase = applyDraftToConfig({
-    draft: configToDraft(input.base),
-    base: input.base,
-  });
-  return !equal(applyDraftToConfig(input), canonicalBase);
 }

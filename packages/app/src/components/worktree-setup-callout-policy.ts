@@ -1,6 +1,6 @@
 import type { PaseoConfigRaw } from "@getpaseo/protocol/messages";
 import { i18n } from "@/i18n/i18next";
-import { buildProjectSettingsImportRoute, buildProjectSettingsRoute } from "@/utils/host-routes";
+import { buildProjectSettingsRoute } from "@/utils/host-routes";
 
 export interface WorktreeSetupWorkspaceInput {
   projectId: string;
@@ -69,50 +69,6 @@ export function buildWorktreeSetupCalloutPolicy(
     description: i18n.t("sidebar.worktreeSetup.description"),
     actionLabel: i18n.t("sidebar.worktreeSetup.openProjectSettings"),
     projectSettingsRoute: buildProjectSettingsRoute(project.projectKey),
-    testID: `worktree-setup-callout-${project.projectKey}`,
-  };
-}
-
-export function buildProjectConfigImportCalloutPolicy(
-  project: ActiveGitWorkspaceProject,
-  input:
-    | {
-        status: "one";
-        sourceDisplayName: string;
-        sourceRouteValue: string;
-        intentId: string;
-      }
-    | { status: "many" },
-): WorktreeSetupCalloutPolicy {
-  const calloutKey = `worktree-setup-missing:${project.projectKey}`;
-  const title =
-    input.status === "one"
-      ? i18n.t("sidebar.worktreeSetup.importTitle", { source: input.sourceDisplayName })
-      : i18n.t("sidebar.worktreeSetup.importManyTitle");
-  const description =
-    input.status === "one"
-      ? i18n.t("sidebar.worktreeSetup.importDescription", {
-          source: input.sourceDisplayName,
-        })
-      : i18n.t("sidebar.worktreeSetup.importManyDescription");
-  const projectSettingsRoute =
-    input.status === "one"
-      ? buildProjectSettingsImportRoute({
-          projectKey: project.projectKey,
-          source: input.sourceRouteValue,
-          serverId: project.serverId,
-          intentId: input.intentId,
-        })
-      : buildProjectSettingsRoute(project.projectKey);
-
-  return {
-    id: calloutKey,
-    dismissalKey: calloutKey,
-    priority: 100,
-    title,
-    description,
-    actionLabel: i18n.t("sidebar.worktreeSetup.reviewMigration"),
-    projectSettingsRoute,
     testID: `worktree-setup-callout-${project.projectKey}`,
   };
 }

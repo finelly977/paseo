@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildProjectConfigImportCalloutPolicy,
   buildWorktreeSetupCalloutPolicy,
   selectActiveGitWorkspaceProject,
   shouldShowWorktreeSetupCallout,
@@ -99,51 +98,6 @@ describe("buildWorktreeSetupCalloutPolicy", () => {
       actionLabel: "Open project settings",
       projectSettingsRoute: "/settings/projects/project-1",
       testID: "worktree-setup-callout-project-1",
-    });
-  });
-
-  it("builds a host-bound import route with a single-use intent", () => {
-    expect(
-      buildProjectConfigImportCalloutPolicy(
-        {
-          serverId: "server-1",
-          projectKey: "remote:github.com/acme/app",
-          repoRoot: "/repo/project-1",
-        },
-        {
-          status: "one",
-          sourceDisplayName: "Fake Source",
-          sourceRouteValue: "fake",
-          intentId: "intent-1",
-        },
-      ),
-    ).toEqual({
-      id: "worktree-setup-missing:remote:github.com/acme/app",
-      dismissalKey: "worktree-setup-missing:remote:github.com/acme/app",
-      priority: 100,
-      title: "Fake Source setup found",
-      description: "Import workspace setup and run scripts from Fake Source.",
-      actionLabel: "Review migration",
-      projectSettingsRoute:
-        "/settings/projects/remote%3Agithub.com%2Facme%2Fapp?importSource=fake&importServerId=server-1&importIntentId=intent-1",
-      testID: "worktree-setup-callout-remote:github.com/acme/app",
-    });
-  });
-
-  it("routes many import sources to project settings without selecting a source", () => {
-    expect(
-      buildProjectConfigImportCalloutPolicy(
-        {
-          serverId: "server-1",
-          projectKey: "remote:github.com/acme/app",
-          repoRoot: "/repo/project-1",
-        },
-        { status: "many" },
-      ),
-    ).toMatchObject({
-      title: "Project setup imports found",
-      description: "Review available project setup imports in Project Settings.",
-      projectSettingsRoute: "/settings/projects/remote%3Agithub.com%2Facme%2Fapp",
     });
   });
 });

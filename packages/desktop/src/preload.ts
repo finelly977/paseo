@@ -17,6 +17,13 @@ interface AttachedBrowserRegistration {
   webContentsId: number;
 }
 
+interface DesktopMigrationOutput {
+  runId: string;
+  stream: "stdout" | "stderr" | "status";
+  chunk?: string;
+  exitCode?: number;
+}
+
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
   invoke: (command: string, args?: Record<string, unknown>) =>
@@ -32,6 +39,30 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       return Promise.resolve(() => {
         ipcRenderer.removeListener(`paseo:event:${event}`, listener);
       });
+    },
+  },
+  migrations: {
+    getAvailability: (input: { source: string }) =>
+      ipcRenderer.invoke("paseo:migrations:availability", input) as Promise<{
+        available: boolean;
+        reason:
+          | "unsupported-source"
+          | "host-not-running"
+          | "nonlocal-host"
+          | "password-protected"
+          | "host-version-mismatch"
+          | "migrator-version-mismatch"
+          | "unavailable"
+          | null;
+      }>,
+    run: (input: { source: string }) =>
+      ipcRenderer.invoke("paseo:migrations:run", input) as Promise<{ runId: string }>,
+    onOutput: (handler: (output: DesktopMigrationOutput) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, output: DesktopMigrationOutput) => {
+        handler(output);
+      };
+      ipcRenderer.on("paseo:migrations:output", listener);
+      return () => ipcRenderer.removeListener("paseo:migrations:output", listener);
     },
   },
   window: {

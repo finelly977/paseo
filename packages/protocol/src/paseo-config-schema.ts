@@ -79,71 +79,13 @@ export const PaseoConfigRevisionSchema = z.object({
   size: z.number(),
 });
 
-export const ProjectConfigImportSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("conductor") }),
-]);
-
-export const ProjectConfigImportAdvertisedSourceSchema = z
-  .object({ kind: z.string().min(1) })
-  .passthrough();
-
-export const ProjectConfigImportInputSchema = z.object({
-  role: z.string(),
-  relativePath: z.string(),
-});
-
-export const ProjectConfigImportItemOutcomeSchema = z.enum([
-  "import",
-  "rewrite",
-  "collision",
-  "unsupported",
-]);
-
-export const ProjectConfigImportItemSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  outcome: ProjectConfigImportItemOutcomeSchema,
-  detail: z.string().optional(),
-});
-
-export const ProjectConfigImportStatusSchema = z.enum([
-  "available",
-  "not_found",
-  "nothing_to_import",
-]);
-
-export const ProjectConfigImportPreviewSchema = z.object({
-  repoRoot: z.string(),
-  source: ProjectConfigImportSourceSchema,
-  status: ProjectConfigImportStatusSchema,
-  sourceRevision: z.string().nullable(),
-  paseoRevision: PaseoConfigRevisionSchema.nullable(),
-  inputs: z.array(ProjectConfigImportInputSchema),
-  items: z.array(ProjectConfigImportItemSchema),
-  preview: PaseoConfigRawSchema.nullable(),
-});
-
 export const ProjectConfigRpcErrorSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("project_not_found") }),
-  z.object({
-    code: z.literal("source_config_not_found"),
-    source: ProjectConfigImportSourceSchema,
-  }),
-  z.object({
-    code: z.literal("invalid_source_config"),
-    source: ProjectConfigImportSourceSchema,
-    relativePath: z.string(),
-  }),
-  z.object({
-    code: z.literal("stale_source_config"),
-    source: ProjectConfigImportSourceSchema,
-  }),
   z.object({ code: z.literal("invalid_project_config") }),
   z.object({
     code: z.literal("stale_project_config"),
     currentRevision: PaseoConfigRevisionSchema.nullable(),
   }),
-  z.object({ code: z.literal("nothing_to_import") }),
   z.object({ code: z.literal("write_failed") }),
 ]);
 
@@ -153,11 +95,4 @@ export type PaseoMetadataGeneration = z.infer<typeof PaseoMetadataGenerationSche
 export type PaseoConfigRaw = z.infer<typeof PaseoConfigRawSchema>;
 export type PaseoConfig = z.infer<typeof PaseoConfigSchema>;
 export type PaseoConfigRevision = z.infer<typeof PaseoConfigRevisionSchema>;
-export type ProjectConfigImportSource = z.infer<typeof ProjectConfigImportSourceSchema>;
-export type ProjectConfigImportAdvertisedSource = z.infer<
-  typeof ProjectConfigImportAdvertisedSourceSchema
->;
-export type ProjectConfigImportInput = z.infer<typeof ProjectConfigImportInputSchema>;
-export type ProjectConfigImportItem = z.infer<typeof ProjectConfigImportItemSchema>;
-export type ProjectConfigImportPreview = z.infer<typeof ProjectConfigImportPreviewSchema>;
 export type ProjectConfigRpcError = z.infer<typeof ProjectConfigRpcErrorSchema>;

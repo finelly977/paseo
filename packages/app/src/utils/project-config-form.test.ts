@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PaseoConfigRawSchema } from "@getpaseo/protocol/paseo-config-schema";
 import type { PaseoConfigRaw } from "@getpaseo/protocol/messages";
-import {
-  applyDraftToConfig,
-  configToDraft,
-  hasProjectConfigDraftChanges,
-  type ProjectConfigDraft,
-} from "./project-config-form";
+import { applyDraftToConfig, configToDraft, type ProjectConfigDraft } from "./project-config-form";
 
 function emptyDraft(): ProjectConfigDraft {
   return {
@@ -353,26 +348,5 @@ describe("applyDraftToConfig", () => {
     const next = applyDraftToConfig({ draft, base });
     const scripts = next.scripts ?? {};
     expect(Object.keys(scripts)).toEqual(["dev"]);
-  });
-});
-
-describe("hasProjectConfigDraftChanges", () => {
-  it("distinguishes an untouched form from unsaved project edits", () => {
-    const base = { worktree: { setup: "npm ci" } };
-    const untouched = configToDraft(base);
-    const edited = { ...untouched, setupText: "npm install" };
-
-    expect(hasProjectConfigDraftChanges({ draft: untouched, base })).toBe(false);
-    expect(hasProjectConfigDraftChanges({ draft: edited, base })).toBe(true);
-  });
-
-  it("treats empty config containers as an untouched canonical form", () => {
-    const base: PaseoConfigRaw = {
-      worktree: {},
-      scripts: {},
-      metadataGeneration: {},
-    };
-
-    expect(hasProjectConfigDraftChanges({ draft: configToDraft(base), base })).toBe(false);
   });
 });

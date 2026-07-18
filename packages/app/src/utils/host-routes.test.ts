@@ -9,7 +9,6 @@ import {
   resolveKnownHostRoute,
   buildSessionsRoute,
   buildSettingsAddHostRoute,
-  buildProjectSettingsImportRoute,
   buildProjectSettingsRoute,
   buildProjectsSettingsRoute,
   decodeFilePathFromPathSegment,
@@ -206,19 +205,6 @@ describe("projects settings routes", () => {
   it("buildProjectSettingsRoute encodes a local repo-root key", () => {
     expect(buildProjectSettingsRoute("/Users/me/dev/paseo")).toBe(
       "/settings/projects/%2FUsers%2Fme%2Fdev%2Fpaseo",
-    );
-  });
-
-  it("buildProjectSettingsImportRoute includes the import source, host, and intent", () => {
-    expect(
-      buildProjectSettingsImportRoute({
-        projectKey: "remote:github.com/acme/app",
-        source: "fake",
-        serverId: "server-1",
-        intentId: "intent 1",
-      }),
-    ).toBe(
-      "/settings/projects/remote%3Agithub.com%2Facme%2Fapp?importSource=fake&importServerId=server-1&importIntentId=intent+1",
     );
   });
 

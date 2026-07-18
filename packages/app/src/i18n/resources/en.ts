@@ -878,11 +878,6 @@ export const en = {
       description:
         "Add setup commands so new worktrees can install dependencies and prepare themselves automatically.",
       openProjectSettings: "Open project settings",
-      importTitle: "{{source}} setup found",
-      importDescription: "Import workspace setup and run scripts from {{source}}.",
-      importManyTitle: "Project setup imports found",
-      importManyDescription: "Review available project setup imports in Project Settings.",
-      reviewMigration: "Review migration",
     },
     project: {
       actions: {
@@ -1130,6 +1125,29 @@ export const en = {
       },
     },
     integrations: {
+      migration: {
+        availability: {
+          checking: "Checking migration availability…",
+          "unsupported-source": "This migration source is unavailable.",
+          "host-not-running": "Start the Desktop-managed host before importing.",
+          "nonlocal-host": "Import is unavailable for a nonlocal host.",
+          "password-protected": "Import is unavailable while the local host is password-protected.",
+          "host-version-mismatch": "Update the Desktop-managed host before importing.",
+          "migrator-version-mismatch": "The bundled migrator does not match this Desktop version.",
+          unavailable: "Desktop migration is unavailable.",
+        },
+        actions: { import: "Import", importing: "Importing…", done: "Done" },
+        unavailable: "Desktop migration is unavailable.",
+        complete: "Import complete.",
+        failed: "Import failed.",
+        conductor: {
+          title: "Conductor",
+          description: "Import projects, settings, and worktrees from this Mac.",
+          sheetTitle: "Import from Conductor",
+          confirmation:
+            "Paseo will register valid repositories, merge supported project settings, and adopt or recreate ready worktrees. Conductor data will not be changed.",
+        },
+      },
       cli: {
         statusFailed: "Unable to check CLI install status.",
         installFailed: "Unable to install the Paseo CLI.",
@@ -2082,30 +2100,6 @@ export const en = {
         setupAccessibility: "Worktree setup commands",
         teardown: "Teardown",
         teardownAccessibility: "Worktree teardown commands",
-      },
-      import: {
-        rowTitle: "Import from {{source}}",
-        rowDescription:
-          "Review workspace setup and run scripts from {{source}} before writing paseo.json.",
-        sheetTitle: "Import from {{source}}",
-        sources: "Source files",
-        willImport: "Will import",
-        needsAttention: "Needs attention",
-        notSupported: "Not supported",
-        import: "Import",
-        importing: "Importing...",
-        refreshPreview: "Refresh preview",
-        success: "{{source}} settings imported",
-        errorTitle: "Couldn't import settings",
-        errors: {
-          capabilityMissing: "Update the host to use this.",
-          unsavedChanges: "Save or discard your project changes before importing.",
-          notFound: "No {{source}} project config was found.",
-          invalid: "{{path}} couldn't be parsed.",
-          staleSource: "The {{source}} config changed. Refresh the preview before importing.",
-          staleProject: "paseo.json changed. Refresh the preview before importing.",
-          nothing: "There is nothing new to import.",
-        },
       },
       scripts: {
         title: "Scripts",

@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "setup": "legacy setup",
+    "archive": "legacy teardown",
+    "run": {
+      "test": {
+        "command": "legacy test"
+      }
+    }
+  }
+}
