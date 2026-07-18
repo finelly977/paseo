@@ -1,12 +1,13 @@
 import { z } from "zod";
 
 const START_TIMEOUT_MS = 15_000;
+const activationUrlSchema = z.httpUrl();
 
 const authorizationSchema = z.object({
   deviceCode: z.string().min(32),
   userCode: z.string().min(1),
-  verificationUri: z.string().url(),
-  verificationUriComplete: z.string().url(),
+  verificationUri: activationUrlSchema,
+  verificationUriComplete: activationUrlSchema,
   expiresAt: z.string().datetime(),
   interval: z.number().int().min(5),
 });

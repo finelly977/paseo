@@ -5,6 +5,18 @@ import { describe, it } from "vitest";
 import { CloudDeviceAuthorizationClient } from "./cloud-device-authorization.js";
 
 describe("Cloud device authorization", () => {
+  it("rejects a non-web activation URL at the Cloud boundary", async () => {
+    const cloud = await RegistrationCloud.start("non-web-authorization");
+    try {
+      await assert.rejects(new CloudDeviceAuthorizationClient().start(cloud.origin, "Studio Mac"), {
+        name: "ZodError",
+      });
+      assert.deepEqual(cloud.receivedPaths, ["/api/device-authorizations/"]);
+    } finally {
+      await cloud.stop();
+    }
+  });
+
   it("fails when start headers arrive but the response body stalls", async () => {
     const cloud = await RegistrationCloud.start("stalled-start-body");
     try {
@@ -50,7 +62,11 @@ describe("Cloud device authorization", () => {
   });
 });
 
-type RegistrationCloudResponse = "stalled-start-body" | "stalled-poll-body" | "malformed-poll-body";
+type RegistrationCloudResponse =
+  | "non-web-authorization"
+  | "stalled-start-body"
+  | "stalled-poll-body"
+  | "malformed-poll-body";
 
 class RegistrationCloud {
   readonly receivedPaths: string[] = [];
@@ -67,6 +83,19 @@ class RegistrationCloud {
       response.writeHead(200, { "content-type": "application/json" });
       if (responseBody === "malformed-poll-body") {
         response.end("not-json");
+        return;
+      }
+      if (responseBody === "non-web-authorization") {
+        response.end(
+          JSON.stringify({
+            deviceCode: "device-code-with-more-than-thirty-two-characters",
+            userCode: "ABCD-EFGH-JKLMN",
+            verificationUri: "https://cloud.paseo.test/activate",
+            verificationUriComplete: "file:///tmp/paseo-activate",
+            expiresAt: "2026-07-18T12:10:00.000Z",
+            interval: 5,
+          }),
+        );
         return;
       }
       if (responseBody === "stalled-start-body") {
