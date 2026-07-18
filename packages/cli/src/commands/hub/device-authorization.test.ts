@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "vitest";
-import {
-  DeviceAuthorizationWorkflow,
-  type CloudDeviceAuthorization,
-  type DeviceAuthorizationPoll,
-} from "./device-authorization.js";
+import { DeviceAuthorizationWorkflow } from "./device-authorization.js";
+import type {
+  CloudDeviceAuthorization,
+  DeviceAuthorizationPoll,
+} from "./cloud-device-authorization.js";
 import { createHubCommand } from "./index.js";
 
 describe("Hub device authorization", () => {
@@ -25,14 +25,17 @@ describe("Hub device authorization", () => {
         {
           hubUrl: "https://cloud.paseo.test",
           deviceCode: "device-code-with-more-than-thirty-two-characters",
+          timeoutMilliseconds: 595_000,
         },
         {
           hubUrl: "https://cloud.paseo.test",
           deviceCode: "device-code-with-more-than-thirty-two-characters",
+          timeoutMilliseconds: 590_000,
         },
         {
           hubUrl: "https://cloud.paseo.test",
           deviceCode: "device-code-with-more-than-thirty-two-characters",
+          timeoutMilliseconds: 580_000,
         },
       ],
       waits: [5_000, 5_000, 10_000],
@@ -69,15 +72,22 @@ describe("Hub device authorization", () => {
     assert.deepEqual(authorization.observed().waits, [5_000, 5_000]);
   });
 
-  it("stops retrying a lost poll at the advertised expiry", async () => {
+  it("retries timeout failures only while the fixed authorization expiry remains", async () => {
     const authorization = new AuthorizationJourney(
-      new FakeCloud([{ status: "retry_later" }], "2026-07-18T12:00:10.000Z"),
+      new FakeCloud(
+        [{ status: "retry_later" }, { status: "retry_later" }],
+        "2026-07-18T12:00:11.000Z",
+      ),
     );
 
     await assert.rejects(authorization.approve("https://cloud.paseo.test", "Studio Mac"), {
       message: "Daemon registration expired",
     });
-    assert.deepEqual(authorization.observed().waits, [5_000, 5_000]);
+    assert.deepEqual(authorization.observed().waits, [5_000, 5_000, 1_000]);
+    assert.deepEqual(
+      authorization.observed().polls.map(({ timeoutMilliseconds }) => timeoutMilliseconds),
+      [6_000, 1_000],
+    );
   });
 
   it("stops without an enrollment token when the request expires", async () => {
@@ -174,7 +184,11 @@ class AuthorizationJourney {
 
 class FakeCloud implements CloudDeviceAuthorization {
   readonly starts: Array<{ hubUrl: string; displayName: string }> = [];
-  readonly polls: Array<{ hubUrl: string; deviceCode: string }> = [];
+  readonly polls: Array<{
+    hubUrl: string;
+    deviceCode: string;
+    timeoutMilliseconds: number;
+  }> = [];
 
   constructor(
     private readonly outcomes: DeviceAuthorizationPoll[],
@@ -193,8 +207,12 @@ class FakeCloud implements CloudDeviceAuthorization {
     };
   }
 
-  async poll(hubUrl: string, deviceCode: string): Promise<DeviceAuthorizationPoll> {
-    this.polls.push({ hubUrl, deviceCode });
+  async poll(
+    hubUrl: string,
+    deviceCode: string,
+    timeoutMilliseconds: number,
+  ): Promise<DeviceAuthorizationPoll> {
+    this.polls.push({ hubUrl, deviceCode, timeoutMilliseconds });
     const outcome = this.outcomes[this.polls.length - 1];
     if (outcome === undefined) throw new Error("No Cloud poll outcome remains");
     return outcome;

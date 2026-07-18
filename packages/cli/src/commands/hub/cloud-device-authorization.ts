@@ -1,0 +1,92 @@
+import { z } from "zod";
+
+const authorizationSchema = z.object({
+  deviceCode: z.string().min(32),
+  userCode: z.string().min(1),
+  verificationUri: z.string().url(),
+  verificationUriComplete: z.string().url(),
+  expiresAt: z.string().datetime(),
+  interval: z.number().int().min(5),
+});
+
+const pollSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending"), interval: z.number().int().min(5) }),
+  z.object({ status: z.literal("slow_down"), interval: z.number().int().min(5) }),
+  z.object({
+    status: z.literal("approved"),
+    interval: z.number().int().min(5),
+    enrollmentToken: z.string().min(32),
+  }),
+  z.object({ status: z.literal("denied"), interval: z.number().int().min(5) }),
+  z.object({ status: z.literal("expired"), interval: z.number().int().min(5) }),
+  z.object({ status: z.literal("enrolled"), interval: z.number().int().min(5) }),
+  z.object({ status: z.literal("retry_later") }),
+]);
+
+export type DeviceAuthorization = z.infer<typeof authorizationSchema>;
+export type DeviceAuthorizationPoll = z.infer<typeof pollSchema>;
+
+export interface CloudDeviceAuthorization {
+  start(hubUrl: string, displayName: string): Promise<DeviceAuthorization>;
+  poll(
+    hubUrl: string,
+    deviceCode: string,
+    timeoutMilliseconds: number,
+  ): Promise<DeviceAuthorizationPoll>;
+}
+
+export class CloudDeviceAuthorizationClient implements CloudDeviceAuthorization {
+  async start(hubUrl: string, displayName: string): Promise<DeviceAuthorization> {
+    const response = await fetch(endpoint(hubUrl, "/api/device-authorizations/"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName }),
+    });
+    if (!response.ok) throw new Error(`Cloud registration failed (${response.status})`);
+    return authorizationSchema.parse(await response.json());
+  }
+
+  async poll(
+    hubUrl: string,
+    deviceCode: string,
+    timeoutMilliseconds: number,
+  ): Promise<DeviceAuthorizationPoll> {
+    const signal = AbortSignal.timeout(timeoutMilliseconds);
+    let response: Response;
+    try {
+      response = await fetch(endpoint(hubUrl, "/api/device-authorizations/poll"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceCode }),
+        signal,
+      });
+    } catch {
+      return { status: "retry_later" };
+    }
+    if ([408, 425, 429].includes(response.status) || response.status >= 500) {
+      return { status: "retry_later" };
+    }
+    if (!response.ok) throw new Error(`Cloud registration poll failed (${response.status})`);
+    try {
+      return pollSchema.parse(await response.json());
+    } catch (error) {
+      if (signal.aborted) return { status: "retry_later" };
+      throw error;
+    }
+  }
+}
+
+function endpoint(hubUrl: string, pathname: string): string {
+  const url = new URL(hubUrl);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Hub URL must be an HTTP or HTTPS origin without credentials or a query");
+  }
+  url.pathname = `${url.pathname.replace(/\/$/u, "")}${pathname}`;
+  return url.toString();
+}
