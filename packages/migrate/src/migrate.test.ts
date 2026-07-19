@@ -51,6 +51,9 @@ test("imports real catalog, config, and Git worktree shapes through observable P
   expect(paseo.createdCheckouts).toEqual([
     { rootPath: fixture.repo, refName: "create-branch", directoryName: "missing-create" },
   ]);
+  expect(paseo.configs.get(path.join(fixture.repo, ".paseo", "missing-create"))).toEqual(
+    paseo.configs.get(fixture.repo),
+  );
   expect(result.notices.map((notice) => notice.code)).toEqual(
     expect.arrayContaining([
       "hidden-project",
@@ -80,7 +83,7 @@ test("imports real catalog, config, and Git worktree shapes through observable P
     output: (event) => secondEvents.push(event),
   });
   expect(second.notices.some((notice) => notice.code === "project-apply-failed")).toBe(false);
-  expect(paseo.configWrites).toBe(2);
+  expect(paseo.configWrites).toBe(3);
   expect(secondEvents.map((event) => event.message)).toContain(
     `Worktree ${path.join(fixture.repo, ".paseo", "missing-create")} already exists for create-branch.`,
   );
@@ -98,7 +101,7 @@ test("reports a revision-stale config write without retrying or replacing existi
     output: () => undefined,
   });
 
-  expect(paseo.configWrites).toBe(2);
+  expect(paseo.configWrites).toBe(3);
   expect(paseo.configs.get(fixture.repo)).toEqual({});
   expect(paseo.openedCheckouts).toEqual([fixture.liveWorktree]);
   expect(paseo.createdCheckouts).toEqual([

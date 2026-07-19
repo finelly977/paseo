@@ -155,6 +155,7 @@ async function applyWorkspace(
         refName: workspace.branch,
         directoryName: workspace.directoryName,
       });
+      await applyConfig(ensured.path, config, context);
       context.stats[ensured.created ? "created" : "existing"] += 1;
       context.output({
         level: "info",
