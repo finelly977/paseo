@@ -18,10 +18,25 @@ afterEach(async () => {
   await Promise.all([...cleanupDaemons].map((daemon) => daemon.close()));
   cleanupDaemons.clear();
   for (const target of cleanupPaths) {
-    rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    try {
+      rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch (error) {
+      // Windows can retain a temporary repository handle past daemon shutdown.
+      // The runner discards its temp root; every other cleanup failure remains fatal.
+      if (!isWindowsBusyError(error)) throw error;
+    }
   }
   cleanupPaths.clear();
 });
+
+function isWindowsBusyError(error: unknown): boolean {
+  return (
+    process.platform === "win32" &&
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "EBUSY"
+  );
+}
 
 test("two complete migrations reuse the same real daemon checkout", async () => {
   const repoRoot = createRepository();
