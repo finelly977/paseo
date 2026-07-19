@@ -163,6 +163,7 @@ test("preserves literal or escaped Conductor names and rewrites active variables
         arithmeticOffset: { command: "serve --port $(( CONDUCTOR_PORT + 1 ))" },
         prefixExpansion: { command: "serve --length ${#CONDUCTOR_PORT}" },
         unicodePrefix: { command: 'printf 😀 "$CONDUCTOR_PORT"' },
+        commandSubstitution: { command: "printf \"$(printf '$CONDUCTOR_PORT')\"" },
       },
     },
   });
@@ -195,6 +196,11 @@ test("preserves literal or escaped Conductor names and rewrites active variables
     level: "warning",
     message:
       "scripts.prefixExpansion: Unsupported Conductor variables: CONDUCTOR_PORT. Command was not imported.",
+  });
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-unsupported",
+    level: "warning",
+    message: "scripts.commandSubstitution: Command substitutions are not imported.",
   });
 });
 

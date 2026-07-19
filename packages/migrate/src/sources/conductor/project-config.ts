@@ -369,6 +369,10 @@ function rewriteExactCommand(
   notices: MigrationNotice[],
   platform: NodeJS.Platform,
 ): string | null {
+  if (containsActiveCommandSubstitution(command)) {
+    notices.push(unsupportedSetting(key, "Command substitutions are not imported."));
+    return null;
+  }
   if (containsActiveHereDocument(command)) {
     notices.push(unsupportedSetting(key, "Here-document commands are not imported."));
     return null;
@@ -723,6 +727,17 @@ function containsActiveHereDocument(command: string): boolean {
   const mask = activeShellMask(command);
   for (const match of command.matchAll(/<<-?/g)) {
     if (mask.slice(match.index, match.index + match[0].length) === match[0]) return true;
+  }
+  return false;
+}
+
+function containsActiveCommandSubstitution(command: string): boolean {
+  const mask = activeShellMask(command);
+  for (const match of command.matchAll(/\$\((?!\()/g)) {
+    if (mask.slice(match.index, match.index + 2) === "$(") return true;
+  }
+  for (const match of command.matchAll(/`/g)) {
+    if (mask[match.index] === "`") return true;
   }
   return false;
 }
