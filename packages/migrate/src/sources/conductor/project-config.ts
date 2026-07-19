@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, posix, relative } from "node:path";
 import type { PaseoConfigRaw, PaseoScriptEntryRaw } from "@getpaseo/protocol/messages";
+import { normalizeServiceEnvName } from "@getpaseo/protocol/service-env-name";
 import { parse as parseToml } from "smol-toml";
 import type { MigrationNotice } from "../../types.js";
 
@@ -294,6 +295,12 @@ function mapRunScript(
   if (script.icon !== undefined) {
     notices.push(unsupportedSetting(`${key}.icon`, "Script icons are not imported."));
   }
+  if (platform === "win32" && script.args && script.args.length > 0) {
+    notices.push(
+      unsupportedSetting(`${key}.args`, "Script arguments are not imported on Windows."),
+    );
+    return;
+  }
 
   let command = appendArgs(script.command, script.args ?? []);
   if (script.cwd) {
@@ -324,7 +331,7 @@ function mapRunScript(
 
   const service = containsShellVariable(command, "CONDUCTOR_PORT");
   if (service) {
-    const environmentName = scriptId.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    const environmentName = normalizeServiceEnvName(scriptId);
     const collision = serviceNames.get(environmentName);
     if (collision) {
       notices.push(
@@ -347,7 +354,7 @@ function mapRunScript(
   );
   if (!rewritten) return;
   if (service) {
-    const environmentName = scriptId.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+    const environmentName = normalizeServiceEnvName(scriptId);
     serviceNames.set(environmentName, scriptId);
   }
   const entry: PaseoScriptEntryRaw = { command: rewritten };
@@ -630,6 +637,18 @@ function activeShellMask(command: string): string {
       mask[index] = " ";
       if (index + 1 < mask.length) mask[index + 1] = " ";
       index += 1;
+      continue;
+    }
+    if (
+      quote === null &&
+      character === "#" &&
+      (index === 0 || /[\s;|&()<>]/.test(command[index - 1]))
+    ) {
+      while (index < command.length && command[index] !== "\n") {
+        mask[index] = " ";
+        index += 1;
+      }
+      index -= 1;
       continue;
     }
     if (quote === "double") {

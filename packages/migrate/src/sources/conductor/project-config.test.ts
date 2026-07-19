@@ -79,6 +79,15 @@ command = "echo $CONDUCTOR_UNSUPPORTED_VALUE"
 
 [scripts.run.unsupported_substitution]
 command = "serve --port \${CONDUCTOR_PORT/3000/3001}"
+
+[scripts.run.comment]
+command = "npm test # $CONDUCTOR_PORT"
+
+[scripts.run.api]
+command = "serve --port $CONDUCTOR_PORT"
+
+[scripts.run.api_]
+command = "serve-other --port $CONDUCTOR_PORT"
 `,
   );
 
@@ -86,6 +95,8 @@ command = "serve --port \${CONDUCTOR_PORT/3000/3001}"
 
   expect(inspected.config).toEqual({
     scripts: {
+      api: { command: "serve --port $PASEO_PORT", type: "service" },
+      comment: { command: "npm test # $CONDUCTOR_PORT" },
       safe: { command: "npm test" },
       service: { command: "serve --port $PASEO_PORT", type: "service" },
     },
@@ -97,6 +108,7 @@ command = "serve --port \${CONDUCTOR_PORT/3000/3001}"
       "scripts.escape.cwd: Absolute or escaping cwd values are not imported.",
       "scripts.unknown_variable: Unsupported Conductor variables: CONDUCTOR_UNSUPPORTED_VALUE. Command was not imported.",
       "scripts.unsupported_substitution: Unsupported Conductor variables: CONDUCTOR_PORT. Command was not imported.",
+      'scripts.api_: Service environment name collides with "api" (API).',
       "settings.unknown_project_setting: Unknown Conductor setting.",
     ]),
   );
@@ -192,6 +204,7 @@ test("skips variable commands on Windows while preserving ordinary commands", ()
         run: {
           service: { command: "serve --port $CONDUCTOR_PORT" },
           plain: { command: "npm test" },
+          args: { command: "npm", args: ["run", "dev"] },
         },
       },
     },
@@ -203,6 +216,7 @@ test("skips variable commands on Windows while preserving ordinary commands", ()
     expect.arrayContaining([
       "worktree.setup: Conductor variables use unsupported shell syntax on Windows: CONDUCTOR_WORKSPACE_PATH. Command was not imported.",
       "scripts.service: Conductor variables use unsupported shell syntax on Windows: CONDUCTOR_PORT. Command was not imported.",
+      "scripts.args.args: Script arguments are not imported on Windows.",
     ]),
   );
 });

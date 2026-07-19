@@ -1,4 +1,7 @@
 import { projectServiceProxyUrls } from "./service-proxy.js";
+import { normalizeServiceEnvName } from "@getpaseo/protocol/service-env-name";
+
+export { normalizeServiceEnvName } from "@getpaseo/protocol/service-env-name";
 
 export interface WorkspaceServicePeer {
   scriptName: string;
@@ -13,13 +16,6 @@ export interface BuildWorkspaceServiceEnvOptions {
   daemonListenHost: string | null | undefined;
   serviceProxyPublicBaseUrl?: string | null;
   peers: readonly WorkspaceServicePeer[];
-}
-
-export function normalizeServiceEnvName(scriptName: string): string {
-  return scriptName
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
 }
 
 export function buildWorkspaceServiceEnv(
