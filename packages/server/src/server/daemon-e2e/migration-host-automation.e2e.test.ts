@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { connectHostAutomation, connectToDaemon } from "@getpaseo/client/node";
@@ -155,7 +155,8 @@ test("normalized checkout-name collisions cannot reuse another branch", async ()
     refName: "refs/heads/feature",
     directoryName: "foo-bar",
   });
-  expect(realpathSync(same.path)).toBe(realpathSync(first.path));
+  const firstStats = statSync(first.path);
+  expect(statSync(same.path)).toMatchObject({ dev: firstStats.dev, ino: firstStats.ino });
   await expect(
     paseo.ensureCheckout({
       rootPath: repoRoot,
