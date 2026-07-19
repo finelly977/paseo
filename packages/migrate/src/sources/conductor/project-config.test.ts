@@ -156,6 +156,7 @@ test("preserves literal or escaped Conductor names and rewrites active variables
         escaped: { command: "printf \\$CONDUCTOR_PORT" },
         escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
         bare: { command: "printf CONDUCTOR_PORT" },
+        heredoc: { command: "cat <<'EOF'\n$CONDUCTOR_PORT\nEOF" },
         active: { command: "printf \"'$CONDUCTOR_PORT'\"" },
       },
     },
@@ -170,7 +171,11 @@ test("preserves literal or escaped Conductor names and rewrites active variables
       escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
     },
   });
-  expect(inspected.notices).toEqual([]);
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-unsupported",
+    level: "warning",
+    message: "scripts.heredoc: Here-document commands are not imported.",
+  });
 });
 
 test("skips cwd scripts on Windows instead of emitting POSIX shell syntax", () => {

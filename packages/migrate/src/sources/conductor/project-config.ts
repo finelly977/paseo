@@ -369,6 +369,10 @@ function rewriteExactCommand(
   notices: MigrationNotice[],
   platform: NodeJS.Platform,
 ): string | null {
+  if (containsActiveHereDocument(command)) {
+    notices.push(unsupportedSetting(key, "Here-document commands are not imported."));
+    return null;
+  }
   const sourceVariables = collectConductorVariables(command);
   if (platform === "win32" && sourceVariables.length > 0) {
     notices.push(
@@ -712,6 +716,14 @@ function forEachActiveArithmetic(command: string, visit: (body: string) => void)
   for (const match of command.matchAll(/\$\(\(([\s\S]*?)\)\)/g)) {
     if (mask.slice(match.index, match.index + 3) === "$((") visit(match[1]);
   }
+}
+
+function containsActiveHereDocument(command: string): boolean {
+  const mask = activeShellMask(command);
+  for (const match of command.matchAll(/<<-?/g)) {
+    if (mask.slice(match.index, match.index + match[0].length) === match[0]) return true;
+  }
+  return false;
 }
 
 function appendArgs(command: string, args: string[]): string {

@@ -111,13 +111,30 @@ function readPidListen(paseoHome: string): string | null {
   if (!existsSync(pidPath)) return null;
   try {
     const parsed = JSON.parse(readFileSync(pidPath, "utf8")) as {
+      pid?: unknown;
       listen?: unknown;
       sockPath?: unknown;
     };
+    if (
+      typeof parsed.pid !== "number" ||
+      !Number.isInteger(parsed.pid) ||
+      !isProcessRunning(parsed.pid)
+    ) {
+      return null;
+    }
     if (typeof parsed.listen === "string") return parsed.listen;
     return typeof parsed.sockPath === "string" ? parsed.sockPath : null;
   } catch {
     return null;
+  }
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM";
   }
 }
 

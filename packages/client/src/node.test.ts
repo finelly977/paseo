@@ -19,7 +19,10 @@ test("discovers the configured local socket before TCP fallback", () => {
   const paseoHome = mkdtempSync(path.join(os.tmpdir(), "paseo-node-client-"));
   cleanup.push(paseoHome);
   mkdirSync(paseoHome, { recursive: true });
-  writeFileSync(path.join(paseoHome, "paseo.pid"), JSON.stringify({ listen: "/tmp/paseo.sock" }));
+  writeFileSync(
+    path.join(paseoHome, "paseo.pid"),
+    JSON.stringify({ pid: process.pid, listen: "/tmp/paseo.sock" }),
+  );
   writeFileSync(
     path.join(paseoHome, "config.json"),
     JSON.stringify({ daemon: { listen: "127.0.0.1:7777" } }),
@@ -35,7 +38,10 @@ test("discovers the configured local socket before TCP fallback", () => {
 test("discovers the running daemon TCP address from its PID record", () => {
   const paseoHome = mkdtempSync(path.join(os.tmpdir(), "paseo-node-client-pid-tcp-"));
   cleanup.push(paseoHome);
-  writeFileSync(path.join(paseoHome, "paseo.pid"), JSON.stringify({ listen: "127.0.0.1:7789" }));
+  writeFileSync(
+    path.join(paseoHome, "paseo.pid"),
+    JSON.stringify({ pid: process.pid, listen: "127.0.0.1:7789" }),
+  );
 
   expect(resolveDefaultDaemonHosts({ PASEO_HOME: paseoHome })).toEqual([
     "127.0.0.1:7789",
@@ -46,7 +52,10 @@ test("discovers the running daemon TCP address from its PID record", () => {
 test("normalizes the daemon's bare IPv6 loopback PID address", () => {
   const paseoHome = mkdtempSync(path.join(os.tmpdir(), "paseo-node-client-pid-ipv6-"));
   cleanup.push(paseoHome);
-  writeFileSync(path.join(paseoHome, "paseo.pid"), JSON.stringify({ listen: "::1:7789" }));
+  writeFileSync(
+    path.join(paseoHome, "paseo.pid"),
+    JSON.stringify({ pid: process.pid, listen: "::1:7789" }),
+  );
 
   expect(resolveDefaultDaemonHosts({ PASEO_HOME: paseoHome })).toEqual([
     "[::1]:7789",
@@ -101,4 +110,22 @@ test("skips malformed discovered candidates and keeps the default fallback", () 
   expect(
     resolveDefaultDaemonHosts({ PASEO_HOME: paseoHome, PASEO_LISTEN: "tcp://missing-port" }),
   ).toEqual(["localhost:6767"]);
+});
+
+test("ignores a stale PID listener before the configured daemon", () => {
+  const paseoHome = mkdtempSync(path.join(os.tmpdir(), "paseo-node-client-stale-pid-"));
+  cleanup.push(paseoHome);
+  writeFileSync(
+    path.join(paseoHome, "paseo.pid"),
+    JSON.stringify({ pid: 2_147_483_647, listen: "127.0.0.1:7789" }),
+  );
+  writeFileSync(
+    path.join(paseoHome, "config.json"),
+    JSON.stringify({ daemon: { listen: "127.0.0.1:7777" } }),
+  );
+
+  expect(resolveDefaultDaemonHosts({ PASEO_HOME: paseoHome })).toEqual([
+    "127.0.0.1:7777",
+    "localhost:6767",
+  ]);
 });

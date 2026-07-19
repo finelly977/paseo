@@ -34,6 +34,7 @@ export function useMigrationAvailability(source: string) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     let active = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
     async function loadAvailability() {
       const next = await getDesktopHost()?.migrations?.getAvailability?.({ source });
       if (active && next) {
@@ -43,11 +44,15 @@ export function useMigrationAvailability(source: string) {
             ? t(`desktop.integrations.migration.availability.${next.reason}`)
             : null,
         });
+        if (next.reason === "host-not-running") {
+          retry = setTimeout(() => void loadAvailability(), 2_000);
+        }
       }
     }
     void loadAvailability();
     return () => {
       active = false;
+      if (retry) clearTimeout(retry);
     };
   }, [source, t]);
   return {
