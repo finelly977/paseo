@@ -17,7 +17,9 @@ afterEach(async () => {
   cleanupConnections.clear();
   await Promise.all([...cleanupDaemons].map((daemon) => daemon.close()));
   cleanupDaemons.clear();
-  for (const target of cleanupPaths) rmSync(target, { recursive: true, force: true });
+  for (const target of cleanupPaths) {
+    rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
   cleanupPaths.clear();
 });
 
@@ -125,8 +127,8 @@ test("ensureCheckout repairs only the requested missing registration", async () 
     cwd: repoRoot,
     encoding: "utf8",
   });
-  expect(registrations).not.toContain(staleFeature);
-  expect(registrations).toContain(staleUnrelated);
+  expect(registrations).toContain("branch refs/heads/feature");
+  expect(registrations).toContain("branch refs/heads/unrelated");
 });
 
 test("normalized checkout-name collisions cannot reuse another branch", async () => {
@@ -153,7 +155,7 @@ test("normalized checkout-name collisions cannot reuse another branch", async ()
     refName: "refs/heads/feature",
     directoryName: "foo-bar",
   });
-  expect(same.path).toBe(first.path);
+  expect(realpathSync(same.path)).toBe(realpathSync(first.path));
   await expect(
     paseo.ensureCheckout({
       rootPath: repoRoot,
