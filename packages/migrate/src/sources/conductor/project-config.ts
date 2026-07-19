@@ -628,7 +628,7 @@ function collectConductorVariables(command: string): string[] {
 }
 
 function activeShellMask(command: string): string {
-  const mask = [...command];
+  const mask = command.split("");
   let quote: "single" | "double" | null = null;
   for (let index = 0; index < command.length; index += 1) {
     const character = command[index];

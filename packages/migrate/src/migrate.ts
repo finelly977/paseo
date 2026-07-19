@@ -62,9 +62,14 @@ export async function migrate(input: {
 
 async function migrateProject(project: MigrationProject, context: MigrationContext): Promise<void> {
   for (const notice of project.notices) context.emitNotice(notice);
+  let config = project.config;
   if (context.dryRun) planProject(project, context);
-  else if (!(await applyProject(project, context))) return;
-  await migrateWorkspaces(project, context);
+  else {
+    const appliedConfig = await applyProject(project, context);
+    if (!appliedConfig) return;
+    config = appliedConfig;
+  }
+  await migrateWorkspaces(project, config, context);
 }
 
 function planProject(project: MigrationProject, context: MigrationContext): void {
@@ -80,52 +85,49 @@ function planProject(project: MigrationProject, context: MigrationContext): void
 async function applyProject(
   project: MigrationProject,
   context: MigrationContext,
-): Promise<boolean> {
+): Promise<PaseoConfigRaw | null> {
   try {
     await context.paseo.addProject(project.rootPath);
     context.output({ level: "info", message: `Registered project ${project.rootPath}.` });
   } catch (error) {
     context.emitNotice(applyFailure("project-apply-failed", project.rootPath, error));
-    return false;
+    return null;
   }
   try {
-    const current = await context.paseo.readProjectConfig(project.rootPath);
-    const merged = mergeExistingConfig(project.config, current.config);
-    if (isDeepStrictEqual(merged, current.config ?? {})) {
-      context.output({
-        level: "info",
-        message: `Project config already current for ${project.rootPath}.`,
-      });
-      return true;
-    }
-    await context.paseo.writeProjectConfig({
-      rootPath: project.rootPath,
-      config: merged,
-      expectedRevision: current.revision,
-    });
-    context.stats.configs += 1;
-    context.output({ level: "info", message: `Updated project config for ${project.rootPath}.` });
+    return await applyConfig(project.rootPath, project.config, context);
   } catch (error) {
     context.emitNotice(applyFailure("project-config-apply-failed", project.rootPath, error));
+    return project.config ?? {};
   }
-  return true;
 }
 
 async function migrateWorkspaces(
   project: MigrationProject,
+  config: PaseoConfigRaw | null,
   context: MigrationContext,
 ): Promise<void> {
   for (const workspace of project.workspaces) {
     for (const notice of workspace.notices) context.emitNotice(notice);
-    if (context.dryRun) planWorkspace(workspace, context);
-    else await applyWorkspace(project.rootPath, workspace, context);
+    if (context.dryRun) planWorkspace(project, workspace, context);
+    else await applyWorkspace(project, config, workspace, context);
   }
 }
 
-function planWorkspace(workspace: MigrationWorkspace, context: MigrationContext): void {
+function planWorkspace(
+  project: MigrationProject,
+  workspace: MigrationWorkspace,
+  context: MigrationContext,
+): void {
   if (workspace.disposition === "adopt" && workspace.path) {
     context.stats.adopted += 1;
     context.output({ level: "info", message: `Would adopt worktree ${workspace.path}.` });
+    if (project.config) {
+      context.stats.configs += 1;
+      context.output({
+        level: "info",
+        message: `Would merge supported project config for ${workspace.path}.`,
+      });
+    }
   } else if (workspace.disposition === "create" && workspace.branch) {
     context.stats.created += 1;
     context.output({
@@ -136,18 +138,20 @@ function planWorkspace(workspace: MigrationWorkspace, context: MigrationContext)
 }
 
 async function applyWorkspace(
-  rootPath: string,
+  project: MigrationProject,
+  config: PaseoConfigRaw | null,
   workspace: MigrationWorkspace,
   context: MigrationContext,
 ): Promise<void> {
   try {
     if (workspace.disposition === "adopt" && workspace.path) {
       await context.paseo.openCheckout(workspace.path);
+      await applyConfig(workspace.path, config, context);
       context.stats.adopted += 1;
       context.output({ level: "info", message: `Adopted worktree ${workspace.path}.` });
     } else if (workspace.disposition === "create" && workspace.branch) {
       const ensured = await context.paseo.ensureCheckout({
-        rootPath,
+        rootPath: project.rootPath,
         refName: workspace.branch,
         directoryName: workspace.directoryName,
       });
@@ -162,6 +166,27 @@ async function applyWorkspace(
   } catch (error) {
     context.emitNotice(applyFailure("workspace-apply-failed", workspace.sourceId, error));
   }
+}
+
+async function applyConfig(
+  rootPath: string,
+  imported: PaseoConfigRaw | null,
+  context: MigrationContext,
+): Promise<PaseoConfigRaw> {
+  const current = await context.paseo.readProjectConfig(rootPath);
+  const merged = mergeExistingConfig(imported, current.config);
+  if (isDeepStrictEqual(merged, current.config ?? {})) {
+    context.output({ level: "info", message: `Project config already current for ${rootPath}.` });
+    return current.config ?? {};
+  }
+  await context.paseo.writeProjectConfig({
+    rootPath,
+    config: merged,
+    expectedRevision: current.revision,
+  });
+  context.stats.configs += 1;
+  context.output({ level: "info", message: `Updated project config for ${rootPath}.` });
+  return merged;
 }
 
 export function mergeExistingConfig(

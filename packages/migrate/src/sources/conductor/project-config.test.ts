@@ -162,6 +162,7 @@ test("preserves literal or escaped Conductor names and rewrites active variables
         arithmeticBraced: { command: "serve --port $(( ${CONDUCTOR_PORT} ))" },
         arithmeticOffset: { command: "serve --port $(( CONDUCTOR_PORT + 1 ))" },
         prefixExpansion: { command: "serve --length ${#CONDUCTOR_PORT}" },
+        unicodePrefix: { command: 'printf 😀 "$CONDUCTOR_PORT"' },
       },
     },
   });
@@ -175,6 +176,7 @@ test("preserves literal or escaped Conductor names and rewrites active variables
       bare: { command: "printf CONDUCTOR_PORT" },
       escaped: { command: "printf \\$CONDUCTOR_PORT" },
       escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
+      unicodePrefix: { command: 'printf 😀 "$PASEO_PORT"', type: "service" },
     },
   });
   expect(inspected.notices).toContainEqual({
