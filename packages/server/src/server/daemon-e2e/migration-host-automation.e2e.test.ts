@@ -49,32 +49,7 @@ test("two complete migrations reuse the same real daemon checkout", async () => 
     host: `127.0.0.1:${daemon.port}`,
   });
   cleanupConnections.add(paseo);
-  const source = {
-    id: "fixture",
-    inspect: async () => ({
-      skippedSettings: [],
-      projects: [
-        {
-          sourceId: "project",
-          rootPath: repoRoot,
-          config: null,
-          notices: [],
-          workspaces: [
-            {
-              sourceId: "workspace",
-              state: "ready",
-              path: null,
-              branch: "feature",
-              archiveCommit: null,
-              directoryName: "imported-feature",
-              disposition: "create" as const,
-              notices: [],
-            },
-          ],
-        },
-      ],
-    }),
-  };
+  const source = migrationSource(repoRoot);
 
   const first = await migrate({ source, paseo, dryRun: false, output: () => undefined });
   const second = await migrate({ source, paseo, dryRun: false, output: () => undefined });
@@ -86,6 +61,35 @@ test("two complete migrations reuse the same real daemon checkout", async () => 
   ]);
   expect(path.basename(listFeatureWorktrees(repoRoot)[0]?.path ?? "")).toBe("imported-feature");
 });
+
+test.skipIf(process.platform === "win32")(
+  "a complete migration recreates an externally deleted checkout",
+  async () => {
+    const repoRoot = createRepository();
+    const daemon = await createTestPaseoDaemon();
+    cleanupDaemons.add(daemon);
+    const paseo = await connectHostAutomation({
+      appVersion: "0.1.110",
+      clientId: "migration-deleted-checkout-e2e",
+      env: {},
+      host: `127.0.0.1:${daemon.port}`,
+    });
+    cleanupConnections.add(paseo);
+    const source = migrationSource(repoRoot);
+
+    const first = await migrate({ source, paseo, dryRun: false, output: () => undefined });
+    const deletedPath = listFeatureWorktrees(repoRoot)[0]?.path;
+    if (!deletedPath) throw new Error("First migration did not create the feature checkout");
+    rmSync(deletedPath, { recursive: true, force: true });
+    expect(existsSync(deletedPath)).toBe(false);
+
+    const second = await migrate({ source, paseo, dryRun: false, output: () => undefined });
+
+    expect(first.notices).toEqual([]);
+    expect(second.notices).toEqual([]);
+    expect(existsSync(deletedPath)).toBe(true);
+  },
+);
 
 test("a different live checkout continues to protect its branch", async () => {
   const repoRoot = createRepository();
@@ -271,6 +275,35 @@ function createRepository(): string {
   });
   execFileSync("git", ["branch", "feature"], { cwd: repoRoot });
   return realpathSync(repoRoot);
+}
+
+function migrationSource(repoRoot: string) {
+  return {
+    id: "fixture",
+    inspect: async () => ({
+      skippedSettings: [],
+      projects: [
+        {
+          sourceId: "project",
+          rootPath: repoRoot,
+          config: null,
+          notices: [],
+          workspaces: [
+            {
+              sourceId: "workspace",
+              state: "ready",
+              path: null,
+              branch: "feature",
+              archiveCommit: null,
+              directoryName: "imported-feature",
+              disposition: "create" as const,
+              notices: [],
+            },
+          ],
+        },
+      ],
+    }),
+  };
 }
 
 function listFeatureWorktrees(repoRoot: string): Array<{ path: string; branch: string }> {
