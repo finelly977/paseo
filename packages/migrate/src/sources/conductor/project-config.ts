@@ -613,7 +613,7 @@ function collectConductorVariables(command: string): string[] {
   const names = new Set<string>();
   const mask = activeShellMask(command);
   const direct =
-    /\$\{(CONDUCTOR_[A-Za-z0-9_]+)(?=[^A-Za-z0-9_])|\$(CONDUCTOR_[A-Za-z0-9_]+)(?![A-Za-z0-9_])/g;
+    /\$\{[#!]?(CONDUCTOR_[A-Za-z0-9_]+)(?=[^A-Za-z0-9_])|\$(CONDUCTOR_[A-Za-z0-9_]+)(?![A-Za-z0-9_])/g;
   for (const match of command.matchAll(direct)) {
     if (mask[match.index] !== "$") continue;
     const name = match[1] ?? match[2];

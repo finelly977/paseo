@@ -161,6 +161,7 @@ test("preserves literal or escaped Conductor names and rewrites active variables
         arithmeticDirect: { command: "serve --port $(( $CONDUCTOR_PORT ))" },
         arithmeticBraced: { command: "serve --port $(( ${CONDUCTOR_PORT} ))" },
         arithmeticOffset: { command: "serve --port $(( CONDUCTOR_PORT + 1 ))" },
+        prefixExpansion: { command: "serve --length ${#CONDUCTOR_PORT}" },
       },
     },
   });
@@ -186,6 +187,12 @@ test("preserves literal or escaped Conductor names and rewrites active variables
     level: "warning",
     message:
       "scripts.arithmeticOffset.port_arithmetic: Conductor port arithmetic is not imported because Paseo reserves one service port.",
+  });
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-unsupported",
+    level: "warning",
+    message:
+      "scripts.prefixExpansion: Unsupported Conductor variables: CONDUCTOR_PORT. Command was not imported.",
   });
 });
 

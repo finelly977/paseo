@@ -118,6 +118,41 @@ test("does not adopt an existing worktree on a different branch", () => {
   });
 });
 
+test("does not recreate a missing workspace from a tag", () => {
+  const repo = createRepository("tag-only-workspace", null);
+  execFileSync("git", ["commit", "--allow-empty", "-m", "initial"], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Paseo Test",
+      GIT_AUTHOR_EMAIL: "test@paseo.local",
+      GIT_COMMITTER_NAME: "Paseo Test",
+      GIT_COMMITTER_EMAIL: "test@paseo.local",
+    },
+  });
+  execFileSync("git", ["tag", "release"], { cwd: repo });
+
+  const inspected = inspectCatalog({
+    repos: [repoRecord("repo", repo)],
+    workspaces: [
+      {
+        id: "workspace-tag-only",
+        repoId: "repo",
+        branch: "release",
+        state: "ready",
+        path: null,
+        archiveCommit: null,
+      },
+    ],
+  });
+
+  expect(inspected.projects[0]?.workspaces[0]).toMatchObject({
+    sourceId: "workspace-tag-only",
+    disposition: "missing-ref",
+    notices: [{ code: "missing-workspace-ref" }],
+  });
+});
+
 function createRepository(name: string, settings: string | null): string {
   const repo = mkdtempSync(path.join(os.tmpdir(), `paseo-inspect-${name}-`));
   cleanup.push(repo);

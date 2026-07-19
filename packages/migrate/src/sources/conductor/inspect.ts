@@ -134,7 +134,7 @@ function inspectWorkspace(
     };
   }
 
-  if (workspace.branch && refExists(repo.rootPath, workspace.branch)) {
+  if (workspace.branch && localBranchExists(repo.rootPath, workspace.branch)) {
     return {
       sourceId: workspace.id,
       state: "ready",
@@ -203,6 +203,17 @@ function resolveGitPath(cwd: string, value: string): string {
 function refExists(rootPath: string, ref: string): boolean {
   try {
     git(rootPath, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function localBranchExists(rootPath: string, branch: string): boolean {
+  const branchName = branch.replace(/^refs\/heads\//, "");
+  if (!branchName) return false;
+  try {
+    git(rootPath, ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`]);
     return true;
   } catch {
     return false;
