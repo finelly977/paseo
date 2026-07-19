@@ -703,10 +703,11 @@ function containsArithmeticVariable(command: string, name: string): boolean {
 
 function containsArithmeticVariableOperation(command: string, name: string): boolean {
   const identifier = new RegExp(`(^|[^A-Za-z0-9_])${name}(?![A-Za-z0-9_])`);
+  const directVariable = new RegExp(`^(?:${name}|\\$${name}|\\$\\{${name}\\})$`);
   let found = false;
   forEachActiveArithmetic(command, (value) => {
     const body = value.trim();
-    if (identifier.test(body) && body !== name) found = true;
+    if (identifier.test(body) && !directVariable.test(body)) found = true;
   });
   return found;
 }

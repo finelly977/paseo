@@ -158,6 +158,9 @@ test("preserves literal or escaped Conductor names and rewrites active variables
         bare: { command: "printf CONDUCTOR_PORT" },
         heredoc: { command: "cat <<'EOF'\n$CONDUCTOR_PORT\nEOF" },
         active: { command: "printf \"'$CONDUCTOR_PORT'\"" },
+        arithmeticDirect: { command: "serve --port $(( $CONDUCTOR_PORT ))" },
+        arithmeticBraced: { command: "serve --port $(( ${CONDUCTOR_PORT} ))" },
+        arithmeticOffset: { command: "serve --port $(( CONDUCTOR_PORT + 1 ))" },
       },
     },
   });
@@ -166,6 +169,8 @@ test("preserves literal or escaped Conductor names and rewrites active variables
     worktree: { setup: "printf '%s\\n' '$CONDUCTOR_WORKSPACE_PATH'" },
     scripts: {
       active: { command: "printf \"'$PASEO_PORT'\"", type: "service" },
+      arithmeticBraced: { command: "serve --port $(( ${PASEO_PORT} ))", type: "service" },
+      arithmeticDirect: { command: "serve --port $(( $PASEO_PORT ))", type: "service" },
       bare: { command: "printf CONDUCTOR_PORT" },
       escaped: { command: "printf \\$CONDUCTOR_PORT" },
       escapedDouble: { command: 'printf "\\$CONDUCTOR_PORT"' },
@@ -175,6 +180,12 @@ test("preserves literal or escaped Conductor names and rewrites active variables
     code: "conductor-setting-unsupported",
     level: "warning",
     message: "scripts.heredoc: Here-document commands are not imported.",
+  });
+  expect(inspected.notices).toContainEqual({
+    code: "conductor-setting-unsupported",
+    level: "warning",
+    message:
+      "scripts.arithmeticOffset.port_arithmetic: Conductor port arithmetic is not imported because Paseo reserves one service port.",
   });
 });
 
