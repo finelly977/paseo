@@ -141,12 +141,19 @@ test("normalized checkout-name collisions cannot reuse another branch", async ()
     host: `127.0.0.1:${daemon.port}`,
   });
   cleanupConnections.add(paseo);
+  await paseo.addProject(repoRoot);
 
   const first = await paseo.ensureCheckout({
     rootPath: repoRoot,
     refName: "feature",
     directoryName: "Foo.Bar",
   });
+  const same = await paseo.ensureCheckout({
+    rootPath: repoRoot,
+    refName: "refs/heads/feature",
+    directoryName: "foo-bar",
+  });
+  expect(same.path).toBe(first.path);
   await expect(
     paseo.ensureCheckout({
       rootPath: repoRoot,

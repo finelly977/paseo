@@ -360,6 +360,8 @@ class DaemonHostAutomation implements HostAutomation {
     refName: string;
     directoryName: string;
   }): Promise<{ path: string; created: boolean }> {
+    const refName = input.refName.replace(/^refs\/heads\//, "");
+    if (!refName) throw new Error("Checkout branch is required");
     const directorySlug = slugify(input.directoryName);
     if (!directorySlug)
       throw new Error(`Unable to derive a checkout name from ${input.directoryName}`);
@@ -369,7 +371,7 @@ class DaemonHostAutomation implements HostAutomation {
     const existing = listed.worktrees.find(
       (worktree) => path.basename(worktree.worktreePath) === directorySlug,
     );
-    if (existing && existing.branchName !== input.refName) {
+    if (existing && existing.branchName !== refName) {
       throw new Error(
         `Checkout name ${directorySlug} is already used by branch ${existing.branchName ?? "unknown"}.`,
       );
@@ -382,16 +384,16 @@ class DaemonHostAutomation implements HostAutomation {
       return { path: existing.worktreePath, created: false };
     }
 
-    await removeMissingCheckoutRegistration(input.rootPath, input.refName);
+    await removeMissingCheckoutRegistration(input.rootPath, refName);
 
     const result = await this.client.createPaseoWorktree({
       cwd: input.rootPath,
       worktreeSlug: directorySlug,
       action: "checkout",
-      refName: input.refName,
+      refName,
     });
     const checkoutPath = result.workspace?.workspaceDirectory;
-    if (!checkoutPath) throw new Error(result.error ?? `Unable to check out ${input.refName}`);
+    if (!checkoutPath) throw new Error(result.error ?? `Unable to check out ${refName}`);
     return { path: checkoutPath, created: true };
   }
 
