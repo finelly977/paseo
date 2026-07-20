@@ -23,7 +23,7 @@ test.skip(process.env.E2E_DESKTOP_RUNTIME !== "1", "requires the real Electron p
 test.setTimeout(180_000);
 
 const repoRoot = path.resolve(__dirname, "../../..");
-const nodeRequire = createRequire(__filename);
+const nodeRequire = createRequire(path.join(repoRoot, "packages", "desktop", "package.json"));
 const importPackageRoot = path.resolve(path.dirname(nodeRequire.resolve("@getpaseo/import")), "..");
 let installation: Awaited<ReturnType<typeof createConductorInstallation>>;
 let electronApp: ElectronApplication;

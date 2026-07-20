@@ -140,6 +140,7 @@ export function ImportSheet({
       footer={footer}
       desktopMaxWidth={640}
       testID="import-sheet"
+      dismissible={state.status !== "running"}
     >
       {state.status === "confirm" ? (
         <Text style={styles.copy}>
