@@ -438,7 +438,7 @@ export async function connectHostAutomation(
   if (client.getLastServerInfoMessage()?.features?.hostAutomation !== true) {
     await client.close();
     throw new Error(
-      "This Paseo host does not support project migration. Update the host to use this.",
+      "This Paseo host does not support project import. Update the host to use this.",
     );
   }
   return new DaemonHostAutomation(client);

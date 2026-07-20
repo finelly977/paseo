@@ -94,16 +94,16 @@ facade. App and CLI may import the low-level driver from
 code imports from `@getpaseo/client`. Node automation uses
 `@getpaseo/client/node`, which owns daemon discovery, authentication, transport
 selection, and the capability-gated host automation facade shared by the CLI and
-published migration tools.
+published import tools.
 
-### `packages/migrate` — Installation migration CLI
+### External project import
 
-Published as `@getpaseo/migrate`. It inspects third-party installation metadata
-through source adapters, maps source-neutral projects/config/workspaces, and
-applies them through the public Node host automation client. Source knowledge and
-fixtures stay in this package; the daemon and shared app workflow remain
-source-neutral. Desktop bundles the exact-version CLI and exposes a narrow,
-local-only Electron bridge for supported migrations.
+The private [`getpaseo/import`](https://github.com/getpaseo/import) repository publishes
+`@getpaseo/import`. It owns source discovery, parsing, mapping, fixtures, the CLI, and the
+programmatic import engine. Paseo Desktop pins an exact package version and calls its library
+entrypoint from Electron main, passing the public Node host-automation facade and forwarding typed
+progress events through a narrow IPC bridge. Paseo does not contain source databases, parsers, or
+import-package release machinery.
 
 ### `packages/app` — Mobile + web client (Expo)
 

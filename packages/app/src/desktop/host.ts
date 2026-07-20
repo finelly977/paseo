@@ -165,14 +165,15 @@ export interface DesktopInvokeBridge {
   invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
 
-export interface DesktopMigrationOutput {
-  runId: string;
-  stream: "stdout" | "stderr" | "status";
-  chunk?: string;
-  exitCode?: number;
-}
+export type DesktopImportOutput =
+  | {
+      runId: string;
+      type: "event";
+      event: { level: "info" | "warning" | "error"; message: string };
+    }
+  | { runId: string; type: "status"; succeeded: boolean };
 
-export interface DesktopMigrationsBridge {
+export interface DesktopImportsBridge {
   getAvailability?: (input: { source: string }) => Promise<{
     available: boolean;
     reason:
@@ -181,12 +182,11 @@ export interface DesktopMigrationsBridge {
       | "nonlocal-host"
       | "password-protected"
       | "host-version-mismatch"
-      | "migrator-version-mismatch"
       | "unavailable"
       | null;
   }>;
   run?: (input: { source: string }) => Promise<{ runId: string }>;
-  onOutput?: (handler: (output: DesktopMigrationOutput) => void) => () => void;
+  onOutput?: (handler: (output: DesktopImportOutput) => void) => () => void;
 }
 
 export interface DesktopHostBridge {
@@ -202,7 +202,7 @@ export interface DesktopHostBridge {
   webUtils?: DesktopWebUtilsBridge;
   menu?: DesktopMenuBridge;
   browser?: DesktopBrowserBridge;
-  migrations?: DesktopMigrationsBridge;
+  imports?: DesktopImportsBridge;
 }
 
 declare global {

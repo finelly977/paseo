@@ -5,44 +5,39 @@ import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
-import { getDesktopHost, type DesktopMigrationOutput } from "@/desktop/host";
+import { getDesktopHost, type DesktopImportOutput } from "@/desktop/host";
 
-type MigrationState =
+type ImportState =
   | { status: "confirm" }
   | { status: "running"; runId: string | null; output: string }
   | { status: "complete"; succeeded: boolean; output: string }
   | { status: "failed"; message: string; output: string };
 
-export interface MigrationSourceDescriptor {
+export interface ImportSourceDescriptor {
   id: string;
   icon: ImageSourcePropType;
   title: string;
-  description: string;
-  sheetTitle: string;
-  confirmation: string;
 }
 
-export function useMigrationAvailability(source: string) {
+export function useImportAvailability(source: string) {
   const { t } = useTranslation();
   const [availability, setAvailability] = useState<{
     available: boolean;
     reason: string | null;
   }>({
     available: false,
-    reason: t("desktop.integrations.migration.availability.checking"),
+    reason: t("desktop.integrations.import.availability.checking"),
   });
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     let active = true;
     let retry: ReturnType<typeof setTimeout> | null = null;
     async function loadAvailability() {
-      const next = await getDesktopHost()?.migrations?.getAvailability?.({ source });
+      const next = await getDesktopHost()?.imports?.getAvailability?.({ source });
       if (active && next) {
         setAvailability({
           available: next.available,
-          reason: next.reason
-            ? t(`desktop.integrations.migration.availability.${next.reason}`)
-            : null,
+          reason: next.reason ? t(`desktop.integrations.import.availability.${next.reason}`) : null,
         });
         if (next.reason === "host-not-running") {
           retry = setTimeout(() => void loadAvailability(), 2_000);
@@ -63,18 +58,21 @@ export function useMigrationAvailability(source: string) {
   };
 }
 
-export function MigrationSheet({
+export function ImportSheet({
   source,
   visible,
   onClose,
 }: {
-  source: MigrationSourceDescriptor;
+  source: ImportSourceDescriptor;
   visible: boolean;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [state, setState] = useState<MigrationState>({ status: "confirm" });
-  const header = useMemo<SheetHeader>(() => ({ title: source.sheetTitle }), [source.sheetTitle]);
+  const [state, setState] = useState<ImportState>({ status: "confirm" });
+  const header = useMemo<SheetHeader>(
+    () => ({ title: t("desktop.integrations.import.sheetTitle", { source: source.title }) }),
+    [source.title, t],
+  );
   const close = useCallback(() => {
     if (state.status !== "running") onClose();
   }, [onClose, state.status]);
@@ -84,21 +82,21 @@ export function MigrationSheet({
   }, [visible]);
 
   const start = useCallback(async () => {
-    const bridge = getDesktopHost()?.migrations;
+    const bridge = getDesktopHost()?.imports;
     if (!bridge?.run || !bridge.onOutput) {
       setState({
         status: "failed",
-        message: t("desktop.integrations.migration.unavailable"),
+        message: t("desktop.integrations.import.unavailable"),
         output: "",
       });
       return;
     }
     setState({ status: "running", runId: null, output: "" });
     let runId: string | null = null;
-    const unsubscribe = bridge.onOutput((event: DesktopMigrationOutput) => {
+    const unsubscribe = bridge.onOutput((event: DesktopImportOutput) => {
       if (runId && event.runId !== runId) return;
       setState((current) => reduceOutput(current, event));
-      if (event.stream === "status") unsubscribe();
+      if (event.type === "status") unsubscribe();
     });
     try {
       const started = await bridge.run({ source: source.id });
@@ -119,17 +117,17 @@ export function MigrationSheet({
   const footer = useMemo(() => {
     if (state.status === "confirm") {
       return (
-        <Button onPress={start} testID="migration-confirm">
-          {t("desktop.integrations.migration.actions.import")}
+        <Button onPress={start} testID="import-confirm">
+          {t("desktop.integrations.import.actions.import")}
         </Button>
       );
     }
     if (state.status === "running") {
-      return <Button disabled>{t("desktop.integrations.migration.actions.importing")}</Button>;
+      return <Button disabled>{t("desktop.integrations.import.actions.importing")}</Button>;
     }
     return (
-      <Button onPress={close} testID="migration-done">
-        {t("desktop.integrations.migration.actions.done")}
+      <Button onPress={close} testID="import-done">
+        {t("desktop.integrations.import.actions.done")}
       </Button>
     );
   }, [close, start, state.status, t]);
@@ -141,26 +139,28 @@ export function MigrationSheet({
       onClose={close}
       footer={footer}
       desktopMaxWidth={640}
-      testID="migration-sheet"
+      testID="import-sheet"
     >
       {state.status === "confirm" ? (
-        <Text style={styles.copy}>{source.confirmation}</Text>
+        <Text style={styles.copy}>
+          {t("desktop.integrations.import.confirmation", { source: source.title })}
+        </Text>
       ) : (
         <View style={styles.content}>
           {state.status === "complete" ? (
-            <Text testID="migration-result" style={styles.copy}>
+            <Text testID="import-result" style={styles.copy}>
               {state.succeeded
-                ? t("desktop.integrations.migration.complete")
-                : t("desktop.integrations.migration.failed")}
+                ? t("desktop.integrations.import.complete")
+                : t("desktop.integrations.import.failed")}
             </Text>
           ) : null}
           {state.status === "failed" ? (
-            <Text testID="migration-error" style={styles.error}>
+            <Text testID="import-error" style={styles.error}>
               {state.message}
             </Text>
           ) : null}
           <ScrollView style={styles.output}>
-            <Text selectable testID="migration-output" style={styles.outputText}>
+            <Text selectable testID="import-output" style={styles.outputText}>
               {state.output}
             </Text>
           </ScrollView>
@@ -170,12 +170,13 @@ export function MigrationSheet({
   );
 }
 
-function reduceOutput(state: MigrationState, event: DesktopMigrationOutput): MigrationState {
+function reduceOutput(state: ImportState, event: DesktopImportOutput): ImportState {
   if (state.status !== "running") return state;
-  if (event.stream === "status") {
-    return { status: "complete", succeeded: event.exitCode === 0, output: state.output };
+  if (event.type === "status") {
+    return { status: "complete", succeeded: event.succeeded, output: state.output };
   }
-  return { ...state, output: `${state.output}${event.chunk ?? ""}` };
+  const line = `${event.event.level.toUpperCase()}: ${event.event.message}\n`;
+  return { ...state, output: `${state.output}${line}` };
 }
 
 const styles = StyleSheet.create((theme) => ({

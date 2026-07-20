@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -22,6 +23,8 @@ test.skip(process.env.E2E_DESKTOP_RUNTIME !== "1", "requires the real Electron p
 test.setTimeout(180_000);
 
 const repoRoot = path.resolve(__dirname, "../../..");
+const nodeRequire = createRequire(__filename);
+const importPackageRoot = path.resolve(path.dirname(nodeRequire.resolve("@getpaseo/import")), "..");
 let installation: Awaited<ReturnType<typeof createConductorInstallation>>;
 let electronApp: ElectronApplication;
 
@@ -39,29 +42,29 @@ test("imports from the product Integrations row and renders success, failure, an
   const page = await electronApp.firstWindow();
   await openIntegrations(page);
 
-  await openMigration(page);
+  await openImport(page);
   await expect(
     page.getByText("Paseo will register valid repositories", { exact: false }),
   ).toBeVisible();
-  await page.getByTestId("migration-confirm").click();
-  await expect(page.getByTestId("migration-result")).toHaveText("Import complete.");
-  await expect(page.getByTestId("migration-output")).toContainText(
+  await page.getByTestId("import-confirm").click();
+  await expect(page.getByTestId("import-result")).toHaveText("Import complete.");
+  await expect(page.getByTestId("import-output")).toContainText(
     `Registered project ${installation.repo}.`,
   );
-  await expect(page.getByTestId("migration-output")).toContainText("Migration summary:");
+  await expect(page.getByTestId("import-output")).toContainText("Import summary:");
 
-  await page.getByTestId("migration-done").click();
+  await page.getByTestId("import-done").click();
   writeFileSync(installation.databasePath, "not a sqlite database");
-  await openMigration(page);
-  await page.getByTestId("migration-confirm").click();
-  await expect(page.getByTestId("migration-result")).toHaveText("Import failed.");
-  await expect(page.getByTestId("migration-output")).toContainText("ERROR:");
+  await openImport(page);
+  await page.getByTestId("import-confirm").click();
+  await expect(page.getByTestId("import-result")).toHaveText("Import failed.");
+  await expect(page.getByTestId("import-output")).toContainText("ERROR:");
 
-  await page.getByTestId("migration-done").click();
-  await stopMigrationHost();
+  await page.getByTestId("import-done").click();
+  await stopImportHost();
   await page.getByRole("button", { name: "General", exact: true }).click();
   await page.getByRole("button", { name: "Integrations", exact: true }).click();
-  const row = page.getByTestId("conductor-migration-row");
+  const row = page.getByTestId("conductor-import-row");
   await expect(row).toContainText("Start the Desktop-managed host before importing.");
   await expect(row.getByRole("button", { name: "Import", exact: true })).toBeDisabled();
 });
@@ -76,7 +79,7 @@ async function launchProduct(): Promise<ElectronApplication> {
       HOME: installation.home,
       PASEO_HOME: requiredEnvironment("E2E_PASEO_HOME"),
       PASEO_DISABLE_SINGLE_INSTANCE_LOCK: "1",
-      PASEO_TEST_APP_NAME: "Paseo Migration Behavior",
+      PASEO_TEST_APP_NAME: "Paseo Import Behavior",
     },
   });
 }
@@ -87,16 +90,16 @@ async function openIntegrations(page: Page): Promise<void> {
   await settings.click();
   await expect(page.getByTestId("settings-sidebar")).toBeVisible();
   await page.getByRole("button", { name: "Integrations", exact: true }).click();
-  await expect(page.getByTestId("conductor-migration-row")).toBeVisible();
+  await expect(page.getByTestId("conductor-import-row")).toBeVisible();
 }
 
-async function openMigration(page: Page): Promise<void> {
+async function openImport(page: Page): Promise<void> {
   const button = page
-    .getByTestId("conductor-migration-row")
+    .getByTestId("conductor-import-row")
     .getByRole("button", { name: "Import", exact: true });
   await expect(button).toBeEnabled();
   await button.click();
-  await expect(page.getByTestId("migration-sheet")).toBeVisible();
+  await expect(page.getByTestId("import-sheet")).toBeVisible();
 }
 
 async function createConductorInstallation(): Promise<{
@@ -105,7 +108,7 @@ async function createConductorInstallation(): Promise<{
   repo: string;
   databasePath: string;
 }> {
-  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-product-migration-")));
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-product-import-")));
   const home = path.join(root, "home");
   const repo = path.join(root, "repo");
   mkdirSync(home, { recursive: true });
@@ -121,10 +124,7 @@ async function createConductorInstallation(): Promise<{
   const databaseDirectory = path.join(home, "Library", "Application Support", "com.conductor.app");
   mkdirSync(databaseDirectory, { recursive: true });
   const databasePath = path.join(databaseDirectory, "conductor.db");
-  cpSync(
-    path.join(repoRoot, "packages", "migrate", "fixtures", "conductor", "conductor.db"),
-    databasePath,
-  );
+  cpSync(path.join(importPackageRoot, "fixtures", "conductor", "conductor.db"), databasePath);
   execFileSync(
     process.execPath,
     [
@@ -150,7 +150,7 @@ const initSqlJs = require("sql.js");
   return { root, home, repo: realpathSync(repo), databasePath };
 }
 
-async function stopMigrationHost(): Promise<void> {
+async function stopImportHost(): Promise<void> {
   const pidFile = path.join(requiredEnvironment("E2E_PASEO_HOME"), "paseo.pid");
   const pid = (JSON.parse(readFileSync(pidFile, "utf8")) as { pid: number }).pid;
   process.kill(pid, "SIGTERM");
@@ -163,7 +163,7 @@ async function stopMigrationHost(): Promise<void> {
       return;
     }
   }
-  throw new Error(`Migration host ${pid} did not stop.`);
+  throw new Error(`Import host ${pid} did not stop.`);
 }
 
 function requiredEnvironment(name: string): string {

@@ -87,7 +87,6 @@ jobs:
           npm pack --dry-run --ignore-scripts --workspace=@getpaseo/protocol
           npm pack --dry-run --ignore-scripts --workspace=@getpaseo/client
           npm pack --dry-run --ignore-scripts --workspace=@getpaseo/server
-          npm run verify:package --workspace=@getpaseo/migrate
 
   server-tests:
     strategy:
@@ -201,7 +200,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  migration-electron:
+  import-electron:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -220,19 +219,17 @@ jobs:
           npm run build:app-deps
           npm run build:server
 
-      - name: Build migrator and Desktop main
-        run: |
-          npm run build --workspace=@getpaseo/migrate
-          npm run build:main --workspace=@getpaseo/desktop
+      - name: Build Desktop main
+        run: npm run build:main --workspace=@getpaseo/desktop
 
-      - name: Run product migration behavior
-        run: npm run test:migration-electron --workspace=@getpaseo/desktop
+      - name: Run product import behavior
+        run: npm run test:import-electron --workspace=@getpaseo/desktop
 
-      - name: Upload migration behavior diagnostics
+      - name: Upload import behavior diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: migration-electron-macos
+          name: import-electron-macos
           path: |
             packages/app/test-results/
             packages/app/playwright-report/
@@ -285,37 +282,8 @@ jobs:
       - name: Run client tests
         run: npm run test --workspace=@getpaseo/client
 
-      - name: Run migrator tests
-        run: npm run test --workspace=@getpaseo/migrate
-
       - name: Typecheck client examples
         run: npm run typecheck:examples --workspace=@getpaseo/client
-
-  migrator-node18:
-    runs-on: ubuntu-latest
-    env:
-      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: node scripts/npm-retry.mjs ci
-
-      - name: Build published migrator
-        run: |
-          npm run build:server-deps
-          npm run build --workspace=@getpaseo/migrate
-
-      - name: Exercise the published CLI on Node 18
-        run: node packages/migrate/dist/cli.js conductor --database packages/migrate/fixtures/conductor/conductor.db --dry-run
-
-      - name: Verify published package contents
-        run: npm run verify:package --workspace=@getpaseo/migrate
 
   playwright:
     strategy:

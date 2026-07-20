@@ -1159,30 +1159,25 @@ export const fr: TranslationResources = {
       },
     },
     integrations: {
-      migration: {
+      import: {
         availability: {
-          checking: "Vérification de la disponibilité de la migration…",
-          "unsupported-source": "Cette source de migration est indisponible.",
+          checking: "Vérification de la disponibilité de l’importation…",
+          "unsupported-source": "Cette source d’importation est indisponible.",
           "host-not-running": "Démarrez l’hôte géré par Desktop avant l’importation.",
           "nonlocal-host": "L’importation est indisponible pour un hôte distant.",
           "password-protected":
             "L’importation est indisponible tant que l’hôte local est protégé par mot de passe.",
           "host-version-mismatch": "Mettez à jour l’hôte géré par Desktop avant l’importation.",
-          "migrator-version-mismatch":
-            "Le migrateur intégré ne correspond pas à cette version de Desktop.",
-          unavailable: "La migration Desktop est indisponible.",
+          unavailable: "L’importation Desktop est indisponible.",
         },
         actions: { import: "Importer", importing: "Importation…", done: "Terminé" },
-        unavailable: "La migration depuis l’application de bureau est indisponible.",
+        unavailable: "L’importation depuis l’application de bureau est indisponible.",
         complete: "Importation terminée.",
         failed: "Échec de l’importation.",
-        conductor: {
-          title: "Conductor",
-          description: "Importez les projets, réglages et worktrees depuis ce Mac.",
-          sheetTitle: "Importer depuis Conductor",
-          confirmation:
-            "Paseo enregistrera les dépôts valides, fusionnera les réglages de projet compatibles et adoptera ou recréera les worktrees prêts. Les données de Conductor ne seront pas modifiées.",
-        },
+        description: "Importez les projets, réglages et worktrees depuis ce Mac.",
+        sheetTitle: "Importer depuis {{source}}",
+        confirmation:
+          "Paseo enregistrera les dépôts valides, fusionnera les réglages de projet compatibles et adoptera ou recréera les worktrees prêts. Les données de {{source}} ne seront pas modifiées.",
       },
       cli: {
         statusFailed: "Impossible de vérifier l'état de l'installation deCLI.",

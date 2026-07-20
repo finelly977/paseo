@@ -1132,29 +1132,25 @@ export const ja: TranslationResources = {
       },
     },
     integrations: {
-      migration: {
+      import: {
         availability: {
-          checking: "移行が利用可能か確認しています…",
-          "unsupported-source": "この移行元は利用できません。",
+          checking: "インポートが利用可能か確認しています…",
+          "unsupported-source": "このインポート元は利用できません。",
           "host-not-running": "インポートする前にDesktop管理ホストを起動してください。",
           "nonlocal-host": "ローカル以外のホストではインポートできません。",
           "password-protected":
             "ローカルホストがパスワード保護されている間はインポートできません。",
           "host-version-mismatch": "インポートする前にDesktop管理ホストを更新してください。",
-          "migrator-version-mismatch": "同梱の移行ツールはこのDesktopバージョンと一致しません。",
-          unavailable: "Desktop移行は利用できません。",
+          unavailable: "Desktopインポートは利用できません。",
         },
         actions: { import: "インポート", importing: "インポート中…", done: "完了" },
-        unavailable: "デスクトップ移行は利用できません。",
+        unavailable: "デスクトップインポートは利用できません。",
         complete: "インポートが完了しました。",
         failed: "インポートに失敗しました。",
-        conductor: {
-          title: "Conductor",
-          description: "このMacからプロジェクト、設定、worktreeをインポートします。",
-          sheetTitle: "Conductorからインポート",
-          confirmation:
-            "Paseoは有効なリポジトリを登録し、対応するプロジェクト設定を統合して、準備済みのworktreeを採用または再作成します。Conductorのデータは変更されません。",
-        },
+        description: "このMacからプロジェクト、設定、worktreeをインポートします。",
+        sheetTitle: "{{source}}からインポート",
+        confirmation:
+          "Paseoは有効なリポジトリを登録し、対応するプロジェクト設定を統合して、準備済みのworktreeを採用または再作成します。{{source}}のデータは変更されません。",
       },
       cli: {
         statusFailed: "CLIのインストール状態を確認できません。",

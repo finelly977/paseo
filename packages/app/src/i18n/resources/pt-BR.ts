@@ -1144,30 +1144,25 @@ export const ptBR: TranslationResources = {
       },
     },
     integrations: {
-      migration: {
+      import: {
         availability: {
-          checking: "Verificando a disponibilidade da migração…",
-          "unsupported-source": "Esta fonte de migração não está disponível.",
+          checking: "Verificando a disponibilidade da importação…",
+          "unsupported-source": "Esta fonte de importação não está disponível.",
           "host-not-running": "Inicie o host gerenciado pelo Desktop antes de importar.",
           "nonlocal-host": "A importação não está disponível para um host não local.",
           "password-protected":
             "A importação não está disponível enquanto o host local estiver protegido por senha.",
           "host-version-mismatch": "Atualize o host gerenciado pelo Desktop antes de importar.",
-          "migrator-version-mismatch":
-            "O migrador incluído não corresponde a esta versão do Desktop.",
-          unavailable: "A migração do Desktop não está disponível.",
+          unavailable: "A importação do Desktop não está disponível.",
         },
         actions: { import: "Importar", importing: "Importando…", done: "Concluído" },
-        unavailable: "A migração pelo aplicativo para desktop não está disponível.",
+        unavailable: "A importação pelo aplicativo para desktop não está disponível.",
         complete: "Importação concluída.",
         failed: "Falha na importação.",
-        conductor: {
-          title: "Conductor",
-          description: "Importe projetos, configurações e worktrees deste Mac.",
-          sheetTitle: "Importar do Conductor",
-          confirmation:
-            "O Paseo registrará repositórios válidos, mesclará configurações de projeto compatíveis e adotará ou recriará worktrees prontos. Os dados do Conductor não serão alterados.",
-        },
+        description: "Importe projetos, configurações e worktrees deste Mac.",
+        sheetTitle: "Importar do {{source}}",
+        confirmation:
+          "O Paseo registrará repositórios válidos, mesclará configurações de projeto compatíveis e adotará ou recriará worktrees prontos. Os dados do {{source}} não serão alterados.",
       },
       cli: {
         statusFailed: "Não foi possível verificar o status de instalação da CLI.",

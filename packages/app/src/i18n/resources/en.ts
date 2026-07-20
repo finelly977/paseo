@@ -1128,28 +1128,24 @@ export const en = {
       },
     },
     integrations: {
-      migration: {
+      import: {
         availability: {
-          checking: "Checking migration availability…",
-          "unsupported-source": "This migration source is unavailable.",
+          checking: "Checking import availability…",
+          "unsupported-source": "This import source is unavailable.",
           "host-not-running": "Start the Desktop-managed host before importing.",
           "nonlocal-host": "Import is unavailable for a nonlocal host.",
           "password-protected": "Import is unavailable while the local host is password-protected.",
           "host-version-mismatch": "Update the Desktop-managed host before importing.",
-          "migrator-version-mismatch": "The bundled migrator does not match this Desktop version.",
-          unavailable: "Desktop migration is unavailable.",
+          unavailable: "Desktop import is unavailable.",
         },
         actions: { import: "Import", importing: "Importing…", done: "Done" },
-        unavailable: "Desktop migration is unavailable.",
+        unavailable: "Desktop import is unavailable.",
         complete: "Import complete.",
         failed: "Import failed.",
-        conductor: {
-          title: "Conductor",
-          description: "Import projects, settings, and worktrees from this Mac.",
-          sheetTitle: "Import from Conductor",
-          confirmation:
-            "Paseo will register valid repositories, merge supported project settings, and adopt or recreate ready worktrees. Conductor data will not be changed.",
-        },
+        description: "Import projects, settings, and worktrees from this Mac.",
+        sheetTitle: "Import from {{source}}",
+        confirmation:
+          "Paseo will register valid repositories, merge supported project settings, and adopt or recreate ready worktrees. {{source}} data will not be changed.",
       },
       cli: {
         statusFailed: "Unable to check CLI install status.",

@@ -17,12 +17,13 @@ interface AttachedBrowserRegistration {
   webContentsId: number;
 }
 
-interface DesktopMigrationOutput {
-  runId: string;
-  stream: "stdout" | "stderr" | "status";
-  chunk?: string;
-  exitCode?: number;
-}
+type DesktopImportOutput =
+  | {
+      runId: string;
+      type: "event";
+      event: { level: "info" | "warning" | "error"; message: string };
+    }
+  | { runId: string; type: "status"; succeeded: boolean };
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
@@ -41,9 +42,9 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
       });
     },
   },
-  migrations: {
+  imports: {
     getAvailability: (input: { source: string }) =>
-      ipcRenderer.invoke("paseo:migrations:availability", input) as Promise<{
+      ipcRenderer.invoke("paseo:imports:availability", input) as Promise<{
         available: boolean;
         reason:
           | "unsupported-source"
@@ -51,18 +52,17 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
           | "nonlocal-host"
           | "password-protected"
           | "host-version-mismatch"
-          | "migrator-version-mismatch"
           | "unavailable"
           | null;
       }>,
     run: (input: { source: string }) =>
-      ipcRenderer.invoke("paseo:migrations:run", input) as Promise<{ runId: string }>,
-    onOutput: (handler: (output: DesktopMigrationOutput) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, output: DesktopMigrationOutput) => {
+      ipcRenderer.invoke("paseo:imports:run", input) as Promise<{ runId: string }>,
+    onOutput: (handler: (output: DesktopImportOutput) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, output: DesktopImportOutput) => {
         handler(output);
       };
-      ipcRenderer.on("paseo:migrations:output", listener);
-      return () => ipcRenderer.removeListener("paseo:migrations:output", listener);
+      ipcRenderer.on("paseo:imports:output", listener);
+      return () => ipcRenderer.removeListener("paseo:imports:output", listener);
     },
   },
   window: {

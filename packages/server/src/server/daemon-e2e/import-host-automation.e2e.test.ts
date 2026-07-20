@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync 
 import os from "node:os";
 import path from "node:path";
 import { connectHostAutomation, connectToDaemon } from "@getpaseo/client/node";
-import { migrate } from "@getpaseo/migrate";
 import { afterEach, expect, test } from "vitest";
 import { hashDaemonPassword } from "../auth.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
@@ -38,59 +37,6 @@ function isWindowsBusyError(error: unknown): boolean {
   );
 }
 
-test("two complete migrations reuse the same real daemon checkout", async () => {
-  const repoRoot = createRepository();
-  const daemon = await createTestPaseoDaemon();
-  cleanupDaemons.add(daemon);
-  const paseo = await connectHostAutomation({
-    appVersion: "0.1.110",
-    clientId: "migration-idempotence-e2e",
-    env: {},
-    host: `127.0.0.1:${daemon.port}`,
-  });
-  cleanupConnections.add(paseo);
-  const source = migrationSource(repoRoot);
-
-  const first = await migrate({ source, paseo, dryRun: false, output: () => undefined });
-  const second = await migrate({ source, paseo, dryRun: false, output: () => undefined });
-
-  expect(first.notices).toEqual([]);
-  expect(second.notices).toEqual([]);
-  expect(listFeatureWorktrees(repoRoot)).toEqual([
-    expect.objectContaining({ branch: "refs/heads/feature", path: expect.any(String) }),
-  ]);
-  expect(path.basename(listFeatureWorktrees(repoRoot)[0]?.path ?? "")).toBe("imported-feature");
-});
-
-test.skipIf(process.platform === "win32")(
-  "a complete migration recreates an externally deleted checkout",
-  async () => {
-    const repoRoot = createRepository();
-    const daemon = await createTestPaseoDaemon();
-    cleanupDaemons.add(daemon);
-    const paseo = await connectHostAutomation({
-      appVersion: "0.1.110",
-      clientId: "migration-deleted-checkout-e2e",
-      env: {},
-      host: `127.0.0.1:${daemon.port}`,
-    });
-    cleanupConnections.add(paseo);
-    const source = migrationSource(repoRoot);
-
-    const first = await migrate({ source, paseo, dryRun: false, output: () => undefined });
-    const deletedPath = listFeatureWorktrees(repoRoot)[0]?.path;
-    if (!deletedPath) throw new Error("First migration did not create the feature checkout");
-    rmSync(deletedPath, { recursive: true, force: true });
-    expect(existsSync(deletedPath)).toBe(false);
-
-    const second = await migrate({ source, paseo, dryRun: false, output: () => undefined });
-
-    expect(first.notices).toEqual([]);
-    expect(second.notices).toEqual([]);
-    expect(existsSync(deletedPath)).toBe(true);
-  },
-);
-
 test("a different live checkout continues to protect its branch", async () => {
   const repoRoot = createRepository();
   const existingPath = path.join(path.dirname(repoRoot), "existing-feature");
@@ -99,7 +45,7 @@ test("a different live checkout continues to protect its branch", async () => {
   cleanupDaemons.add(daemon);
   const paseo = await connectHostAutomation({
     appVersion: "0.1.110",
-    clientId: "migration-live-protection-e2e",
+    clientId: "import-live-protection-e2e",
     env: {},
     host: `127.0.0.1:${daemon.port}`,
   });
@@ -129,7 +75,7 @@ test("ensureCheckout repairs only the requested missing registration", async () 
   cleanupDaemons.add(daemon);
   const paseo = await connectHostAutomation({
     appVersion: "0.1.110",
-    clientId: "migration-stale-registration-e2e",
+    clientId: "import-stale-registration-e2e",
     env: {},
     host: `127.0.0.1:${daemon.port}`,
   });
@@ -157,7 +103,7 @@ test("normalized checkout-name collisions cannot reuse another branch", async ()
   cleanupDaemons.add(daemon);
   const paseo = await connectHostAutomation({
     appVersion: "0.1.110",
-    clientId: "migration-slug-collision-e2e",
+    clientId: "import-slug-collision-e2e",
     env: {},
     host: `127.0.0.1:${daemon.port}`,
   });
@@ -201,7 +147,7 @@ test("the public connector authenticates to a real password-protected daemon and
   await expect(
     connectToDaemon({
       appVersion: "0.1.110",
-      clientId: "migration-auth-failure-e2e",
+      clientId: "import-auth-failure-e2e",
       env: { PASEO_PASSWORD: "wrong-secret" },
       host: `127.0.0.1:${daemon.port}`,
       timeoutMs: 2_000,
@@ -210,7 +156,7 @@ test("the public connector authenticates to a real password-protected daemon and
 
   const client = await connectToDaemon({
     appVersion: "0.1.110",
-    clientId: "migration-auth-success-e2e",
+    clientId: "import-auth-success-e2e",
     env: { PASEO_PASSWORD: "connector-secret" },
     host: `127.0.0.1:${daemon.port}`,
   });
@@ -230,7 +176,7 @@ test("the public connector uses PORT fallback and skips malformed discovered can
 
   const client = await connectToDaemon({
     appVersion: "0.1.110",
-    clientId: "migration-port-fallback-e2e",
+    clientId: "import-port-fallback-e2e",
     env: { PASEO_HOME: paseoHome, PORT: String(daemon.port) },
   });
   cleanupConnections.add(client);
@@ -251,7 +197,7 @@ test.skipIf(process.platform === "win32")(
 
     const client = await connectToDaemon({
       appVersion: "0.1.110",
-      clientId: "migration-ipc-e2e",
+      clientId: "import-ipc-e2e",
       env: {},
       host: `unix://${socketPath}`,
     });
@@ -262,7 +208,7 @@ test.skipIf(process.platform === "win32")(
 );
 
 function createRepository(): string {
-  const parent = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-migration-daemon-")));
+  const parent = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-import-daemon-")));
   cleanupPaths.add(parent);
   const repoRoot = path.join(parent, "repo");
   execFileSync("git", ["init", "-b", "main", repoRoot]);
@@ -275,47 +221,4 @@ function createRepository(): string {
   });
   execFileSync("git", ["branch", "feature"], { cwd: repoRoot });
   return realpathSync(repoRoot);
-}
-
-function migrationSource(repoRoot: string) {
-  return {
-    id: "fixture",
-    inspect: async () => ({
-      skippedSettings: [],
-      projects: [
-        {
-          sourceId: "project",
-          rootPath: repoRoot,
-          config: null,
-          notices: [],
-          workspaces: [
-            {
-              sourceId: "workspace",
-              state: "ready",
-              path: null,
-              branch: "feature",
-              archiveCommit: null,
-              directoryName: "imported-feature",
-              disposition: "create" as const,
-              notices: [],
-            },
-          ],
-        },
-      ],
-    }),
-  };
-}
-
-function listFeatureWorktrees(repoRoot: string): Array<{ path: string; branch: string }> {
-  const entries = execFileSync("git", ["worktree", "list", "--porcelain"], {
-    cwd: repoRoot,
-    encoding: "utf8",
-  })
-    .trim()
-    .split("\n\n");
-  return entries.flatMap((entry) => {
-    const worktreePath = entry.match(/^worktree (.+)$/m)?.[1];
-    const branch = entry.match(/^branch (.+)$/m)?.[1];
-    return worktreePath && branch === "refs/heads/feature" ? [{ path: worktreePath, branch }] : [];
-  });
 }

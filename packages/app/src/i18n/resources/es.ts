@@ -1157,30 +1157,25 @@ export const es: TranslationResources = {
       },
     },
     integrations: {
-      migration: {
+      import: {
         availability: {
-          checking: "Comprobando la disponibilidad de la migración…",
-          "unsupported-source": "Esta fuente de migración no está disponible.",
+          checking: "Comprobando la disponibilidad de la importación…",
+          "unsupported-source": "Esta fuente de importación no está disponible.",
           "host-not-running": "Inicia el host gestionado por Desktop antes de importar.",
           "nonlocal-host": "La importación no está disponible para un host no local.",
           "password-protected":
             "La importación no está disponible mientras el host local esté protegido con contraseña.",
           "host-version-mismatch": "Actualiza el host gestionado por Desktop antes de importar.",
-          "migrator-version-mismatch":
-            "El migrador incluido no coincide con esta versión de Desktop.",
-          unavailable: "La migración de Desktop no está disponible.",
+          unavailable: "La importación de Desktop no está disponible.",
         },
         actions: { import: "Importar", importing: "Importando…", done: "Listo" },
-        unavailable: "La migración de escritorio no está disponible.",
+        unavailable: "La importación de escritorio no está disponible.",
         complete: "Importación completada.",
         failed: "La importación ha fallado.",
-        conductor: {
-          title: "Conductor",
-          description: "Importa proyectos, ajustes y worktrees desde este Mac.",
-          sheetTitle: "Importar desde Conductor",
-          confirmation:
-            "Paseo registrará los repositorios válidos, combinará los ajustes de proyecto compatibles y adoptará o recreará los worktrees preparados. Los datos de Conductor no se modificarán.",
-        },
+        description: "Importa proyectos, ajustes y worktrees desde este Mac.",
+        sheetTitle: "Importar desde {{source}}",
+        confirmation:
+          "Paseo registrará los repositorios válidos, combinará los ajustes de proyecto compatibles y adoptará o recreará los worktrees preparados. Los datos de {{source}} no se modificarán.",
       },
       cli: {
         statusFailed: "No se puede verificar el estado de instalación deCLI.",
