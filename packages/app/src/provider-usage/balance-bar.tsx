@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { clampPct, formatAmount, formatResetLabel } from "./format";
+import { resolveTone } from "./tone";
 import type { ProviderUsageBalance, ProviderUsageTone } from "./types";
 
 interface ResolvedBalance {
@@ -41,7 +42,7 @@ function fillToneStyle(tone: ProviderUsageTone) {
 
 export function ProviderUsageBalanceBar({ balance }: { balance: ProviderUsageBalance }) {
   const { amountText, usedPct } = resolveBalance(balance);
-  const tone = balance.tone ?? "default";
+  const tone = resolveTone(balance.tone, usedPct);
   const resetLabel = formatResetLabel(balance.resetsAt);
 
   const fillStyle = useMemo<StyleProp<ViewStyle>>(

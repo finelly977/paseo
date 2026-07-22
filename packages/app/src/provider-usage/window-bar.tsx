@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { clampPct, formatPct, formatResetLabel } from "./format";
-import { deriveTone } from "./tone";
+import { resolveTone } from "./tone";
 import type { ProviderUsageTone, ProviderUsageWindow } from "./types";
 
 function resolveUsedPct(window: ProviderUsageWindow): number | null {
@@ -26,7 +26,7 @@ function fillToneStyle(tone: ProviderUsageTone) {
 
 export function ProviderUsageWindowBar({ window }: { window: ProviderUsageWindow }) {
   const usedPct = resolveUsedPct(window);
-  const tone = window.tone ?? deriveTone(usedPct);
+  const tone = resolveTone(window.tone, usedPct);
 
   const fillWidth = clampPct(usedPct ?? 0);
   const fillStyle = useMemo<StyleProp<ViewStyle>>(
