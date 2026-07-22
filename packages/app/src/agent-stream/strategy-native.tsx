@@ -89,6 +89,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     contentMeasuredForKey: null as string | null,
   });
   const scrollOffsetYRef = useRef(0);
+  const isUserScrollActiveRef = useRef(false);
   const programmaticScrollEventBudgetRef = useRef(0);
   const [isNativeViewportSettling, setIsNativeViewportSettling] = useState(false);
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
@@ -208,6 +209,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       contentMeasuredForKey: null,
     };
     scrollOffsetYRef.current = 0;
+    isUserScrollActiveRef.current = false;
     clearNativeViewportSettling();
     setIsNativeViewportSettling(false);
     historyStartReadyRef.current = false;
@@ -308,8 +310,25 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       bottomAnchorController.handleScrollNearBottomChange({
         nextIsNearBottom: nearBottom,
         scrollDelta: contentOffset.y - previousOffsetY,
+        isUserScroll: isUserScrollActiveRef.current,
       });
     }
+  });
+
+  const handleScrollBeginDrag = useStableEvent(() => {
+    isUserScrollActiveRef.current = true;
+  });
+
+  const handleScrollEndDrag = useStableEvent(() => {
+    isUserScrollActiveRef.current = false;
+  });
+
+  const handleMomentumScrollBegin = useStableEvent(() => {
+    isUserScrollActiveRef.current = true;
+  });
+
+  const handleMomentumScrollEnd = useStableEvent(() => {
+    isUserScrollActiveRef.current = false;
   });
 
   const handleListLayout = useStableEvent((event: LayoutChangeEvent) => {
@@ -419,6 +438,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       style={listStyle}
       onLayout={handleListLayout}
       onScroll={handleScroll}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      onScrollEndDrag={handleScrollEndDrag}
+      onMomentumScrollBegin={handleMomentumScrollBegin}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
       scrollEventThrottle={16}
       onContentSizeChange={handleContentSizeChange}
       maintainVisibleContentPosition={maintainVisibleContentPosition}

@@ -774,4 +774,18 @@ describe("controller helper predicates", () => {
       }),
     ).toBe(true);
   });
+
+  it("lets an active user drag override pending sticky verification", () => {
+    expect(
+      __private__.shouldDetachFromScrollAway({
+        mode: "sticky-bottom",
+        nextIsNearBottom: false,
+        scrollDelta: 48,
+        hasPendingRequest: false,
+        hasPendingVerification: true,
+        hasUnverifiedStickyMeasurementChange: true,
+        isUserScroll: true,
+      }),
+    ).toBe(true);
+  });
 });

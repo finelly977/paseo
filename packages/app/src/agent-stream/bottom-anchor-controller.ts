@@ -84,6 +84,7 @@ interface BottomAnchorControllerDriver {
   handleScrollNearBottomChange: (params: {
     nextIsNearBottom: boolean;
     scrollDelta: number;
+    isUserScroll?: boolean;
   }) => void;
   notifyAuthoritativeHistoryMaybeChanged: () => void;
   reevaluate: (animated?: boolean) => void;
@@ -570,7 +571,7 @@ function createBottomAnchorControllerDriver(
       evaluate(false, "content_size_change");
     },
     handleScrollNearBottomChange(params) {
-      const { nextIsNearBottom, scrollDelta } = params;
+      const { nextIsNearBottom, scrollDelta, isUserScroll = false } = params;
       if (
         nextIsNearBottom &&
         mode === "sticky-bottom" &&
@@ -588,6 +589,7 @@ function createBottomAnchorControllerDriver(
           hasPendingRequest: pendingRequest !== null,
           hasPendingVerification: pendingVerification !== null,
           hasUnverifiedStickyMeasurementChange,
+          isUserScroll,
         })
       ) {
         this.detachByUser();
@@ -657,14 +659,16 @@ export const __private__ = {
     hasPendingRequest: boolean;
     hasPendingVerification: boolean;
     hasUnverifiedStickyMeasurementChange: boolean;
+    isUserScroll?: boolean;
   }): boolean {
     const scrolledAwayIntentionally = Math.abs(input.scrollDelta) >= USER_SCROLL_AWAY_DELTA_PX;
     return (
       input.mode === "sticky-bottom" &&
       !input.nextIsNearBottom &&
-      !input.hasPendingRequest &&
-      !input.hasPendingVerification &&
-      (!input.hasUnverifiedStickyMeasurementChange || scrolledAwayIntentionally)
+      (input.isUserScroll ||
+        (!input.hasPendingRequest &&
+          !input.hasPendingVerification &&
+          (!input.hasUnverifiedStickyMeasurementChange || scrolledAwayIntentionally)))
     );
   },
 };
@@ -758,7 +762,11 @@ export function useBottomAnchorController(input: {
     prepareForStickyContentChange() {
       driverRef.current?.prepareForStickyContentChange();
     },
-    handleScrollNearBottomChange(params: { nextIsNearBottom: boolean; scrollDelta: number }) {
+    handleScrollNearBottomChange(params: {
+      nextIsNearBottom: boolean;
+      scrollDelta: number;
+      isUserScroll?: boolean;
+    }) {
       driverRef.current?.handleScrollNearBottomChange(params);
     },
     reevaluate(animated = false) {
