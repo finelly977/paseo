@@ -90,6 +90,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
   const scrollOffsetYRef = useRef(0);
   const isUserScrollActiveRef = useRef(false);
+  const userScrollEndFrameIdRef = useRef<number | null>(null);
   const programmaticScrollEventBudgetRef = useRef(0);
   const [isNativeViewportSettling, setIsNativeViewportSettling] = useState(false);
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
@@ -127,6 +128,13 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     if (nativeViewportSettlingFrameIdRef.current !== null) {
       cancelAnimationFrame(nativeViewportSettlingFrameIdRef.current);
       nativeViewportSettlingFrameIdRef.current = null;
+    }
+  }, []);
+
+  const clearPendingUserScrollEnd = useCallback(() => {
+    if (userScrollEndFrameIdRef.current !== null) {
+      cancelAnimationFrame(userScrollEndFrameIdRef.current);
+      userScrollEndFrameIdRef.current = null;
     }
   }, []);
 
@@ -210,6 +218,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     };
     scrollOffsetYRef.current = 0;
     isUserScrollActiveRef.current = false;
+    clearPendingUserScrollEnd();
     clearNativeViewportSettling();
     setIsNativeViewportSettling(false);
     historyStartReadyRef.current = false;
@@ -218,8 +227,9 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     });
     return () => {
       cancelAnimationFrame(frame);
+      clearPendingUserScrollEnd();
     };
-  }, [agentId, clearNativeViewportSettling]);
+  }, [agentId, clearNativeViewportSettling, clearPendingUserScrollEnd]);
 
   useEffect(() => {
     const keyboardEvents = [
@@ -303,32 +313,44 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       onNearHistoryStart();
     }
 
-    if (programmaticScrollEventBudgetRef.current > 0 && contentOffset.y <= 8) {
+    if (
+      !isUserScrollActiveRef.current &&
+      programmaticScrollEventBudgetRef.current > 0 &&
+      contentOffset.y <= 8
+    ) {
       programmaticScrollEventBudgetRef.current -= 1;
     } else {
       programmaticScrollEventBudgetRef.current = 0;
       bottomAnchorController.handleScrollNearBottomChange({
         nextIsNearBottom: nearBottom,
         scrollDelta: contentOffset.y - previousOffsetY,
-        isUserScroll: isUserScrollActiveRef.current,
       });
     }
   });
 
   const handleScrollBeginDrag = useStableEvent(() => {
+    clearPendingUserScrollEnd();
     isUserScrollActiveRef.current = true;
+    bottomAnchorController.beginUserScroll();
   });
 
   const handleScrollEndDrag = useStableEvent(() => {
-    isUserScrollActiveRef.current = false;
+    clearPendingUserScrollEnd();
+    userScrollEndFrameIdRef.current = requestAnimationFrame(() => {
+      userScrollEndFrameIdRef.current = null;
+      isUserScrollActiveRef.current = false;
+      bottomAnchorController.endUserScroll();
+    });
   });
 
   const handleMomentumScrollBegin = useStableEvent(() => {
-    isUserScrollActiveRef.current = true;
+    clearPendingUserScrollEnd();
   });
 
   const handleMomentumScrollEnd = useStableEvent(() => {
+    clearPendingUserScrollEnd();
     isUserScrollActiveRef.current = false;
+    bottomAnchorController.endUserScroll();
   });
 
   const handleListLayout = useStableEvent((event: LayoutChangeEvent) => {
