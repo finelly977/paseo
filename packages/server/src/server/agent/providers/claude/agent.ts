@@ -51,7 +51,13 @@ import {
 import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "../provider-runner.js";
 import { renderPromptAttachmentAsText } from "../../prompt-attachments.js";
 import { claudeQuery, type ClaudeOptions, type ClaudeQueryFactory } from "./query.js";
-import { realClaudeRewindSdk, revertClaudeConversation, revertClaudeFiles } from "./rewind.js";
+import {
+  archiveClaudeSession,
+  CLAUDE_ARCHIVED_SESSION_TAG,
+  realClaudeRewindSdk,
+  revertClaudeConversation,
+  revertClaudeFiles,
+} from "./rewind.js";
 import { normalizeProviderReplayTimestamp } from "../../provider-history-timestamps.js";
 import { claudeProjectDirSync } from "./project-dir.js";
 import { THINKING_APPLIES_NEXT_TURN_NOTICE } from "../../provider-notices.js";
@@ -1541,16 +1547,21 @@ export class ClaudeAgentClient implements AgentClient {
     if (!(await pathExists(sessionsRoot))) {
       return [];
     }
-    const limit = options?.limit ?? 20;
-    const candidates = await collectRecentClaudeSessions(sessionsRoot, limit * 3, {
-      rootIsProjectDir: Boolean(options?.cwd),
-    });
+    const limit = options?.limit;
+    const candidates = await collectRecentClaudeSessions(
+      sessionsRoot,
+      limit === undefined ? undefined : limit * 3,
+      {
+        rootIsProjectDir: Boolean(options?.cwd),
+      },
+    );
     const parsed = await Promise.all(
       candidates.map((candidate) => parseClaudeSessionDescriptor(candidate.path, candidate.mtime)),
     );
-    return parsed
-      .filter((session): session is ImportableProviderSession => session !== null)
-      .slice(0, limit);
+    const validSessions = parsed.filter(
+      (session): session is ImportableProviderSession => session !== null,
+    );
+    return limit === undefined ? validSessions : validSessions.slice(0, limit);
   }
 
   async importSession(input: ImportProviderSessionInput, context: ImportProviderSessionContext) {
@@ -2503,7 +2514,13 @@ class ClaudeAgentSession implements AgentSession {
 
   async revertConversation(input: { messageId: string }): Promise<void> {
     const target = this.resolveConversationRewindTarget(input.messageId);
+    const originalSessionId = this.claudeSessionId;
     if (target.kind === "fresh-session") {
+      await archiveClaudeSession({
+        sdk: realClaudeRewindSdk,
+        sessionId: originalSessionId,
+        cwd: this.config.cwd,
+      });
       this.startFreshConversationSession();
       return;
     }
@@ -2511,6 +2528,7 @@ class ClaudeAgentSession implements AgentSession {
       sdk: realClaudeRewindSdk,
       sessionId: this.claudeSessionId,
       messageId: target.messageId,
+      cwd: this.config.cwd,
       resolveMessageId: (messageId) => this.resolveClaudeMessageId(messageId),
       setSessionId: (sessionId) => {
         this.rebindConversationSession(sessionId);
@@ -5473,7 +5491,7 @@ async function pathExists(target: string): Promise<boolean> {
 
 async function collectRecentClaudeSessions(
   root: string,
-  limit: number,
+  limit: number | undefined,
   options?: { rootIsProjectDir?: boolean },
 ): Promise<ClaudeSessionCandidate[]> {
   let rootEntries: string[];
@@ -5514,7 +5532,8 @@ async function collectRecentClaudeSessions(
   const candidates: ClaudeSessionCandidate[] = statResults.filter(
     (entry): entry is ClaudeSessionCandidate => entry !== null,
   );
-  return candidates.sort((a, b) => b.mtime.getTime() - a.mtime.getTime()).slice(0, limit);
+  const sortedCandidates = candidates.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+  return limit === undefined ? sortedCandidates : sortedCandidates.slice(0, limit);
 }
 
 interface ClaudeSessionDescriptorAccumulator {
@@ -5563,6 +5582,24 @@ function applyClaudeSessionEntryToAccumulator(
   }
 }
 
+function readLatestClaudeSessionTag(rawLines: readonly string[]): string | null {
+  for (let index = rawLines.length - 1; index >= 0; index -= 1) {
+    const line = rawLines[index]?.trim();
+    if (!line || !line.includes('"type"') || !line.includes('"tag"')) {
+      continue;
+    }
+    try {
+      const entry = toObjectRecord(JSON.parse(line));
+      if (entry?.type === "tag" && typeof entry.tag === "string") {
+        return entry.tag.trim() || null;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function parseClaudeSessionDescriptor(
   filePath: string,
   mtime: Date,
@@ -5582,7 +5619,8 @@ async function parseClaudeSessionDescriptor(
     lastPromptPreview: null,
   };
 
-  for (const rawLine of content.split(/\r?\n/)) {
+  const rawLines = content.split(/\r?\n/);
+  for (const rawLine of rawLines) {
     const line = rawLine.trim();
     if (!line) continue;
     let entry: unknown;
@@ -5599,7 +5637,7 @@ async function parseClaudeSessionDescriptor(
 
   const { sessionId, cwd, title } = acc;
 
-  if (!sessionId || !cwd) {
+  if (!sessionId || !cwd || readLatestClaudeSessionTag(rawLines) === CLAUDE_ARCHIVED_SESSION_TAG) {
     return null;
   }
 

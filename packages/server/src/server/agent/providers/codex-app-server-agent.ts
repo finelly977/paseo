@@ -872,6 +872,36 @@ function filterCodexThreadsByCwd(
   return threads.filter((thread) => typeof thread.cwd === "string" && matchesCwd(thread.cwd));
 }
 
+async function fetchAllCodexThreads(
+  client: CodexAppServerClientLike,
+  options: ListImportableSessionsOptions | undefined,
+): Promise<Array<Record<string, unknown>>> {
+  const pageLimit = options?.limit === undefined ? 100 : Math.max(options.limit, 50);
+  const allThreads: Array<Record<string, unknown>> = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const response = toObjectRecord(
+      await client.request("thread/list", {
+        limit: pageLimit,
+        ...(cursor ? { cursor } : {}),
+        ...(options?.cwd ? { cwd: options.cwd } : {}),
+      }),
+    );
+    if (Array.isArray(response?.data)) {
+      allThreads.push(...response.data.filter(isRecord));
+    }
+    const nextCursor = typeof response?.nextCursor === "string" ? response.nextCursor : null;
+    const matchedCount = options?.cwd
+      ? filterCodexThreadsByCwd(allThreads, options.cwd).length
+      : allThreads.length;
+    if (!nextCursor || (options?.limit !== undefined && matchedCount >= options.limit)) {
+      break;
+    }
+    cursor = nextCursor;
+  }
+  return filterCodexThreadsByCwd(allThreads, options?.cwd);
+}
+
 export function toAgentUsage(tokenUsage: unknown): AgentUsage | undefined {
   const usage = toObjectRecord(tokenUsage);
   if (!usage) return undefined;
@@ -4200,9 +4230,6 @@ export class CodexAppServerAgentSession implements AgentSession {
       client: this.client,
       threadId: this.currentThreadId,
       messageId: input.messageId,
-      cwd: this.config.cwd ?? null,
-      model: this.config.model ?? null,
-      serviceTier: this.serviceTier,
       userMessageTurns: this.codexUserMessageTurns(),
       setThreadId: async (threadId) => {
         this.currentThreadId = threadId;
@@ -6341,20 +6368,10 @@ export class CodexAppServerAgentClient implements AgentClient {
       await client.request("initialize", buildCodexAppServerInitializeParams());
       client.notify("initialized", {});
 
-      const limit = options?.limit ?? 20;
-      // thread/list returns the cheap `cwd` field. Fetch a wider window when
-      // filtering since most threads will be from other cwds, then keep the
-      // local realpath-aware filter for symlink-equivalent workspace paths.
-      const listLimit = options?.cwd ? Math.max(limit, 50) : limit;
-      const response = toObjectRecord(
-        await client.request("thread/list", {
-          limit: listLimit,
-          ...(options?.cwd ? { cwd: options.cwd } : {}),
-        }),
-      );
-      const allThreads = Array.isArray(response?.data) ? response.data.filter(isRecord) : [];
-      const threads = filterCodexThreadsByCwd(allThreads, options?.cwd);
-      return threads.slice(0, limit).map((thread) => {
+      const threads = await fetchAllCodexThreads(client, options);
+      const selectedThreads =
+        options?.limit === undefined ? threads : threads.slice(0, options.limit);
+      return selectedThreads.map((thread) => {
         const threadId = typeof thread.id === "string" ? thread.id : "";
         const cwd = typeof thread.cwd === "string" ? thread.cwd : process.cwd();
         const preview = typeof thread.preview === "string" ? thread.preview : null;

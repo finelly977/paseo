@@ -101,7 +101,6 @@ const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
 const OPENCODE_BUILD_MODE_ID = "build";
 const OPENCODE_LEGACY_FULL_ACCESS_MODE_ID = "full-access";
 const OPENCODE_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
-const OPENCODE_PERSISTED_SESSION_LIMIT = 200;
 const OPENCODE_PENDING_ABORT_START_TIMEOUT_MS = 10_000;
 const OPENCODE_CHILD_SESSION_HYDRATION_LIMIT = 100;
 const OPENCODE_CHILD_SESSION_SERVER_REGISTRY_LIMIT = 500;
@@ -941,12 +940,11 @@ async function collectOpenCodeImportableSessionsFromSdk(
   client: Pick<OpencodeClient, "experimental">,
   options?: ListImportableSessionsOptions,
 ): Promise<ImportableProviderSession[]> {
-  const limit = options?.limit ?? OPENCODE_PERSISTED_SESSION_LIMIT;
-  const sessionListLimit = options?.cwd ? Math.max(limit, OPENCODE_PERSISTED_SESSION_LIMIT) : limit;
+  const limit = options?.limit;
   const response = await client.experimental.session.list({
     archived: true,
     roots: true,
-    limit: sessionListLimit,
+    ...(limit === undefined ? {} : { limit }),
     ...(options?.cwd ? { directory: options.cwd } : {}),
   });
 
@@ -955,18 +953,17 @@ async function collectOpenCodeImportableSessionsFromSdk(
   }
 
   const matchesCwd = options?.cwd ? createPathEquivalenceMatcher(options.cwd) : null;
-  return (response.data ?? [])
+  const sessions = (response.data ?? [])
     .filter((session) => !matchesCwd || matchesCwd(session.directory))
-    .sort((left, right) => getOpenCodeSessionTimestamp(right) - getOpenCodeSessionTimestamp(left))
-    .slice(0, limit)
-    .map((session) => ({
-      providerHandleId: session.id,
-      cwd: session.directory,
-      title: normalizeOpenCodeSessionTitle(session.title),
-      firstPromptPreview: null,
-      lastPromptPreview: null,
-      lastActivityAt: new Date(getOpenCodeSessionTimestamp(session)),
-    }));
+    .sort((left, right) => getOpenCodeSessionTimestamp(right) - getOpenCodeSessionTimestamp(left));
+  return (limit === undefined ? sessions : sessions.slice(0, limit)).map((session) => ({
+    providerHandleId: session.id,
+    cwd: session.directory,
+    title: normalizeOpenCodeSessionTitle(session.title),
+    firstPromptPreview: null,
+    lastPromptPreview: null,
+    lastActivityAt: new Date(getOpenCodeSessionTimestamp(session)),
+  }));
 }
 
 function normalizeOpenCodeSessionTitle(title: string | null | undefined): string | null {

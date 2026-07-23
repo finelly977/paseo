@@ -27,7 +27,6 @@ import {
   getPromptPreview,
   getSessionTitle,
   groupSessionEntriesByFolder,
-  PER_PROVIDER_LIMIT,
   resolveProvidersToFetch,
   requiresImportSessionsHostUpgrade,
   sumFilteredAlreadyImportedCount,
@@ -85,7 +84,6 @@ function buildSessionsQueriesConfig(args: {
       // Folder grouping + search let the user narrow results without hiding older history.
       return await client.fetchRecentProviderSessions({
         providers: [provider],
-        limit: PER_PROVIDER_LIMIT,
       });
     },
   }));

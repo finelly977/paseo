@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 
 import {
+  archiveClaudeSession,
   revertClaudeConversation,
   revertClaudeConversationAndFiles,
   revertClaudeFiles,
@@ -17,12 +18,16 @@ describe("Claude rewind", () => {
       sdk: claude,
       sessionId,
       messageId: "user-message-1",
+      cwd: "/workspace/project",
       setSessionId: (nextSessionId) => {
         sessionId = nextSessionId;
       },
     });
 
     expect(claude.recordedForks).toEqual([{ upToMessageId: "user-message-1" }]);
+    expect(claude.recordedTags).toEqual([
+      { sessionId: "original-session", tag: "archived", dir: "/workspace/project" },
+    ]);
     expect(sessionId).toBe("forked-session-1");
   });
 
@@ -41,7 +46,23 @@ describe("Claude rewind", () => {
     });
 
     expect(claude.recordedForks).toEqual([{ upToMessageId: "claude-jsonl-message-1" }]);
+    expect(claude.recordedTags).toEqual([{ sessionId: "original-session", tag: "archived" }]);
     expect(sessionId).toBe("forked-session-1");
+  });
+
+  test("archives a Claude session without changing its conversation", async () => {
+    const claude = new FakeClaudeSdk();
+
+    await archiveClaudeSession({
+      sdk: claude,
+      sessionId: "original-session",
+      cwd: "/workspace/project",
+    });
+
+    expect(claude.recordedForks).toEqual([]);
+    expect(claude.recordedTags).toEqual([
+      { sessionId: "original-session", tag: "archived", dir: "/workspace/project" },
+    ]);
   });
 
   test("rewinds tracked files to the user message", async () => {
@@ -77,6 +98,7 @@ describe("Claude rewind", () => {
       query: claude.createQuery() as Query,
       sessionId,
       messageId: "user-message-1",
+      cwd: "/workspace/project",
       setSessionId: (nextSessionId) => {
         sessionId = nextSessionId;
       },
@@ -84,6 +106,9 @@ describe("Claude rewind", () => {
 
     expect(claude.recordedFileRewinds).toEqual([{ userMessageId: "user-message-1" }]);
     expect(claude.recordedForks).toEqual([{ upToMessageId: "user-message-1" }]);
+    expect(claude.recordedTags).toEqual([
+      { sessionId: "original-session", tag: "archived", dir: "/workspace/project" },
+    ]);
     expect(sessionId).toBe("forked-before-rehydrate");
   });
 });

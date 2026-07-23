@@ -2,9 +2,6 @@ import type { FetchRecentProviderSessionEntry } from "@getpaseo/client/internal/
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { i18n } from "@/i18n/i18next";
 
-// Protocol allows up to 200 per request; keep the full budget so the sheet is not
-// limited to a handful of recent sessions.
-export const PER_PROVIDER_LIMIT = 200;
 export const ALL_FILTER_VALUE = "__all__";
 
 export function requiresImportSessionsHostUpgrade(input: {

@@ -2290,7 +2290,7 @@ describe("OpenCode persisted sessions", () => {
     expect(sessions[0]?.lastActivityAt.toISOString()).toBe("1970-01-01T00:00:03.000Z");
     expect(runtime.clientCreations).toEqual([{ baseUrl: runtime.server.url, directory: cwd }]);
     expect(openCodeClient.calls.experimentalSessionList).toEqual([
-      { archived: true, roots: true, limit: 200, directory: cwd },
+      { archived: true, roots: true, limit: 1, directory: cwd },
     ]);
     expect(openCodeClient.calls.sessionMessages).toEqual([]);
   });
@@ -2411,7 +2411,7 @@ describe("OpenCode persisted sessions", () => {
       title: "Windows session",
     });
     expect(openCodeClient.calls.experimentalSessionList).toEqual([
-      { archived: true, roots: true, limit: 200, directory: requestedCwd },
+      { archived: true, roots: true, limit: 1, directory: requestedCwd },
     ]);
   });
 });

@@ -1,16 +1,10 @@
 import type {
-  CodexThreadForkParams,
-  CodexThreadForkResponse,
   CodexThreadRollbackParams,
   CodexThreadRollbackResponse,
 } from "./app-server-transport.js";
-import {
-  parseCodexThreadForkResponse,
-  parseCodexThreadRollbackResponse,
-} from "./app-server-transport.js";
+import { parseCodexThreadRollbackResponse } from "./app-server-transport.js";
 
 export interface CodexRewindClient {
-  forkThread?(params: CodexThreadForkParams): Promise<CodexThreadForkResponse>;
   rollbackThread?(params: CodexThreadRollbackParams): Promise<CodexThreadRollbackResponse>;
   request(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
 }
@@ -18,16 +12,6 @@ export interface CodexRewindClient {
 export interface CodexUserMessageTurnIndex {
   resolve(messageId: string): number | null;
   count(): number;
-}
-
-async function forkCodexThread(
-  client: CodexRewindClient,
-  params: CodexThreadForkParams,
-): Promise<CodexThreadForkResponse> {
-  if (client.forkThread) {
-    return client.forkThread(params);
-  }
-  return parseCodexThreadForkResponse(await client.request("thread/fork", params));
 }
 
 async function rollbackCodexThread(
@@ -44,9 +28,6 @@ export async function revertCodexConversation(input: {
   client: CodexRewindClient;
   threadId: string | null;
   messageId: string;
-  cwd?: string | null;
-  model?: string | null;
-  serviceTier?: string | null;
   userMessageTurns: CodexUserMessageTurnIndex;
   setThreadId: (threadId: string) => void | Promise<void>;
 }): Promise<void> {
@@ -65,22 +46,9 @@ export async function revertCodexConversation(input: {
     throw new Error(`Codex user message ${input.messageId} is outside the current thread`);
   }
 
-  // Fork is non-destructive: the old thread file stays on disk and remains
-  // recoverable with `codex resume <old-uuid>` if the rewind target was wrong.
-  const forked = await forkCodexThread(input.client, {
-    threadId: input.threadId,
-    cwd: input.cwd ?? null,
-    model: input.model ?? null,
-    serviceTier: input.serviceTier ?? null,
-    excludeTurns: false,
-    persistExtendedHistory: true,
-  });
-  const forkedThreadId = forked.thread.id;
-
-  // Codex rollback is chat-only by design. File edits from rewound turns stay
-  // on disk; a future file primitive would be a separate capability.
+  // 直接在当前线程原地回退。Codex 只回退对话，已产生的文件修改仍保留在磁盘上。
   const rolledBack = await rollbackCodexThread(input.client, {
-    threadId: forkedThreadId,
+    threadId: input.threadId,
     numTurns,
   });
   await input.setThreadId(rolledBack.thread.id);

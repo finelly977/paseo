@@ -422,7 +422,6 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
         providers: ["claude"],
-        limit: 200,
       });
     });
 
@@ -483,7 +482,6 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
         providers: ["claude"],
-        limit: 200,
       });
     });
   });
@@ -601,19 +599,16 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
         providers: ["claude"],
-        limit: 200,
       });
     });
     expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
       providers: ["codex"],
-      limit: 200,
     });
     expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(
       expect.objectContaining({ providers: ["opencode"] }),
     );
     expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
       providers: ["z-ai"],
-      limit: 200,
     });
 
     await screen.findByText("Session claude");
@@ -794,7 +789,6 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
         providers: ["claude"],
-        limit: 200,
       });
     });
     expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(

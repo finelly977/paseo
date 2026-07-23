@@ -75,10 +75,14 @@ export async function listPiImportableSessions(
   const sessionsDir = await resolvePiSessionsDir(options);
   const files = await walkJsonlFiles(sessionsDir);
   const matchesCwd = options.cwd ? createRealpathAwarePathMatcher(options.cwd) : null;
-  const limit = options.limit ?? 20;
+  const limit = options.limit;
   const ranked = await rankSessionFilesByMtime(files);
-  const candidateLimit = Math.max(limit * IMPORT_CANDIDATE_OVERSCAN, IMPORT_CANDIDATE_MIN);
-  const candidates = matchesCwd ? ranked : ranked.slice(0, candidateLimit);
+  const candidateLimit =
+    limit === undefined
+      ? undefined
+      : Math.max(limit * IMPORT_CANDIDATE_OVERSCAN, IMPORT_CANDIDATE_MIN);
+  const candidates =
+    matchesCwd || candidateLimit === undefined ? ranked : ranked.slice(0, candidateLimit);
   const sessions: ImportableProviderSession[] = [];
 
   for (const entry of candidates) {
@@ -86,7 +90,7 @@ export async function listPiImportableSessions(
     if (!session) continue;
     if (matchesCwd && !matchesCwd(session.cwd)) continue;
     sessions.push(session);
-    if (sessions.length >= limit) {
+    if (limit !== undefined && sessions.length >= limit) {
       break;
     }
   }

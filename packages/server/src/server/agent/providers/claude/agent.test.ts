@@ -1082,6 +1082,47 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
 });
 
 describe("ClaudeAgentClient.listImportableSessions", () => {
+  test("omits sessions tagged as archived", async () => {
+    const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-import-"));
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tmpConfigDir;
+
+    try {
+      const cwd = path.join(tmpConfigDir, "archived-project");
+      const projectDir = claudeProjectDirSync(cwd, { configDir: tmpConfigDir });
+      await fs.mkdir(projectDir, { recursive: true });
+      const sessionFile = path.join(projectDir, "archived-session.jsonl");
+      await fs.writeFile(
+        sessionFile,
+        `${JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "Archived prompt" },
+          cwd,
+          sessionId: "archived-session",
+        })}\n${JSON.stringify({
+          type: "tag",
+          tag: "archived",
+          sessionId: "archived-session",
+        })}\n`,
+        "utf-8",
+      );
+
+      const client = new ClaudeAgentClient({
+        logger: createTestLogger(),
+        resolveBinary: async () => "/test/claude/bin",
+      });
+
+      await expect(client.listImportableSessions()).resolves.toEqual([]);
+    } finally {
+      if (previousConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+      }
+      await fs.rm(tmpConfigDir, { recursive: true, force: true });
+    }
+  });
+
   test("scopes candidates to the requested cwd before applying the limit", async () => {
     const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-import-"));
     const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;

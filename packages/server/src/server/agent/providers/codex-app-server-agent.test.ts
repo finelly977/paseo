@@ -1006,9 +1006,9 @@ describe("Codex app-server provider", () => {
 
     await session.revertConversation({ messageId: "codex-first" });
 
-    expect(appServer.recordedRollbacks).toEqual([{ threadId: "forked-thread", numTurns: 2 }]);
+    expect(appServer.recordedRollbacks).toEqual([{ threadId: "thread-1", numTurns: 2 }]);
     await expect(session.getRuntimeInfo()).resolves.toMatchObject({
-      sessionId: "forked-thread",
+      sessionId: "thread-1",
     });
     appServer.assertNoErrors();
     await session.close();
@@ -4563,7 +4563,12 @@ describe("Codex importable sessions", () => {
     const fakeClient = {
       request: async (method: string, params?: unknown) => {
         calls.push({ method, params });
-        if (method === "thread/list") return { data: allThreads };
+        if (method === "thread/list") {
+          const hasCursor = typeof params === "object" && params !== null && "cursor" in params;
+          return hasCursor
+            ? { data: [allThreads[1]] }
+            : { data: [allThreads[0], allThreads[2]], nextCursor: "page-2" };
+        }
         return {};
       },
       notify: () => {},
@@ -4613,7 +4618,11 @@ describe("Codex importable sessions", () => {
           capabilities: { experimentalApi: true, mcpServerOpenaiFormElicitation: true },
         },
       },
-      { method: "thread/list", params: { limit: 50, cwd: "/workspace/project-a" } },
+      { method: "thread/list", params: { limit: 100, cwd: "/workspace/project-a" } },
+      {
+        method: "thread/list",
+        params: { limit: 100, cursor: "page-2", cwd: "/workspace/project-a" },
+      },
     ]);
   });
 });
