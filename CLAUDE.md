@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> **Fork notice:** This checkout is [finelly977/paseo](https://github.com/finelly977/paseo), a downstream 二开 of [getpaseo/paseo](https://github.com/getpaseo/paseo). Agent identity, remotes, and upstream sync rules are in [AGENTS.md](AGENTS.md). When the user asks to merge the author's latest, default to the latest **published** release (including beta); do not use unreleased `upstream/main` unless they explicitly ask.
+
 Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. Your dev environment, in your pocket. Connects directly to your actual development environment — your code stays on your machine.
 
 **Supported agents:** Claude Code, Codex, GitHub Copilot, OpenCode, and Pi.
