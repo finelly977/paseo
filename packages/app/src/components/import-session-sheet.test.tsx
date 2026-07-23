@@ -72,6 +72,7 @@ vi.mock("lucide-react-native", () => {
   };
   return {
     ChevronDown: icon("ChevronDown"),
+    Folder: icon("Folder"),
     Inbox: icon("Inbox"),
     Layers: icon("Layers"),
     RotateCw: icon("RotateCw"),
@@ -115,6 +116,18 @@ vi.mock("@/components/ui/combobox", () => ({
     );
   },
   ComboboxItem: ({ label }: { label: string }) => React.createElement("span", null, label),
+  SearchInput: ({
+    placeholder,
+    onChangeText,
+  }: {
+    placeholder: string;
+    onChangeText: (text: string) => void;
+  }) =>
+    React.createElement("input", {
+      "data-testid": "import-session-search-input",
+      placeholder,
+      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+    }),
 }));
 
 vi.mock("@/components/adaptive-modal-sheet", () => ({
@@ -408,9 +421,8 @@ describe("ImportSessionSheet", () => {
 
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-        cwd: "/repo/paseo",
         providers: ["claude"],
-        limit: 15,
+        limit: 200,
       });
     });
 
@@ -470,9 +482,8 @@ describe("ImportSessionSheet", () => {
     await screen.findByText("Cached importable session");
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-        cwd: "/repo/paseo",
         providers: ["claude"],
-        limit: 15,
+        limit: 200,
       });
     });
   });
@@ -589,23 +600,20 @@ describe("ImportSessionSheet", () => {
 
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-        cwd: "/repo/paseo",
         providers: ["claude"],
-        limit: 15,
+        limit: 200,
       });
     });
     expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-      cwd: "/repo/paseo",
       providers: ["codex"],
-      limit: 15,
+      limit: 200,
     });
     expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(
       expect.objectContaining({ providers: ["opencode"] }),
     );
     expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
-      cwd: "/repo/paseo",
       providers: ["z-ai"],
-      limit: 15,
+      limit: 200,
     });
 
     await screen.findByText("Session claude");
@@ -786,7 +794,7 @@ describe("ImportSessionSheet", () => {
     await waitFor(() => {
       expect(fetchRecentProviderSessions).toHaveBeenCalledWith({
         providers: ["claude"],
-        limit: 15,
+        limit: 200,
       });
     });
     expect(fetchRecentProviderSessions).not.toHaveBeenCalledWith(
