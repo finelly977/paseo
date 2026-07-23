@@ -6,8 +6,10 @@ import {
   buildProviderLabelMap,
   collectErroredProviderLabels,
   computeEmptyState,
+  filterSessionEntries,
   getPromptPreview,
   getSessionTitle,
+  groupSessionEntriesByFolder,
   resolveProvidersToFetch,
   requiresImportSessionsHostUpgrade,
   type SessionsQueryResult,
@@ -204,6 +206,68 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(entry({ title: null, firstPromptPreview: "   " }))).toBe(
       "Untitled session",
     );
+  });
+});
+
+describe("filterSessionEntries", () => {
+  it("filters by provider and free-text search across title/prompt/cwd", () => {
+    const entries = [
+      entry({
+        providerId: "claude",
+        providerHandleId: "a",
+        title: "Refactor auth",
+        cwd: "E:\\paseo",
+      }),
+      entry({
+        providerId: "codex",
+        providerHandleId: "b",
+        title: "Research",
+        cwd: "E:\\other",
+        firstPromptPreview: "look at auth",
+      }),
+    ];
+    expect(
+      filterSessionEntries(entries, { selectedProvider: "claude", searchQuery: "" }).map(
+        (e) => e.providerHandleId,
+      ),
+    ).toEqual(["a"]);
+    expect(
+      filterSessionEntries(entries, {
+        selectedProvider: ALL_FILTER_VALUE,
+        searchQuery: "auth",
+      }).map((e) => e.providerHandleId),
+    ).toEqual(["a", "b"]);
+    expect(
+      filterSessionEntries(entries, {
+        selectedProvider: ALL_FILTER_VALUE,
+        searchQuery: "E:\\other",
+      }).map((e) => e.providerHandleId),
+    ).toEqual(["b"]);
+  });
+});
+
+describe("groupSessionEntriesByFolder", () => {
+  it("groups by cwd and pins the preferred folder first", () => {
+    const entries = [
+      entry({
+        providerHandleId: "new-other",
+        cwd: "E:\\other",
+        lastActivityAt: "2026-04-30T12:00:00.000Z",
+      }),
+      entry({
+        providerHandleId: "new-paseo",
+        cwd: "E:\\paseo",
+        lastActivityAt: "2026-04-30T11:00:00.000Z",
+      }),
+      entry({
+        providerHandleId: "old-paseo",
+        cwd: "E:\\paseo\\",
+        lastActivityAt: "2026-04-30T10:00:00.000Z",
+      }),
+    ];
+    const groups = groupSessionEntriesByFolder(entries, "E:\\paseo");
+    expect(groups.map((g) => g.label)).toEqual(["E:\\paseo", "E:\\other"]);
+    expect(groups[0]?.entries.map((e) => e.providerHandleId)).toEqual(["new-paseo", "old-paseo"]);
   });
 });
 

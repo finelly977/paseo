@@ -312,6 +312,9 @@ export const en = {
     filters: {
       all: "All",
     },
+    search: {
+      placeholder: "Search title, prompt, or folder",
+    },
     status: {
       connectHost: "Connect to a host to import sessions",
       updateHost: "Update the host to import sessions.",
@@ -329,12 +332,16 @@ export const en = {
       noPrompt: "No prompt preview",
     },
     empty: {
+      noSearchMatches: "No sessions match your search.",
       noRecent: "No recent sessions to import.",
       alreadyImported: "All recent sessions are already imported.",
       noProviderSessions: "No {{provider}} sessions found.",
     },
     row: {
       importing: "Importing...",
+    },
+    folders: {
+      unknown: "Unknown folder",
     },
   },
   workspace: {

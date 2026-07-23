@@ -7,11 +7,11 @@ import type {
   FetchRecentProviderSessionEntry,
 } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
-import { ChevronDown, Inbox, Layers, RotateCw } from "lucide-react-native";
+import { ChevronDown, Folder, Inbox, Layers, RotateCw } from "lucide-react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
+import { Combobox, ComboboxItem, SearchInput, type ComboboxOption } from "@/components/ui/combobox";
 import { getProviderIcon } from "@/components/provider-icons";
 import { formatTimeAgo } from "@/utils/time";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
@@ -23,8 +23,10 @@ import {
   buildProviderLabelMap,
   collectErroredProviderLabels,
   computeEmptyState,
+  filterSessionEntries,
   getPromptPreview,
   getSessionTitle,
+  groupSessionEntriesByFolder,
   PER_PROVIDER_LIMIT,
   resolveProvidersToFetch,
   requiresImportSessionsHostUpgrade,
@@ -67,11 +69,9 @@ function buildSessionsQueriesConfig(args: {
   sessionsQueryRoot: ReadonlyArray<string | null>;
   visible: boolean;
   client: RecentProviderSessionsClient | null;
-  cwd: string | null | undefined;
   hostDisconnectedMessage?: string;
 }): SessionsQueryConfig[] {
-  const { providersToFetch, sessionsQueryRoot, visible, client, cwd, hostDisconnectedMessage } =
-    args;
+  const { providersToFetch, sessionsQueryRoot, visible, client, hostDisconnectedMessage } = args;
   if (providersToFetch === null) return [];
   const enabled = visible && Boolean(client);
   return providersToFetch.map((provider) => ({
@@ -81,8 +81,9 @@ function buildSessionsQueriesConfig(args: {
       if (!client) {
         throw new Error(hostDisconnectedMessage ?? i18n.t("workspace.terminal.hostDisconnected"));
       }
+      // Intentionally omit cwd so the sheet lists importable sessions across all folders.
+      // Folder grouping + search let the user narrow results without hiding older history.
       return await client.fetchRecentProviderSessions({
-        ...(cwd ? { cwd } : {}),
         providers: [provider],
         limit: PER_PROVIDER_LIMIT,
       });
@@ -293,10 +294,7 @@ export function ImportSessionSheet({
     [snapshotEntries],
   );
 
-  const sessionsQueryRoot = useMemo(
-    () => ["recent-provider-sessions", cwd ?? null] as const,
-    [cwd],
-  );
+  const sessionsQueryRoot = useMemo(() => ["recent-provider-sessions", "all-cwds"] as const, []);
 
   const queriesConfig = useMemo(
     () =>
@@ -305,10 +303,9 @@ export function ImportSessionSheet({
         sessionsQueryRoot,
         visible,
         client,
-        cwd,
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
       }),
-    [providersToFetch, sessionsQueryRoot, visible, client, cwd, t],
+    [providersToFetch, sessionsQueryRoot, visible, client, t],
   );
 
   const queries = useQueries({ queries: queriesConfig });
@@ -322,6 +319,7 @@ export function ImportSessionSheet({
   const filterProviders = useMemo(() => [...(providersToFetch ?? [])].sort(), [providersToFetch]);
 
   const [selectedProvider, setSelectedProvider] = useState<string>(ALL_FILTER_VALUE);
+  const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const filterAnchorRef = useRef<View>(null);
 
@@ -334,10 +332,24 @@ export function ImportSessionSheet({
     }
   }, [visible, filterProviders, selectedProvider]);
 
-  const visibleEntries = useMemo(() => {
-    if (selectedProvider === ALL_FILTER_VALUE) return aggregatedEntries;
-    return aggregatedEntries.filter((entry) => entry.providerId === selectedProvider);
-  }, [aggregatedEntries, selectedProvider]);
+  useEffect(() => {
+    if (!visible) {
+      setSearchQuery("");
+    }
+  }, [visible]);
+
+  const visibleEntries = useMemo(
+    () =>
+      filterSessionEntries(aggregatedEntries, {
+        selectedProvider,
+        searchQuery,
+      }),
+    [aggregatedEntries, selectedProvider, searchQuery],
+  );
+  const folderGroups = useMemo(
+    () => groupSessionEntriesByFolder(visibleEntries, cwd),
+    [visibleEntries, cwd],
+  );
 
   const filterComboboxOptions = useMemo<ComboboxOption[]>(
     () => [
@@ -477,12 +489,14 @@ export function ImportSessionSheet({
     isQueryingProviders,
     allQueriesSettled,
     selectedProvider,
+    searchQuery,
     aggregatedCount: aggregatedEntries.length,
     visibleCount: visibleEntries.length,
     totalAlreadyImportedCount,
     providerLabelById,
   });
   const showFilter = filterProviders.length > 1;
+  const showFolderHeaders = folderGroups.length > 1;
 
   return (
     <AdaptiveModalSheet
@@ -493,43 +507,53 @@ export function ImportSessionSheet({
       desktopMaxWidth={560}
       snapPoints={IMPORT_SHEET_SNAP_POINTS}
     >
-      {showFilter ? (
-        <View ref={filterAnchorRef} collapsable={false} style={styles.filterTriggerWrap}>
-          <Pressable
-            onPress={handleFilterOpen}
-            style={filterTriggerStyle}
-            testID="import-session-filter-trigger"
-            accessibilityRole="button"
-            accessibilityLabel={`Filter: ${selectedProviderLabel}`}
-          >
-            {selectedProvider === ALL_FILTER_VALUE ? (
-              <Layers size={14} color={theme.colors.foregroundMuted} />
-            ) : (
-              (() => {
-                const ProviderIcon = getProviderIcon(selectedProvider);
-                return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
-              })()
-            )}
-            <Text style={styles.filterTriggerText} numberOfLines={1}>
-              {selectedProviderLabel}
-            </Text>
-            <ChevronDown size={14} color={theme.colors.foregroundMuted} />
-          </Pressable>
-          <Combobox
-            options={filterComboboxOptions}
-            value={selectedProvider}
-            onSelect={handleFilterSelect}
-            renderOption={renderFilterOption}
-            searchable={false}
-            title="Filter by provider"
-            open={isFilterOpen}
-            onOpenChange={setIsFilterOpen}
-            anchorRef={filterAnchorRef}
-            desktopPlacement="bottom-start"
-            desktopPreventInitialFlash
+      <View style={styles.toolbar}>
+        <View style={styles.searchWrap} testID="import-session-search">
+          <SearchInput
+            placeholder={t("importSession.search.placeholder")}
+            onChangeText={setSearchQuery}
+            resetKey={visible ? "open" : "closed"}
+            useBottomSheetInput
           />
         </View>
-      ) : null}
+        {showFilter ? (
+          <View ref={filterAnchorRef} collapsable={false} style={styles.filterTriggerWrap}>
+            <Pressable
+              onPress={handleFilterOpen}
+              style={filterTriggerStyle}
+              testID="import-session-filter-trigger"
+              accessibilityRole="button"
+              accessibilityLabel={`Filter: ${selectedProviderLabel}`}
+            >
+              {selectedProvider === ALL_FILTER_VALUE ? (
+                <Layers size={14} color={theme.colors.foregroundMuted} />
+              ) : (
+                (() => {
+                  const ProviderIcon = getProviderIcon(selectedProvider);
+                  return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
+                })()
+              )}
+              <Text style={styles.filterTriggerText} numberOfLines={1}>
+                {selectedProviderLabel}
+              </Text>
+              <ChevronDown size={14} color={theme.colors.foregroundMuted} />
+            </Pressable>
+            <Combobox
+              options={filterComboboxOptions}
+              value={selectedProvider}
+              onSelect={handleFilterSelect}
+              renderOption={renderFilterOption}
+              searchable={false}
+              title="Filter by provider"
+              open={isFilterOpen}
+              onOpenChange={setIsFilterOpen}
+              anchorRef={filterAnchorRef}
+              desktopPlacement="bottom-start"
+              desktopPreventInitialFlash
+            />
+          </View>
+        ) : null}
+      </View>
       <SheetStatusMessages
         isClientReady={Boolean(client)}
         isSnapshotUnsupported={isSnapshotUnsupported}
@@ -542,15 +566,30 @@ export function ImportSessionSheet({
       />
       {visibleEntries.length > 0 ? (
         <View style={styles.list}>
-          {visibleEntries.map((entry) => (
-            <ImportSessionSheetRow
-              key={`${entry.providerId}:${entry.providerHandleId}`}
-              entry={entry}
-              disabled={importMutation.isPending}
-              importing={importingSessionKey === `${entry.providerId}:${entry.providerHandleId}`}
-              showCwd={!cwd}
-              onImportSession={handleImportSession}
-            />
+          {folderGroups.map((group) => (
+            <View key={group.key} style={styles.folderGroup}>
+              {showFolderHeaders ? (
+                <View style={styles.folderHeader} testID={`import-session-folder-${group.key}`}>
+                  <Folder size={14} color={theme.colors.foregroundMuted} />
+                  <Text style={styles.folderHeaderText} numberOfLines={1}>
+                    {group.label}
+                  </Text>
+                  <Text style={styles.folderHeaderCount}>{group.entries.length}</Text>
+                </View>
+              ) : null}
+              {group.entries.map((entry) => (
+                <ImportSessionSheetRow
+                  key={`${entry.providerId}:${entry.providerHandleId}`}
+                  entry={entry}
+                  disabled={importMutation.isPending}
+                  importing={
+                    importingSessionKey === `${entry.providerId}:${entry.providerHandleId}`
+                  }
+                  showCwd={!showFolderHeaders}
+                  onImportSession={handleImportSession}
+                />
+              ))}
+            </View>
           ))}
         </View>
       ) : null}
@@ -560,8 +599,15 @@ export function ImportSessionSheet({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  filterTriggerWrap: {
+  toolbar: {
+    gap: theme.spacing[2],
     paddingBottom: theme.spacing[2],
+  },
+  searchWrap: {
+    width: "100%",
+  },
+  filterTriggerWrap: {
+    alignSelf: "flex-start",
   },
   filterTrigger: {
     flexDirection: "row",
@@ -587,7 +633,28 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: theme.fontWeight.medium,
   },
   list: {
+    gap: theme.spacing[3],
+  },
+  folderGroup: {
     gap: theme.spacing[1],
+  },
+  folderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1.5],
+    paddingTop: theme.spacing[1],
+    paddingBottom: theme.spacing[1],
+  },
+  folderHeaderText: {
+    flex: 1,
+    minWidth: 0,
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+  },
+  folderHeaderCount: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
   },
   row: {
     flexDirection: "row",

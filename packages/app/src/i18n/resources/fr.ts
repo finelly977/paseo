@@ -317,6 +317,9 @@ export const fr: TranslationResources = {
     filters: {
       all: "Tous",
     },
+    search: {
+      placeholder: "Rechercher titre, prompt ou dossier",
+    },
     status: {
       connectHost: "Connectez-vous à un hôte pour importer des sessions",
       updateHost: "Mettez à jour l'hôte pour importer des sessions.",
@@ -334,12 +337,16 @@ export const fr: TranslationResources = {
       noPrompt: "Aucun aperçu rapide",
     },
     empty: {
+      noSearchMatches: "Aucune session ne correspond à votre recherche.",
       noRecent: "Aucune session récente à importer.",
       alreadyImported: "Toutes les sessions récentes sont déjà importées.",
       noProviderSessions: "Aucune session{{provider}}trouvée.",
     },
     row: {
       importing: "Importation...",
+    },
+    folders: {
+      unknown: "Dossier inconnu",
     },
   },
   workspace: {

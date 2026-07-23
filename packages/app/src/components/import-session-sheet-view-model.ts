@@ -2,7 +2,9 @@ import type { FetchRecentProviderSessionEntry } from "@getpaseo/client/internal/
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { i18n } from "@/i18n/i18next";
 
-export const PER_PROVIDER_LIMIT = 15;
+// Protocol allows up to 200 per request; keep the full budget so the sheet is not
+// limited to a handful of recent sessions.
+export const PER_PROVIDER_LIMIT = 200;
 export const ALL_FILTER_VALUE = "__all__";
 
 export function requiresImportSessionsHostUpgrade(input: {
@@ -123,6 +125,7 @@ export interface EmptyStateInputs {
   isQueryingProviders: boolean;
   allQueriesSettled: boolean;
   selectedProvider: string;
+  searchQuery?: string;
   aggregatedCount: number;
   visibleCount: number;
   totalAlreadyImportedCount: number;
@@ -142,6 +145,12 @@ export function computeEmptyState(input: EmptyStateInputs): {
   if (!showEmptyState) {
     return { showEmptyState, emptyStateTitle: "" };
   }
+  if (input.searchQuery?.trim()) {
+    return {
+      showEmptyState,
+      emptyStateTitle: i18n.t("importSession.empty.noSearchMatches"),
+    };
+  }
   const isFilteredEmpty = input.selectedProvider !== ALL_FILTER_VALUE && input.aggregatedCount > 0;
   if (isFilteredEmpty) {
     const label = input.providerLabelById.get(input.selectedProvider) ?? input.selectedProvider;
@@ -157,4 +166,101 @@ export function computeEmptyState(input: EmptyStateInputs): {
     };
   }
   return { showEmptyState, emptyStateTitle: i18n.t("importSession.empty.noRecent") };
+}
+
+export function filterSessionEntries(
+  entries: readonly FetchRecentProviderSessionEntry[],
+  input: {
+    selectedProvider: string;
+    searchQuery: string;
+  },
+): FetchRecentProviderSessionEntry[] {
+  const query = input.searchQuery.trim().toLowerCase();
+  return entries.filter((entry) => {
+    if (
+      input.selectedProvider !== ALL_FILTER_VALUE &&
+      entry.providerId !== input.selectedProvider
+    ) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const haystack = [
+      entry.title,
+      entry.firstPromptPreview,
+      entry.lastPromptPreview,
+      entry.cwd,
+      entry.providerLabel,
+      entry.providerId,
+      entry.providerHandleId,
+    ]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .join("\n")
+      .toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+export function normalizeFolderKey(cwd: string | null | undefined): string {
+  const trimmed = cwd?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  // Compare folders case-insensitively and ignore trailing separators.
+  return trimmed.replace(/[\\/]+$/, "").toLowerCase();
+}
+
+export function getFolderLabel(cwd: string | null | undefined): string {
+  const trimmed = cwd?.trim() ?? "";
+  if (!trimmed) {
+    return i18n.t("importSession.folders.unknown");
+  }
+  return trimmed;
+}
+
+export interface ImportSessionFolderGroup {
+  key: string;
+  label: string;
+  entries: FetchRecentProviderSessionEntry[];
+}
+
+/**
+ * Group sessions by working directory while preserving last-activity order
+ * (first-seen folder order follows the already sorted entry list).
+ * When `preferredCwd` is set, that folder is pinned to the top.
+ */
+export function groupSessionEntriesByFolder(
+  entries: readonly FetchRecentProviderSessionEntry[],
+  preferredCwd?: string | null,
+): ImportSessionFolderGroup[] {
+  const groups: ImportSessionFolderGroup[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const entry of entries) {
+    const key = normalizeFolderKey(entry.cwd);
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        key: key || "__unknown__",
+        label: getFolderLabel(entry.cwd),
+        entries: [entry],
+      });
+      continue;
+    }
+    groups[existingIndex]?.entries.push(entry);
+  }
+  const preferredKey = normalizeFolderKey(preferredCwd);
+  if (!preferredKey || groups.length <= 1) {
+    return groups;
+  }
+  const preferredIndex = indexByKey.get(preferredKey);
+  if (preferredIndex === undefined || preferredIndex === 0) {
+    return groups;
+  }
+  const preferred = groups[preferredIndex];
+  if (!preferred) {
+    return groups;
+  }
+  return [preferred, ...groups.filter((_, index) => index !== preferredIndex)];
 }

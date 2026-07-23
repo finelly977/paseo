@@ -313,6 +313,9 @@ export const ar: TranslationResources = {
     filters: {
       all: "الجميع",
     },
+    search: {
+      placeholder: "ابحث في العنوان أو الموجه أو المجلد",
+    },
     status: {
       connectHost: "اتصل بمضيف لاستيراد الجلسات",
       updateHost: "قم بتحديث المضيف لاستيراد الجلسات.",
@@ -330,12 +333,16 @@ export const ar: TranslationResources = {
       noPrompt: "لا توجد معاينة سريعة",
     },
     empty: {
+      noSearchMatches: "لا توجد جلسات تطابق البحث.",
       noRecent: "لا توجد جلسات حديثة لاستيرادها.",
       alreadyImported: "تم بالفعل استيراد كافة الجلسات الأخيرة.",
       noProviderSessions: "لم يتم العثور على جلسات{{provider}}.",
     },
     row: {
       importing: "جارٍ الاستيراد...",
+    },
+    folders: {
+      unknown: "مجلد غير معروف",
     },
   },
   workspace: {

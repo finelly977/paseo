@@ -316,6 +316,9 @@ export const ja: TranslationResources = {
     filters: {
       all: "すべて",
     },
+    search: {
+      placeholder: "タイトル、プロンプト、フォルダを検索",
+    },
     status: {
       connectHost: "セッションをインポートするにはホストに接続してください",
       updateHost: "セッションをインポートするにはホストを更新してください。",
@@ -333,12 +336,16 @@ export const ja: TranslationResources = {
       noPrompt: "プロンプトのプレビューなし",
     },
     empty: {
+      noSearchMatches: "検索に一致するセッションはありません。",
       noRecent: "インポートする最近のセッションがありません。",
       alreadyImported: "最近のセッションはすでにすべてインポートされています。",
       noProviderSessions: "{{provider}}のセッションが見つかりません。",
     },
     row: {
       importing: "インポート中...",
+    },
+    folders: {
+      unknown: "不明なフォルダ",
     },
   },
   workspace: {

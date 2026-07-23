@@ -316,6 +316,9 @@ export const ptBR: TranslationResources = {
     filters: {
       all: "Tudo",
     },
+    search: {
+      placeholder: "Buscar título, prompt ou pasta",
+    },
     status: {
       connectHost: "Conecte-se a um host para importar sessões",
       updateHost: "Atualize o host para importar sessões.",
@@ -333,12 +336,16 @@ export const ptBR: TranslationResources = {
       noPrompt: "Nenhuma prévia de prompt",
     },
     empty: {
+      noSearchMatches: "Nenhuma sessão corresponde à busca.",
       noRecent: "Nenhuma sessão recente para importar.",
       alreadyImported: "Todas as sessões recentes já foram importadas.",
       noProviderSessions: "Nenhuma sessão de {{provider}} encontrada.",
     },
     row: {
       importing: "Importando...",
+    },
+    folders: {
+      unknown: "Pasta desconhecida",
     },
   },
   workspace: {

@@ -313,6 +313,9 @@ export const zhCN: TranslationResources = {
     filters: {
       all: "全部",
     },
+    search: {
+      placeholder: "搜索标题、提示词或文件夹",
+    },
     status: {
       connectHost: "连接到 Host 以导入会话",
       updateHost: "更新 Host 以导入会话。",
@@ -330,12 +333,16 @@ export const zhCN: TranslationResources = {
       noPrompt: "没有 prompt 预览",
     },
     empty: {
+      noSearchMatches: "没有匹配搜索的会话。",
       noRecent: "没有可导入的最近会话。",
       alreadyImported: "所有最近会话都已导入。",
       noProviderSessions: "没有找到 {{provider}} 会话。",
     },
     row: {
       importing: "正在导入...",
+    },
+    folders: {
+      unknown: "未知文件夹",
     },
   },
   workspace: {

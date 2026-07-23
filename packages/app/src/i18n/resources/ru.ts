@@ -315,6 +315,9 @@ export const ru: TranslationResources = {
     filters: {
       all: "Все",
     },
+    search: {
+      placeholder: "Поиск по названию, prompt или папке",
+    },
     status: {
       connectHost: "Подключитесь к хосту, чтобы импортировать сеансы",
       updateHost: "Обновите хост для импорта сеансов.",
@@ -332,12 +335,16 @@ export const ru: TranslationResources = {
       noPrompt: "Нет быстрого предварительного просмотра",
     },
     empty: {
+      noSearchMatches: "Нет сессий, соответствующих поиску.",
       noRecent: "Нет последних сеансов для импорта.",
       alreadyImported: "Все последние сеансы уже импортированы.",
       noProviderSessions: "Сеансы{{provider}}не найдены.",
     },
     row: {
       importing: "Импорт...",
+    },
+    folders: {
+      unknown: "Неизвестная папка",
     },
   },
   workspace: {
