@@ -1,4 +1,5 @@
 import type { FetchRecentProviderSessionEntry } from "@getpaseo/client/internal/daemon-client";
+import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@getpaseo/protocol/agent-title-limits";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { i18n } from "@/i18n/i18next";
 
@@ -96,7 +97,7 @@ export function collectErroredProviderLabels(
   return labels;
 }
 
-export function getSessionTitle(entry: FetchRecentProviderSessionEntry): string {
+function getPreferredSessionTitle(entry: FetchRecentProviderSessionEntry): string | null {
   const title = entry.title?.trim();
   if (title) {
     return title;
@@ -105,7 +106,15 @@ export function getSessionTitle(entry: FetchRecentProviderSessionEntry): string 
   if (firstPromptPreview) {
     return firstPromptPreview;
   }
-  return i18n.t("importSession.preview.untitledSession");
+  return null;
+}
+
+export function getSessionTitle(entry: FetchRecentProviderSessionEntry): string {
+  return getPreferredSessionTitle(entry) ?? i18n.t("importSession.preview.untitledSession");
+}
+
+export function getImportSessionTitle(entry: FetchRecentProviderSessionEntry): string | null {
+  return getPreferredSessionTitle(entry)?.slice(0, MAX_EXPLICIT_AGENT_TITLE_CHARS) ?? null;
 }
 
 export function getPromptPreview(entry: FetchRecentProviderSessionEntry): string {

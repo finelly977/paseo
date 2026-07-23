@@ -167,6 +167,7 @@ const PROJECT_GITHUB_CLONE_TIMEOUT_MS = 5 * 60 * 1000;
 interface ImportAgentInputBase {
   cwd?: string;
   workspaceId?: string;
+  title?: string | null;
   labels?: Record<string, string>;
 }
 
@@ -2592,6 +2593,7 @@ export class DaemonClient {
         : { provider: input.provider, sessionId: input.sessionId }),
       ...(input.cwd ? { cwd: input.cwd } : {}),
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+      ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.labels && Object.keys(input.labels).length > 0 ? { labels: input.labels } : {}),
     });
 

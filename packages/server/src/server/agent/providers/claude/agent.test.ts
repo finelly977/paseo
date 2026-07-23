@@ -1082,6 +1082,58 @@ describe("normalizeClaudeAskUserQuestionUpdatedInput", () => {
 });
 
 describe("ClaudeAgentClient.listImportableSessions", () => {
+  test("优先读取 Claude CLI 最新的自定义会话标题", async () => {
+    const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-import-"));
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = tmpConfigDir;
+
+    try {
+      const cwd = path.join(tmpConfigDir, "custom-title-project");
+      const projectDir = claudeProjectDirSync(cwd, { configDir: tmpConfigDir });
+      await fs.mkdir(projectDir, { recursive: true });
+      const sessionFile = path.join(projectDir, "custom-title-session.jsonl");
+      await fs.writeFile(
+        sessionFile,
+        `${JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "首条用户消息" },
+          cwd,
+          sessionId: "custom-title-session",
+        })}\n${JSON.stringify({
+          type: "custom-title",
+          customTitle: "Claude CLI 旧标题",
+          sessionId: "custom-title-session",
+        })}\n${JSON.stringify({
+          type: "custom-title",
+          customTitle: "Claude CLI 最新标题",
+          sessionId: "custom-title-session",
+        })}\n`,
+        "utf-8",
+      );
+
+      const client = new ClaudeAgentClient({
+        logger: createTestLogger(),
+        resolveBinary: async () => "/test/claude/bin",
+      });
+
+      await expect(client.listImportableSessions({ cwd })).resolves.toEqual([
+        expect.objectContaining({
+          providerHandleId: "custom-title-session",
+          cwd,
+          title: "Claude CLI 最新标题",
+          firstPromptPreview: "首条用户消息",
+        }),
+      ]);
+    } finally {
+      if (previousConfigDir === undefined) {
+        delete process.env.CLAUDE_CONFIG_DIR;
+      } else {
+        process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+      }
+      await fs.rm(tmpConfigDir, { recursive: true, force: true });
+    }
+  });
+
   test("omits sessions tagged as archived", async () => {
     const tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "paseo-claude-import-"));
     const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;

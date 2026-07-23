@@ -1134,6 +1134,7 @@ export class AgentManager {
     providerHandleId: string;
     cwd: string;
     workspaceId: string;
+    title?: string;
     labels?: Record<string, string>;
   }): Promise<ManagedAgent> {
     return this.trackAgentRegistrationOperation(this.importProviderSessionInternal(input));
@@ -1144,6 +1145,7 @@ export class AgentManager {
     providerHandleId: string;
     cwd: string;
     workspaceId: string;
+    title?: string;
     labels?: Record<string, string>;
   }): Promise<ManagedAgent> {
     this.assertAcceptingAgentRegistrations();
@@ -1159,6 +1161,7 @@ export class AgentManager {
       {
         provider: input.provider,
         cwd: input.cwd,
+        ...(input.title ? { title: input.title } : {}),
       },
       resolvedAgentId,
     );
@@ -1168,13 +1171,17 @@ export class AgentManager {
       {
         providerHandleId: input.providerHandleId,
         cwd: input.cwd,
+        ...(input.title ? { title: input.title } : {}),
       },
       { config: providerLaunchConfig, storedConfig, launchContext },
     );
     let handedToRegistration = false;
     try {
+      const providerConfig = stripInternalPaseoMcpServer(imported.config);
       const importedConfig = await this.normalizeConfig(
-        stripInternalPaseoMcpServer(imported.config),
+        input.title && !providerConfig.title
+          ? { ...providerConfig, title: input.title }
+          : providerConfig,
       );
       const timelineRows = buildImportedTimelineRows(imported.timeline);
       const initialTitle = resolveImportedAgentTitle(importedConfig, timelineRows);
@@ -1805,7 +1812,7 @@ export class AgentManager {
 
   async unarchiveSnapshot(
     agentId: string,
-    updates?: { workspaceId?: string; labels?: AgentLabelPatch },
+    updates?: { workspaceId?: string; title?: string; labels?: AgentLabelPatch },
   ): Promise<boolean> {
     const registry = this.requireRegistry();
     const record = await registry.get(agentId);
@@ -1818,6 +1825,7 @@ export class AgentManager {
     await registry.upsert({
       ...record,
       ...(updates?.workspaceId ? { workspaceId: updates.workspaceId } : {}),
+      ...(updates?.title ? { title: updates.title } : {}),
       ...(updates?.labels ? { labels: applyLabelPatch(record.labels, updates.labels) } : {}),
       archivedAt: null,
       updatedAt: new Date().toISOString(),

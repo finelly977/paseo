@@ -590,13 +590,17 @@ test("runInImportWorkspace rejects a requested workspace with a different cwd", 
 test("runInImportWorkspace creates one fresh workspace for an untargeted import", async () => {
   const cwd = path.join(tmpDir, "fresh-import");
   mkdirSync(cwd);
+  gitRoots.add(cwd);
+  gitBranches.set(cwd, "feature/auth-fix");
 
   const result = await provisioning.runInImportWorkspace(
-    { cwd },
+    { cwd, title: "CLI session title" },
     async (workspace) => workspace.workspaceId,
   );
 
   expect(result.value).toBe(result.createdWorkspace?.workspaceId);
+  expect(result.createdWorkspace?.title).toBe("CLI session title");
+  expect(result.createdWorkspace?.displayName).toBe("feature/auth-fix");
   expect(await workspaceRegistry.list()).toEqual([result.createdWorkspace]);
 });
 

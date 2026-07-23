@@ -3023,6 +3023,113 @@ test("fetch_recent_provider_sessions_request reports filteredAlreadyImportedCoun
   ]);
 });
 
+test("fetch_recent_provider_sessions_request 修复旧会话标题且保留手动工作区标题", async () => {
+  const emitted: Array<{ type: string; payload: unknown }> = [];
+  const session = createSessionForWorkspaceTests();
+  const agentId = "00000000-0000-4000-8000-000000000635";
+  const workspaceId = "ws-imported-title-repair";
+  const cwd = path.resolve("/tmp/imported-title-repair");
+  let storedAgent = {
+    ...makeStoredAgent({
+      id: agentId,
+      cwd,
+      updatedAt: "2026-04-30T12:00:00.000Z",
+    }),
+    workspaceId,
+    title: "首条用户消息",
+    persistence: {
+      provider: "codex",
+      sessionId: "imported-title-session",
+      nativeHandle: "imported-title-session",
+    },
+  } satisfies StoredAgentRecord;
+  let workspace = createPersistedWorkspaceRecord({
+    workspaceId,
+    projectId: "project-imported-title-repair",
+    cwd,
+    kind: "local_checkout",
+    displayName: "feature/auth-fix",
+    branch: "feature/auth-fix",
+    createdAt: "2026-04-30T12:00:00.000Z",
+    updatedAt: "2026-04-30T12:00:00.000Z",
+  });
+  const updatedWorkspaceIds: string[][] = [];
+
+  session.emit = (message) => emitted.push(message as { type: string; payload: unknown });
+  session.agentManager.listAgents = () => [];
+  session.agentManager.getAgent = () => undefined;
+  session.agentStorage.list = async () => [storedAgent];
+  session.agentStorage.setTitle = async (_agentId: string, title: string) => {
+    storedAgent = { ...storedAgent, title };
+  };
+  session.agentManager.listImportableSessions = async () => [
+    makeImportableProviderSession({
+      provider: "codex",
+      sessionId: "imported-title-session",
+      cwd,
+      title: "Codex CLI 真实标题",
+      firstPrompt: "首条用户消息",
+      lastActivityAt: "2026-04-30T12:00:00.000Z",
+    }),
+  ];
+  session.workspaceRegistry.get = async (lookupWorkspaceId: string) =>
+    lookupWorkspaceId === workspaceId ? workspace : null;
+  session.workspaceRegistry.update = async (lookupWorkspaceId: string, updater) => {
+    if (lookupWorkspaceId !== workspaceId) {
+      return null;
+    }
+    workspace = updater(workspace);
+    return workspace;
+  };
+  session.emitWorkspaceUpdatesForWorkspaceIds = async (workspaceIds: Iterable<string>) => {
+    updatedWorkspaceIds.push(Array.from(workspaceIds));
+  };
+
+  await session.handleMessage({
+    type: "fetch_recent_provider_sessions_request",
+    requestId: "req-imported-title-repair",
+    providers: ["codex"],
+  });
+
+  expect(storedAgent.title).toBe("Codex CLI 真实标题");
+  expect(workspace.displayName).toBe("feature/auth-fix");
+  expect(workspace.title).toBe("Codex CLI 真实标题");
+  expect(updatedWorkspaceIds).toEqual([[workspaceId]]);
+  expect(emitted).toEqual([
+    {
+      type: "fetch_recent_provider_sessions_response",
+      payload: {
+        requestId: "req-imported-title-repair",
+        entries: [],
+        filteredAlreadyImportedCount: 1,
+      },
+    },
+  ]);
+
+  workspace = { ...workspace, title: "用户手动工作区标题" };
+  emitted.length = 0;
+  updatedWorkspaceIds.length = 0;
+
+  await session.handleMessage({
+    type: "fetch_recent_provider_sessions_request",
+    requestId: "req-imported-title-repair-manual-workspace",
+    providers: ["codex"],
+  });
+
+  expect(workspace.title).toBe("用户手动工作区标题");
+  expect(updatedWorkspaceIds).toEqual([]);
+  expect(emitted).toEqual([
+    {
+      type: "fetch_recent_provider_sessions_response",
+      payload: {
+        requestId: "req-imported-title-repair-manual-workspace",
+        entries: [],
+        filteredAlreadyImportedCount: 1,
+      },
+    },
+  ]);
+});
+
 test("fetch_agent_request still resolves archived historical agents", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = createSessionForWorkspaceTests();
@@ -3988,12 +4095,14 @@ test("import_agent_request registers a workspace for a never-seen cwd", async ()
     providerId: "codex",
     providerHandleId: "session-xyz",
     cwd: importedCwd,
+    title: "CLI session title",
   });
 
   const importedWorkspace = Array.from(workspaces.values()).find(
     (workspace) => workspace.cwd === importedCwd,
   );
   expect(importedWorkspace).toBeTruthy();
+  expect(importedWorkspace?.title).toBe("CLI session title");
   const workspaceUpdates = filterByType(emitted, "workspace_update");
   expect(workspaceUpdates.length).toBeGreaterThan(0);
   expect(

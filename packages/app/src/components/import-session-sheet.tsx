@@ -24,6 +24,7 @@ import {
   collectErroredProviderLabels,
   computeEmptyState,
   filterSessionEntries,
+  getImportSessionTitle,
   getPromptPreview,
   getSessionTitle,
   groupSessionEntriesByFolder,
@@ -424,11 +425,13 @@ export function ImportSessionSheet({
       if (!entry.cwd) {
         throw new Error("Session is missing a working directory");
       }
+      const title = getImportSessionTitle(entry);
       const agent = await client.importAgent({
         providerId: entry.providerId,
         providerHandleId: entry.providerHandleId,
         cwd: entry.cwd,
         ...(workspaceId ? { workspaceId } : {}),
+        ...(title ? { title } : {}),
       });
       return agent;
     },

@@ -529,6 +529,7 @@ export interface ImportableProviderSession {
 export interface ImportProviderSessionInput {
   providerHandleId: string;
   cwd: string;
+  title?: string;
 }
 
 export interface ImportProviderSessionContext {

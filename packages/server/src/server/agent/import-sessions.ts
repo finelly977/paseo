@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Logger } from "pino";
+import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@getpaseo/protocol/agent-title-limits";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import type {
   AgentManager,
@@ -10,6 +11,7 @@ import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
 import type { AgentPersistenceHandle, AgentProvider } from "./agent-sdk-types.js";
 import { ensureAgentLoaded, type AgentLoaderManager } from "./agent-loading.js";
 import { unarchiveAgentState } from "./agent-prompt.js";
+import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import { toRecentProviderSessionDescriptorPayload } from "./agent-projections.js";
 import type { WorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
 import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
@@ -46,6 +48,7 @@ export interface NormalizedImportAgentRequest {
   providerHandleId: string;
   cwd?: string;
   workspaceId?: string;
+  title?: string;
   labels?: Record<string, string>;
   requestId: string;
 }
@@ -70,6 +73,14 @@ export interface ListImportableProviderSessionsInput {
 export interface ListImportableProviderSessionsResult {
   entries: RecentProviderSessionDescriptorPayload[];
   filteredAlreadyImportedCount: number;
+  titleRepairs: ImportedSessionTitleRepair[];
+}
+
+export interface ImportedSessionTitleRepair {
+  agentId: string;
+  workspaceId?: string;
+  title: string;
+  updateAgentTitle: boolean;
 }
 
 export interface ImportProviderSessionInput {
@@ -109,6 +120,7 @@ export function normalizeImportAgentRequest(
     providerHandleId,
     cwd: msg.cwd,
     workspaceId: msg.workspaceId,
+    ...(msg.title ? { title: msg.title } : {}),
     labels: msg.labels,
     requestId: msg.requestId,
   };
@@ -135,6 +147,7 @@ export async function listImportableProviderSessions(
     cwd: request.cwd,
   });
   let filteredAlreadyImportedCount = 0;
+  const titleRepairs = new Map<string, ImportedSessionTitleRepair>();
   const candidates: ManagedImportableProviderSession[] = [];
   const matchesRequestCwd = request.cwd ? createRealpathAwarePathMatcher(request.cwd) : null;
   for (const session of sessions) {
@@ -147,10 +160,21 @@ export async function listImportableProviderSessions(
     if (isMetadataGenerationSession(session)) {
       continue;
     }
-    if (
-      importedHandles.has(toProviderSessionHandleKey(session.provider, session.providerHandleId))
-    ) {
+    const providerHandleKey = toProviderSessionHandleKey(
+      session.provider,
+      session.providerHandleId,
+    );
+    if (importedHandles.has(providerHandleKey)) {
       filteredAlreadyImportedCount += 1;
+      const storedOwner = importedSessions.recordsByHandle.get(providerHandleKey);
+      const titleRepair = buildImportedSessionTitleRepair(
+        session,
+        storedOwner,
+        importedSessions.rootAgentCountsByWorkspaceId,
+      );
+      if (titleRepair) {
+        titleRepairs.set(titleRepair.agentId, titleRepair);
+      }
       continue;
     }
     candidates.push(session);
@@ -166,7 +190,47 @@ export async function listImportableProviderSessions(
       }),
   );
 
-  return { entries, filteredAlreadyImportedCount };
+  return {
+    entries,
+    filteredAlreadyImportedCount,
+    titleRepairs: Array.from(titleRepairs.values()),
+  };
+}
+
+function buildImportedSessionTitleRepair(
+  session: ManagedImportableProviderSession,
+  storedOwner: StoredAgentRecord | undefined,
+  rootAgentCountsByWorkspaceId: ReadonlyMap<string, number>,
+): ImportedSessionTitleRepair | null {
+  const nativeTitle = session.title?.trim().slice(0, MAX_EXPLICIT_AGENT_TITLE_CHARS);
+  if (!storedOwner?.id || storedOwner.internal || !nativeTitle) {
+    return null;
+  }
+
+  const currentTitle = storedOwner.title?.trim() ?? "";
+  const firstPromptPreview = session.firstPromptPreview?.trim() ?? "";
+  const provisionalTitle = firstPromptPreview
+    ? resolveCreateAgentTitles({ initialPrompt: firstPromptPreview }).provisionalTitle
+    : null;
+  const updateAgentTitle =
+    currentTitle !== nativeTitle &&
+    (!currentTitle || currentTitle === firstPromptPreview || currentTitle === provisionalTitle);
+  const workspaceId = storedOwner.workspaceId;
+  const repairWorkspaceTitle = Boolean(
+    workspaceId &&
+    !getParentAgentIdFromLabels(storedOwner.labels) &&
+    rootAgentCountsByWorkspaceId.get(workspaceId) === 1,
+  );
+  if (!updateAgentTitle && !repairWorkspaceTitle) {
+    return null;
+  }
+
+  return {
+    agentId: storedOwner.id,
+    ...(repairWorkspaceTitle && workspaceId ? { workspaceId } : {}),
+    title: nativeTitle,
+    updateAgentTitle,
+  };
 }
 
 export async function importProviderSession(
@@ -179,7 +243,11 @@ export async function importProviderSession(
   const key = await resolveProviderSessionImportMutationKey(input);
   return serializeProviderSessionImport(input.agentManager, key, async () => {
     const placement = await input.workspaceProvisioning.runInImportWorkspace(
-      { cwd, requestedWorkspaceId: input.request.workspaceId },
+      {
+        cwd,
+        requestedWorkspaceId: input.request.workspaceId,
+        ...(input.request.title ? { title: input.request.title } : {}),
+      },
       (workspace) => importProviderSessionNow(input, cwd, workspace.workspaceId),
     );
     return { ...placement.value, createdWorkspace: placement.createdWorkspace };
@@ -215,6 +283,7 @@ async function importProviderSessionNow(
     }
     await unarchiveAgentState(input.agentStorage, input.agentManager, archivedRecord.id, {
       workspaceId,
+      ...(input.request.title ? { title: input.request.title } : {}),
       labels: Object.keys(labelPatch).length > 0 ? labelPatch : undefined,
     });
     try {
@@ -238,6 +307,7 @@ async function importProviderSessionNow(
     providerHandleId,
     cwd,
     workspaceId,
+    ...(input.request.title ? { title: input.request.title } : {}),
     labels,
   });
   await unarchiveAgentState(input.agentStorage, input.agentManager, snapshot.id);
@@ -339,11 +409,18 @@ async function collectImportedProviderSessions(
   agentManager: Pick<AgentManager, "listAgents">,
   agentStorage: Pick<AgentStorage, "list">,
   providerFilter: Set<string> | undefined,
-): Promise<{ handles: Set<string>; count: number }> {
+): Promise<{
+  handles: Set<string>;
+  count: number;
+  recordsByHandle: Map<string, StoredAgentRecord>;
+  rootAgentCountsByWorkspaceId: Map<string, number>;
+}> {
   const handles = new Set<string>();
   const sessions = new Set<string>();
   const records = await agentStorage.list();
   const storedRecordsById = new Map(records.map((record) => [record.id, record]));
+  const recordsByHandle = new Map<string, StoredAgentRecord>();
+  const rootAgentIdsByWorkspaceId = new Map<string, Set<string>>();
 
   const collect = (
     provider: AgentProvider | StoredAgentRecord["provider"] | string,
@@ -366,9 +443,27 @@ async function collectImportedProviderSessions(
       continue;
     }
     collect(record.provider, record.persistence);
+    for (const key of getProviderSessionHandleKeys(record.provider, record.persistence)) {
+      recordsByHandle.set(key, record);
+    }
+    if (record.workspaceId && !record.internal && !getParentAgentIdFromLabels(record.labels)) {
+      const agentIds = rootAgentIdsByWorkspaceId.get(record.workspaceId) ?? new Set<string>();
+      agentIds.add(record.id);
+      rootAgentIdsByWorkspaceId.set(record.workspaceId, agentIds);
+    }
   }
 
-  return { handles, count: sessions.size };
+  return {
+    handles,
+    count: sessions.size,
+    recordsByHandle,
+    rootAgentCountsByWorkspaceId: new Map(
+      Array.from(rootAgentIdsByWorkspaceId, ([workspaceId, agentIds]) => [
+        workspaceId,
+        agentIds.size,
+      ]),
+    ),
+  };
 }
 
 function toProviderSessionHandleKey(provider: string, providerHandleId: string): string {
@@ -390,8 +485,22 @@ function collectProviderSessionHandleKeys(
     return;
   }
 
-  target.add(toProviderSessionHandleKey(provider, persistence.sessionId));
-  if (persistence.nativeHandle) {
-    target.add(toProviderSessionHandleKey(provider, persistence.nativeHandle));
+  for (const key of getProviderSessionHandleKeys(provider, persistence)) {
+    target.add(key);
   }
+}
+
+function getProviderSessionHandleKeys(
+  provider: AgentProvider | StoredAgentRecord["provider"] | string,
+  persistence: AgentPersistenceHandle | null | undefined,
+): string[] {
+  if (!persistence) {
+    return [];
+  }
+  return [
+    toProviderSessionHandleKey(provider, persistence.sessionId),
+    ...(persistence.nativeHandle
+      ? [toProviderSessionHandleKey(provider, persistence.nativeHandle)]
+      : []),
+  ];
 }

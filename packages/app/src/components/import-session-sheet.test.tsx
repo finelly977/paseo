@@ -520,6 +520,7 @@ describe("ImportSessionSheet", () => {
         providerId: "claude",
         providerHandleId: "provider-thread-1",
         cwd: "/repo/paseo-realpath",
+        title: "Import me",
       });
     });
     expect(onImportedAgent).toHaveBeenCalledWith("agent-imported");
@@ -556,6 +557,7 @@ describe("ImportSessionSheet", () => {
       providerId: "claude",
       providerHandleId: "provider-thread-1",
       cwd: "/repo/paseo",
+      title: "Import me",
     });
     expect(onImportedAgent).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
@@ -834,6 +836,7 @@ describe("ImportSessionSheet", () => {
         providerId: "claude",
         providerHandleId: "provider-thread-1",
         cwd: "/home/me/work/other-project",
+        title: "Import me",
       });
     });
     expect(onImported).toHaveBeenCalledTimes(1);

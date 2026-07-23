@@ -26,6 +26,7 @@ export interface ResolveOrCreateWorkspaceIdInput {
 export interface ImportWorkspaceInput {
   cwd: string;
   requestedWorkspaceId?: string;
+  title?: string | null;
 }
 
 export interface ImportWorkspaceResult<T> {
@@ -112,7 +113,7 @@ export function createWorkspaceProvisioningService(deps: {
     }
 
     const projectsBeforeImport = await projectRegistry.list();
-    const workspace = await createWorkspaceForDirectory(input.cwd);
+    const workspace = await createWorkspaceForDirectory(input.cwd, input.title);
     const previousProject =
       projectsBeforeImport.find((project) => project.projectId === workspace.projectId) ?? null;
 

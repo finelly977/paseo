@@ -1556,7 +1556,9 @@ export class ClaudeAgentClient implements AgentClient {
       },
     );
     const parsed = await Promise.all(
-      candidates.map((candidate) => parseClaudeSessionDescriptor(candidate.path, candidate.mtime)),
+      candidates.map((candidate) =>
+        parseClaudeSessionDescriptor(candidate.path, candidate.mtime, this.logger),
+      ),
     );
     const validSessions = parsed.filter(
       (session): session is ImportableProviderSession => session !== null,
@@ -5582,6 +5584,31 @@ function applyClaudeSessionEntryToAccumulator(
   }
 }
 
+function readLatestClaudeCustomTitle(
+  rawLines: readonly string[],
+  filePath: string,
+  logger: Logger,
+): string | null {
+  for (let index = rawLines.length - 1; index >= 0; index -= 1) {
+    const line = rawLines[index]?.trim();
+    if (!line || !line.includes('"custom-title"') || !line.includes('"customTitle"')) {
+      continue;
+    }
+    try {
+      const entry = toObjectRecord(JSON.parse(line));
+      if (entry?.type === "custom-title" && typeof entry.customTitle === "string") {
+        return entry.customTitle.trim() || null;
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error, filePath, lineNumber: index + 1 },
+        "解析 Claude 自定义会话标题记录失败",
+      );
+    }
+  }
+  return null;
+}
+
 function readLatestClaudeSessionTag(rawLines: readonly string[]): string | null {
   for (let index = rawLines.length - 1; index >= 0; index -= 1) {
     const line = rawLines[index]?.trim();
@@ -5603,6 +5630,7 @@ function readLatestClaudeSessionTag(rawLines: readonly string[]): string | null 
 async function parseClaudeSessionDescriptor(
   filePath: string,
   mtime: Date,
+  logger: Logger,
 ): Promise<ImportableProviderSession | null> {
   let content: string;
   try {
@@ -5644,7 +5672,9 @@ async function parseClaudeSessionDescriptor(
   return {
     providerHandleId: sessionId,
     cwd,
-    title: (title ?? "").trim() || `Claude session ${sessionId.slice(0, 8)}`,
+    title:
+      readLatestClaudeCustomTitle(rawLines, filePath, logger) ??
+      ((title ?? "").trim() || `Claude session ${sessionId.slice(0, 8)}`),
     firstPromptPreview: acc.firstPromptPreview,
     lastPromptPreview: acc.lastPromptPreview,
     lastActivityAt: mtime,

@@ -7,6 +7,7 @@ import {
   collectErroredProviderLabels,
   computeEmptyState,
   filterSessionEntries,
+  getImportSessionTitle,
   getPromptPreview,
   getSessionTitle,
   groupSessionEntriesByFolder,
@@ -206,6 +207,26 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(entry({ title: null, firstPromptPreview: "   " }))).toBe(
       "Untitled session",
     );
+  });
+});
+
+describe("getImportSessionTitle", () => {
+  it("优先使用 CLI 返回的真实标题", () => {
+    expect(
+      getImportSessionTitle(
+        entry({ title: "  CLI 会话标题  ", firstPromptPreview: "首条用户消息" }),
+      ),
+    ).toBe("CLI 会话标题");
+  });
+
+  it("CLI 没有标题时使用首条用户消息，避免退回分支名", () => {
+    expect(
+      getImportSessionTitle(entry({ title: null, firstPromptPreview: "  首条用户消息  " })),
+    ).toBe("首条用户消息");
+  });
+
+  it("标题和首条消息都为空时不伪造名称", () => {
+    expect(getImportSessionTitle(entry({ title: null, firstPromptPreview: "   " }))).toBeNull();
   });
 });
 

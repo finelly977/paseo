@@ -1,7 +1,7 @@
 import equal from "fast-deep-equal";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
-import { resolve, sep } from "path";
+import { basename, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import {
@@ -111,6 +111,7 @@ import {
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import {
+  type ImportedSessionTitleRepair,
   ImportSessionsRequestError,
   importProviderSession,
   listImportableProviderSessions,
@@ -283,6 +284,15 @@ function clientUsesLegacyWorkspaceRestore(appVersion: string | null): boolean {
   return (
     appVersion !== null && !isAppVersionAtLeast(appVersion, MIN_VERSION_EXPLICIT_WORKSPACE_RECOVERY)
   );
+}
+
+function isDefaultImportedWorkspaceName(workspace: PersistedWorkspaceRecord): boolean {
+  if (workspace.title !== null) {
+    return false;
+  }
+  const displayName = workspace.displayName.trim();
+  const branch = workspace.branch?.trim();
+  return displayName === branch || displayName === basename(workspace.cwd);
 }
 
 type DeleteFencedAgentStorage = AgentStorage & {
@@ -4687,6 +4697,7 @@ export class Session {
         agentStorage: this.agentStorage,
         providerSnapshotManager: this.providerSnapshotManager,
       });
+      await this.applyImportedSessionTitleRepairs(result.titleRepairs);
       this.emit({
         type: "fetch_recent_provider_sessions_response",
         payload: {
@@ -4716,6 +4727,52 @@ export class Session {
           error: message,
           code,
         },
+      });
+    }
+  }
+
+  private async applyImportedSessionTitleRepairs(
+    repairs: readonly ImportedSessionTitleRepair[],
+  ): Promise<void> {
+    const repairedWorkspaceIds = new Set<string>();
+    for (const repair of repairs) {
+      try {
+        if (repair.updateAgentTitle) {
+          if (this.agentManager.getAgent(repair.agentId)) {
+            await this.agentManager.setTitle(repair.agentId, repair.title);
+          } else {
+            await this.agentStorage.setTitle(repair.agentId, repair.title);
+          }
+        }
+
+        if (!repair.workspaceId) {
+          continue;
+        }
+        const existing = await this.workspaceRegistry.get(repair.workspaceId);
+        if (!existing || existing.archivedAt || !isDefaultImportedWorkspaceName(existing)) {
+          continue;
+        }
+        const updatedAt = new Date().toISOString();
+        const updated = await this.workspaceRegistry.update(repair.workspaceId, (current) => {
+          if (current.archivedAt || !isDefaultImportedWorkspaceName(current)) {
+            return current;
+          }
+          return { ...current, title: repair.title, updatedAt };
+        });
+        if (updated?.title === repair.title) {
+          repairedWorkspaceIds.add(repair.workspaceId);
+        }
+      } catch (error) {
+        this.sessionLogger.warn(
+          { err: error, agentId: repair.agentId, workspaceId: repair.workspaceId },
+          "同步导入会话的 CLI 原生标题失败",
+        );
+      }
+    }
+
+    if (repairedWorkspaceIds.size > 0) {
+      await this.emitWorkspaceUpdatesForWorkspaceIds(repairedWorkspaceIds, {
+        skipReconcile: true,
       });
     }
   }

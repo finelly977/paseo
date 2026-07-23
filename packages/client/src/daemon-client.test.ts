@@ -4084,6 +4084,7 @@ test("imports an agent by provider handle id", async () => {
     providerId: "custom-codex",
     providerHandleId: "thread-1",
     cwd: "/tmp/repo",
+    title: "CLI session title",
   });
 
   expect(mock.sent).toHaveLength(1);
@@ -4096,6 +4097,7 @@ test("imports an agent by provider handle id", async () => {
       providerHandleId?: string;
       sessionId?: string;
       cwd?: string;
+      title?: string;
     };
   };
   expect(request.message).toMatchObject({
@@ -4103,6 +4105,7 @@ test("imports an agent by provider handle id", async () => {
     providerId: "custom-codex",
     providerHandleId: "thread-1",
     cwd: "/tmp/repo",
+    title: "CLI session title",
   });
   expect(request.message).not.toHaveProperty("sessionId");
 

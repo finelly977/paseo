@@ -2598,10 +2598,15 @@ test("importProviderSession imports the selected session without listing and pub
     providerHandleId: "thread-selected",
     cwd: workdir,
     workspaceId: "ws-imported",
+    title: "Codex CLI 原生标题",
   });
 
   expect(client.listCalls).toBe(0);
-  expect(client.importInput).toEqual({ providerHandleId: "thread-selected", cwd: workdir });
+  expect(client.importInput).toEqual({
+    providerHandleId: "thread-selected",
+    cwd: workdir,
+    title: "Codex CLI 原生标题",
+  });
   expect(imported.lifecycle).toBe("idle");
   expect(imported.historyPrimed).toBe(true);
   expect(manager.getTimeline(imported.id)).toEqual([
@@ -2636,7 +2641,7 @@ test("importProviderSession imports the selected session without listing and pub
       persistence: { nativeHandle: "thread-selected" },
     },
   });
-  expect((await storage.get(imported.id))?.title).toBe("Trace provider imports");
+  expect((await storage.get(imported.id))?.title).toBe("Codex CLI 原生标题");
 });
 
 test("reloadAgentSession passes daemon launch env through the provider launch context", async () => {

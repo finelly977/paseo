@@ -248,6 +248,7 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
   });
   expect(result).toEqual({
     filteredAlreadyImportedCount: 2,
+    titleRepairs: [],
     entries: [
       {
         providerId: "codex",
@@ -271,6 +272,148 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
       },
     ],
   });
+});
+
+test("listImportableProviderSessions 为旧导入记录生成 CLI 标题修复", async () => {
+  const cwd = "/tmp/project";
+  const agentId = "00000000-0000-4000-8000-000000000634";
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ cwd, providers: ["codex"] }),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions: async () => [
+        makeImportableSession({
+          sessionId: "imported-session",
+          cwd,
+          title: "Codex CLI 真实标题",
+          firstPrompt: "首条用户消息",
+          lastActivityAt: "2026-04-30T12:00:00.000Z",
+        }),
+      ],
+    },
+    agentStorage: {
+      list: async () => [
+        makeStoredProviderSession({
+          id: agentId,
+          cwd,
+          sessionId: "imported-session",
+          workspaceId: "ws-imported-title",
+          title: "首条用户消息",
+          archivedAt: null,
+        }),
+      ],
+    },
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(result.entries).toEqual([]);
+  expect(result.filteredAlreadyImportedCount).toBe(1);
+  expect(result.titleRepairs).toEqual([
+    {
+      agentId,
+      workspaceId: "ws-imported-title",
+      title: "Codex CLI 真实标题",
+      updateAgentTitle: true,
+    },
+  ]);
+});
+
+test("listImportableProviderSessions 保留手动修改过的会话标题", async () => {
+  const cwd = "/tmp/project";
+  const agentId = "00000000-0000-4000-8000-000000000636";
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ cwd, providers: ["claude"] }),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions: async () => [
+        makeImportableSession({
+          provider: "claude",
+          sessionId: "manual-title-session",
+          cwd,
+          title: "Claude CLI 真实标题",
+          firstPrompt: "首条用户消息",
+          lastActivityAt: "2026-04-30T12:00:00.000Z",
+        }),
+      ],
+    },
+    agentStorage: {
+      list: async () => [
+        {
+          ...makeStoredProviderSession({
+            id: agentId,
+            cwd,
+            sessionId: "manual-title-session",
+            workspaceId: "ws-manual-title",
+            title: "用户手动标题",
+            archivedAt: null,
+          }),
+          provider: "claude",
+          persistence: { provider: "claude", sessionId: "manual-title-session" },
+        },
+      ],
+    },
+    providerSnapshotManager: { getProviderLabel: () => "Claude" },
+  });
+
+  expect(result.titleRepairs).toEqual([
+    {
+      agentId,
+      workspaceId: "ws-manual-title",
+      title: "Claude CLI 真实标题",
+      updateAgentTitle: false,
+    },
+  ]);
+});
+
+test("listImportableProviderSessions 不用 CLI 子会话标题改写工作区名称", async () => {
+  const cwd = "/tmp/project";
+  const rootAgentId = "00000000-0000-4000-8000-000000000637";
+  const childAgentId = "00000000-0000-4000-8000-000000000638";
+  const workspaceId = "ws-imported-subagent-title";
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ cwd, providers: ["codex"] }),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions: async () => [
+        makeImportableSession({
+          sessionId: "imported-child-session",
+          cwd,
+          title: "CLI 子会话标题",
+          firstPrompt: "子会话首条消息",
+          lastActivityAt: "2026-04-30T12:00:00.000Z",
+        }),
+      ],
+    },
+    agentStorage: {
+      list: async () => [
+        makeStoredProviderSession({
+          id: rootAgentId,
+          cwd,
+          sessionId: "workspace-root-session",
+          workspaceId,
+          archivedAt: null,
+        }),
+        makeStoredProviderSession({
+          id: childAgentId,
+          cwd,
+          sessionId: "imported-child-session",
+          workspaceId,
+          title: "子会话首条消息",
+          labels: { [PARENT_AGENT_ID_LABEL]: rootAgentId },
+          archivedAt: null,
+        }),
+      ],
+    },
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(result.titleRepairs).toEqual([
+    {
+      agentId: childAgentId,
+      title: "CLI 子会话标题",
+      updateAgentTitle: true,
+    },
+  ]);
 });
 
 test("listImportableProviderSessions looks past already-imported rows to fill the requested limit", async () => {
@@ -495,11 +638,13 @@ test("normalizeImportAgentRequest accepts new and legacy import handle shapes", 
       requestId: "new-shape",
       providerId: "custom-codex",
       providerHandleId: "thread-1",
+      title: "CLI session title",
     }),
   ).toEqual({
     requestId: "new-shape",
     provider: "custom-codex",
     providerHandleId: "thread-1",
+    title: "CLI session title",
   });
 
   expect(
@@ -522,6 +667,7 @@ function makeStoredProviderSession(input: {
   sessionId: string;
   nativeHandle?: string;
   workspaceId?: string;
+  title?: string | null;
   labels?: Record<string, string>;
   archivedAt?: string | null;
 }): StoredAgentRecord {
@@ -534,6 +680,7 @@ function makeStoredProviderSession(input: {
     updatedAt: "2026-04-30T11:00:00.000Z",
     lastActivityAt: "2026-04-30T10:30:00.000Z",
     lastUserMessageAt: null,
+    title: input.title ?? null,
     labels: input.labels ?? {},
     config: { provider: "codex", cwd: input.cwd },
     persistence: {
@@ -570,7 +717,11 @@ class ProviderImportHarness {
       },
       unarchiveSnapshot: async (
         agentId: string,
-        updates?: { workspaceId?: string; labels?: Record<string, string | null> },
+        updates?: {
+          workspaceId?: string;
+          title?: string;
+          labels?: Record<string, string | null>;
+        },
       ) => {
         if (this.unarchiveWait) {
           await this.unarchiveWait;
@@ -590,6 +741,7 @@ class ProviderImportHarness {
         await this.storage.upsert({
           ...record,
           workspaceId: updates?.workspaceId ?? record.workspaceId,
+          title: updates?.title ?? record.title,
           labels,
           archivedAt: null,
         });
@@ -672,13 +824,19 @@ class ProviderImportHarness {
     };
   }
 
-  import(input: { providerHandleId: string; cwd?: string; labels?: Record<string, string> }) {
+  import(input: {
+    providerHandleId: string;
+    cwd?: string;
+    title?: string;
+    labels?: Record<string, string>;
+  }) {
     return importProviderSession({
       request: {
         requestId: "import-thread",
         provider: "codex",
         providerHandleId: input.providerHandleId,
         cwd: input.cwd,
+        title: input.title,
         labels: input.labels,
       },
       workspaceProvisioning: createImportWorkspace("ws-restored"),
@@ -699,6 +857,7 @@ test("importProviderSession uses the provider import path with the requested lab
   const result = await harness.import({
     providerHandleId: "thread-imported",
     cwd: "/tmp/imported-agent",
+    title: "CLI session title",
     labels: { source: "import" },
   });
 
@@ -708,6 +867,7 @@ test("importProviderSession uses the provider import path with the requested lab
       providerHandleId: "thread-imported",
       cwd: "/tmp/imported-agent",
       workspaceId: "ws-restored",
+      title: "CLI session title",
       labels: { source: "import" },
     },
   ]);
@@ -749,6 +909,7 @@ test("importProviderSession restores an archived session as the same standalone 
   const result = await harness.import({
     providerHandleId: "thread-archived",
     cwd: harness.snapshot.cwd,
+    title: "CLI restored title",
     labels: { source: "reimport" },
   });
 
@@ -760,6 +921,7 @@ test("importProviderSession restores an archived session as the same standalone 
   expect(await harness.storage.get(harness.snapshot.id)).toMatchObject({
     id: harness.snapshot.id,
     workspaceId: "ws-restored",
+    title: "CLI restored title",
     labels: { existing: "label", source: "reimport" },
     archivedAt: null,
   });
