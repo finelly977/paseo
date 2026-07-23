@@ -1,5 +1,6 @@
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import { pickAttentionAgent } from "@/utils/agent-attention";
+import { isWorkspaceRootAgent } from "@/subagents/policies";
 import {
   buildHostWorkspaceOpenRoute,
   buildHostWorkspaceRoute,
@@ -32,6 +33,7 @@ export interface NavigateToWorkspaceInput {
 export interface NavigateToWorkspaceDeps extends PrepareWorkspaceTabDeps {
   getSessionWorkspaces: (serverId: string) => Map<string, WorkspaceDescriptor> | null | undefined;
   getSessionAgents: (serverId: string) => Iterable<Agent>;
+  getOpenWorkspaceTabTargets: (workspaceKey: string) => readonly WorkspaceTabTarget[];
   rememberLastWorkspace: (selection: ActiveWorkspaceSelection) => void;
   navigateToRoute: (route: string) => void;
 }
@@ -64,6 +66,21 @@ function parseWorkspaceSelectionFromRouteParams(params: {
   return { serverId, workspaceId };
 }
 
+function pickMostRecentWorkspaceAgentId(input: {
+  workspaceAgents: Agent[];
+  allAgents: Agent[];
+}): string | null {
+  const agentsById = new Map(input.allAgents.map((agent) => [agent.id, agent]));
+  const candidates = input.workspaceAgents
+    .filter((agent) => !agent.archivedAt)
+    .filter((agent) => {
+      const parent = agent.parentAgentId ? agentsById.get(agent.parentAgentId) : undefined;
+      return isWorkspaceRootAgent(agent, parent);
+    })
+    .sort((left, right) => right.lastActivityAt.getTime() - left.lastActivityAt.getTime());
+  return candidates[0]?.id ?? null;
+}
+
 export function parseActiveWorkspaceSelection(
   input: RouteSelectionInput,
 ): ActiveWorkspaceSelection | null {
@@ -93,8 +110,9 @@ export function navigateToWorkspace(
       prepareWorkspaceTab({ ...input, target: input.target }, deps);
     }
   } else {
+    const allAgents = resolvedWorkspaceId ? Array.from(deps.getSessionAgents(input.serverId)) : [];
     const workspaceAgents = resolvedWorkspaceId
-      ? Array.from(deps.getSessionAgents(input.serverId)).filter(
+      ? allAgents.filter(
           (agent) => normalizeWorkspaceOpaqueId(agent.workspaceId) === resolvedWorkspaceId,
         )
       : [];
@@ -104,6 +122,17 @@ export function navigateToWorkspace(
         kind: "agent",
         agentId: attentionAgentId,
       });
+    } else if (resolvedWorkspaceId) {
+      const workspaceKey = `${input.serverId}:${resolvedWorkspaceId}`;
+      const hasOpenConversationTab = deps
+        .getOpenWorkspaceTabTargets(workspaceKey)
+        .some((target) => target.kind === "agent" || target.kind === "draft");
+      if (!hasOpenConversationTab) {
+        const mostRecentAgentId = pickMostRecentWorkspaceAgentId({ workspaceAgents, allAgents });
+        if (mostRecentAgentId) {
+          deps.openTabFocused(workspaceKey, { kind: "agent", agentId: mostRecentAgentId });
+        }
+      }
     }
   }
 

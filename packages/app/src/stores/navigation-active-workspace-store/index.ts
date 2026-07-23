@@ -38,6 +38,11 @@ function navigateDeps(): NavigateToWorkspaceDeps {
       useSessionStore.getState().sessions[serverId]?.agents.values() ?? [],
     openTabFocused: (workspaceKey, target) =>
       useWorkspaceLayoutStore.getState().openTabFocused(workspaceKey, target),
+    getOpenWorkspaceTabTargets: (workspaceKey) =>
+      useWorkspaceLayoutStore
+        .getState()
+        .getWorkspaceTabs(workspaceKey)
+        .map((tab) => tab.target),
     pinAgent: (workspaceKey, agentId) =>
       useWorkspaceLayoutStore.getState().pinAgent(workspaceKey, agentId),
     rememberLastWorkspace: (selection) => lastWorkspaceSelectionStore.remember(selection),

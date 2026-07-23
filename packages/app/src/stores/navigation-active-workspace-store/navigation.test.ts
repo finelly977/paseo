@@ -26,6 +26,7 @@ function createFakeDeps(overrides: Partial<NavigateToWorkspaceDeps> = {}) {
       openedTabs.push({ workspaceKey, target });
       return target.kind === "agent" ? target.agentId : null;
     },
+    getOpenWorkspaceTabTargets: () => [],
     pinAgent: () => undefined,
     rememberLastWorkspace: (selection) => remembered.push(selection),
     navigateToRoute: (route) => navigations.push(route),
@@ -98,6 +99,61 @@ describe("workspace navigation", () => {
         target: { kind: "agent", agentId: "agent-1" },
       },
     ]);
+  });
+
+  it("reopens the most recent root agent when a workspace has no conversation tab", () => {
+    const workspace = {
+      id: "workspace-a",
+      workspaceDirectory: "/repo/workspace-a",
+    } as WorkspaceDescriptor;
+    const olderAgent = {
+      id: "agent-old",
+      cwd: "/repo/workspace-a",
+      workspaceId: "workspace-a",
+      lastActivityAt: new Date("2026-07-23T10:00:00.000Z"),
+    } as unknown as Agent;
+    const newerAgent = {
+      id: "agent-new",
+      cwd: "/repo/workspace-a",
+      workspaceId: "workspace-a",
+      lastActivityAt: new Date("2026-07-23T11:00:00.000Z"),
+    } as unknown as Agent;
+    const { deps, openedTabs } = createFakeDeps({
+      getSessionWorkspaces: () => new Map([[workspace.id, workspace]]),
+      getSessionAgents: () => [olderAgent, newerAgent],
+      getOpenWorkspaceTabTargets: () => [],
+    });
+
+    navigateToWorkspace({ serverId: "server-1", workspaceId: "workspace-a" }, deps);
+
+    expect(openedTabs).toEqual([
+      {
+        workspaceKey: "server-1:workspace-a",
+        target: { kind: "agent", agentId: "agent-new" },
+      },
+    ]);
+  });
+
+  it("does not replace an existing conversation tab when revisiting a workspace", () => {
+    const workspace = {
+      id: "workspace-a",
+      workspaceDirectory: "/repo/workspace-a",
+    } as WorkspaceDescriptor;
+    const agent = {
+      id: "agent-1",
+      cwd: "/repo/workspace-a",
+      workspaceId: "workspace-a",
+      lastActivityAt: new Date("2026-07-23T11:00:00.000Z"),
+    } as unknown as Agent;
+    const { deps, openedTabs } = createFakeDeps({
+      getSessionWorkspaces: () => new Map([[workspace.id, workspace]]),
+      getSessionAgents: () => [agent],
+      getOpenWorkspaceTabTargets: () => [{ kind: "agent", agentId: "agent-1" }],
+    });
+
+    navigateToWorkspace({ serverId: "server-1", workspaceId: "workspace-a" }, deps);
+
+    expect(openedTabs).toEqual([]);
   });
 
   it("keeps an explicit tab authoritative over an attention agent", () => {
