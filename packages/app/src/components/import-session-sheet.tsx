@@ -20,6 +20,7 @@ import { i18n } from "@/i18n/i18next";
 import {
   aggregateSessionEntries,
   ALL_FILTER_VALUE,
+  buildFolderFilterOptions,
   buildProviderLabelMap,
   collectErroredProviderLabels,
   computeEmptyState,
@@ -316,11 +317,18 @@ export function ImportSessionSheet({
   );
 
   const filterProviders = useMemo(() => [...(providersToFetch ?? [])].sort(), [providersToFetch]);
+  const folderOptions = useMemo(
+    () => buildFolderFilterOptions(aggregatedEntries, cwd),
+    [aggregatedEntries, cwd],
+  );
 
   const [selectedProvider, setSelectedProvider] = useState<string>(ALL_FILTER_VALUE);
+  const [selectedFolder, setSelectedFolder] = useState<string>(ALL_FILTER_VALUE);
   const [searchQuery, setSearchQuery] = useState("");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isFolderFilterOpen, setIsFolderFilterOpen] = useState(false);
   const filterAnchorRef = useRef<View>(null);
+  const folderAnchorRef = useRef<View>(null);
 
   useEffect(() => {
     if (
@@ -337,13 +345,24 @@ export function ImportSessionSheet({
     }
   }, [visible]);
 
+  useEffect(() => {
+    if (
+      !visible ||
+      (selectedFolder !== ALL_FILTER_VALUE &&
+        !folderOptions.some((option) => option.id === selectedFolder))
+    ) {
+      setSelectedFolder(ALL_FILTER_VALUE);
+    }
+  }, [visible, folderOptions, selectedFolder]);
+
   const visibleEntries = useMemo(
     () =>
       filterSessionEntries(aggregatedEntries, {
         selectedProvider,
+        selectedFolder,
         searchQuery,
       }),
-    [aggregatedEntries, selectedProvider, searchQuery],
+    [aggregatedEntries, selectedProvider, selectedFolder, searchQuery],
   );
   const folderGroups = useMemo(
     () => groupSessionEntriesByFolder(visibleEntries, cwd),
@@ -368,7 +387,10 @@ export function ImportSessionSheet({
     [filterComboboxOptions, selectedProvider, t],
   );
 
-  const handleFilterOpen = useCallback(() => setIsFilterOpen(true), []);
+  const handleFilterOpen = useCallback(() => {
+    setIsFolderFilterOpen(false);
+    setIsFilterOpen(true);
+  }, []);
 
   const filterTriggerStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -417,13 +439,61 @@ export function ImportSessionSheet({
     [filterOptionIcons],
   );
 
+  const folderComboboxOptions = useMemo<ComboboxOption[]>(
+    () => [
+      { id: ALL_FILTER_VALUE, label: t("importSession.filters.allFolders") },
+      ...folderOptions,
+    ],
+    [folderOptions, t],
+  );
+
+  const selectedFolderLabel = useMemo(
+    () =>
+      folderComboboxOptions.find((opt) => opt.id === selectedFolder)?.label ??
+      t("importSession.filters.allFolders"),
+    [folderComboboxOptions, selectedFolder, t],
+  );
+
+  const handleFolderFilterOpen = useCallback(() => {
+    setIsFilterOpen(false);
+    setIsFolderFilterOpen(true);
+  }, []);
+
+  const handleFolderFilterSelect = useCallback((id: string) => {
+    setSelectedFolder(id);
+    setIsFolderFilterOpen(false);
+  }, []);
+
+  const renderFolderOption = useCallback(
+    ({
+      option,
+      selected,
+      active,
+      onPress,
+    }: {
+      option: ComboboxOption;
+      selected: boolean;
+      active: boolean;
+      onPress: () => void;
+    }) => (
+      <ComboboxItem
+        label={option.label}
+        kind="directory"
+        selected={selected}
+        active={active}
+        onPress={onPress}
+      />
+    ),
+    [],
+  );
+
   const importMutation = useMutation({
     mutationFn: async (entry: FetchRecentProviderSessionEntry) => {
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
       }
       if (!entry.cwd) {
-        throw new Error("Session is missing a working directory");
+        throw new Error(t("importSession.errors.missingWorkingDirectory"));
       }
       const title = getImportSessionTitle(entry);
       const agent = await client.importAgent({
@@ -490,6 +560,8 @@ export function ImportSessionSheet({
     isQueryingProviders,
     allQueriesSettled,
     selectedProvider,
+    selectedFolder,
+    selectedFolderLabel,
     searchQuery,
     aggregatedCount: aggregatedEntries.length,
     visibleCount: visibleEntries.length,
@@ -497,6 +569,7 @@ export function ImportSessionSheet({
     providerLabelById,
   });
   const showFilter = filterProviders.length > 1;
+  const showFolderFilter = folderOptions.length > 1;
   const showFolderHeaders = folderGroups.length > 1;
 
   return (
@@ -517,41 +590,79 @@ export function ImportSessionSheet({
             useBottomSheetInput
           />
         </View>
-        {showFilter ? (
-          <View ref={filterAnchorRef} collapsable={false} style={styles.filterTriggerWrap}>
-            <Pressable
-              onPress={handleFilterOpen}
-              style={filterTriggerStyle}
-              testID="import-session-filter-trigger"
-              accessibilityRole="button"
-              accessibilityLabel={`Filter: ${selectedProviderLabel}`}
-            >
-              {selectedProvider === ALL_FILTER_VALUE ? (
-                <Layers size={14} color={theme.colors.foregroundMuted} />
-              ) : (
-                (() => {
-                  const ProviderIcon = getProviderIcon(selectedProvider);
-                  return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
-                })()
-              )}
-              <Text style={styles.filterTriggerText} numberOfLines={1}>
-                {selectedProviderLabel}
-              </Text>
-              <ChevronDown size={14} color={theme.colors.foregroundMuted} />
-            </Pressable>
-            <Combobox
-              options={filterComboboxOptions}
-              value={selectedProvider}
-              onSelect={handleFilterSelect}
-              renderOption={renderFilterOption}
-              searchable={false}
-              title="Filter by provider"
-              open={isFilterOpen}
-              onOpenChange={setIsFilterOpen}
-              anchorRef={filterAnchorRef}
-              desktopPlacement="bottom-start"
-              desktopPreventInitialFlash
-            />
+        {showFilter || showFolderFilter ? (
+          <View style={styles.filtersRow}>
+            {showFilter ? (
+              <View ref={filterAnchorRef} collapsable={false} style={styles.filterTriggerWrap}>
+                <Pressable
+                  onPress={handleFilterOpen}
+                  style={filterTriggerStyle}
+                  testID="import-session-filter-trigger"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("importSession.filters.providerAccessibility", {
+                    value: selectedProviderLabel,
+                  })}
+                >
+                  {selectedProvider === ALL_FILTER_VALUE ? (
+                    <Layers size={14} color={theme.colors.foregroundMuted} />
+                  ) : (
+                    (() => {
+                      const ProviderIcon = getProviderIcon(selectedProvider);
+                      return <ProviderIcon size={14} color={theme.colors.foregroundMuted} />;
+                    })()
+                  )}
+                  <Text style={styles.filterTriggerText} numberOfLines={1}>
+                    {selectedProviderLabel}
+                  </Text>
+                  <ChevronDown size={14} color={theme.colors.foregroundMuted} />
+                </Pressable>
+                <Combobox
+                  options={filterComboboxOptions}
+                  value={selectedProvider}
+                  onSelect={handleFilterSelect}
+                  renderOption={renderFilterOption}
+                  searchable={false}
+                  title={t("importSession.filters.providerTitle")}
+                  open={isFilterOpen}
+                  onOpenChange={setIsFilterOpen}
+                  anchorRef={filterAnchorRef}
+                  desktopPlacement="bottom-start"
+                  desktopPreventInitialFlash
+                />
+              </View>
+            ) : null}
+            {showFolderFilter ? (
+              <View ref={folderAnchorRef} collapsable={false} style={styles.folderTriggerWrap}>
+                <Pressable
+                  onPress={handleFolderFilterOpen}
+                  style={filterTriggerStyle}
+                  testID="import-session-folder-filter-trigger"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("importSession.filters.folderAccessibility", {
+                    value: selectedFolderLabel,
+                  })}
+                >
+                  <Folder size={14} color={theme.colors.foregroundMuted} />
+                  <Text style={styles.filterTriggerText} numberOfLines={1}>
+                    {selectedFolderLabel}
+                  </Text>
+                  <ChevronDown size={14} color={theme.colors.foregroundMuted} />
+                </Pressable>
+                <Combobox
+                  options={folderComboboxOptions}
+                  value={selectedFolder}
+                  onSelect={handleFolderFilterSelect}
+                  renderOption={renderFolderOption}
+                  searchable
+                  title={t("importSession.filters.folderTitle")}
+                  open={isFolderFilterOpen}
+                  onOpenChange={setIsFolderFilterOpen}
+                  anchorRef={folderAnchorRef}
+                  desktopPlacement="bottom-start"
+                  desktopPreventInitialFlash
+                />
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -610,11 +721,24 @@ const styles = StyleSheet.create((theme) => ({
   filterTriggerWrap: {
     alignSelf: "flex-start",
   },
+  folderTriggerWrap: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "100%",
+  },
+  filtersRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    flexWrap: "wrap",
+  },
   filterTrigger: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1.5],
     alignSelf: "flex-start",
+    flexShrink: 1,
+    maxWidth: "100%",
     paddingVertical: theme.spacing[1.5],
     paddingHorizontal: theme.spacing[3],
     borderRadius: theme.borderRadius.md,
@@ -629,6 +753,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface3,
   },
   filterTriggerText: {
+    flexShrink: 1,
+    minWidth: 0,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,

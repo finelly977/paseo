@@ -15,6 +15,7 @@ import { golandTarget } from "./targets/goland.js";
 import { intellijIdeaTarget } from "./targets/intellij-idea.js";
 import { kiroTarget } from "./targets/kiro.js";
 import { phpstormTarget } from "./targets/phpstorm.js";
+import { powershellTarget } from "./targets/powershell.js";
 import { pycharmTarget } from "./targets/pycharm.js";
 import { riderTarget } from "./targets/rider.js";
 import { rubymineTarget } from "./targets/rubymine.js";
@@ -47,6 +48,7 @@ export const EDITOR_TARGETS: readonly EditorTarget[] = [
   rubymineTarget,
   rustroverTarget,
   webstormTarget,
+  powershellTarget,
   finderTarget,
   explorerTarget,
   fileManagerTarget,

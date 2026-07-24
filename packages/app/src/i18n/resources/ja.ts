@@ -177,6 +177,12 @@ export const ja: TranslationResources = {
   agentStream: {
     empty: "このエージェントとチャットを始めましょう...",
     scrollToBottom: "下にスクロール",
+    historyIndex: {
+      label: "会話履歴インデックス",
+      jumpTo: "{{title}}へ移動",
+      noPreview: "返信のプレビューはありません",
+      untitled: "無題のメッセージ",
+    },
     permission: {
       plan: "プラン",
       required: "権限が必要です",
@@ -315,6 +321,11 @@ export const ja: TranslationResources = {
     title: "セッションをインポート",
     filters: {
       all: "すべて",
+      allFolders: "すべてのフォルダ",
+      providerTitle: "プロバイダーで絞り込む",
+      folderTitle: "フォルダで絞り込む",
+      providerAccessibility: "プロバイダーフィルター: {{value}}",
+      folderAccessibility: "フォルダフィルター: {{value}}",
     },
     search: {
       placeholder: "タイトル、プロンプト、フォルダを検索",
@@ -340,12 +351,16 @@ export const ja: TranslationResources = {
       noRecent: "インポートする最近のセッションがありません。",
       alreadyImported: "最近のセッションはすでにすべてインポートされています。",
       noProviderSessions: "{{provider}}のセッションが見つかりません。",
+      noFolderSessions: "{{folder}}にセッションが見つかりません。",
     },
     row: {
       importing: "インポート中...",
     },
     folders: {
       unknown: "不明なフォルダ",
+    },
+    errors: {
+      missingWorkingDirectory: "このセッションには作業ディレクトリがありません。",
     },
   },
   workspace: {
@@ -1767,6 +1782,11 @@ export const ja: TranslationResources = {
       },
       detailLevel: {
         title: "詳細レベル",
+      },
+      spacing: {
+        title: "間隔",
+        paragraph: "段落の間隔",
+        paragraphAccessibility: "メッセージ段落の間隔（ピクセル）",
       },
       fonts: {
         title: "フォント",

@@ -35,6 +35,7 @@ export function MarkdownTextSpan({
 
 interface MarkdownParagraphViewProps {
   paragraphStyle: ViewStyle;
+  marginBottomOverride?: number | null;
   containsImage?: boolean;
   children: ReactNode;
 }
@@ -48,7 +49,18 @@ const MARKDOWN_PARAGRAPH_RESET: ViewStyle = {};
 // images) into one-character placeholders, which destroys image row layout.
 // <View> preserves the original block layout; the trade-off is no cross-span
 // selection on Android (a UITextView-style trick has no Android equivalent).
-export function MarkdownParagraphView({ paragraphStyle, children }: MarkdownParagraphViewProps) {
-  const style = useMemo(() => [paragraphStyle, MARKDOWN_PARAGRAPH_RESET], [paragraphStyle]);
+export function MarkdownParagraphView({
+  paragraphStyle,
+  marginBottomOverride = null,
+  children,
+}: MarkdownParagraphViewProps) {
+  const style = useMemo(
+    () => [
+      paragraphStyle,
+      marginBottomOverride != null ? { marginBottom: marginBottomOverride } : null,
+      MARKDOWN_PARAGRAPH_RESET,
+    ],
+    [paragraphStyle, marginBottomOverride],
+  );
   return <View style={style}>{children}</View>;
 }

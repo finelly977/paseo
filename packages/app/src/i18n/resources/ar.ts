@@ -177,6 +177,12 @@ export const ar: TranslationResources = {
   agentStream: {
     empty: "ابدأ الدردشة مع هذا الوكيل...",
     scrollToBottom: "قم بالتمرير إلى الأسفل",
+    historyIndex: {
+      label: "فهرس سجل المحادثة",
+      jumpTo: "الانتقال إلى {{title}}",
+      noPreview: "لا توجد معاينة للرد",
+      untitled: "رسالة بلا عنوان",
+    },
     permission: {
       plan: "يخطط",
       required: "الإذن مطلوب",
@@ -312,6 +318,11 @@ export const ar: TranslationResources = {
     title: "جلسة الاستيراد",
     filters: {
       all: "الجميع",
+      allFolders: "كل المجلدات",
+      providerTitle: "التصفية حسب الموفّر",
+      folderTitle: "التصفية حسب المجلد",
+      providerAccessibility: "عامل تصفية الموفّر: {{value}}",
+      folderAccessibility: "عامل تصفية المجلد: {{value}}",
     },
     search: {
       placeholder: "ابحث في العنوان أو الموجه أو المجلد",
@@ -337,12 +348,16 @@ export const ar: TranslationResources = {
       noRecent: "لا توجد جلسات حديثة لاستيرادها.",
       alreadyImported: "تم بالفعل استيراد كافة الجلسات الأخيرة.",
       noProviderSessions: "لم يتم العثور على جلسات{{provider}}.",
+      noFolderSessions: "لم يتم العثور على جلسات في {{folder}}.",
     },
     row: {
       importing: "جارٍ الاستيراد...",
     },
     folders: {
       unknown: "مجلد غير معروف",
+    },
+    errors: {
+      missingWorkingDirectory: "لا تحتوي هذه الجلسة على مجلد عمل.",
     },
   },
   workspace: {
@@ -1752,6 +1767,11 @@ export const ar: TranslationResources = {
       },
       detailLevel: {
         title: "مستوى التفاصيل",
+      },
+      spacing: {
+        title: "التباعد",
+        paragraph: "تباعد الفقرات",
+        paragraphAccessibility: "تباعد فقرات الرسالة بالبكسل",
       },
       fonts: {
         title: "الخطوط",

@@ -20,8 +20,10 @@ import { Switch } from "@/components/ui/switch";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import {
   MAX_CODE_FONT_SIZE,
+  MAX_MESSAGE_PARAGRAPH_SPACING,
   MAX_UI_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
+  MIN_MESSAGE_PARAGRAPH_SPACING,
   MIN_UI_FONT_SIZE,
   parseClampedFontSize,
   sanitizeFontFamily,
@@ -466,6 +468,9 @@ export function AppearanceSection() {
   const [monoFontDraft, setMonoFontDraft] = useState(settings.monoFontFamily);
   const [uiSizeDraft, setUiSizeDraft] = useState(String(settings.uiFontSize));
   const [codeSizeDraft, setCodeSizeDraft] = useState(String(settings.codeFontSize));
+  const [paragraphSpacingDraft, setParagraphSpacingDraft] = useState(
+    String(settings.messageParagraphSpacing),
+  );
 
   // Resync numeric drafts when the committed value changes elsewhere.
   useEffect(() => {
@@ -474,6 +479,9 @@ export function AppearanceSection() {
   useEffect(() => {
     setCodeSizeDraft(String(settings.codeFontSize));
   }, [settings.codeFontSize]);
+  useEffect(() => {
+    setParagraphSpacingDraft(String(settings.messageParagraphSpacing));
+  }, [settings.messageParagraphSpacing]);
 
   const handleThemeChange = useCallback(
     (theme: AppSettings["theme"]) => {
@@ -565,6 +573,22 @@ export function AppearanceSection() {
     }
   }, [codeSizeDraft, settings.codeFontSize, updateSettings]);
 
+  const handleParagraphSpacingChange = useCallback((value: string) => {
+    setParagraphSpacingDraft(value.replace(/[^\d]/g, ""));
+  }, []);
+
+  const commitParagraphSpacing = useCallback(() => {
+    const parsed = parseClampedFontSize(paragraphSpacingDraft, {
+      min: MIN_MESSAGE_PARAGRAPH_SPACING,
+      max: MAX_MESSAGE_PARAGRAPH_SPACING,
+    });
+    const next = parsed ?? settings.messageParagraphSpacing;
+    setParagraphSpacingDraft(String(next));
+    if (next !== settings.messageParagraphSpacing) {
+      void updateSettings({ messageParagraphSpacing: next });
+    }
+  }, [paragraphSpacingDraft, settings.messageParagraphSpacing, updateSettings]);
+
   // Live-while-typing: the in-progress drafts drive the preview without
   // committing to the global theme. Empty/invalid fields fall back to the
   // theme value inside the preview.
@@ -592,6 +616,18 @@ export function AppearanceSection() {
           <ToolCallDetailRow
             value={settings.toolCallDetailLevel}
             onChange={handleToolCallDetailLevelChange}
+          />
+        </View>
+      </SettingsSection>
+      <SettingsSection title={t("settings.appearance.spacing.title")}>
+        <View style={settingsStyles.card}>
+          <FontSizeRow
+            title={t("settings.appearance.spacing.paragraph")}
+            accessibilityLabel={t("settings.appearance.spacing.paragraphAccessibility")}
+            draft={paragraphSpacingDraft}
+            withBorder={false}
+            onChangeDraft={handleParagraphSpacingChange}
+            onCommit={commitParagraphSpacing}
           />
         </View>
       </SettingsSection>

@@ -287,4 +287,38 @@ describe("sendOsNotification", () => {
       data: { serverId: "srv-1" },
     });
   });
+
+  it("reports a local notification channel for Electron and granted web notifications", async () => {
+    const desktopModule = await loadModuleForPlatform("web", {
+      desktopHost: {
+        notification: {
+          sendNotification: vi.fn(async () => true),
+        },
+      },
+    });
+    expect(desktopModule.canShowLocalNotifications()).toBe(true);
+
+    class GrantedNotification {
+      static permission = "granted";
+
+      addEventListener(): void {}
+    }
+    (globalThis as { Notification?: unknown }).Notification = GrantedNotification;
+    const webModule = await loadModuleForPlatform("web");
+    expect(webModule.canShowLocalNotifications()).toBe(true);
+  });
+
+  it("reports no local notification channel on native or before web permission is granted", async () => {
+    class PromptNotification {
+      static permission = "default";
+
+      addEventListener(): void {}
+    }
+    (globalThis as { Notification?: unknown }).Notification = PromptNotification;
+    const webModule = await loadModuleForPlatform("web");
+    expect(webModule.canShowLocalNotifications()).toBe(false);
+
+    const nativeModule = await loadModuleForPlatform("ios");
+    expect(nativeModule.canShowLocalNotifications()).toBe(false);
+  });
 });

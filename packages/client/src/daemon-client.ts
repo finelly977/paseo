@@ -1827,6 +1827,8 @@ export class DaemonClient {
     focusedTerminalId?: string | null;
     lastActivityAt: string;
     appVisible: boolean;
+    appFocused?: boolean;
+    canShowLocalNotifications?: boolean;
     appVisibilityChangedAt?: string;
   }): void {
     this.sendSessionMessage({
@@ -1836,6 +1838,10 @@ export class DaemonClient {
       focusedTerminalId: params.focusedTerminalId ?? null,
       lastActivityAt: params.lastActivityAt,
       appVisible: params.appVisible,
+      ...(params.appFocused !== undefined ? { appFocused: params.appFocused } : {}),
+      ...(params.canShowLocalNotifications !== undefined
+        ? { canShowLocalNotifications: params.canShowLocalNotifications }
+        : {}),
       appVisibilityChangedAt: params.appVisibilityChangedAt,
     });
   }

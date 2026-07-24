@@ -177,6 +177,12 @@ export const zhCN: TranslationResources = {
   agentStream: {
     empty: "开始和这个 Agent 对话...",
     scrollToBottom: "滚动到底部",
+    historyIndex: {
+      label: "对话历史索引",
+      jumpTo: "跳转到：{{title}}",
+      noPreview: "暂无回复摘要",
+      untitled: "未命名消息",
+    },
     permission: {
       plan: "Plan",
       required: "需要权限",
@@ -312,6 +318,11 @@ export const zhCN: TranslationResources = {
     title: "导入会话",
     filters: {
       all: "全部",
+      allFolders: "全部文件夹",
+      providerTitle: "按提供方筛选",
+      folderTitle: "按文件夹筛选",
+      providerAccessibility: "提供方筛选：{{value}}",
+      folderAccessibility: "文件夹筛选：{{value}}",
     },
     search: {
       placeholder: "搜索标题、提示词或文件夹",
@@ -337,12 +348,16 @@ export const zhCN: TranslationResources = {
       noRecent: "没有可导入的最近会话。",
       alreadyImported: "所有最近会话都已导入。",
       noProviderSessions: "没有找到 {{provider}} 会话。",
+      noFolderSessions: "在 {{folder}} 中没有找到会话。",
     },
     row: {
       importing: "正在导入...",
     },
     folders: {
       unknown: "未知文件夹",
+    },
+    errors: {
+      missingWorkingDirectory: "该会话缺少工作目录。",
     },
   },
   workspace: {
@@ -1732,6 +1747,11 @@ export const zhCN: TranslationResources = {
       },
       detailLevel: {
         title: "详细程度",
+      },
+      spacing: {
+        title: "间距",
+        paragraph: "段落间距",
+        paragraphAccessibility: "消息段落间距（像素）",
       },
       fonts: {
         title: "字体",

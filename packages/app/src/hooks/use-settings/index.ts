@@ -24,6 +24,9 @@ import {
   MIN_CODE_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_FONT_SIZE,
+  DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  MIN_MESSAGE_PARAGRAPH_SPACING,
+  MAX_MESSAGE_PARAGRAPH_SPACING,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
@@ -55,6 +58,9 @@ export {
   MIN_CODE_FONT_SIZE,
   MIN_TERMINAL_SCROLLBACK_LINES,
   MIN_UI_FONT_SIZE,
+  DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  MIN_MESSAGE_PARAGRAPH_SPACING,
+  MAX_MESSAGE_PARAGRAPH_SPACING,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
   sanitizeFontFamily,
@@ -98,6 +104,18 @@ export interface UseSettingsReturn {
 }
 
 type SettingsSelector<TSelected> = (settings: Settings) => TSelected;
+type NumericAppSetting = "uiFontSize" | "codeFontSize" | "messageParagraphSpacing";
+
+function copyDefinedNumericAppSetting(
+  target: Partial<AppSettings>,
+  source: Partial<Settings>,
+  key: NumericAppSetting,
+): void {
+  const value = source[key];
+  if (value !== undefined) {
+    target[key] = value;
+  }
+}
 
 export function useAppSettings(): UseAppSettingsReturn {
   const queryClient = useQueryClient();
@@ -173,12 +191,9 @@ export function useSettings<TSelected>(
       if (updates.monoFontFamily !== undefined) {
         appUpdates.monoFontFamily = updates.monoFontFamily;
       }
-      if (updates.uiFontSize !== undefined) {
-        appUpdates.uiFontSize = updates.uiFontSize;
-      }
-      if (updates.codeFontSize !== undefined) {
-        appUpdates.codeFontSize = updates.codeFontSize;
-      }
+      copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
+      copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
+      copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
       if (updates.syntaxTheme !== undefined) {
         appUpdates.syntaxTheme = updates.syntaxTheme;
       }

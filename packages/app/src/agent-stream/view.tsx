@@ -102,6 +102,8 @@ import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
+import { ConversationHistoryIndex } from "./history-index";
+import { buildConversationHistoryIndex, getStreamItemDomId } from "./history-index-model";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -161,7 +163,9 @@ function renderStreamItemWithTurnFooter(input: {
     />
   ) : null;
   const content = (
-    <StreamItemWrapper gapBelow={input.layoutItem.gapBelow}>{input.content}</StreamItemWrapper>
+    <StreamItemWrapper itemId={input.layoutItem.item.id} gapBelow={input.layoutItem.gapBelow}>
+      {input.content}
+    </StreamItemWrapper>
   );
 
   if (input.layoutItem.frameOrder === "footer-then-content") {
@@ -339,6 +343,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const router = useRouter();
     const autoExpandReasoning = useSettings((settings) => settings.autoExpandReasoning);
     const toolCallDetailLevel = useSettings((settings) => settings.toolCallDetailLevel);
+    const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
     const viewportRef = useRef<StreamViewportHandle | null>(null);
     const isMobile = useIsCompactFormFactor();
     const streamRenderStrategy = useMemo(
@@ -601,6 +606,18 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
       ],
     );
+    const historyIndexEntries = useMemo(() => {
+      const items: StreamItem[] = [];
+      const seen = new Set<string>();
+      for (const layoutItem of [...streamLayout.history, ...streamLayout.liveHead]) {
+        if (seen.has(layoutItem.item.id)) {
+          continue;
+        }
+        seen.add(layoutItem.item.id);
+        items.push(layoutItem.item);
+      }
+      return buildConversationHistoryIndex(items);
+    }, [streamLayout.history, streamLayout.liveHead]);
     useImperativeHandle(
       ref,
       () => ({
@@ -1013,6 +1030,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     return (
       <ToolCallSheetProvider>
         <View style={stylesheet.container}>
+          {isWeb && !isMobile ? (
+            <ConversationHistoryIndex entries={historyIndexEntries} viewportRef={viewportRef} />
+          ) : null}
           <MessageOuterSpacingProvider disableOuterSpacing>
             {streamRenderStrategy.render({
               agentId,
@@ -1030,6 +1050,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               isLoadingOlderHistory: isLoadingOlder,
               hasOlderHistory: hasOlder,
               scrollEnabled: streamScrollEnabled,
+              messageParagraphSpacing,
               listStyle: stylesheet.list,
               baseListContentContainerStyle: stylesheet.listContentContainer,
               forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
@@ -1471,6 +1492,7 @@ function PermissionRequestCard({
 const stylesheet = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
+    position: "relative",
     backgroundColor: theme.colors.surface0,
   },
   contentWrapper: {
@@ -1625,14 +1647,19 @@ const permissionStyles = StyleSheet.create((theme) => ({
 }));
 
 interface StreamItemWrapperProps {
+  itemId: string;
   gapBelow: number;
   children: ReactNode;
 }
 
-function StreamItemWrapper({ gapBelow, children }: StreamItemWrapperProps) {
+function StreamItemWrapper({ itemId, gapBelow, children }: StreamItemWrapperProps) {
   const wrapperStyle = useMemo(
     () => [stylesheet.streamItemWrapper, { marginBottom: gapBelow }],
     [gapBelow],
   );
-  return <View style={wrapperStyle}>{children}</View>;
+  return (
+    <View nativeID={getStreamItemDomId(itemId)} style={wrapperStyle}>
+      {children}
+    </View>
+  );
 }

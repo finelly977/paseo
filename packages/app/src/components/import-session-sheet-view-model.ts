@@ -4,6 +4,7 @@ import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { i18n } from "@/i18n/i18next";
 
 export const ALL_FILTER_VALUE = "__all__";
+export const UNKNOWN_FOLDER_KEY = "__unknown__";
 
 export function requiresImportSessionsHostUpgrade(input: {
   supportsSnapshot: boolean;
@@ -29,10 +30,9 @@ export function resolveProvidersToFetch(
   supportsSnapshot: boolean,
   snapshotEntries: ReadonlyArray<{ provider: string; enabled?: boolean }> | undefined,
 ): AgentProvider[] | null {
-  // COMPAT(providersSnapshot): the import-recent-sessions feature ships alongside
-  // providersSnapshot (v0.1.48, 2026-04-05). Daemons older than that lack both —
-  // we render an "update host" empty state instead of degrading. Drop this gate
-  // when the supported daemon floor is >= v0.1.48 (target: 2026-10-05).
+  // COMPAT(providersSnapshot)：导入最近会话功能与 providersSnapshot 同步发布
+  // （v0.1.48，2026-04-05）。更早的守护进程缺少这两项能力，直接显示“更新主机”空状态，
+  // 不降级到不完整的导入流程。支持的守护进程最低版本达到 v0.1.48 后（目标：2026-10-05）删除此门控。
   if (!supportsSnapshot) return null;
   if (!snapshotEntries) return null;
   return snapshotEntries.filter((entry) => entry.enabled !== false).map((entry) => entry.provider);
@@ -131,6 +131,8 @@ export interface EmptyStateInputs {
   isQueryingProviders: boolean;
   allQueriesSettled: boolean;
   selectedProvider: string;
+  selectedFolder: string;
+  selectedFolderLabel?: string;
   searchQuery?: string;
   aggregatedCount: number;
   visibleCount: number;
@@ -157,6 +159,15 @@ export function computeEmptyState(input: EmptyStateInputs): {
       emptyStateTitle: i18n.t("importSession.empty.noSearchMatches"),
     };
   }
+  const isFolderFiltered = input.selectedFolder !== ALL_FILTER_VALUE;
+  if (isFolderFiltered && input.aggregatedCount > 0) {
+    return {
+      showEmptyState,
+      emptyStateTitle: i18n.t("importSession.empty.noFolderSessions", {
+        folder: input.selectedFolderLabel ?? input.selectedFolder,
+      }),
+    };
+  }
   const isFilteredEmpty = input.selectedProvider !== ALL_FILTER_VALUE && input.aggregatedCount > 0;
   if (isFilteredEmpty) {
     const label = input.providerLabelById.get(input.selectedProvider) ?? input.selectedProvider;
@@ -178,15 +189,20 @@ export function filterSessionEntries(
   entries: readonly FetchRecentProviderSessionEntry[],
   input: {
     selectedProvider: string;
+    selectedFolder: string;
     searchQuery: string;
   },
 ): FetchRecentProviderSessionEntry[] {
   const query = input.searchQuery.trim().toLowerCase();
+  const folderKey = input.selectedFolder === ALL_FILTER_VALUE ? null : input.selectedFolder;
   return entries.filter((entry) => {
     if (
       input.selectedProvider !== ALL_FILTER_VALUE &&
       entry.providerId !== input.selectedProvider
     ) {
+      return false;
+    }
+    if (folderKey !== null && folderFilterKey(entry.cwd) !== folderKey) {
       return false;
     }
     if (!query) {
@@ -213,8 +229,13 @@ export function normalizeFolderKey(cwd: string | null | undefined): string {
   if (!trimmed) {
     return "";
   }
-  // Compare folders case-insensitively and ignore trailing separators.
-  return trimmed.replace(/[\\/]+$/, "").toLowerCase();
+  // 统一分隔符并去掉尾部斜杠，但保留大小写。会话可能来自大小写敏感的远程主机，
+  // 不能把仅大小写不同的目录误合并。
+  const normalized = trimmed.replace(/\\/g, "/");
+  if (normalized === "/" || /^[A-Za-z]:\/$/u.test(normalized)) {
+    return normalized;
+  }
+  return normalized.replace(/\/+$/, "");
 }
 
 export function getFolderLabel(cwd: string | null | undefined): string {
@@ -232,9 +253,8 @@ export interface ImportSessionFolderGroup {
 }
 
 /**
- * Group sessions by working directory while preserving last-activity order
- * (first-seen folder order follows the already sorted entry list).
- * When `preferredCwd` is set, that folder is pinned to the top.
+ * 按工作目录分组，同时保留最近活动时间顺序。
+ * 首次出现的文件夹顺序沿用已经排序的会话列表；指定 preferredCwd 时将对应文件夹置顶。
  */
 export function groupSessionEntriesByFolder(
   entries: readonly FetchRecentProviderSessionEntry[],
@@ -243,12 +263,12 @@ export function groupSessionEntriesByFolder(
   const groups: ImportSessionFolderGroup[] = [];
   const indexByKey = new Map<string, number>();
   for (const entry of entries) {
-    const key = normalizeFolderKey(entry.cwd);
+    const key = folderFilterKey(entry.cwd);
     const existingIndex = indexByKey.get(key);
     if (existingIndex === undefined) {
       indexByKey.set(key, groups.length);
       groups.push({
-        key: key || "__unknown__",
+        key,
         label: getFolderLabel(entry.cwd),
         entries: [entry],
       });
@@ -269,4 +289,31 @@ export function groupSessionEntriesByFolder(
     return groups;
   }
   return [preferred, ...groups.filter((_, index) => index !== preferredIndex)];
+}
+
+export interface ImportSessionFolderOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * 生成工作目录的稳定筛选键。
+ * 该键与 groupSessionEntriesByFolder 生成的分组键一致，确保下拉选择和分组使用同一身份。
+ */
+export function folderFilterKey(cwd: string | null | undefined): string {
+  return normalizeFolderKey(cwd) || UNKNOWN_FOLDER_KEY;
+}
+
+/**
+ * 从会话本身生成文件夹下拉选项：每个不同工作目录一个选项，显示完整路径，
+ * 按最近活动时间排序，并将当前工作区置顶。
+ */
+export function buildFolderFilterOptions(
+  entries: readonly FetchRecentProviderSessionEntry[],
+  preferredCwd?: string | null,
+): ImportSessionFolderOption[] {
+  return groupSessionEntriesByFolder(entries, preferredCwd).map((group) => ({
+    id: group.key,
+    label: group.label,
+  }));
 }

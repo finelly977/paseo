@@ -46,6 +46,7 @@ export function MarkdownTextSpan({
 
 interface MarkdownParagraphViewProps {
   paragraphStyle: ViewStyle;
+  marginBottomOverride?: number | null;
   containsImage?: boolean;
   children: ReactNode;
 }
@@ -55,7 +56,18 @@ const MARKDOWN_PARAGRAPH_RESET: ViewStyle = {};
 // Same shape as Android — paragraph is a View so block-level children (images)
 // keep their natural layout. Web text selection already spans nested inline
 // elements via CSS user-select, so no UITextView equivalent is needed.
-export function MarkdownParagraphView({ paragraphStyle, children }: MarkdownParagraphViewProps) {
-  const style = useMemo(() => [paragraphStyle, MARKDOWN_PARAGRAPH_RESET], [paragraphStyle]);
+export function MarkdownParagraphView({
+  paragraphStyle,
+  marginBottomOverride = null,
+  children,
+}: MarkdownParagraphViewProps) {
+  const style = useMemo(
+    () => [
+      paragraphStyle,
+      marginBottomOverride != null ? { marginBottom: marginBottomOverride } : null,
+      MARKDOWN_PARAGRAPH_RESET,
+    ],
+    [paragraphStyle, marginBottomOverride],
+  );
   return <View style={style}>{children}</View>;
 }

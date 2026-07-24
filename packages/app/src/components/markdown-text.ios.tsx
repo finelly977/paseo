@@ -72,6 +72,7 @@ export function MarkdownTextSpan({
 
 interface MarkdownParagraphViewProps {
   paragraphStyle: ViewStyle;
+  marginBottomOverride?: number | null;
   containsImage?: boolean;
   children: ReactNode;
 }
@@ -86,18 +87,27 @@ const MARKDOWN_PARAGRAPH_RESET: ViewStyle = {};
 // flow through unchanged.
 export function MarkdownParagraphView({
   paragraphStyle,
+  marginBottomOverride = null,
   containsImage = false,
   children,
 }: MarkdownParagraphViewProps) {
+  const overrideStyle = useMemo<ViewStyle | null>(
+    () => (marginBottomOverride != null ? { marginBottom: marginBottomOverride } : null),
+    [marginBottomOverride],
+  );
   const textStyle = useMemo(
     () =>
       resolvePlainMarkdownTextStyle([
         paragraphStyle,
+        overrideStyle,
         MARKDOWN_PARAGRAPH_RESET,
       ] as StyleProp<TextStyle>),
-    [paragraphStyle],
+    [paragraphStyle, overrideStyle],
   );
-  const viewStyle = useMemo(() => [paragraphStyle, MARKDOWN_PARAGRAPH_RESET], [paragraphStyle]);
+  const viewStyle = useMemo(
+    () => [paragraphStyle, overrideStyle, MARKDOWN_PARAGRAPH_RESET],
+    [paragraphStyle, overrideStyle],
+  );
 
   if (containsImage) {
     return <View style={viewStyle}>{children}</View>;

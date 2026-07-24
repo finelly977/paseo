@@ -2235,6 +2235,12 @@ export const ClientHeartbeatMessageSchema = z.object({
   focusedTerminalId: z.string().nullable().optional().default(null),
   lastActivityAt: z.string(),
   appVisible: z.boolean(),
+  // COMPAT(clientHeartbeatFocus): v0.2.0-beta.4（2026-07-24）新增；旧客户端不会发送。
+  // 守护进程在 2027-01-24 前将缺失值按 appVisible 处理。
+  appFocused: z.boolean().optional(),
+  // COMPAT(clientLocalNotificationCapability): v0.2.0-beta.4（2026-07-24）新增；旧客户端不会发送。
+  // 守护进程在 2027-01-24 前将缺失值保留为未知，不用于过期客户端的本地通知兜底。
+  canShowLocalNotifications: z.boolean().optional(),
   appVisibilityChangedAt: z.string().optional(),
 });
 

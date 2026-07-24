@@ -179,6 +179,12 @@ export const fr: TranslationResources = {
   agentStream: {
     empty: "Commencez à discuter avec cet agent...",
     scrollToBottom: "Faire défiler vers le bas",
+    historyIndex: {
+      label: "Index de l historique de conversation",
+      jumpTo: "Aller à {{title}}",
+      noPreview: "Aucun aperçu de réponse",
+      untitled: "Message sans titre",
+    },
     permission: {
       plan: "Plan",
       required: "Autorisation requise",
@@ -316,6 +322,11 @@ export const fr: TranslationResources = {
     title: "Session d'importation",
     filters: {
       all: "Tous",
+      allFolders: "Tous les dossiers",
+      providerTitle: "Filtrer par fournisseur",
+      folderTitle: "Filtrer par dossier",
+      providerAccessibility: "Filtre de fournisseur : {{value}}",
+      folderAccessibility: "Filtre de dossier : {{value}}",
     },
     search: {
       placeholder: "Rechercher titre, prompt ou dossier",
@@ -341,12 +352,16 @@ export const fr: TranslationResources = {
       noRecent: "Aucune session récente à importer.",
       alreadyImported: "Toutes les sessions récentes sont déjà importées.",
       noProviderSessions: "Aucune session{{provider}}trouvée.",
+      noFolderSessions: "Aucune session trouvée dans {{folder}}.",
     },
     row: {
       importing: "Importation...",
     },
     folders: {
       unknown: "Dossier inconnu",
+    },
+    errors: {
+      missingWorkingDirectory: "Cette session ne contient aucun dossier de travail.",
     },
   },
   workspace: {
@@ -1801,6 +1816,11 @@ export const fr: TranslationResources = {
       },
       detailLevel: {
         title: "Niveau de détail",
+      },
+      spacing: {
+        title: "Espacement",
+        paragraph: "Espacement des paragraphes",
+        paragraphAccessibility: "Espacement des paragraphes de message en pixels",
       },
       fonts: {
         title: "Polices",

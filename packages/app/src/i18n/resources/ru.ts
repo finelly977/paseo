@@ -177,6 +177,12 @@ export const ru: TranslationResources = {
   agentStream: {
     empty: "Начните общаться с этим агентом...",
     scrollToBottom: "Прокрутить вниз",
+    historyIndex: {
+      label: "Индекс истории разговора",
+      jumpTo: "Перейти к: {{title}}",
+      noPreview: "Нет предпросмотра ответа",
+      untitled: "Сообщение без названия",
+    },
     permission: {
       plan: "План",
       required: "Требуется разрешение",
@@ -314,6 +320,11 @@ export const ru: TranslationResources = {
     title: "Импортировать сеанс",
     filters: {
       all: "Все",
+      allFolders: "Все папки",
+      providerTitle: "Фильтр по поставщику",
+      folderTitle: "Фильтр по папке",
+      providerAccessibility: "Фильтр поставщика: {{value}}",
+      folderAccessibility: "Фильтр папки: {{value}}",
     },
     search: {
       placeholder: "Поиск по названию, prompt или папке",
@@ -339,12 +350,16 @@ export const ru: TranslationResources = {
       noRecent: "Нет последних сеансов для импорта.",
       alreadyImported: "Все последние сеансы уже импортированы.",
       noProviderSessions: "Сеансы{{provider}}не найдены.",
+      noFolderSessions: "В {{folder}} сеансы не найдены.",
     },
     row: {
       importing: "Импорт...",
     },
     folders: {
       unknown: "Неизвестная папка",
+    },
+    errors: {
+      missingWorkingDirectory: "У этого сеанса нет рабочего каталога.",
     },
   },
   workspace: {
@@ -1787,6 +1802,11 @@ export const ru: TranslationResources = {
       },
       detailLevel: {
         title: "Уровень детализации",
+      },
+      spacing: {
+        title: "Отступы",
+        paragraph: "Интервал между абзацами",
+        paragraphAccessibility: "Интервал между абзацами сообщения в пикселях",
       },
       fonts: {
         title: "Шрифты",

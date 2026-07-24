@@ -265,6 +265,24 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
           reason,
         });
       },
+      scrollToItem: (itemId) => {
+        const index = historyRows.findIndex((item) => item.id === itemId);
+        if (index >= 0) {
+          try {
+            flatListRef.current?.scrollToIndex({
+              index,
+              animated: true,
+              viewPosition: 0.4,
+            });
+          } catch (error) {
+            console.error("[AgentStream] 消息跳转失败", error);
+          }
+          return;
+        }
+        if (segments.liveHead.some((item) => item.id === itemId)) {
+          bottomAnchorController.requestLocalAnchor({ agentId, reason: "jump-to-bottom" });
+        }
+      },
       prepareForViewportChange: () => {
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
@@ -276,7 +294,14 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, markNativeViewportSettling, viewportRef]);
+  }, [
+    agentId,
+    bottomAnchorController,
+    historyRows,
+    markNativeViewportSettling,
+    segments.liveHead,
+    viewportRef,
+  ]);
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {

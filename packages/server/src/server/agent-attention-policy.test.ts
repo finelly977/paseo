@@ -9,6 +9,8 @@ import {
 function state(overrides: Partial<ClientPresenceState>): ClientPresenceState {
   return {
     appVisible: true,
+    appFocused: true,
+    canShowLocalNotifications: null,
     focusedAgentId: null,
     focusedTerminalId: null,
     lastActivityAtMs: null,
@@ -57,9 +59,10 @@ describe("computeNotificationPlan", () => {
     ).toEqual({ inAppRecipientIndex: null, shouldPush: false });
   });
 
-  it("does not suppress notifications when a focused client is backgrounded", () => {
+  it("uses push when a background client cannot show local notifications", () => {
     const backgroundFocused = state({
       appVisible: false,
+      canShowLocalNotifications: false,
       focusedAgentId: "agent-1",
       lastActivityAtMs: presentAtMs,
     });
@@ -71,7 +74,62 @@ describe("computeNotificationPlan", () => {
         pushEligible: true,
         nowMs,
       }),
+    ).toEqual({ inAppRecipientIndex: null, shouldPush: true });
+  });
+
+  it("does not suppress notifications when a visible window has lost focus", () => {
+    const unfocusedWindow = state({
+      appVisible: true,
+      appFocused: false,
+      canShowLocalNotifications: true,
+      focusedAgentId: "agent-1",
+      lastActivityAtMs: presentAtMs,
+    });
+
+    expect(
+      computeNotificationPlan({
+        allStates: [unfocusedWindow],
+        focusTarget: { kind: "agent", id: "agent-1" },
+        pushEligible: true,
+        nowMs,
+      }),
     ).toEqual({ inAppRecipientIndex: 0, shouldPush: false });
+  });
+
+  it("keeps a stale client with local notifications as the in-app recipient", () => {
+    const unfocusedWindow = state({
+      appVisible: false,
+      appFocused: false,
+      canShowLocalNotifications: true,
+      lastActivityAtMs: staleAtMs,
+    });
+
+    expect(
+      computeNotificationPlan({
+        allStates: [unfocusedWindow],
+        focusTarget: { kind: "agent", id: "agent-1" },
+        pushEligible: true,
+        nowMs,
+      }),
+    ).toEqual({ inAppRecipientIndex: 0, shouldPush: false });
+  });
+
+  it("falls back to push for a background client without local notifications", () => {
+    const backgroundClient = state({
+      appVisible: false,
+      appFocused: false,
+      canShowLocalNotifications: false,
+      lastActivityAtMs: presentAtMs,
+    });
+
+    expect(
+      computeNotificationPlan({
+        allStates: [backgroundClient],
+        focusTarget: { kind: "agent", id: "agent-1" },
+        pushEligible: true,
+        nowMs,
+      }),
+    ).toEqual({ inAppRecipientIndex: null, shouldPush: true });
   });
 
   it("treats present clients focused on different agents as eligible", () => {

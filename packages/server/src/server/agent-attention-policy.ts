@@ -4,6 +4,8 @@ export const PRESENCE_THRESHOLD_MS = 180_000;
 
 export interface ClientPresenceState {
   appVisible: boolean;
+  appFocused: boolean;
+  canShowLocalNotifications: boolean | null;
   lastActivityAtMs: number | null;
   focusedAgentId: string | null;
   focusedTerminalId: string | null;
@@ -21,7 +23,7 @@ interface ComputeNotificationPlanInput {
   // A present, app-visible client focused on the attention target suppresses the
   // notification entirely. Pass null when the target should not suppress notifications.
   focusTarget: AttentionFocusTarget | null;
-  // Whether a push notification is allowed when no client is present.
+  // Whether a push notification is allowed when no client can receive local attention.
   pushEligible: boolean;
   nowMs: number;
 }
@@ -47,6 +49,8 @@ export function computeNotificationPlan({
 }: ComputeNotificationPlanInput): NotificationPlan {
   let mostRecentPresentIndex: number | null = null;
   let mostRecentPresentAtMs = Number.NEGATIVE_INFINITY;
+  let mostRecentLocalNotificationIndex: number | null = null;
+  let mostRecentLocalNotificationAtMs = Number.NEGATIVE_INFINITY;
 
   for (const [clientIndex, state] of allStates.entries()) {
     const clampedActivityAtMs =
@@ -54,22 +58,33 @@ export function computeNotificationPlan({
     const isPresent =
       clampedActivityAtMs !== null && nowMs - clampedActivityAtMs <= PRESENCE_THRESHOLD_MS;
 
-    if (!isPresent) {
-      continue;
-    }
-
-    if (state.appVisible && isFocusedOnTarget(state, focusTarget)) {
+    const isActivelyUsingApp = state.appVisible && state.appFocused;
+    if (isPresent && isActivelyUsingApp && isFocusedOnTarget(state, focusTarget)) {
       return { inAppRecipientIndex: null, shouldPush: false };
     }
 
-    if (clampedActivityAtMs > mostRecentPresentAtMs) {
+    const canReceiveAttention = isActivelyUsingApp || state.canShowLocalNotifications !== false;
+    if (isPresent && canReceiveAttention && clampedActivityAtMs > mostRecentPresentAtMs) {
       mostRecentPresentIndex = clientIndex;
       mostRecentPresentAtMs = clampedActivityAtMs;
+    }
+
+    if (
+      state.canShowLocalNotifications === true &&
+      clampedActivityAtMs !== null &&
+      clampedActivityAtMs > mostRecentLocalNotificationAtMs
+    ) {
+      mostRecentLocalNotificationIndex = clientIndex;
+      mostRecentLocalNotificationAtMs = clampedActivityAtMs;
     }
   }
 
   if (mostRecentPresentIndex !== null) {
     return { inAppRecipientIndex: mostRecentPresentIndex, shouldPush: false };
+  }
+
+  if (mostRecentLocalNotificationIndex !== null) {
+    return { inAppRecipientIndex: mostRecentLocalNotificationIndex, shouldPush: false };
   }
 
   return { inAppRecipientIndex: null, shouldPush: pushEligible };

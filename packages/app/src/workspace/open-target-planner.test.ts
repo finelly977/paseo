@@ -116,6 +116,37 @@ describe("planWorkspaceOpenTargets", () => {
     ]);
   });
 
+  it("opens terminal targets at the workspace even when a file is active", () => {
+    const targets = planWorkspaceOpenTargets({
+      workspaceDirectory: "/repo",
+      activeFile: { path: "src/app.ts", lineStart: 3 },
+      desktopTargets: [
+        {
+          id: "powershell",
+          label: "PowerShell",
+          kind: "terminal",
+          icon: { kind: "symbol", name: "terminal" },
+        },
+      ],
+      canUseDesktopBridge: true,
+      isLocalExecution: true,
+    });
+
+    expect(targets).toEqual([
+      {
+        source: "desktop",
+        id: "powershell",
+        label: "PowerShell",
+        editorId: "powershell",
+        icon: { kind: "symbol", name: "terminal" },
+        openInput: {
+          editorId: "powershell",
+          workspacePath: "/repo",
+        },
+      },
+    ]);
+  });
+
   it("keeps GitHub target independent and uses blob and tree URLs", () => {
     const blobTargets = planWorkspaceOpenTargets({
       workspaceDirectory: "/repo",

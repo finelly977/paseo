@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { AppState } from "react-native";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { getIsElectron, isWeb, isNative } from "@/constants/platform";
+import { getIsAppActivelyVisible, getIsAppVisible } from "@/utils/app-visibility";
+import { canShowLocalNotifications } from "@/utils/os-notifications";
 import { readDesktopSystemIdleTimeMs } from "@/desktop/electron/idle";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import {
@@ -40,7 +42,9 @@ export function useClientActivity({
       deviceType: isWeb ? "web" : "mobile",
       initialFocusedAgentId: focusedAgentId,
       initialFocusedTerminalId: focusedTerminalId,
-      initialAppVisible: AppState.currentState === "active",
+      initialAppVisible: getIsAppVisible(),
+      initialAppFocused: getIsAppActivelyVisible(),
+      getCanShowLocalNotifications: canShowLocalNotifications,
       now: () => Date.now(),
       onAppResumed: (awayMs) => onAppResumedRef.current?.(awayMs),
     });
@@ -51,6 +55,7 @@ export function useClientActivity({
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       tracker.notifyAppVisibility(nextState === "active");
+      tracker.notifyAppFocus(nextState === "active");
       tracker.sendHeartbeat();
     });
     return () => subscription.remove();
@@ -66,16 +71,34 @@ export function useClientActivity({
       tracker.maybeSendImmediateHeartbeat();
     };
 
+    const syncWebPresence = (): boolean => {
+      const visibilityChanged = tracker.notifyAppVisibility(getIsAppVisible());
+      const focusChanged = tracker.notifyAppFocus(getIsAppActivelyVisible());
+      if (visibilityChanged.changed || focusChanged.changed) {
+        // 失焦/恢复焦点必须立即同步，不能被用户活动节流窗口延迟，否则服务端
+        // 可能在这段时间内错误地抑制完成通知。
+        tracker.sendHeartbeat();
+        return true;
+      }
+      return false;
+    };
+
     const handleVisibilityChange = () => {
-      const visible = document.visibilityState === "visible";
-      const { changed } = tracker.notifyAppVisibility(visible);
-      if (changed && visible) {
+      syncWebPresence();
+    };
+    const handleWindowFocus = () => {
+      tracker.recordUserActivity();
+      if (!syncWebPresence()) {
         tracker.maybeSendImmediateHeartbeat();
       }
     };
+    const handleWindowBlur = () => {
+      syncWebPresence();
+    };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleUserActivity);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("blur", handleWindowBlur);
     window.addEventListener("pointerdown", handleUserActivity, { passive: true });
     window.addEventListener("keydown", handleUserActivity);
     window.addEventListener("wheel", handleUserActivity, { passive: true });
@@ -83,7 +106,8 @@ export function useClientActivity({
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleUserActivity);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener("pointerdown", handleUserActivity);
       window.removeEventListener("keydown", handleUserActivity);
       window.removeEventListener("wheel", handleUserActivity);

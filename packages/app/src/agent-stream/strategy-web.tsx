@@ -11,6 +11,7 @@ import React, {
 import { ActivityIndicator } from "react-native";
 import { measureElement as measureVirtualElement, useVirtualizer } from "@tanstack/react-virtual";
 import { estimateStreamItemHeight } from "./web-virtualization";
+import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
 
@@ -108,6 +109,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     isLoadingOlderHistory,
     hasOlderHistory,
     scrollEnabled,
+    messageParagraphSpacing,
     isMobileBreakpoint,
   } = props;
   const scrollContainerRef = useRef<HTMLElement | null>(null);
@@ -131,6 +133,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const lastTouchClientYRef = useRef<number | null>(null);
   const pendingAutoScrollFrameRef = useRef<number | null>(null);
   const pendingAutoScrollTimeoutRef = useRef<number | null>(null);
+  const pendingItemJumpFrameRef = useRef<number | null>(null);
   const pendingVirtualRowMeasureFramesRef = useRef(new Map<Element, number>());
   const historyStartReadyRef = useRef(false);
   const shouldUseVirtualizer = segments.historyVirtualized.length > 0;
@@ -154,7 +157,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     getItemKey: (index: number) => segments.historyVirtualized[index]?.id ?? index,
     estimateSize: (index: number) => {
       const row = segments.historyVirtualized[index];
-      return row ? estimateStreamItemHeight(row) : 120;
+      return row ? estimateStreamItemHeight(row, messageParagraphSpacing) : 120;
     },
     measureElement: measureVirtualElement,
     useAnimationFrameWithResizeObserver: true,
@@ -203,6 +206,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         window.cancelAnimationFrame(frame);
       }
       pendingFrames.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pendingItemJumpFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingItemJumpFrameRef.current);
+      }
     };
   }, []);
 
@@ -466,29 +477,6 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     };
   }, [cancelPendingStickToBottom, handleDomScroll]);
 
-  useEffect(() => {
-    const handle: StreamViewportHandle = {
-      scrollToBottom: () => {
-        setFollowOutput(true);
-        cancelPendingStickToBottom();
-        forceStickToBottom();
-      },
-      prepareForViewportChange: () => {
-        if (!followOutputRef.current) {
-          return;
-        }
-        scheduleStickToBottom();
-      },
-    };
-    viewportRef.current = handle;
-    return () => {
-      if (viewportRef.current === handle) {
-        viewportRef.current = null;
-      }
-      cancelPendingStickToBottom();
-    };
-  }, [cancelPendingStickToBottom, forceStickToBottom, scheduleStickToBottom, viewportRef]);
-
   const contentContainerStyle = useMemo((): CSSProperties => {
     return {
       display: "flex",
@@ -545,6 +533,75 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const liveAuxiliary = useMemo(() => {
     return renderLiveAuxiliary();
   }, [renderLiveAuxiliary]);
+  const scrollToItem = useCallback(
+    (itemId: string) => {
+      setFollowOutput(false);
+      cancelPendingStickToBottom();
+      if (pendingItemJumpFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingItemJumpFrameRef.current);
+        pendingItemJumpFrameRef.current = null;
+      }
+      const centerMountedTarget = (): boolean => {
+        const scrollContainer = scrollContainerRef.current;
+        const target = scrollContainer ? document.getElementById(getStreamItemDomId(itemId)) : null;
+        if (
+          !scrollContainer ||
+          !(target instanceof HTMLElement) ||
+          !scrollContainer.contains(target)
+        ) {
+          return false;
+        }
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        return true;
+      };
+      const virtualIndex = segments.historyVirtualized.findIndex((item) => item.id === itemId);
+      if (virtualIndex >= 0) {
+        rowVirtualizer.scrollToIndex(virtualIndex, { align: "center" });
+        let remainingFrames = 8;
+        const centerAfterMount = () => {
+          pendingItemJumpFrameRef.current = null;
+          if (centerMountedTarget() || remainingFrames <= 0) {
+            return;
+          }
+          remainingFrames -= 1;
+          pendingItemJumpFrameRef.current = window.requestAnimationFrame(centerAfterMount);
+        };
+        pendingItemJumpFrameRef.current = window.requestAnimationFrame(centerAfterMount);
+        return;
+      }
+      centerMountedTarget();
+    },
+    [cancelPendingStickToBottom, rowVirtualizer, segments.historyVirtualized],
+  );
+  useEffect(() => {
+    const handle: StreamViewportHandle = {
+      scrollToBottom: () => {
+        setFollowOutput(true);
+        cancelPendingStickToBottom();
+        forceStickToBottom();
+      },
+      scrollToItem,
+      prepareForViewportChange: () => {
+        if (!followOutputRef.current) {
+          return;
+        }
+        scheduleStickToBottom();
+      },
+    };
+    viewportRef.current = handle;
+    return () => {
+      if (viewportRef.current === handle) {
+        viewportRef.current = null;
+      }
+      cancelPendingStickToBottom();
+    };
+  }, [
+    cancelPendingStickToBottom,
+    forceStickToBottom,
+    scheduleStickToBottom,
+    scrollToItem,
+    viewportRef,
+  ]);
   const historyStartSlot = useMemo(() => {
     if (!isLoadingOlderHistory) {
       return null;

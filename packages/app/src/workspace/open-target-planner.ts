@@ -72,7 +72,7 @@ function planDesktopOpenTargets(input: {
   }
 
   return input.desktopTargets.map((target) => {
-    if (!input.resolvedFile) {
+    if (!input.resolvedFile || target.kind === "terminal") {
       return {
         source: "desktop",
         id: target.id,

@@ -3,6 +3,7 @@ import type { FetchRecentProviderSessionEntry } from "@getpaseo/client/internal/
 import {
   aggregateSessionEntries,
   ALL_FILTER_VALUE,
+  buildFolderFilterOptions,
   buildProviderLabelMap,
   collectErroredProviderLabels,
   computeEmptyState,
@@ -248,22 +249,73 @@ describe("filterSessionEntries", () => {
       }),
     ];
     expect(
-      filterSessionEntries(entries, { selectedProvider: "claude", searchQuery: "" }).map(
-        (e) => e.providerHandleId,
-      ),
+      filterSessionEntries(entries, {
+        selectedProvider: "claude",
+        selectedFolder: ALL_FILTER_VALUE,
+        searchQuery: "",
+      }).map((e) => e.providerHandleId),
     ).toEqual(["a"]);
     expect(
       filterSessionEntries(entries, {
         selectedProvider: ALL_FILTER_VALUE,
+        selectedFolder: ALL_FILTER_VALUE,
         searchQuery: "auth",
       }).map((e) => e.providerHandleId),
     ).toEqual(["a", "b"]);
     expect(
       filterSessionEntries(entries, {
         selectedProvider: ALL_FILTER_VALUE,
+        selectedFolder: ALL_FILTER_VALUE,
         searchQuery: "E:\\other",
       }).map((e) => e.providerHandleId),
     ).toEqual(["b"]);
+  });
+
+  it("filters by folder using the full-path key, ignoring trailing separators", () => {
+    const entries = [
+      entry({ providerHandleId: "a", cwd: "E:\\paseo" }),
+      entry({ providerHandleId: "b", cwd: "E:\\paseo\\" }),
+      entry({ providerHandleId: "c", cwd: "E:\\other" }),
+    ];
+    const [paseoOption] = buildFolderFilterOptions(entries);
+    expect(
+      filterSessionEntries(entries, {
+        selectedProvider: ALL_FILTER_VALUE,
+        selectedFolder: paseoOption?.id ?? "",
+        searchQuery: "",
+      }).map((e) => e.providerHandleId),
+    ).toEqual(["a", "b"]);
+  });
+
+  it("keeps case-distinct paths separate for sessions from case-sensitive hosts", () => {
+    const entries = [
+      entry({ providerHandleId: "upper", cwd: "/home/User/project" }),
+      entry({ providerHandleId: "lower", cwd: "/home/user/project" }),
+    ];
+
+    expect(buildFolderFilterOptions(entries).map((option) => option.label)).toEqual([
+      "/home/User/project",
+      "/home/user/project",
+    ]);
+  });
+});
+
+describe("buildFolderFilterOptions", () => {
+  it("lists one option per folder with the full-path label, pinning the active workspace", () => {
+    const entries = [
+      entry({
+        providerHandleId: "other",
+        cwd: "E:\\other",
+        lastActivityAt: "2026-04-30T12:00:00.000Z",
+      }),
+      entry({
+        providerHandleId: "paseo",
+        cwd: "E:\\paseo",
+        lastActivityAt: "2026-04-30T11:00:00.000Z",
+      }),
+    ];
+    const options = buildFolderFilterOptions(entries, "E:\\paseo");
+    expect(options.map((o) => o.label)).toEqual(["E:\\paseo", "E:\\other"]);
   });
 });
 
@@ -321,6 +373,7 @@ describe("computeEmptyState", () => {
     isQueryingProviders: true,
     allQueriesSettled: true,
     selectedProvider: ALL_FILTER_VALUE,
+    selectedFolder: ALL_FILTER_VALUE,
     aggregatedCount: 0,
     visibleCount: 0,
     totalAlreadyImportedCount: 0,
@@ -375,6 +428,16 @@ describe("computeEmptyState", () => {
       providerLabelById: new Map([["claude", "Claude Code"]]),
     });
     expect(result.emptyStateTitle).toBe("No Claude Code sessions found.");
+  });
+
+  it("shows a folder-scoped message when a folder filter hides aggregated entries", () => {
+    const result = computeEmptyState({
+      ...baseInputs,
+      selectedFolder: "/repo/other",
+      selectedFolderLabel: "/repo/other",
+      aggregatedCount: 3,
+    });
+    expect(result.emptyStateTitle).toBe("No sessions found in /repo/other.");
   });
 
   it("falls back to the provider id when the filtered provider lacks a label", () => {

@@ -67,6 +67,8 @@ function buildTracker(
     initialFocusedAgentId: overrides.initialFocusedAgentId ?? "agent-1",
     initialFocusedTerminalId: overrides.initialFocusedTerminalId ?? null,
     initialAppVisible: overrides.initialAppVisible ?? true,
+    initialAppFocused: overrides.initialAppFocused ?? overrides.initialAppVisible ?? true,
+    getCanShowLocalNotifications: overrides.getCanShowLocalNotifications ?? (() => true),
     now: clock.now,
     onAppResumed: overrides.onAppResumed,
   });
@@ -85,6 +87,8 @@ describe("client activity tracker", () => {
       deviceType: "web",
       focusedAgentId: "agent-1",
       appVisible: true,
+      appFocused: true,
+      canShowLocalNotifications: true,
       lastActivityAt: new Date(START_MS + 5_250).toISOString(),
     });
   });
@@ -225,6 +229,35 @@ describe("client activity tracker", () => {
     const { tracker } = buildTracker({ initialAppVisible: true });
     const result = tracker.notifyAppVisibility(true);
     expect(result.changed).toBe(false);
+  });
+
+  it("reports window focus independently from page visibility", () => {
+    const { tracker, client } = buildTracker({
+      initialAppVisible: true,
+      initialAppFocused: true,
+    });
+
+    expect(tracker.notifyAppFocus(false)).toEqual({ changed: true });
+    tracker.sendHeartbeat();
+
+    expect(client.latest()).toMatchObject({
+      appVisible: true,
+      appFocused: false,
+    });
+  });
+
+  it("reports whether the client can show local notifications", () => {
+    let canShow = false;
+    const { tracker, client } = buildTracker({
+      getCanShowLocalNotifications: () => canShow,
+    });
+
+    tracker.sendHeartbeat();
+    expect(client.latest().canShowLocalNotifications).toBe(false);
+
+    canShow = true;
+    tracker.sendHeartbeat();
+    expect(client.latest().canShowLocalNotifications).toBe(true);
   });
 
   it("does not call onAppResumed when transitioning visible→visible or from initial-visible to hidden", () => {

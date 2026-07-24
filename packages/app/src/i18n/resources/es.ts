@@ -177,6 +177,12 @@ export const es: TranslationResources = {
   agentStream: {
     empty: "Comience a chatear con este agente...",
     scrollToBottom: "Desplazarse hacia abajo",
+    historyIndex: {
+      label: "Índice del historial de conversación",
+      jumpTo: "Ir a {{title}}",
+      noPreview: "Sin vista previa de respuesta",
+      untitled: "Mensaje sin título",
+    },
     permission: {
       plan: "Plan",
       required: "Permiso requerido",
@@ -315,6 +321,11 @@ export const es: TranslationResources = {
     title: "Importar sesión",
     filters: {
       all: "Todo",
+      allFolders: "Todas las carpetas",
+      providerTitle: "Filtrar por proveedor",
+      folderTitle: "Filtrar por carpeta",
+      providerAccessibility: "Filtro de proveedor: {{value}}",
+      folderAccessibility: "Filtro de carpeta: {{value}}",
     },
     search: {
       placeholder: "Buscar título, prompt o carpeta",
@@ -340,12 +351,16 @@ export const es: TranslationResources = {
       noRecent: "No hay sesiones recientes para importar.",
       alreadyImported: "Todas las sesiones recientes ya están importadas.",
       noProviderSessions: "No se encontraron sesiones{{provider}}.",
+      noFolderSessions: "No se encontraron sesiones en {{folder}}.",
     },
     row: {
       importing: "Importador...",
     },
     folders: {
       unknown: "Carpeta desconocida",
+    },
+    errors: {
+      missingWorkingDirectory: "Esta sesión no tiene un directorio de trabajo.",
     },
   },
   workspace: {
@@ -1800,6 +1815,11 @@ export const es: TranslationResources = {
       },
       detailLevel: {
         title: "Nivel de detalle",
+      },
+      spacing: {
+        title: "Espaciado",
+        paragraph: "Espaciado de párrafos",
+        paragraphAccessibility: "Espaciado de párrafos de mensajes en píxeles",
       },
       fonts: {
         title: "Fuentes",

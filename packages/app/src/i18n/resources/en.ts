@@ -175,6 +175,12 @@ export const en = {
   agentStream: {
     empty: "Start chatting with this agent...",
     scrollToBottom: "Scroll to bottom",
+    historyIndex: {
+      label: "Conversation history index",
+      jumpTo: "Jump to {{title}}",
+      noPreview: "No response preview",
+      untitled: "Untitled message",
+    },
     permission: {
       plan: "Plan",
       required: "Permission Required",
@@ -311,6 +317,11 @@ export const en = {
     title: "Import session",
     filters: {
       all: "All",
+      allFolders: "All folders",
+      providerTitle: "Filter by provider",
+      folderTitle: "Filter by folder",
+      providerAccessibility: "Provider filter: {{value}}",
+      folderAccessibility: "Folder filter: {{value}}",
     },
     search: {
       placeholder: "Search title, prompt, or folder",
@@ -336,12 +347,16 @@ export const en = {
       noRecent: "No recent sessions to import.",
       alreadyImported: "All recent sessions are already imported.",
       noProviderSessions: "No {{provider}} sessions found.",
+      noFolderSessions: "No sessions found in {{folder}}.",
     },
     row: {
       importing: "Importing...",
     },
     folders: {
       unknown: "Unknown folder",
+    },
+    errors: {
+      missingWorkingDirectory: "This session has no working directory.",
     },
   },
   workspace: {
@@ -1762,6 +1777,11 @@ export const en = {
       },
       detailLevel: {
         title: "Detail level",
+      },
+      spacing: {
+        title: "Spacing",
+        paragraph: "Paragraph spacing",
+        paragraphAccessibility: "Message paragraph spacing in pixels",
       },
       fonts: {
         title: "Fonts",

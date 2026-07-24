@@ -27,7 +27,7 @@ describe("assistant message height estimate", () => {
       height: 41.1,
     });
 
-    expect(estimateAssistantMessageHeightFromCache("First paragraph\n\nSecond paragraph")).toBe(97);
+    expect(estimateAssistantMessageHeightFromCache("First paragraph\n\nSecond paragraph")).toBe(93);
   });
 
   it("falls back to image metadata when markdown blocks are not measured", () => {
@@ -43,5 +43,25 @@ describe("assistant message height estimate", () => {
         "Here is the screenshot\n\n![Screenshot](https://example.com/landscape.png)",
       ),
     ).toBeGreaterThan(220);
+  });
+
+  it("reuses measured block heights with different paragraph spacing", () => {
+    setAssistantMarkdownBlockHeight({
+      block: "First paragraph",
+      width: 804,
+      height: 18.2,
+    });
+    setAssistantMarkdownBlockHeight({
+      block: "Second paragraph",
+      width: 804,
+      height: 41.1,
+    });
+
+    expect(estimateAssistantMessageHeightFromCache("First paragraph\n\nSecond paragraph", 4)).toBe(
+      89,
+    );
+    expect(estimateAssistantMessageHeightFromCache("First paragraph\n\nSecond paragraph", 8)).toBe(
+      93,
+    );
   });
 });

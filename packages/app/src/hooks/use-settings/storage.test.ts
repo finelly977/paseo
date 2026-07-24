@@ -6,6 +6,7 @@ import {
   DEFAULT_APP_SETTINGS,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
+  DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   DEFAULT_UI_FONT_SIZE,
   loadAppSettingsFromStorage,
   loadSettingsFromStorage,
@@ -329,6 +330,7 @@ describe("appearance settings", () => {
     expect(result.codeFontSize).toBe(DEFAULT_CODE_FONT_SIZE);
     expect(result.syntaxTheme).toBe("one");
     expect(result.toolCallDetailLevel).toBe("detailed");
+    expect(result.messageParagraphSpacing).toBe(DEFAULT_MESSAGE_PARAGRAPH_SPACING);
   });
 
   it("migrates the enabled compact tool call preference to overview", async () => {
@@ -395,6 +397,31 @@ describe("appearance settings", () => {
       }),
     });
     expect((await loadAppSettingsFromStorage(bogus)).codeFontSize).toBe(DEFAULT_CODE_FONT_SIZE);
+  });
+
+  it("clamps the message paragraph spacing into range and rejects non-numeric values", async () => {
+    const high = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ messageParagraphSpacing: 999 }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(high)).messageParagraphSpacing).toBe(32);
+
+    const negative = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ messageParagraphSpacing: -5 }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(negative)).messageParagraphSpacing).toBe(0);
+
+    const bogus = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ messageParagraphSpacing: "abc" }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(bogus)).messageParagraphSpacing).toBe(
+      DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+    );
   });
 
   it("trims an accepted font family", async () => {

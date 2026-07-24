@@ -5,7 +5,7 @@ import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 const ASSISTANT_MARKDOWN_BLOCK_HEIGHT_CACHE_LIMIT = 1000;
 const ASSISTANT_MARKDOWN_BLOCK_ESTIMATE_WIDTH = MAX_CONTENT_WIDTH - 16;
 const ASSISTANT_MESSAGE_VERTICAL_PADDING = 24;
-const ASSISTANT_MARKDOWN_BLOCK_GAP = 12;
+export const DEFAULT_ASSISTANT_MARKDOWN_BLOCK_GAP = 8;
 
 interface MarkdownBlockHeightInput {
   block: string;
@@ -40,6 +40,16 @@ function normalizeMarkdownBlockWidth(width: number): number | null {
     return null;
   }
   return Math.round(width);
+}
+
+function normalizeParagraphSpacing(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_ASSISTANT_MARKDOWN_BLOCK_GAP;
+  }
+  if (!Number.isFinite(value)) {
+    return DEFAULT_ASSISTANT_MARKDOWN_BLOCK_GAP;
+  }
+  return Math.max(0, Math.round(value));
 }
 
 function createMarkdownBlockHeightKey(input: MarkdownBlockHeightInput): string | null {
@@ -78,7 +88,10 @@ export function setAssistantMarkdownBlockHeight(input: {
   return height;
 }
 
-function estimateAssistantMarkdownBlockHeightFromCache(markdown: string): number | null {
+function estimateAssistantMarkdownBlockHeightFromCache(
+  markdown: string,
+  paragraphSpacing: number,
+): number | null {
   const blocks = splitMarkdownBlocks(markdown);
   if (blocks.length === 0) {
     return null;
@@ -100,13 +113,17 @@ function estimateAssistantMarkdownBlockHeightFromCache(markdown: string): number
   return (
     ASSISTANT_MESSAGE_VERTICAL_PADDING +
     blockHeight +
-    ASSISTANT_MARKDOWN_BLOCK_GAP * Math.max(0, blocks.length - 1)
+    paragraphSpacing * Math.max(0, blocks.length - 1)
   );
 }
 
-export function estimateAssistantMessageHeightFromCache(markdown: string): number | null {
+export function estimateAssistantMessageHeightFromCache(
+  markdown: string,
+  paragraphSpacing?: number,
+): number | null {
+  const normalizedParagraphSpacing = normalizeParagraphSpacing(paragraphSpacing);
   return (
-    estimateAssistantMarkdownBlockHeightFromCache(markdown) ??
+    estimateAssistantMarkdownBlockHeightFromCache(markdown, normalizedParagraphSpacing) ??
     estimateAssistantImageMessageHeightFromCache(markdown)
   );
 }

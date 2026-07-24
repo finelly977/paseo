@@ -28,6 +28,9 @@ export const DEFAULT_CODE_FONT_SIZE = 12; // == FONT_SIZE.code
 export const MIN_CODE_FONT_SIZE = 9;
 export const MAX_CODE_FONT_SIZE = 22; // line-height 1.5×22=33 stays safe
 export const MAX_FONT_FAMILY_LENGTH = 200;
+export const DEFAULT_MESSAGE_PARAGRAPH_SPACING = 8; // 对应 SPACING[2]，默认的段落间距
+export const MIN_MESSAGE_PARAGRAPH_SPACING = 0;
+export const MAX_MESSAGE_PARAGRAPH_SPACING = 32;
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -44,6 +47,7 @@ export interface AppSettings {
   autoExpandReasoning: boolean;
   toolCallDetailLevel: ToolCallDetailLevel;
   vimKeybindings: boolean;
+  messageParagraphSpacing: number; // 每个消息段落下方的像素间距，默认 8
 }
 
 export interface Settings extends AppSettings {
@@ -68,6 +72,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   autoExpandReasoning: false,
   toolCallDetailLevel: "detailed",
   vimKeybindings: false,
+  messageParagraphSpacing: DEFAULT_MESSAGE_PARAGRAPH_SPACING,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -188,6 +193,20 @@ function parseToolCallDetailLevel(stored: StoredAppSettings): ToolCallDetailLeve
   return null;
 }
 
+type NumericAppearanceSetting = "uiFontSize" | "codeFontSize" | "messageParagraphSpacing";
+
+function copyClampedAppearanceSetting(
+  result: Partial<AppSettings>,
+  key: NumericAppearanceSetting,
+  value: unknown,
+  bounds: { min: number; max: number },
+): void {
+  const parsed = parseClampedFontSize(value, bounds);
+  if (parsed !== null) {
+    result[key] = parsed;
+  }
+}
+
 function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   const result: Partial<AppSettings> = {};
   if (typeof stored.theme === "string" && VALID_THEMES.has(stored.theme)) {
@@ -218,20 +237,18 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   if (monoFontFamily !== null) {
     result.monoFontFamily = monoFontFamily;
   }
-  const uiFontSize = parseClampedFontSize(stored.uiFontSize, {
+  copyClampedAppearanceSetting(result, "uiFontSize", stored.uiFontSize, {
     min: MIN_UI_FONT_SIZE,
     max: MAX_UI_FONT_SIZE,
   });
-  if (uiFontSize !== null) {
-    result.uiFontSize = uiFontSize;
-  }
-  const codeFontSize = parseClampedFontSize(stored.codeFontSize, {
+  copyClampedAppearanceSetting(result, "codeFontSize", stored.codeFontSize, {
     min: MIN_CODE_FONT_SIZE,
     max: MAX_CODE_FONT_SIZE,
   });
-  if (codeFontSize !== null) {
-    result.codeFontSize = codeFontSize;
-  }
+  copyClampedAppearanceSetting(result, "messageParagraphSpacing", stored.messageParagraphSpacing, {
+    min: MIN_MESSAGE_PARAGRAPH_SPACING,
+    max: MAX_MESSAGE_PARAGRAPH_SPACING,
+  });
   if (typeof stored.syntaxTheme === "string" && isSyntaxThemeId(stored.syntaxTheme)) {
     result.syntaxTheme = stored.syntaxTheme;
   }

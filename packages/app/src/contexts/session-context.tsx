@@ -165,6 +165,28 @@ interface AgentAttentionNotificationInput {
   permissionRequest: NotificationPermissionRequest | null;
 }
 
+async function sendAttentionOsNotification(
+  notification: AgentAttentionNotificationPayload,
+): Promise<boolean> {
+  try {
+    const sent = await sendOsNotification({
+      title: notification.title,
+      body: notification.body,
+      data: notification.data,
+    });
+    if (!sent) {
+      console.warn("[Session] 操作系统未接受智能体完成通知", {
+        reason: notification.data.reason,
+        agentId: notification.data.agentId,
+      });
+    }
+    return sent;
+  } catch (error) {
+    console.error("[Session] 发送智能体完成通知失败", error);
+    return false;
+  }
+}
+
 function resolveAgentAttentionNotification(
   input: AgentAttentionNotificationInput,
 ): AgentAttentionNotificationPayload | null {
@@ -182,6 +204,50 @@ function resolveAgentAttentionNotification(
     assistantMessage: input.reason === "finished" ? input.assistantMessage : null,
     permissionRequest: input.reason === "permission" ? input.permissionRequest : null,
   });
+}
+
+function parseAttentionTimestamp(timestamp: string): number | null {
+  const timestampMs = new Date(timestamp).getTime();
+  if (Number.isFinite(timestampMs)) {
+    return timestampMs;
+  }
+  console.error("[Session] 智能体完成通知时间戳无效", timestamp);
+  return null;
+}
+
+function canSendAttentionNotification(input: {
+  agentId: string;
+  timestampMs: number;
+  notified: ReadonlyMap<string, number>;
+  inFlight: ReadonlySet<string>;
+}): boolean {
+  const lastNotified = input.notified.get(input.agentId);
+  if (lastNotified !== undefined && lastNotified >= input.timestampMs) {
+    return false;
+  }
+  return !input.inFlight.has(`${input.agentId}:${input.timestampMs}`);
+}
+
+async function deliverAttentionNotification(input: {
+  agentId: string;
+  timestampMs: number;
+  notification: AgentAttentionNotificationPayload;
+  notified: Map<string, number>;
+  inFlight: Set<string>;
+}): Promise<void> {
+  const key = `${input.agentId}:${input.timestampMs}`;
+  input.inFlight.add(key);
+  try {
+    if (await sendAttentionOsNotification(input.notification)) {
+      const previous = input.notified.get(input.agentId);
+      input.notified.set(
+        input.agentId,
+        previous === undefined ? input.timestampMs : Math.max(previous, input.timestampMs),
+      );
+    }
+  } finally {
+    input.inFlight.delete(key);
+  }
 }
 
 type WorkspaceSetupProgressPayload = Extract<
@@ -451,6 +517,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   );
   const _sessionStateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attentionNotifiedRef = useRef<Map<string, number>>(new Map());
+  const attentionNotificationInFlightRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef(AppState.currentState);
   const viewedTimelineSyncRef = useRef<ViewedTimelineSync | null>(null);
   const audioOutputBuffersRef = useRef<Map<string, BufferedAudioChunk[]>>(new Map());
@@ -495,7 +562,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   usePushTokenRegistration({ client, serverId });
 
   const notifyAgentAttention = useCallback(
-    (params: {
+    async (params: {
       agentId: string;
       reason: "finished" | "error" | "permission";
       timestamp: string;
@@ -513,12 +580,20 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         return;
       }
 
-      const timestampMs = new Date(params.timestamp).getTime();
-      const lastNotified = attentionNotifiedRef.current.get(params.agentId);
-      if (lastNotified && lastNotified >= timestampMs) {
+      const timestampMs = parseAttentionTimestamp(params.timestamp);
+      if (timestampMs === null) {
         return;
       }
-      attentionNotifiedRef.current.set(params.agentId, timestampMs);
+      if (
+        !canSendAttentionNotification({
+          agentId: params.agentId,
+          timestampMs,
+          notified: attentionNotifiedRef.current,
+          inFlight: attentionNotificationInFlightRef.current,
+        })
+      ) {
+        return;
+      }
 
       const head = session?.agentStreamHead.get(params.agentId) ?? [];
       const tail = session?.agentStreamTail.get(params.agentId) ?? [];
@@ -540,10 +615,12 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         return;
       }
 
-      void sendOsNotification({
-        title: notification.title,
-        body: notification.body,
-        data: notification.data,
+      await deliverAttentionNotification({
+        agentId: params.agentId,
+        timestampMs,
+        notification,
+        notified: attentionNotifiedRef.current,
+        inFlight: attentionNotificationInFlightRef.current,
       });
     },
     [serverId],
@@ -840,7 +917,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
     const unsubAgentAttention = client.onAgentAttentionRequired((notification) => {
       if (notification.shouldNotify) {
-        notifyAgentAttention(notification);
+        void notifyAgentAttention(notification);
       }
     });
 
@@ -1137,7 +1214,18 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           cwd: message.payload.cwd,
           ...(message.payload.workspaceId ? { workspaceId: message.payload.workspaceId } : {}),
         },
-      });
+      })
+        .then((sent) => {
+          if (!sent) {
+            console.warn("[Session] 操作系统未接受终端完成通知", {
+              terminalId: message.payload.terminalId,
+            });
+          }
+          return sent;
+        })
+        .catch((error) => {
+          console.error("[Session] 发送终端通知失败", error);
+        });
     });
 
     return () => {

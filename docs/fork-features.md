@@ -26,6 +26,7 @@
 - 导入页面请求智能体 CLI 可提供的全部会话，不使用仅显示最近固定数量会话的前端限制。
 - Codex 会自动遍历分页，直到取完会话或满足显式限制；Claude、OpenCode、Pi、OMP 和 ACP 导入路径不再由导入界面强制截断。
 - 支持按智能体类型、会话标题、消息预览和工作目录搜索。
+- 提供按完整工作目录路径筛选的下拉框，不用文件夹名称作为唯一身份；路径相同但名称相同的不同目录不会混淆。
 - 会话按工作目录分组并显示目录信息，便于在大量历史会话中定位目标。
 - 已导入会话仍会被识别并从可导入列表中过滤。
 
@@ -69,9 +70,54 @@
 ### 5. 对话 Markdown 使用更紧凑的排版密度
 
 - 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距。
+- 在设置的“外观 → 间距”中可调整消息段落间距，范围为 0–32 像素，默认 8 像素；助手 Markdown 分块渲染和网页历史虚拟化估算使用同一设置，且不会重复叠加段落内部与消息块外部间距。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
 
 主要涉及：
 
 - `packages/app/src/agent-stream/spacing.ts`
 - `packages/app/src/styles/markdown-styles.ts`
+- `packages/app/src/hooks/use-settings/storage.ts`
+- `packages/app/src/screens/settings/appearance/appearance-section.tsx`
+
+### 6. 对话历史索引与消息跳转
+
+- 桌面网页端在对话内容左侧显示历史索引刻度，每个刻度对应一轮用户消息。
+- 悬停或聚焦刻度时显示用户消息标题和助手回复摘要，点击后跳转到对应消息；长历史最多显示 60 个刻度，首尾保留并均匀采样。
+- 虚拟化历史使用虚拟列表定位，已挂载消息使用 DOM 滚动定位，不一次性额外渲染全部历史内容。
+
+主要涉及：
+
+- `packages/app/src/agent-stream/history-index-model.ts`
+- `packages/app/src/agent-stream/history-index.web.tsx`
+- `packages/app/src/agent-stream/strategy-web.tsx`
+- `packages/app/src/agent-stream/view.tsx`
+
+### 7. 窗口焦点感知与智能体完成通知可靠性
+
+- 心跳同时上报应用可见状态和窗口焦点状态；浏览器页面可见但窗口失焦时，不再把用户误判为正在查看当前智能体。
+- 窗口获得或失去焦点时立即同步心跳，避免活动心跳节流造成通知决策滞后。
+- 心跳同时上报当前客户端是否具备本地桌面通知通道；活动时间过期后，仍可由已连接且具备本地通知能力的桌面客户端接收通知，不会误走没有令牌的推送路径。
+- 系统通知发送会等待客户端发送调用的结果；失败或系统拒绝时记录错误，并且只有真实发送成功才记录去重时间，后续事件仍可重试。
+- 旧客户端不发送焦点字段时，守护进程在兼容期限内按原可见状态处理。
+
+主要涉及：
+
+- `packages/app/src/hooks/use-client-activity.ts`
+- `packages/app/src/contexts/session-context.tsx`
+- `packages/protocol/src/messages.ts`
+- `packages/server/src/server/agent-attention-policy.ts`
+- `packages/server/src/server/session.ts`
+- `packages/server/src/server/websocket-server.ts`
+
+### 8. Windows PowerShell 工作区打开方式
+
+- 桌面端“打开方式”菜单在 Windows 上检测 Windows PowerShell 5.1、PowerShell 7（pwsh）及其常见命令路径。
+- 选择 PowerShell 会打开独立控制台并定位到当前工作区目录，路径中的单引号会按 PowerShell 规则安全转义。
+- 非 Windows 平台不显示该目标。
+
+主要涉及：
+
+- `packages/desktop/src/features/editor-targets/targets/powershell.ts`
+- `packages/desktop/src/features/editor-targets/registry.ts`
+- `packages/app/src/screens/workspace/workspace-open-in-editor-button.tsx`

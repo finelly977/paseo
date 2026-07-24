@@ -97,6 +97,21 @@ export async function ensureOsNotificationPermission(): Promise<boolean> {
   return await ensureNotificationPermission();
 }
 
+/** 返回当前客户端是否具备发送本地桌面通知的通道。 */
+export function canShowLocalNotifications(): boolean {
+  if (isNative) {
+    return false;
+  }
+  if (getDesktopNotificationSender()) {
+    return true;
+  }
+  const NotificationConstructor = getWebNotificationConstructor();
+  if (!NotificationConstructor) {
+    return false;
+  }
+  return NotificationConstructor.permission === "granted";
+}
+
 function hasNotificationClickTarget(data: Record<string, unknown> | undefined): boolean {
   const target = resolveNotificationTarget(data);
   return target.serverId !== null || target.agentId !== null || target.workspaceId !== null;
@@ -110,7 +125,8 @@ function getWebNotificationIconUrl(): string | undefined {
   try {
     const asset = Asset.fromModule(require("../../assets/images/notification-icon.png"));
     notificationIconUrl = asset.uri ?? null;
-  } catch {
+  } catch (error) {
+    console.error("[Notifications] 加载通知图标失败", error);
     notificationIconUrl = null;
   }
 

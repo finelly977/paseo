@@ -616,6 +616,8 @@ export class Session {
     focusedTerminalId: string | null;
     lastActivityAt: Date;
     appVisible: boolean;
+    appFocused: boolean;
+    canShowLocalNotifications: boolean | null;
     appVisibilityChangedAt: Date;
   } | null = null;
   private readonly terminalManager: TerminalManager | null;
@@ -1230,6 +1232,8 @@ export class Session {
     focusedTerminalId: string | null;
     lastActivityAt: Date;
     appVisible: boolean;
+    appFocused: boolean;
+    canShowLocalNotifications: boolean | null;
     appVisibilityChangedAt: Date;
   } | null {
     return this.clientActivity;
@@ -3559,6 +3563,8 @@ export class Session {
     focusedTerminalId?: string | null;
     lastActivityAt: string;
     appVisible: boolean;
+    appFocused?: boolean;
+    canShowLocalNotifications?: boolean;
     appVisibilityChangedAt?: string;
   }): void {
     const focusedTerminalId = msg.focusedTerminalId?.trim() || null;
@@ -3571,6 +3577,12 @@ export class Session {
       focusedTerminalId,
       lastActivityAt: new Date(msg.lastActivityAt),
       appVisible: msg.appVisible,
+      // COMPAT(clientHeartbeatFocus): v0.2.0-beta.4 新增，旧客户端不会发送；
+      // 2027-01-24 前将缺失值按 appVisible 处理。
+      appFocused: msg.appFocused ?? msg.appVisible,
+      // COMPAT(clientLocalNotificationCapability): v0.2.0-beta.4 新增，旧客户端不会发送；
+      // 2027-01-24 前保留 null，以维持旧客户端的活动期选择逻辑，但不把它用于过期后的本地通知兜底。
+      canShowLocalNotifications: msg.canShowLocalNotifications ?? null,
       appVisibilityChangedAt,
     };
     if (msg.appVisible && focusedTerminalId) {

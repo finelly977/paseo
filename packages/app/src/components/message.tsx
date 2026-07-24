@@ -117,6 +117,7 @@ import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useSettings } from "@/hooks/use-settings";
 export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
@@ -1474,7 +1475,11 @@ function AssistantMessageBlockContainer({
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const { width, height } = event.nativeEvent.layout;
-      setAssistantMarkdownBlockHeight({ block, width, height });
+      setAssistantMarkdownBlockHeight({
+        block,
+        width,
+        height,
+      });
     },
     [block],
   );
@@ -1579,6 +1584,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   client,
   spacing = "default",
 }: AssistantMessageProps) {
+  const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
   const markdownParser = useMemo(() => {
     const parser = MarkdownIt({ typographer: true, linkify: true });
     const defaultValidateLink = parser.validateLink.bind(parser);
@@ -1867,6 +1873,8 @@ export const AssistantMessage = memo(function AssistantMessage({
         <MarkdownParagraphView
           key={node.key}
           paragraphStyle={styles.paragraph}
+          // 助手消息块已由外层容器提供可配置间距，这里不再重复添加。
+          marginBottomOverride={0}
           containsImage={markdownNodeContainsType(node, "image")}
         >
           {children}
@@ -1940,7 +1948,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         <AssistantMessageBlockContainer
           key={key}
           block={block}
-          marginBottom={index < keyedBlocks.length - 1 ? 12 : 0}
+          marginBottom={index < keyedBlocks.length - 1 ? messageParagraphSpacing : 0}
         >
           <MemoizedMarkdownBlock
             text={block}

@@ -5,6 +5,7 @@ import type { EditorTargetIcon, EditorTargetRuntime } from "./target.js";
 import { cursorTarget } from "./targets/cursor.js";
 import { explorerTarget, fileManagerTarget, finderTarget } from "./targets/file-manager.js";
 import { intellijIdeaTarget } from "./targets/intellij-idea.js";
+import { powershellTarget } from "./targets/powershell.js";
 import { pycharmTarget } from "./targets/pycharm.js";
 import { vscodeTarget } from "./targets/vscode.js";
 import { webstormTarget } from "./targets/webstorm.js";
@@ -288,5 +289,50 @@ describe("editor target registry", () => {
 
     expect(macTargets.map((target) => target.id)).toEqual(["finder"]);
     expect(windowsTargets.map((target) => target.id)).toEqual(["explorer"]);
+  });
+
+  it("opens PowerShell at the workspace directory on Windows", async () => {
+    const runtime = new FakeEditorTargets("win32");
+    runtime.installCommand(
+      "powershell.exe",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    );
+
+    expect(await powershellTarget.isInstalled(runtime)).toBe(true);
+    expect(await powershellTarget.describe(runtime)).toEqual({
+      id: "powershell",
+      label: "PowerShell",
+      kind: "terminal",
+      icon: { kind: "symbol", name: "terminal" },
+    });
+
+    await powershellTarget.launch({ workspacePath: "C:/repo" }, runtime);
+
+    expect(runtime.launches).toEqual([
+      {
+        command: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+        args: ["-NoExit", "-Command", "Set-Location -LiteralPath 'C:/repo'"],
+      },
+    ]);
+  });
+
+  it("escapes single quotes in a PowerShell workspace path", async () => {
+    const runtime = new FakeEditorTargets("win32");
+    runtime.installCommand("pwsh.exe", "C:/Program Files/PowerShell/pwsh.exe");
+
+    await powershellTarget.launch({ workspacePath: "C:/user/O'Brien/project" }, runtime);
+
+    expect(runtime.launches[0]?.args).toEqual([
+      "-NoExit",
+      "-Command",
+      "Set-Location -LiteralPath 'C:/user/O''Brien/project'",
+    ]);
+  });
+
+  it("does not offer PowerShell off Windows", async () => {
+    const runtime = new FakeEditorTargets("darwin");
+    runtime.installCommand("powershell.exe");
+
+    expect(await powershellTarget.isInstalled(runtime)).toBe(false);
   });
 });

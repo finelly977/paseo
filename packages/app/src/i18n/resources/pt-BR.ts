@@ -177,6 +177,12 @@ export const ptBR: TranslationResources = {
   agentStream: {
     empty: "Comece a conversar com este agente...",
     scrollToBottom: "Rolar para o fim",
+    historyIndex: {
+      label: "Índice do histórico da conversa",
+      jumpTo: "Ir para {{title}}",
+      noPreview: "Sem prévia da resposta",
+      untitled: "Mensagem sem título",
+    },
     permission: {
       plan: "Plano",
       required: "Permissão necessária",
@@ -315,6 +321,11 @@ export const ptBR: TranslationResources = {
     title: "Importar sessão",
     filters: {
       all: "Tudo",
+      allFolders: "Todas as pastas",
+      providerTitle: "Filtrar por provedor",
+      folderTitle: "Filtrar por pasta",
+      providerAccessibility: "Filtro de provedor: {{value}}",
+      folderAccessibility: "Filtro de pasta: {{value}}",
     },
     search: {
       placeholder: "Buscar título, prompt ou pasta",
@@ -340,12 +351,16 @@ export const ptBR: TranslationResources = {
       noRecent: "Nenhuma sessão recente para importar.",
       alreadyImported: "Todas as sessões recentes já foram importadas.",
       noProviderSessions: "Nenhuma sessão de {{provider}} encontrada.",
+      noFolderSessions: "Nenhuma sessão encontrada em {{folder}}.",
     },
     row: {
       importing: "Importando...",
     },
     folders: {
       unknown: "Pasta desconhecida",
+    },
+    errors: {
+      missingWorkingDirectory: "Esta sessão não tem um diretório de trabalho.",
     },
   },
   workspace: {
@@ -1783,6 +1798,11 @@ export const ptBR: TranslationResources = {
       },
       detailLevel: {
         title: "Nível de detalhe",
+      },
+      spacing: {
+        title: "Espaçamento",
+        paragraph: "Espaçamento de parágrafos",
+        paragraphAccessibility: "Espaçamento de parágrafos da mensagem em pixels",
       },
       fonts: {
         title: "Fontes",

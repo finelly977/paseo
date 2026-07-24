@@ -8,6 +8,8 @@ export interface HeartbeatPayload {
   focusedTerminalId: string | null;
   lastActivityAt: string;
   appVisible: boolean;
+  appFocused: boolean;
+  canShowLocalNotifications: boolean;
   appVisibilityChangedAt?: string;
 }
 
@@ -22,6 +24,8 @@ export interface ClientActivityTrackerInput {
   initialFocusedAgentId: string | null;
   initialFocusedTerminalId: string | null;
   initialAppVisible: boolean;
+  initialAppFocused: boolean;
+  getCanShowLocalNotifications: () => boolean;
   now: () => number;
   onAppResumed?: (awayMs: number) => void;
 }
@@ -32,6 +36,7 @@ export interface ClientActivityTracker {
   setFocusedAgentId(id: string | null): void;
   setFocusedTerminalId(id: string | null): void;
   notifyAppVisibility(visible: boolean): { changed: boolean };
+  notifyAppFocus(focused: boolean): { changed: boolean };
   notifySystemIdleMs(idleMs: number | null): void;
   sendHeartbeat(): void;
 }
@@ -42,6 +47,7 @@ export function createClientActivityTracker(
   const { client, deviceType, now, onAppResumed } = input;
   let lastActivityAtMs = now();
   let appVisible = input.initialAppVisible;
+  let appFocused = input.initialAppFocused;
   let appVisibilityChangedAtMs = now();
   let backgroundedAtMs: number | null = appVisible ? null : now();
   let focusedAgentId = input.initialFocusedAgentId;
@@ -56,6 +62,8 @@ export function createClientActivityTracker(
       focusedTerminalId,
       lastActivityAt: new Date(lastActivityAtMs).toISOString(),
       appVisible,
+      appFocused,
+      canShowLocalNotifications: input.getCanShowLocalNotifications(),
       appVisibilityChangedAt: new Date(appVisibilityChangedAtMs).toISOString(),
     });
   }
@@ -101,6 +109,14 @@ export function createClientActivityTracker(
         onAppResumed?.(Math.max(0, now() - at));
       }
       recordUserActivity();
+      return { changed: true };
+    },
+    notifyAppFocus(nextFocused) {
+      if (appFocused === nextFocused) return { changed: false };
+      appFocused = nextFocused;
+      if (nextFocused) {
+        recordUserActivity();
+      }
       return { changed: true };
     },
     notifySystemIdleMs(idleMs) {

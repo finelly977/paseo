@@ -2156,6 +2156,8 @@ export class VoiceAssistantWebSocketServer {
     if (!activity) {
       return {
         appVisible: false,
+        appFocused: false,
+        canShowLocalNotifications: null,
         focusedAgentId: null,
         focusedTerminalId: null,
         lastActivityAtMs: null,
@@ -2164,6 +2166,8 @@ export class VoiceAssistantWebSocketServer {
 
     return {
       appVisible: activity.appVisible,
+      appFocused: activity.appFocused,
+      canShowLocalNotifications: activity.canShowLocalNotifications,
       focusedAgentId: activity.focusedAgentId,
       focusedTerminalId: activity.focusedTerminalId,
       lastActivityAtMs: activity.lastActivityAt.getTime(),

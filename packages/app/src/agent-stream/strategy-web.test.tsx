@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamItem } from "@/types/stream";
+import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamSegmentRenderers, StreamViewportHandle } from "./strategy";
 import { createWebStreamStrategy } from "./strategy-web";
 
@@ -52,6 +53,7 @@ describe("createWebStreamStrategy", () => {
   let root: Root | null = null;
   let container: HTMLDivElement | null = null;
   let originalScrollTo: HTMLElement["scrollTo"] | undefined;
+  let originalScrollIntoView: HTMLElement["scrollIntoView"] | undefined;
   let originalOffsetHeight: PropertyDescriptor | undefined;
 
   beforeEach(() => {
@@ -69,6 +71,8 @@ describe("createWebStreamStrategy", () => {
     });
     originalScrollTo = HTMLElement.prototype.scrollTo;
     HTMLElement.prototype.scrollTo = vi.fn();
+    originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     originalOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
       configurable: true,
@@ -91,6 +95,11 @@ describe("createWebStreamStrategy", () => {
       HTMLElement.prototype.scrollTo = originalScrollTo;
     } else {
       Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+    }
+    if (originalScrollIntoView) {
+      HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
     }
     if (originalOffsetHeight) {
       Object.defineProperty(HTMLElement.prototype, "offsetHeight", originalOffsetHeight);
@@ -134,6 +143,7 @@ describe("createWebStreamStrategy", () => {
             isLoadingOlderHistory: false,
             hasOlderHistory: false,
             scrollEnabled: true,
+            messageParagraphSpacing: 8,
             listStyle: null,
             baseListContentContainerStyle: null,
             forwardListContentContainerStyle: null,
@@ -144,6 +154,60 @@ describe("createWebStreamStrategy", () => {
 
     expect(rowRenderCount.mock.calls.length).toBeGreaterThan(0);
     expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length);
+  });
+
+  it("jumps to a mounted history item through the viewport handle", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    const target = userMessage(1);
+    const renderers: StreamSegmentRenderers = {
+      renderHistoryVirtualizedRow: () => null,
+      renderHistoryMountedRow: (item) => <div id={getStreamItemDomId(item.id)}>{item.id}</div>,
+      renderLiveHeadRow: () => null,
+      renderLiveAuxiliary: () => null,
+    };
+    const renderInput: StreamRenderInput = {
+      agentId: "agent",
+      segments: {
+        historyVirtualized: [],
+        historyMounted: [target],
+        liveHead: [],
+      },
+      boundary: {
+        hasVirtualizedHistory: false,
+        hasMountedHistory: true,
+        hasLiveHead: false,
+      },
+      renderers,
+      listEmptyComponent: null,
+      viewportRef,
+      routeBottomAnchorRequest: null,
+      isAuthoritativeHistoryReady: true,
+      onNearBottomChange: vi.fn(),
+      onNearHistoryStart: vi.fn(),
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+      scrollEnabled: true,
+      messageParagraphSpacing: 8,
+      listStyle: null,
+      baseListContentContainerStyle: null,
+      forwardListContentContainerStyle: null,
+    };
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(strategy.render(renderInput));
+    });
+    act(() => {
+      viewportRef.current?.scrollToItem(target.id);
+    });
+
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "center",
+    });
   });
 
   it("rerenders a stable live-head row when its revision changes", () => {
@@ -177,6 +241,7 @@ describe("createWebStreamStrategy", () => {
       isLoadingOlderHistory: false,
       hasOlderHistory: false,
       scrollEnabled: true,
+      messageParagraphSpacing: 8,
       listStyle: null,
       baseListContentContainerStyle: null,
       forwardListContentContainerStyle: null,
@@ -232,6 +297,7 @@ describe("createWebStreamStrategy", () => {
           isLoadingOlderHistory: false,
           hasOlderHistory: false,
           scrollEnabled: true,
+          messageParagraphSpacing: 8,
           listStyle: null,
           baseListContentContainerStyle: null,
           forwardListContentContainerStyle: null,
@@ -315,6 +381,7 @@ describe("createWebStreamStrategy", () => {
             isLoadingOlderHistory: false,
             hasOlderHistory: true,
             scrollEnabled: true,
+            messageParagraphSpacing: 8,
             listStyle: null,
             baseListContentContainerStyle: null,
             forwardListContentContainerStyle: null,
@@ -379,6 +446,7 @@ describe("createWebStreamStrategy", () => {
       isLoadingOlderHistory: false,
       hasOlderHistory: false,
       scrollEnabled: true,
+      messageParagraphSpacing: 8,
       listStyle: null,
       baseListContentContainerStyle: null,
       forwardListContentContainerStyle: null,
@@ -486,6 +554,7 @@ describe("createWebStreamStrategy", () => {
       isLoadingOlderHistory: false,
       hasOlderHistory: false,
       scrollEnabled: true,
+      messageParagraphSpacing: 8,
       listStyle: null,
       baseListContentContainerStyle: null,
       forwardListContentContainerStyle: null,
@@ -582,6 +651,7 @@ describe("createWebStreamStrategy", () => {
       isLoadingOlderHistory: false,
       hasOlderHistory: false,
       scrollEnabled: true,
+      messageParagraphSpacing: 8,
       listStyle: null,
       baseListContentContainerStyle: null,
       forwardListContentContainerStyle: null,
@@ -680,6 +750,7 @@ describe("createWebStreamStrategy", () => {
       isLoadingOlderHistory: false,
       hasOlderHistory: false,
       scrollEnabled: true,
+      messageParagraphSpacing: 8,
       listStyle: null,
       baseListContentContainerStyle: null,
       forwardListContentContainerStyle: null,
