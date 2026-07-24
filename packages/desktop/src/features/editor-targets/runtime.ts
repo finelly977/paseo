@@ -38,6 +38,9 @@ const RUNTIME_CONTROL_ENV_KEYS = [
   "ELECTRON_RUN_AS_NODE",
   "ELECTRON_NO_ATTACH_CONSOLE",
 ] as const;
+const WINDOWS_CONSOLE_COMMAND_ENV_KEY = "PASEO_EDITOR_TARGET_COMMAND";
+const WINDOWS_CONSOLE_CWD_ENV_KEY = "PASEO_EDITOR_TARGET_CWD";
+const WINDOWS_CONSOLE_ARG_ENV_PREFIX = "PASEO_EDITOR_TARGET_ARG_";
 
 function createExternalProcessEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...baseEnv };
@@ -111,6 +114,30 @@ function spawnProcess(command: string, args: string[], options: SpawnOptions): S
   return nodeSpawn(command, args, options) as ChildProcess as SpawnedProcess;
 }
 
+function createWindowsConsoleLaunch(input: {
+  command: string;
+  args: readonly string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+}): { commandLine: string; env: NodeJS.ProcessEnv } {
+  const env = createExternalProcessEnv(input.env);
+  env[WINDOWS_CONSOLE_COMMAND_ENV_KEY] = input.command;
+  env[WINDOWS_CONSOLE_CWD_ENV_KEY] = input.cwd;
+
+  const argumentReferences = input.args.map((argument, index) => {
+    const key = `${WINDOWS_CONSOLE_ARG_ENV_PREFIX}${index}`;
+    env[key] = argument;
+    return `"%${key}%"`;
+  });
+  const suffix = argumentReferences.length > 0 ? ` ${argumentReferences.join(" ")}` : "";
+  return {
+    commandLine:
+      `start "" /D "%${WINDOWS_CONSOLE_CWD_ENV_KEY}%" ` +
+      `"%${WINDOWS_CONSOLE_COMMAND_ENV_KEY}%"${suffix}`,
+    env,
+  };
+}
+
 function iconPath(fileName: string): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, "editor-target-icons", fileName);
@@ -153,6 +180,32 @@ export function createEditorTargetRuntime(
             env: createExternalProcessEnv(env),
             shell: commandScript,
             stdio: "ignore",
+          });
+        } catch (error) {
+          reject(error);
+          return;
+        }
+        child.once("error", reject);
+        child.once("spawn", () => {
+          child.unref();
+          resolve();
+        });
+      });
+    },
+    async openWindowsConsole({ command, args, cwd }) {
+      if (platform !== "win32") {
+        throw new Error("只能在 Windows 上打开独立控制台");
+      }
+      const launch = createWindowsConsoleLaunch({ command, args, cwd, env });
+      await new Promise<void>((resolve, reject) => {
+        let child: SpawnedProcess;
+        try {
+          child = spawn(launch.commandLine, [], {
+            detached: true,
+            env: launch.env,
+            shell: true,
+            stdio: "ignore",
+            windowsHide: true,
           });
         } catch (error) {
           reject(error);

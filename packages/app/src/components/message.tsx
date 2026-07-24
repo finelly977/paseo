@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   type GestureResponderEvent,
   type LayoutChangeEvent,
+  type PressableStateCallbackType,
   StyleProp,
   ViewStyle,
   type TextStyle,
@@ -118,6 +119,10 @@ import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mut
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useSettings } from "@/hooks/use-settings";
+import {
+  shouldCollapseUserMessage,
+  USER_MESSAGE_COLLAPSED_LINE_COUNT,
+} from "./user-message-collapse";
 export type { InlinePathTarget } from "@/assistant-file-links";
 export type { AssistantForkTarget };
 
@@ -173,6 +178,9 @@ const ThemedTodoCheckIcon = withUnistyles(Check);
 const ThemedFileSymlinkIcon = withUnistyles(FileSymlink);
 const ThemedTriangleAlertIcon = withUnistyles(TriangleAlertIcon);
 const ThemedChevronRightIcon = withUnistyles(ChevronRight);
+const ThemedChevronDownIcon = withUnistyles(ChevronDown);
+const COLLAPSED_MESSAGE_ACCESSIBILITY_STATE = { expanded: false } as const;
+const EXPANDED_MESSAGE_ACCESSIBILITY_STATE = { expanded: true } as const;
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -362,6 +370,30 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     ...(isWeb ? { lineHeight: 22, overflowWrap: "anywhere" as const } : {}),
   },
+  expandToggle: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    marginTop: theme.spacing[2],
+    marginLeft: -theme.spacing[1],
+    paddingHorizontal: theme.spacing[1],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+  },
+  expandToggleHovered: {
+    backgroundColor: theme.colors.surface2,
+  },
+  expandTogglePressed: {
+    opacity: 0.8,
+  },
+  expandToggleText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
+  expandIconExpanded: {
+    transform: [{ rotate: "180deg" }],
+  },
   imagePreviewContainer: {
     flexDirection: "row",
     gap: theme.spacing[2],
@@ -418,6 +450,50 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
   );
 }
 
+interface UserMessageCollapseToggleProps {
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+const UserMessageCollapseToggle = memo(function UserMessageCollapseToggle({
+  isExpanded,
+  onToggle,
+}: UserMessageCollapseToggleProps) {
+  const { t } = useTranslation();
+  const expandToggleStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType) => [
+      userMessageStylesheet.expandToggle,
+      hovered && userMessageStylesheet.expandToggleHovered,
+      pressed && userMessageStylesheet.expandTogglePressed,
+    ],
+    [],
+  );
+
+  return (
+    <Pressable
+      testID="user-message-collapse-toggle"
+      accessibilityRole="button"
+      accessibilityLabel={t(
+        isExpanded ? "message.actions.collapseMessage" : "message.actions.expandMessage",
+      )}
+      accessibilityState={
+        isExpanded ? EXPANDED_MESSAGE_ACCESSIBILITY_STATE : COLLAPSED_MESSAGE_ACCESSIBILITY_STATE
+      }
+      onPress={onToggle}
+      style={expandToggleStyle}
+    >
+      <Text style={userMessageStylesheet.expandToggleText}>
+        {t(isExpanded ? "message.actions.collapseMessage" : "message.actions.expandMessage")}
+      </Text>
+      <ThemedChevronDownIcon
+        size={14}
+        uniProps={foregroundMutedColorMapping}
+        style={isExpanded ? userMessageStylesheet.expandIconExpanded : undefined}
+      />
+    </Pressable>
+  );
+});
+
 export const UserMessage = memo(function UserMessage({
   serverId,
   agentId,
@@ -441,6 +517,8 @@ export const UserMessage = memo(function UserMessage({
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
+  const shouldCollapse = useMemo(() => shouldCollapseUserMessage(message), [message]);
+  const [isExpanded, setIsExpanded] = useState(false);
   const showTrailingRow = hasText && (isCompact || isNative || isHovered);
   const formattedTimestamp = useMemo(
     () => formatMessageTimestamp(new Date(timestamp)),
@@ -450,6 +528,7 @@ export const UserMessage = memo(function UserMessage({
 
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
+  const handleToggleExpanded = useCallback(() => setIsExpanded((expanded) => !expanded), []);
   const getMessageContent = useCallback(() => message, [message]);
   const handleRewind = useCallback(
     (input: { mode: RewindMode; rewoundText: string }) => {
@@ -532,9 +611,19 @@ export const UserMessage = memo(function UserMessage({
             </View>
           ) : null}
           {hasText ? (
-            <Text selectable style={userMessageStylesheet.text}>
+            <Text
+              selectable
+              style={userMessageStylesheet.text}
+              numberOfLines={
+                shouldCollapse && !isExpanded ? USER_MESSAGE_COLLAPSED_LINE_COUNT : undefined
+              }
+              ellipsizeMode="tail"
+            >
               {message}
             </Text>
+          ) : null}
+          {shouldCollapse ? (
+            <UserMessageCollapseToggle isExpanded={isExpanded} onToggle={handleToggleExpanded} />
           ) : null}
         </View>
         {hasText ? (

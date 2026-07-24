@@ -71,6 +71,7 @@
 
 - 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距。
 - 在设置的“外观 → 间距”中可调整消息段落间距，范围为 0–32 像素，默认 8 像素；助手 Markdown 分块渲染和网页历史虚拟化估算使用同一设置，且不会重复叠加段落内部与消息块外部间距。
+- 超过 12 行或 1200 个字符的用户消息默认只展示 8 行，用户可以展开或收起；复制消息仍复制完整原文。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
 
 主要涉及：
@@ -79,10 +80,13 @@
 - `packages/app/src/styles/markdown-styles.ts`
 - `packages/app/src/hooks/use-settings/storage.ts`
 - `packages/app/src/screens/settings/appearance/appearance-section.tsx`
+- `packages/app/src/components/message.tsx`
+- `packages/app/src/components/user-message-collapse.ts`
+- `packages/app/src/agent-stream/web-virtualization.ts`
 
 ### 6. 对话历史索引与消息跳转
 
-- 桌面网页端在对话内容左侧显示历史索引刻度，每个刻度对应一轮用户消息。
+- 桌面网页端在整个对话视口的最左侧显示历史索引刻度，不随居中的消息文字区域移动；每个刻度对应一轮用户消息。
 - 悬停或聚焦刻度时显示用户消息标题和助手回复摘要，点击后跳转到对应消息；长历史最多显示 60 个刻度，首尾保留并均匀采样。
 - 虚拟化历史使用虚拟列表定位，已挂载消息使用 DOM 滚动定位，不一次性额外渲染全部历史内容。
 
@@ -113,11 +117,13 @@
 ### 8. Windows PowerShell 工作区打开方式
 
 - 桌面端“打开方式”菜单在 Windows 上检测 Windows PowerShell 5.1、PowerShell 7（pwsh）及其常见命令路径。
-- 选择 PowerShell 会打开独立控制台并定位到当前工作区目录，路径中的单引号会按 PowerShell 规则安全转义。
+- 选择 PowerShell 会打开可见的独立控制台，并通过进程工作目录直接定位到当前工作区，避免路径字符串解析导致启动无窗口。
 - 非 Windows 平台不显示该目标。
 
 主要涉及：
 
 - `packages/desktop/src/features/editor-targets/targets/powershell.ts`
+- `packages/desktop/src/features/editor-targets/runtime.ts`
+- `packages/desktop/src/features/editor-targets/target.ts`
 - `packages/desktop/src/features/editor-targets/registry.ts`
 - `packages/app/src/screens/workspace/workspace-open-in-editor-button.tsx`

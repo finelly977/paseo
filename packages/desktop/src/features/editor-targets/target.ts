@@ -26,6 +26,11 @@ export interface EditorTargetRuntime {
   isAbsolutePath(path: string): boolean;
   resolveCommand(commands: readonly string[]): string | null;
   spawnDetached(input: { command: string; args: readonly string[] }): Promise<void>;
+  openWindowsConsole(input: {
+    command: string;
+    args: readonly string[];
+    cwd: string;
+  }): Promise<void>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): void;
   loadIcon(fileName: string): Promise<EditorTargetIcon>;

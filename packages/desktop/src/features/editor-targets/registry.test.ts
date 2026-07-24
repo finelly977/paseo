@@ -16,8 +16,13 @@ interface RecordedLaunch {
   args: string[];
 }
 
+interface RecordedWindowsConsoleLaunch extends RecordedLaunch {
+  cwd: string;
+}
+
 class FakeEditorTargets implements EditorTargetRuntime {
   readonly launches: RecordedLaunch[] = [];
+  readonly windowsConsoleLaunches: RecordedWindowsConsoleLaunch[] = [];
   readonly openedPaths: string[] = [];
   readonly revealedPaths: string[] = [];
   readonly openedMacApplications: Array<{
@@ -66,6 +71,18 @@ class FakeEditorTargets implements EditorTargetRuntime {
 
   async spawnDetached(input: { command: string; args: readonly string[] }): Promise<void> {
     this.launches.push({ command: input.command, args: [...input.args] });
+  }
+
+  async openWindowsConsole(input: {
+    command: string;
+    args: readonly string[];
+    cwd: string;
+  }): Promise<void> {
+    this.windowsConsoleLaunches.push({
+      command: input.command,
+      args: [...input.args],
+      cwd: input.cwd,
+    });
   }
 
   async openPath(targetPath: string): Promise<void> {
@@ -291,7 +308,7 @@ describe("editor target registry", () => {
     expect(windowsTargets.map((target) => target.id)).toEqual(["explorer"]);
   });
 
-  it("opens PowerShell at the workspace directory on Windows", async () => {
+  it("在 Windows 工作区目录中打开 PowerShell", async () => {
     const runtime = new FakeEditorTargets("win32");
     runtime.installCommand(
       "powershell.exe",
@@ -308,28 +325,28 @@ describe("editor target registry", () => {
 
     await powershellTarget.launch({ workspacePath: "C:/repo" }, runtime);
 
-    expect(runtime.launches).toEqual([
+    expect(runtime.windowsConsoleLaunches).toEqual([
       {
         command: "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
-        args: ["-NoExit", "-Command", "Set-Location -LiteralPath 'C:/repo'"],
+        args: ["-NoLogo", "-NoExit"],
+        cwd: "C:/repo",
       },
     ]);
   });
 
-  it("escapes single quotes in a PowerShell workspace path", async () => {
+  it("直接传递包含单引号的工作区路径", async () => {
     const runtime = new FakeEditorTargets("win32");
     runtime.installCommand("pwsh.exe", "C:/Program Files/PowerShell/pwsh.exe");
 
     await powershellTarget.launch({ workspacePath: "C:/user/O'Brien/project" }, runtime);
 
-    expect(runtime.launches[0]?.args).toEqual([
-      "-NoExit",
-      "-Command",
-      "Set-Location -LiteralPath 'C:/user/O''Brien/project'",
-    ]);
+    expect(runtime.windowsConsoleLaunches[0]).toMatchObject({
+      args: ["-NoLogo", "-NoExit"],
+      cwd: "C:/user/O'Brien/project",
+    });
   });
 
-  it("does not offer PowerShell off Windows", async () => {
+  it("非 Windows 平台不显示 PowerShell", async () => {
     const runtime = new FakeEditorTargets("darwin");
     runtime.installCommand("powershell.exe");
 

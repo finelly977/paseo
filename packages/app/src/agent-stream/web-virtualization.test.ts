@@ -148,6 +148,17 @@ describe("estimateStreamItemHeight", () => {
     expect(estimateStreamItemHeight(item)).toBe(220);
   });
 
+  it("为超长用户消息的折叠预览预留高度", () => {
+    const item: StreamItem = {
+      kind: "user_message",
+      id: "u-long",
+      text: Array.from({ length: 13 }, (_, index) => `line ${index}`).join("\n"),
+      timestamp: createTimestamp(1),
+    };
+
+    expect(estimateStreamItemHeight(item)).toBeGreaterThan(220);
+  });
+
   it("uses cached assistant image metadata when available", () => {
     clearAssistantImageMetadataCache();
     setAssistantImageMetadata(

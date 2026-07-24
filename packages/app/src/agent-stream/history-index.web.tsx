@@ -10,7 +10,6 @@ import {
 import { Pressable, Text, View, type ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
-import { MAX_CONTENT_WIDTH } from "@/constants/layout";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import { getStreamItemDomId, sampleConversationHistoryIndex } from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
@@ -25,7 +24,9 @@ const railStyle: CSSProperties = {
   zIndex: 10,
   top: 16,
   bottom: 16,
-  left: `max(4px, calc(50% - ${MAX_CONTENT_WIDTH / 2 + 28}px))`,
+  // 索引属于对话区域的导航层，固定贴在整个对话视口左边缘，
+  // 不随居中的消息文字列宽度移动。
+  left: 0,
   width: 24,
   pointerEvents: "none",
 };

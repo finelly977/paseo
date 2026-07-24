@@ -1,9 +1,12 @@
 import type { StreamItem } from "@/types/stream";
 import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-message-height-estimate";
+import { shouldCollapseUserMessage } from "@/components/user-message-collapse";
 
 export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 100;
 export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 50;
 const COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE = 40;
+const COLLAPSED_LONG_USER_MESSAGE_ROW_HEIGHT_ESTIMATE = 280;
+const COLLAPSED_LONG_USER_MESSAGE_WITH_IMAGES_HEIGHT_ESTIMATE = 420;
 
 type BottomAnchorE2ETestGlobals = typeof globalThis & {
   __PASEO_E2E_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD?: unknown;
@@ -48,6 +51,11 @@ export function estimateStreamItemHeight(
 ): number {
   switch (item.kind) {
     case "user_message":
+      if (shouldCollapseUserMessage(item.text)) {
+        return item.images && item.images.length > 0
+          ? COLLAPSED_LONG_USER_MESSAGE_WITH_IMAGES_HEIGHT_ESTIMATE
+          : COLLAPSED_LONG_USER_MESSAGE_ROW_HEIGHT_ESTIMATE;
+      }
       return item.images && item.images.length > 0 ? 220 : 96;
     case "assistant_message":
       return estimateAssistantMessageHeightFromCache(item.text, messageParagraphSpacing) ?? 220;

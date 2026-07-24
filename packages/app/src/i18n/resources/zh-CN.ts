@@ -258,6 +258,8 @@ export const zhCN: TranslationResources = {
       copyCode: "复制代码",
       copyTurn: "复制回合",
       copyMessage: "复制消息",
+      expandMessage: "展开消息",
+      collapseMessage: "收起消息",
       forkMenu: "分叉消息",
       forkInNewTab: "分叉到新标签页",
       forkInNewWorkspace: "分叉到新工作区",
