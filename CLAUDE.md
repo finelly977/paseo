@@ -1,167 +1,175 @@
 # CLAUDE.md
 
-> **Fork notice:** This checkout is [finelly977/paseo](https://github.com/finelly977/paseo), a downstream 二开 of [getpaseo/paseo](https://github.com/getpaseo/paseo). Agent identity, remotes, and upstream sync rules are in [AGENTS.md](AGENTS.md). When the user asks to merge the author's latest, default to the latest **published** release (including beta); do not use unreleased `upstream/main` unless they explicitly ask.
+> **二开说明：** 当前检出目录是 [finelly977/paseo](https://github.com/finelly977/paseo)，它是 [getpaseo/paseo](https://github.com/getpaseo/paseo) 的下游二开。代理身份、远端配置、二开功能清单维护规则和上游同步策略见 [AGENTS.md](AGENTS.md)。用户要求合并原作者最新版时，默认使用最新的**已发布版本**（包括 beta），除非用户明确要求，否则不得使用未发布的 `upstream/main`。
 
-Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. Your dev environment, in your pocket. Connects directly to your actual development environment — your code stays on your machine.
+Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移动应用。它把真实开发环境放进口袋，并直接连接用户本机，代码始终保留在用户自己的设备上。
 
-**Supported agents:** Claude Code, Codex, GitHub Copilot, OpenCode, and Pi.
+**支持的智能体：** Claude Code、Codex、GitHub Copilot、OpenCode 和 Pi。
 
-## Repository map
+## 仓库结构
 
-This is an npm workspace monorepo:
+本项目是 npm workspace 单体仓库：
 
-- `packages/server` — Daemon: agent lifecycle, WebSocket API, MCP server
-- `packages/app` — Mobile + web client (Expo)
-- `packages/cli` — Docker-style CLI (`paseo run/ls/logs/wait`)
-- `packages/relay` — E2E encrypted relay for remote access
-- `packages/desktop` — Electron desktop wrapper
-- `packages/website` — Marketing site (paseo.sh)
+- `packages/server` — 守护进程：智能体生命周期、WebSocket API、MCP 服务端
+- `packages/app` — 移动端和网页客户端（Expo）
+- `packages/cli` — Docker 风格命令行工具（`paseo run/ls/logs/wait`）
+- `packages/relay` — 端到端加密的远程中继
+- `packages/desktop` — Electron 桌面端外壳
+- `packages/website` — 营销网站（paseo.sh）
 
-## Docs
+## 文档
 
-`docs/` is the source of truth for system-level and process-level knowledge. **"The docs", "check the docs", or "check the X docs" always mean this directory — not the web.** Look here before fetching anything online; the docs capture gotchas and conventions you cannot derive from the code or external sources.
+`docs/` 是系统级和流程级知识的唯一事实来源。用户提到“文档”“检查文档”或“检查某某文档”时，始终指此目录，而不是互联网。访问外部资料前必须先查看这里，因为这些文档记录了无法只从代码或外部资料推导出的约束和注意事项。
 
-At the start of non-trivial work, list `docs/` and skim anything relevant to the task. When you learn something meta worth preserving — a gotcha, a convention, a workflow, a piece of system context that will outlive the current task — update an existing doc or propose a new one. Code-level facts belong in inline comments next to the code; system, process, and gotcha-level facts belong in `docs/`.
+开始非轻量任务时，先列出 `docs/`，再快速阅读与任务相关的文件。发现值得长期保留的工程经验、约定、工作流或系统背景时，应更新现有文档或提出新文档。代码级事实写在对应代码旁边；系统级、流程级和注意事项级事实写入 `docs/`。
 
-| Doc                                                                | What's in it                                                                                                                   |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| [docs/product.md](docs/product.md)                                 | What Paseo is, who it's for, where it's going                                                                                  |
-| [docs/architecture.md](docs/architecture.md)                       | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
-| [docs/agent-lifecycle.md](docs/agent-lifecycle.md)                 | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
-| [docs/data-model.md](docs/data-model.md)                           | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
-| [docs/glossary.md](docs/glossary.md)                               | Authoritative terminology — UI label wins, no synonyms                                                                         |
-| [docs/coding-standards.md](docs/coding-standards.md)               | Type hygiene, error handling, state design, React patterns, file organization                                                  |
-| [docs/design.md](docs/design.md)                                   | Theme tokens — colors, fonts, spacing, radii, icons                                                                            |
-| [docs/forms.md](docs/forms.md)                                     | Form architecture — non-React form model, form kit, load-state gating; the schedule form is the golden example                 |
-| [docs/hover.md](docs/hover.md)                                     | Hover — the canonical pattern (plain View + onPointerEnter/Leave, separate inner Pressable) and the three ways agents break it |
-| [docs/unistyles.md](docs/unistyles.md)                             | Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order                                                       |
-| [docs/floating-panels.md](docs/floating-panels.md)                 | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
-| [docs/expo-router.md](docs/expo-router.md)                         | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
-| [docs/file-icons.md](docs/file-icons.md)                           | Material icon theme integration for the file explorer                                                                          |
-| [docs/providers.md](docs/providers.md)                             | Adding a new agent provider end-to-end                                                                                         |
-| [docs/forge-providers.md](docs/forge-providers.md)                 | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
-| [docs/custom-providers.md](docs/custom-providers.md)               | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
-| [docs/service-proxy.md](docs/service-proxy.md)                     | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
-| [docs/development.md](docs/development.md)                         | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
-| [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                 | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
-| [docs/protocol-validation.md](docs/protocol-validation.md)         | zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules                              |
-| [docs/terminal-performance.md](docs/terminal-performance.md)       | Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage                                     |
-| [docs/testing.md](docs/testing.md)                                 | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
-| [docs/mobile-testing.md](docs/mobile-testing.md)                   | Maestro and mobile test workflows                                                                                              |
-| [docs/mobile-panels.md](docs/mobile-panels.md)                     | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
-| [docs/ad-hoc-daemon-testing.md](docs/ad-hoc-daemon-testing.md)     | Isolated in-process daemon test harness                                                                                        |
-| [docs/browser-capture-harness.md](docs/browser-capture-harness.md) | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
-| [docs/android.md](docs/android.md)                                 | App variants, local/cloud builds, EAS workflows                                                                                |
-| [docs/docker.md](docs/docker.md)                                   | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
-| [docs/release.md](docs/release.md)                                 | Release playbook, draft releases, completion checklist                                                                         |
-| [docs/terminal-activity.md](docs/terminal-activity.md)             | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
-| [SECURITY.md](SECURITY.md)                                         | Relay threat model, E2E encryption, DNS rebinding, agent auth                                                                  |
+任何改变二开产品行为的任务，都必须同步维护 [docs/fork-features.md](docs/fork-features.md)。该文件只记录当前仍然有效的二开差异，不记录历史流水账。
 
-## Quick start
+| 文档                                                               | 内容                                                                                |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| [docs/fork-features.md](docs/fork-features.md)                     | 当前有效的二开功能和与上游的行为差异；上游同步和二开交付前必须审计                  |
+| [docs/product.md](docs/product.md)                                 | Paseo 是什么、面向谁、未来方向                                                      |
+| [docs/architecture.md](docs/architecture.md)                       | 系统设计、包分层、WebSocket 协议、智能体生命周期和数据流                            |
+| [docs/agent-lifecycle.md](docs/agent-lifecycle.md)                 | 智能体状态、父子关系、归档语义、标签与归档的区别、子智能体轨道                      |
+| [docs/data-model.md](docs/data-model.md)                           | 基于文件的 JSON 持久化、Zod Schema、原子写入、不使用迁移                            |
+| [docs/glossary.md](docs/glossary.md)                               | 权威术语；界面用词优先，不使用同义词混称                                            |
+| [docs/coding-standards.md](docs/coding-standards.md)               | 类型规范、错误处理、状态设计、React 模式和文件组织                                  |
+| [docs/design.md](docs/design.md)                                   | 主题变量：颜色、字体、间距、圆角和图标                                              |
+| [docs/forms.md](docs/forms.md)                                     | 表单架构：非 React 表单模型、表单工具包、加载状态门控；计划任务表单是标准示例       |
+| [docs/hover.md](docs/hover.md)                                     | 悬停交互标准模式及常见错误                                                          |
+| [docs/unistyles.md](docs/unistyles.md)                             | Unistyles 注意事项；禁止使用 `useUnistyles()`，以及替代方案优先级                   |
+| [docs/floating-panels.md](docs/floating-panels.md)                 | 锚定浮层：Android Portal/Modal 逃逸、生命周期门控、键盘共享值、状态栏偏移和闪烁问题 |
+| [docs/expo-router.md](docs/expo-router.md)                         | Expo Router 路由所有权、启动恢复和原生空白屏问题                                    |
+| [docs/file-icons.md](docs/file-icons.md)                           | 文件浏览器的 Material 图标主题集成                                                  |
+| [docs/providers.md](docs/providers.md)                             | 端到端新增智能体提供方                                                              |
+| [docs/forge-providers.md](docs/forge-providers.md)                 | 新增 Git 托管服务：注册表、清单、接入检查表、自托管/GHES 和两级事实模型             |
+| [docs/custom-providers.md](docs/custom-providers.md)               | 自定义提供方配置：Z.AI、阿里云/Qwen、ACP 智能体、配置档案和自定义二进制文件         |
+| [docs/service-proxy.md](docs/service-proxy.md)                     | 服务代理：通过公网地址暴露工作区脚本、DNS 设置和反向代理                            |
+| [docs/development.md](docs/development.md)                         | 开发服务、构建同步注意事项、CLI 参考和智能体状态                                    |
+| [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                 | WebSocket RPC 命名空间规范：点分命名和 `.request`/`.response` 配对                  |
+| [docs/protocol-validation.md](docs/protocol-validation.md)         | zod-aot 生成的入站 WebSocket 校验、编译器回归补丁和 Schema 纯度规则                 |
+| [docs/terminal-performance.md](docs/terminal-performance.md)       | 终端延迟链路、合并与背压约束、基准测试和性能规格                                    |
+| [docs/testing.md](docs/testing.md)                                 | 测试驱动开发、确定性、真实依赖优先和测试组织                                        |
+| [docs/mobile-testing.md](docs/mobile-testing.md)                   | Maestro 和移动端测试流程                                                            |
+| [docs/mobile-panels.md](docs/mobile-panels.md)                     | 紧凑布局左/中/右面板所有权、工作线程动画、手势修订和 Fabric 约束                    |
+| [docs/ad-hoc-daemon-testing.md](docs/ad-hoc-daemon-testing.md)     | 隔离的进程内守护进程测试工具                                                        |
+| [docs/browser-capture-harness.md](docs/browser-capture-harness.md) | 真实 Electron 浏览器截图工具和合成器表面注意事项                                    |
+| [docs/android.md](docs/android.md)                                 | 应用变体、本地/云端构建和 EAS 工作流                                                |
+| [docs/docker.md](docs/docker.md)                                   | 在 Docker 中运行守护进程和内置网页界面、数据卷、智能体镜像与安全规则                |
+| [docs/release.md](docs/release.md)                                 | 发布操作手册、草稿发布和完成检查表                                                  |
+| [docs/terminal-activity.md](docs/terminal-activity.md)             | 终端活动指示器、来源无关的跟踪器、智能体钩子上报和新增钩子提供方                    |
+| [SECURITY.md](SECURITY.md)                                         | 中继威胁模型、端到端加密、DNS 重绑定和智能体认证                                    |
 
-```bash
-npm run dev                          # Start the dev daemon
-npm run dev:app                      # Start Expo against the dev daemon
-npm run dev:desktop                  # Start Electron desktop dev
-npm run cli -- ls -a -g              # List all agents
-npm run cli -- daemon status         # Check daemon status
-npm run typecheck                    # Always run after changes
-npm run lint                         # Always run after changes
-npm run format                       # Auto-format with Biome
-npm run format:check                 # Check formatting without writing
+## 快速开始
+
+```powershell
+npm run dev                          # 启动开发守护进程
+npm run dev:app                      # 启动连接开发守护进程的 Expo 应用
+npm run dev:desktop                  # 启动 Electron 桌面端开发环境
+npm run cli -- ls -a -g              # 列出全部智能体
+npm run cli -- daemon status         # 检查守护进程状态
+npm run typecheck                    # 每次修改后必须运行
+npm run lint                         # 每次修改后必须运行
+npm run format                       # 使用项目格式化工具自动格式化
+npm run format:check                 # 检查格式但不写入文件
 ```
 
-Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
+仓库开发命令默认使用当前检出目录的本地状态。在此检出目录中，`PASEO_HOME` 解析为 `.dev/paseo-home`，`npm run cli -- ...` 也会自动连接该开发目录。已打包桌面应用和生产风格守护进程继续使用 `~/.paseo` 和端口 `6767`。
 
-See [docs/development.md](docs/development.md) for full setup, build sync requirements, and debugging.
+完整设置、构建同步要求和调试说明见 [docs/development.md](docs/development.md)。
 
-## Critical rules
+## 关键规则
 
-- **NEVER restart the main Paseo daemon on port 6767 without permission** — it manages all running agents. If you're an agent, restarting it kills your own process.
-- **NEVER assume a timeout means the service needs restarting** — timeouts can be transient.
-- **NEVER add auth checks to tests** — agent providers handle their own auth.
-- **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/expo-router.md](docs/expo-router.md).**
-- **NEVER run the full test suite locally.** The test suites are heavy and will freeze the machine, especially if multiple agents run them in parallel. Rules:
-  - Run only the specific test file you changed: `npx vitest run <file> --bail=1`
-  - Never run `npm run test` for an entire workspace unless explicitly asked.
-  - If you must run a broad suite, pipe output to a file and read it afterward: `npx vitest run <file> --bail=1 > /tmp/test-output.txt 2>&1` then read the file.
-  - Never re-run a test suite that another agent already ran and reported green — trust the result.
-  - For full suite verification, push to CI and check GitHub Actions instead.
-- **Always run typecheck and lint after every change.**
-- **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current:
-  - `npm run build:client` — rebuild protocol and client declarations.
-  - `npm run build:server` — rebuild highlight, relay, protocol, client, server, and CLI when server/CLI types may be stale.
-  - Do not patch inferred callback parameters or add local duplicate types just to silence stale declaration errors.
-- **Run `npm run format` before committing.** This repo uses Biome for formatting. Do not manually fix formatting — let the formatter handle it.
-- **Always use npm scripts for linting and formatting.** Do not run tools directly with `npx eslint`, `npx oxfmt`, `npx oxlint`, or package-local binaries. For targeted checks, pass file paths through the npm script:
+- **未经用户允许，严禁重启端口 `6767` 上的 Paseo 主守护进程。** 它负责管理所有运行中的智能体；如果当前执行者也是智能体，重启会杀死自身进程。
+- **严禁因为一次超时就认定服务需要重启。** 超时可能只是瞬时问题。
+- **严禁在测试中新增认证检查。** 认证由各智能体提供方自行处理。
+- **修改应用路由、启动路由、工作区恢复记忆或活动工作区选择前，必须阅读 [docs/expo-router.md](docs/expo-router.md)。**
+- **严禁在本地运行完整测试套件。** 测试规模很大，尤其在多个智能体并行运行时可能冻结机器：
+  - 只运行实际修改的具体测试文件：`npx vitest run <file> --bail=1`
+  - 除非用户明确要求，否则不得对整个 workspace 执行 `npm run test`。
+  - 如果确实需要运行较大范围测试，应把输出重定向到文件，再单独读取结果。
+  - 其他智能体已报告通过的测试不得无意义重复执行，应信任其结果。
+  - 完整测试应推送到 CI，并查看 GitHub Actions 结果。
+- **每次修改后始终运行类型检查和 Lint。**
+- **排查跨包类型错误前，先构建对应 workspace 包。** 本仓库会消费其他 workspace 生成的声明文件，声明过期时不能通过局部补类型掩盖问题：
+  - `npm run build:client` — 重建协议和客户端声明。
+  - `npm run build:server` — 当服务端或 CLI 类型可能过期时，重建 highlight、relay、protocol、client、server 和 CLI。
+  - 不得为了压制过期声明错误而给推断回调参数补临时类型，也不得复制本地类型定义。
+- **提交前运行 `npm run format`。** 项目使用统一格式化工具，禁止手工调整格式来绕过格式检查。
+- **Lint 和格式化始终通过 npm 脚本执行。** 不得直接运行 `npx eslint`、`npx oxfmt`、`npx oxlint` 或包内二进制文件。需要定向检查时，把文件路径传给 npm 脚本：
   - `npm run lint -- packages/app/src/components/message.tsx`
   - `npm run format:files -- CLAUDE.md packages/app/src/components/message.tsx`
-- **The protocol stays backward-compatible. Features don't have to.** Two separate contracts:
-  - **Protocol contract (always):** schema changes must not break parsing in either direction. An old client must still parse messages from a new daemon; a new daemon must still parse messages from an old client.
-    - New fields: `.optional()` with a sensible default.
-    - Never flip optional → required, remove fields, or narrow types (`string` → `enum`, `nullable` → non-null).
-    - Removed fields stay accepted (we stop sending them, not stop reading them).
-    - Test with: "does a 6-month-old client still parse this?" and "does a 6-month-old daemon still send something this client accepts?"
-    - Wire schemas are pure structural declarations. Do not add `.transform()`, `.catch()`, or `.preprocess()` to WebSocket message schemas; put normalization in an explicit post-validation pass.
-    - Plain `z.union()` is forbidden when every branch has a shared literal tag. Use `z.discriminatedUnion()` unless generated-code regression tests prove that specific shape is miscompiled.
-    - `.default()` is acceptable on primitive leaves only. Never put defaults on item schemas for large arrays or big inbound containers.
-  - **Feature contract (per-feature):** a new feature may require a new daemon capability. The client detects whether the capability is present and either runs the feature or shows "Update the host to use this." That's it.
-    - **No fallback paths.** Don't write a degraded version of a new feature that runs on old daemons. Don't fan out across legacy RPCs to simulate a missing capability. The user upgrades or doesn't get the feature.
-    - **No defensive branches scattered through the feature.** Capability detection happens in one place; downstream code reads a clean shape.
-    - **Capability flags live in `server_info.features.*`** with a single `// COMPAT(featureName): added in v0.1.X, drop the gate when floor >= v0.1.X` comment marking the cleanup site.
-    - Existing functionality keeps working across versions — that's the protocol contract doing its job. New-feature degradation is not the goal.
-    - **New RPCs use dotted namespaces with direction suffixes.** Follow [docs/rpc-namespacing.md](docs/rpc-namespacing.md): `domain.provider.operation.request` pairs with `domain.provider.operation.response`. Existing flat RPC names will migrate over time; don't add new ones.
+- **协议必须保持向后兼容，但单个新功能不必降级兼容。** 两者是不同契约：
+  - **协议契约（始终适用）：** Schema 修改不能破坏任一方向的解析。旧客户端必须能解析新守护进程消息，新守护进程也必须接受旧客户端请求。
+    - 新字段必须使用 `.optional()`，并提供合理的业务默认行为。
+    - 禁止把可选字段改为必填、删除字段或收窄类型，例如 `string` 改为 `enum`、`nullable` 改为不可空。
+    - 已移除字段仍需允许解析，只停止发送，不能停止接收。
+    - 测试时必须问：“六个月前的客户端还能解析吗？”以及“六个月前的守护进程发出的内容，新客户端还能接受吗？”
+    - 线上协议 Schema 只能包含纯结构声明。禁止在 WebSocket 消息 Schema 中使用 `.transform()`、`.catch()` 或 `.preprocess()`；标准化逻辑放在显式的校验后处理阶段。
+    - 当所有联合分支都有共同的字面量标签时，禁止使用普通 `z.union()`，应使用 `z.discriminatedUnion()`；只有生成代码回归测试证明特定结构编译错误时才允许例外。
+    - `.default()` 只允许用于基础类型叶子节点，禁止给大型数组元素 Schema 或大型入站容器设置默认值。
+  - **功能契约（按功能判断）：** 新功能可以要求新的守护进程能力。客户端只需要检测能力是否存在；存在就运行，不存在就提示“请更新主机后使用”。
+    - **禁止降级路径。** 不要为了兼容旧守护进程实现一个残缺版本，也不要并发调用多个旧 RPC 模拟缺失能力。用户要么升级，要么暂时无法使用该功能。
+    - **禁止把防御分支散落在整个功能中。** 能力检测集中在一个位置，下游只读取干净的数据结构。
+    - 能力标记统一放在 `server_info.features.*`，并在唯一清理位置添加 `// COMPAT(featureName): added in v0.1.X, drop the gate when floor >= v0.1.X` 注释。
+    - 已有功能依靠协议契约继续跨版本工作，新功能不以降级体验为目标。
+    - **新 RPC 使用带方向后缀的点分命名空间。** 按 [docs/rpc-namespacing.md](docs/rpc-namespacing.md) 规定，让 `domain.provider.operation.request` 与 `domain.provider.operation.response` 配对。旧的扁平 RPC 会逐步迁移，但不得新增扁平 RPC。
+- **所有向后兼容适配都必须标记日期和清理时间。** 每个旧客户端/旧守护进程兼容层都要带 `COMPAT(name)` 注释、加入版本和预计删除日期（通常为六个月后）。执行 `rg "COMPAT\("` 必须能得到完整清理列表。禁止把兼容逻辑藏在无标记的空值回退或可选链中。
 
-- **All back-compat shims are tagged and dated for cleanup.** Every shim that exists for old-client/old-daemon support carries a `COMPAT(name)` comment with the version it was added in and a target removal date (typically 6 months out). One grep — `rg "COMPAT\("` — should produce the full list of cleanup work. Don't bury back-compat in untagged `??`-fallbacks or optional-chain tunnels — that's how it stops being deletable.
+## 平台门控
 
-## Platform gating
+应用运行于 iOS、Android、网页浏览器和 Electron 桌面端网页环境。默认代码应跨平台，只在确有必要时增加门控。统一从 `@/constants/platform` 导入平台判断。
 
-The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is cross-platform by default. Gate only when you must. Import gates from `@/constants/platform`.
+### 四种标准门控
 
-### The four gates
+| 门控                       | 类型     | 使用场景                                                                                            |
+| -------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `isWeb`                    | 常量     | DOM API，例如 `document`、`window`、`<div>`、`addEventListener`、`ResizeObserver`；这是例外而非常态 |
+| `isNative`                 | 常量     | 原生专用 API，例如触觉反馈、`StatusBar.currentHeight`、推送令牌、相机/扫描器、`expo-av`             |
+| `getIsElectron()`          | 缓存函数 | 桌面外壳能力，例如文件对话框、标题栏拖拽区、守护进程管理、应用更新和 Dock 徽标                      |
+| `useIsCompactFormFactor()` | Hook     | 布局决策，例如侧边栏覆盖或固定、弹窗或全屏、单面板或分栏；来源为 `@/constants/layout`               |
 
-| Gate                       | Type      | When to use                                                                                                                 |
-| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `isWeb`                    | constant  | DOM APIs — `document`, `window`, `<div>`, `addEventListener`, `ResizeObserver`. This is the **exception**, not the default. |
-| `isNative`                 | constant  | Native-only APIs — Haptics, `StatusBar.currentHeight`, push tokens, camera/scanner, `expo-av`.                              |
-| `getIsElectron()`          | cached fn | Desktop wrapper features — file dialogs, titlebar drag region, daemon management, app updates, dock badges.                 |
-| `useIsCompactFormFactor()` | hook      | Layout decisions — sidebar overlay vs pinned, modal vs full screen, single-panel vs split. From `@/constants/layout`.       |
+### 决策表
 
-### Decision matrix
+| 需求                                                          | 使用方式                                                                  |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 访问 DOM（`document`、`window`、`<div>`、`addEventListener`） | `if (isWeb)`                                                              |
+| 使用原生专用 API（触觉反馈、推送令牌、相机）                  | `if (isNative)`                                                           |
+| 使用 Electron 桥接（文件对话框、标题栏、更新）                | `if (getIsElectron())`                                                    |
+| 在手机与平板/桌面之间切换布局                                 | `useIsCompactFormFactor()`                                                |
+| 网页悬停显示、原生端始终显示                                  | `isHovered \|\| isNative \|\| isCompact`                                  |
+| 只门控 iOS 或 Android                                         | `Platform.OS === "ios"` / `Platform.OS === "android"`，少量使用并保持内联 |
 
-| I need to...                                                   | Use                                                                       |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Access DOM (`document`, `window`, `<div>`, `addEventListener`) | `if (isWeb)`                                                              |
-| Use a native-only API (Haptics, push tokens, camera)           | `if (isNative)`                                                           |
-| Use an Electron bridge (file dialog, titlebar, updates)        | `if (getIsElectron())`                                                    |
-| Switch layout between phone and tablet/desktop                 | `useIsCompactFormFactor()`                                                |
-| Show something on hover, always-visible on native              | `isHovered \|\| isNative \|\| isCompact` (hover only works on web)        |
-| Gate to iOS or Android specifically                            | `Platform.OS === "ios"` / `Platform.OS === "android"` (rare, keep inline) |
+### 规则
 
-### Rules
+- **默认跨平台。** 没有明确原因时不要增加门控。
+- **大型平台差异优先使用 Metro 文件扩展名，而不是运行时 `if`。** 当模块在不同平台上的实现本质不同，使用 `.web.ts` / `.native.ts`，Metro 会在构建时选择正确文件，不会打包无关平台代码。`if (isWeb)` 只用于少量内联判断；如果出现大型 `if (isWeb) { ... } else { ... }`，应拆分文件。
 
-- **Default is cross-platform.** Don't gate unless you have a specific reason.
-- **Prefer Metro file extensions over `if` statements.** When a module has fundamentally different implementations per platform, use `.web.ts` / `.native.ts` file extensions instead of runtime `if (isWeb)` branches. Metro resolves the correct file at build time — the unused platform code is never bundled. Reserve `if (isWeb)` for small, inline checks (a single line or a few props). If you find yourself writing a large `if (isWeb) { ... } else { ... }` block, split into separate files instead.
-  ```
+  ```text
   hooks/
-    use-audio-recorder.web.ts    ← uses Web Audio API
-    use-audio-recorder.native.ts ← uses expo-audio
+    use-audio-recorder.web.ts    ← 使用 Web Audio API
+    use-audio-recorder.native.ts ← 使用 expo-audio
   ```
-  Import as `@/hooks/use-audio-recorder` — Metro picks the right file automatically.
-- **Use `.electron.ts` / `.electron.tsx` for Electron-only web modules.** Electron is still the Metro `web` platform, but desktop dev/build sets `PASEO_WEB_PLATFORM=electron`, so Metro first looks for `.electron.*` files and falls back to normal `.web.*` files. Use this when the implementation depends on Electron-only behavior such as `webviewTag`, desktop preload APIs, or the Electron bridge. Keep plain browser web in `.web.*`, and keep native fallbacks in the base file or `.native.*`.
-  ```
+
+  统一导入 `@/hooks/use-audio-recorder`，由 Metro 自动选择实现。
+
+- **Electron 专用网页模块使用 `.electron.ts` / `.electron.tsx`。** Electron 仍属于 Metro 的 `web` 平台，但桌面开发和构建会设置 `PASEO_WEB_PLATFORM=electron`，因此 Metro 会优先查找 `.electron.*`，再回退到普通 `.web.*`。依赖 Electron 专用行为时使用此结构，例如 `webviewTag`、桌面 preload API 或 Electron 桥接。普通浏览器实现留在 `.web.*`，原生回退放在基础文件或 `.native.*`。
+
+  ```text
   components/
-    browser-pane.electron.tsx ← Electron <webview> implementation
-    browser-pane.web.tsx      ← plain web fallback
-    browser-pane.tsx          ← native fallback
+    browser-pane.electron.tsx ← Electron `<webview>` 实现
+    browser-pane.web.tsx      ← 普通网页回退
+    browser-pane.tsx          ← 原生回退
   ```
-  Import as `@/components/browser-pane` — Electron desktop gets the `.electron.tsx` file, browser web gets `.web.tsx`, and native gets the native/base implementation.
-- **NEVER use raw DOM APIs without `isWeb` guard.** DOM APIs crash native. Casting a RN ref to `HTMLElement` is a red flag — ensure the block is web-only.
-- **NEVER use `onPointerEnter`/`onPointerLeave`.** They don't fire on native iOS.
-- **Hover only works on web.** React Native's `onHoverIn`/`onHoverOut` on `Pressable` does NOT fire on native iOS/iPad — the underlying W3C pointer events are behind disabled experimental flags. For hover-to-show UI (kebab menus, action buttons), use `isHovered || isNative || isCompact` so the controls are always visible on native and hover-to-show on web.
-- **Don't use Platform.OS as a proxy for layout capabilities.** Use breakpoints for layout decisions, not platform checks.
-- **Import `isWeb`/`isNative` from `@/constants/platform`.** Never write `const isWeb = Platform.OS === "web"` locally.
 
-## Debugging
+  统一导入 `@/components/browser-pane`，Electron、浏览器和原生端会分别获得正确实现。
 
-Find the complete daemon logs and traces in the $PASEO_HOME/daemon.log
+- **严禁在没有 `isWeb` 门控时使用原始 DOM API。** DOM API 会导致原生端崩溃。把 React Native 引用强制转换成 `HTMLElement` 是危险信号，必须确认整个代码块只在网页端执行。
+- **严禁使用 `onPointerEnter` / `onPointerLeave`。** 它们不会在原生 iOS 上触发。
+- **悬停只在网页端有效。** React Native `Pressable` 的 `onHoverIn` / `onHoverOut` 在原生 iOS/iPad 上不会触发。对于悬停显示的菜单或操作按钮，应使用 `isHovered || isNative || isCompact`，确保原生端始终可见。
+- **禁止用 `Platform.OS` 代替布局能力判断。** 布局决策使用断点，不使用平台判断。
+- **统一从 `@/constants/platform` 导入 `isWeb` / `isNative`。** 禁止局部编写 `const isWeb = Platform.OS === "web"`。
+
+## 调试
+
+完整守护进程日志和跟踪信息位于 `$PASEO_HOME/daemon.log`。

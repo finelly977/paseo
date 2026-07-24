@@ -4882,9 +4882,7 @@ export class Session {
     }
 
     if (repairedWorkspaceIds.size > 0) {
-      await this.emitWorkspaceUpdatesForWorkspaceIds(repairedWorkspaceIds, {
-        skipReconcile: true,
-      });
+      await this.emitWorkspaceUpdatesForWorkspaceIds(repairedWorkspaceIds);
     }
   }
 

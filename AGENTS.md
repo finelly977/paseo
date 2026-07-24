@@ -1,74 +1,94 @@
-# AGENTS.md — Fork working copy
+# AGENTS.md — 二开工作副本
 
-This checkout is a **downstream fork** of [getpaseo/paseo](https://github.com/getpaseo/paseo), not a clean upstream tree.
+本检出目录是 [getpaseo/paseo](https://github.com/getpaseo/paseo) 的**下游二开仓库**，不是干净的上游源码树。
 
-- **Fork (product line):** [finelly977/paseo](https://github.com/finelly977/paseo) — `origin`
-- **Upstream (author):** [getpaseo/paseo](https://github.com/getpaseo/paseo) — `upstream` (fetch only; push is disabled)
+- **二开产品线：** [finelly977/paseo](https://github.com/finelly977/paseo) — `origin`
+- **原作者上游：** [getpaseo/paseo](https://github.com/getpaseo/paseo) — `upstream`（只允许拉取，已禁用推送）
 
-The owner uses this repo for **second-party development (二开)** and for **selectively merging useful upstream updates**. Private product changes live on the fork; upstream is a source of optional improvements, not the default push target.
+仓库所有者使用此仓库进行二次开发，并选择性合并原作者发布的更新。私有产品改动保留在二开仓库；上游只是可选改进来源，不是默认推送目标。
 
-Product architecture, package map, coding rules, and critical operational constraints still live in [CLAUDE.md](CLAUDE.md) and `docs/`. Follow those for day-to-day implementation work. This file only covers **fork identity and upstream sync policy**.
+产品架构、包结构、编码规范和关键运行约束仍以 [CLAUDE.md](CLAUDE.md) 与 `docs/` 为准。本文只规定**仓库身份、二开功能清单维护方式和上游同步策略**。
 
-## Remotes (expected)
+## 二开功能清单（关键）
 
-| Remote     | URL                                       | Role                                 |
-| ---------- | ----------------------------------------- | ------------------------------------ |
-| `origin`   | `https://github.com/finelly977/paseo.git` | Default push/pull for all local work |
-| `upstream` | `https://github.com/getpaseo/paseo.git`   | Read-only source of author releases  |
+[docs/fork-features.md](docs/fork-features.md) 是当前二开功能的唯一清单。任何会改变二开产品行为的任务，都必须在同一次交付中同步维护该文件。
 
-Do not re-point `origin` at the author repo. Do not push to `upstream`.
+该文件不是更新日志，严禁按时间顺序不断追加历史记录。维护规则如下：
 
-## Upstream sync policy (critical)
+1. **新增二开功能：** 新增一条当前有效功能说明，写清用户行为、适用边界和与上游的差异。
+2. **修改已有二开功能：** 直接改写原条目，使其准确描述修改后的最终行为，不要在后面追加“本次又修改了什么”。
+3. **移除二开功能：** 删除对应条目；如果只是部分撤销，则改写为仍然有效的剩余行为。
+4. **上游原生覆盖：** 如果合并上游后该能力已完全成为上游原生行为，不再属于二开差异，应从清单删除；如果二开仍有额外差异，则只保留差异部分。
+5. **交付前审计：** 对照代码实际行为检查清单，禁止保留已经失效、被覆盖或与代码不一致的描述。
 
-When the user asks to **check, review, sync, merge, or pull the author's latest** (e.g. “合作者最新版”, “同步上游”, “看最新更新”, “merge upstream”):
+同步上游时，功能冲突判断必须优先对照此清单，而不是只看 Git 是否产生文本冲突。自动合并成功不代表产品行为兼容。
 
-1. **Default scope = latest published release only**
-   - Use the newest **GitHub Release / git tag** on upstream, including **pre-releases and beta** tags (e.g. `v0.2.0-beta.3`).
-   - Prefer `gh release list --repo getpaseo/paseo` and/or `git fetch upstream --tags`, then resolve the latest published tag (stable or beta, whichever is newest by release time unless the user specifies stable-only).
-   - Diff / merge / cherry-pick against that **tag** (or the commit the release points at), not against floating branch tips.
+## 远端配置（预期状态）
 
-2. **Do not use unpublished WIP unless explicitly requested**
-   - Do **not** treat `upstream/main`, open PR branches, or untagged HEAD as “latest” by default.
-   - Half-finished, unreleased author work is out of scope for routine sync.
-   - Only use unreleased `upstream/main` (or a named branch/PR) when the user **clearly** asks for it — e.g. names `main`, “未发布”, “HEAD”, a branch name, or a PR number.
+| 远端       | 地址                                      | 用途                             |
+| ---------- | ----------------------------------------- | -------------------------------- |
+| `origin`   | `https://github.com/finelly977/paseo.git` | 所有本地工作的默认拉取和推送目标 |
+| `upstream` | `https://github.com/getpaseo/paseo.git`   | 原作者发布版本的只读来源         |
 
-3. **Merge is selective**
-   - Bring over changes that are useful and compatible with local 二开.
-   - Do not blindly overwrite fork-specific behavior (tab close layout-only, import-session UX, local packaging, etc.) without calling that out.
-   - Prefer small, reviewable merges or cherry-picks over a giant dump of author history.
+禁止把 `origin` 改回原作者仓库，禁止向 `upstream` 推送。
 
-4. **After syncing**
-   - Keep `origin` as the fork; push results to `origin` only.
-   - Report which **release tag** was used, what landed, and what was skipped (and why).
+## 上游同步策略（关键）
 
-### Quick commands (published release default)
+当用户要求检查、评审、同步、合并或拉取原作者最新版时，例如“作者最新版”“同步上游”“看最新更新”或“merge upstream”，遵循以下规则。
 
-```bash
+### 1. 默认范围只看最新已发布版本
+
+- 使用上游最新的 GitHub Release 或 Git 标签，包括预发布版和 beta，例如 `v0.2.0-beta.4`。
+- 优先执行 `gh release list --repo getpaseo/paseo` 和/或 `git fetch upstream --tags`，按发布时间确定最新已发布标签；除非用户明确要求稳定版，否则稳定版和 beta 一起比较。
+- 差异分析、合并和挑选提交都以该标签或标签指向的提交为基准，不能默认使用浮动分支头。
+
+### 2. 未经明确要求不得使用未发布代码
+
+- 不得把 `upstream/main`、开放中的 PR 分支或无标签提交当作默认“最新版”。
+- 日常同步不包含原作者尚未完成或尚未发布的工作。
+- 只有用户明确提到 `main`、“未发布”“HEAD”、具体分支名或 PR 编号时，才允许检查对应的未发布内容。
+
+### 3. 以功能兼容为准选择性合并
+
+- 合并有价值且与当前二开功能兼容的改动。
+- 必须对照 [docs/fork-features.md](docs/fork-features.md) 做行为审计，不能因为没有文本冲突就默认安全。
+- 不得无说明地覆盖二开特有行为，例如标签关闭仅影响布局、会话导入体验、会话回退策略和本地打包调整。
+- 默认优先采用小而可审查的合并或挑选提交；用户明确要求整版合并时，可以合并完整发布标签，但合并后仍必须完成二开功能审计。
+
+### 4. 同步完成后
+
+- `origin` 始终保持为二开仓库，只能向 `origin` 推送结果。
+- 报告使用了哪个发布标签、合并了什么、跳过了什么以及原因。
+- 同步维护 [docs/fork-features.md](docs/fork-features.md)，删除已被上游完全吸收的二开条目，更新仍有差异的条目。
+
+### 已发布版本的默认命令
+
+```powershell
 git fetch upstream --tags
 gh release list --repo getpaseo/paseo --limit 10
-# resolve newest published tag (incl. beta), then e.g.:
+# 确定最新发布标签（包括 beta）后，例如：
 git log --oneline HEAD..vX.Y.Z
 git merge vX.Y.Z
-# or cherry-pick specific commits after reviewing the tag range
+# 或在审查标签范围后挑选需要的提交
 git push origin HEAD
 ```
 
-### Explicit unreleased sync (only if user asks)
+### 仅在用户明确要求时同步未发布内容
 
-```bash
+```powershell
 git fetch upstream
 git log --oneline HEAD..upstream/main
-# merge/cherry-pick only after user opted into unreleased main
+# 只有用户明确选择未发布 main 后，才允许合并或挑选提交
 ```
 
-## Day-to-day development
+## 日常开发
 
-- Default branch for local product work: `main` tracking `origin/main`.
-- Feature work: short-lived branches on the fork (`feat/…`, `fix/…`), PR or merge into fork `main`.
-- Upstream contribution (optional): branch from a published upstream tag or from `upstream/main` only for a clean PR back to the author; do not mix private 二开 into those PRs.
+- 本地产品开发默认使用 `main`，跟踪 `origin/main`。
+- 功能开发使用二开仓库上的短期分支，例如 `feat/…`、`fix/…`，完成后通过 PR 或合并进入二开 `main`。
+- 如需向上游贡献代码，应从已发布上游标签创建干净分支；只有明确需要时才从 `upstream/main` 创建。禁止把私有二开功能混入上游 PR。
 
-## What this is not
+## 本文件不代表什么
 
-- Not a replacement for [CLAUDE.md](CLAUDE.md) product rules.
-- Not permission to publish to npm/GitHub releases of the upstream project.
-- Not a mandate to track author `main` continuously.
+- 不能替代 [CLAUDE.md](CLAUDE.md) 中的产品和工程规则。
+- 不代表可以发布原作者项目的 npm 包或 GitHub Release。
+- 不要求持续跟踪原作者 `main`。
