@@ -1,15 +1,11 @@
 import { useMemo, useCallback, useRef, useSyncExternalStore } from "react";
-import equal from "fast-deep-equal";
 import { useShallow } from "zustand/shallow";
 import { useSessionStore } from "@/stores/session-store";
-import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import type { Agent } from "@/stores/session-store";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
+import { collectAggregatedAgents, type AggregatedAgent } from "@/utils/aggregate-agents";
 
-export interface AggregatedAgent extends AgentDirectoryEntry {
-  serverId: string;
-  serverLabel: string;
-}
+export type { AggregatedAgent } from "@/utils/aggregate-agents";
 
 export interface AggregatedAgentsResult {
   agents: AggregatedAgent[];
@@ -55,47 +51,15 @@ export function useAggregatedAgents(options?: {
   const result = useMemo(() => {
     // runtimeVersion is referenced so the memo recomputes when runtime state changes.
     void runtimeVersion;
-    const allAgents: AggregatedAgent[] = [];
     const serverLabelById = new Map(
       daemons.map((daemon) => [daemon.serverId, daemon.label] as const),
     );
-
-    // Derive agent directory from all sessions
-    for (const [serverId, agents] of Object.entries(sessionAgents)) {
-      if (!agents || agents.size === 0) {
-        continue;
-      }
-      const serverLabel = serverLabelById.get(serverId) ?? serverId;
-      for (const agent of agents.values()) {
-        if (!includeArchived && agent.archivedAt) {
-          continue;
-        }
-        const nextAgent: AggregatedAgent = {
-          id: agent.id,
-          serverId,
-          serverLabel,
-          title: agent.title ?? null,
-          status: agent.status,
-          lastActivityAt: agent.lastActivityAt,
-          cwd: agent.cwd,
-          workspaceId: agent.workspaceId,
-          provider: agent.provider,
-          pendingPermissionCount: agent.pendingPermissions.length,
-          requiresAttention: agent.requiresAttention,
-          attentionReason: agent.attentionReason,
-          attentionTimestamp: agent.attentionTimestamp,
-          archivedAt: agent.archivedAt,
-          createdAt: agent.createdAt,
-          labels: agent.labels,
-          projectPlacement: agent.projectPlacement,
-        };
-        const cacheKey = `${serverId}:${agent.id}`;
-        const prev = prevAgentsRef.current.get(cacheKey);
-        // Preserve object identity when fields are unchanged so callers can use
-        // reference equality (useShallow, memo) to skip re-renders.
-        allAgents.push(prev !== undefined && equal(prev, nextAgent) ? prev : nextAgent);
-      }
-    }
+    const allAgents = collectAggregatedAgents({
+      sessionAgents,
+      serverLabelById,
+      includeArchived,
+      previousById: prevAgentsRef.current,
+    });
 
     // Sort by: running agents first, then by most recent activity
     allAgents.sort((left, right) => {

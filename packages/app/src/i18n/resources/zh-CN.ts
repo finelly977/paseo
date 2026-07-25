@@ -959,6 +959,8 @@ export const zhCN: TranslationResources = {
         archive: "归档",
         archiveWorkspace: "归档工作区",
         hideFromSidebar: "从侧边栏隐藏",
+        removeAgent: "移除",
+        removingAgent: "正在移除...",
         archiving: "正在归档...",
         hiding: "正在隐藏...",
       },
@@ -966,6 +968,10 @@ export const zhCN: TranslationResources = {
         hideTitle: "隐藏 workspace？",
         hideMessage: "从侧边栏隐藏「{{workspaceName}}」？\n\n磁盘上的文件不会被更改。",
         hideConfirm: "隐藏",
+        removeAgentTitle: "从 Paseo 移除会话？",
+        removeAgentMessage:
+          "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
+        removeAgentConfirm: "移除",
         cancel: "取消",
       },
       rename: {
@@ -979,6 +985,8 @@ export const zhCN: TranslationResources = {
         branchNameCopied: "分支名称已复制",
         hostDisconnected: "Host 未连接",
         hideFailed: "隐藏 workspace 失败",
+        removeAgentFailed: "从 Paseo 移除会话失败",
+        updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
         archiveFailed: "归档工作区失败",
       },
     },

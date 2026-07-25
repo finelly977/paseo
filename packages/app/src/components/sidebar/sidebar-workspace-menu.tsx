@@ -2,7 +2,17 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Archive, CircleCheck, Copy, MoreVertical, Pencil, Pin, PinOff } from "lucide-react-native";
+import {
+  Archive,
+  CircleCheck,
+  Copy,
+  EyeOff,
+  MoreVertical,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCw,
+} from "lucide-react-native";
 import { isNative, isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import type { ShortcutKey } from "@/utils/format-shortcut";
@@ -26,6 +36,8 @@ const ThemedPencil = withUnistyles(Pencil);
 const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
+const ThemedEyeOff = withUnistyles(EyeOff);
+const ThemedRotateCw = withUnistyles(RotateCw);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -35,6 +47,8 @@ const markAsReadLeadingIcon = (
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
+const removeLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
+const reloadLeadingIcon = <ThemedRotateCw size={14} uniProps={foregroundMutedColorMapping} />;
 
 function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return (
@@ -58,6 +72,9 @@ interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  onReloadAgent?: () => void;
+  onRemoveAgent?: () => void;
+  isRemovingAgent?: boolean;
 }
 
 export function SidebarWorkspaceMenu({
@@ -73,6 +90,9 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  onReloadAgent,
+  onRemoveAgent,
+  isRemovingAgent,
 }: SidebarWorkspaceMenuProps) {
   const { t } = useTranslation();
   const archiveTrailing = useMemo(
@@ -135,6 +155,27 @@ export function SidebarWorkspaceMenu({
             onSelect={onTogglePin}
           >
             {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
+          </DropdownMenuItem>
+        ) : null}
+        {onReloadAgent ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-reload-agent-${workspaceKey}`}
+            leading={reloadLeadingIcon}
+            onSelect={onReloadAgent}
+          >
+            {t("workspace.tabs.menu.reloadAgent")}
+          </DropdownMenuItem>
+        ) : null}
+        {onRemoveAgent ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-remove-agent-${workspaceKey}`}
+            leading={removeLeadingIcon}
+            onSelect={onRemoveAgent}
+            destructive
+            status={isRemovingAgent ? "pending" : "idle"}
+            pendingLabel={t("sidebar.workspace.actions.removingAgent")}
+          >
+            {t("sidebar.workspace.actions.removeAgent")}
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem

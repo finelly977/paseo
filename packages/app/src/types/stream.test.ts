@@ -377,6 +377,46 @@ describe("stream reducer canonical tool calls", () => {
     assert.strictEqual(first.messageId, "msg-same");
   });
 
+  it("完全忽略 Codex reasoning，且不会打断正在输出的正文", () => {
+    const assistantResult = applyStreamEvent({
+      tail: [],
+      head: [],
+      event: assistantTimeline("正在输出", "codex", "msg-reasoning-hidden"),
+      timestamp: new Date("2025-01-01T10:02:00Z"),
+    });
+    const reasoningResult = applyStreamEvent({
+      tail: assistantResult.tail,
+      head: assistantResult.head,
+      event: reasoningTimeline("这段摘要不应显示", "codex"),
+      timestamp: new Date("2025-01-01T10:02:01Z"),
+    });
+
+    expect(reasoningResult.tail).toEqual([]);
+    expect(reasoningResult.head).toBe(assistantResult.head);
+    expect(reasoningResult.head.some((item) => item.kind === "thought")).toBe(false);
+  });
+
+  it("合并分块消息后移除 Codex Git 界面指令", () => {
+    const state = hydrateStreamState([
+      {
+        event: assistantTimeline("构建完成。\n::git-st", "codex", "msg-git-directives"),
+        timestamp: new Date("2025-01-01T10:02:00Z"),
+      },
+      {
+        event: assistantTimeline(
+          'age{cwd="E:\\paseo"}\n::git-commit{cwd="E:\\paseo"}',
+          "codex",
+          "msg-git-directives",
+        ),
+        timestamp: new Date("2025-01-01T10:02:01Z"),
+      },
+    ]);
+
+    const messages = state.filter((item) => item.kind === "assistant_message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.text).toBe("构建完成。");
+  });
+
   it("keeps row identities unique when an assistant message resumes after a tool", () => {
     const messageId = "msg-resumed";
     const state = hydrateStreamState([

@@ -999,6 +999,8 @@ export const fr: TranslationResources = {
         archive: "Archive",
         archiveWorkspace: "Archiver l’espace de travail",
         hideFromSidebar: "Masquer de la barre latérale",
+        removeAgent: "移除",
+        removingAgent: "正在移除...",
         archiving: "Archivage...",
         hiding: "Dissimulation...",
       },
@@ -1007,6 +1009,10 @@ export const fr: TranslationResources = {
         hideMessage:
           "Masquer «{{workspaceName}}» dans la barre latérale?\n\nLes fichiers sur le disque ne seront pas modifiés.",
         hideConfirm: "Cacher",
+        removeAgentTitle: "从 Paseo 移除会话？",
+        removeAgentMessage:
+          "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
+        removeAgentConfirm: "移除",
         cancel: "Annuler",
       },
       rename: {
@@ -1020,6 +1026,8 @@ export const fr: TranslationResources = {
         branchNameCopied: "Nom de la succursale copié",
         hostDisconnected: "Hostn'est pas connecté",
         hideFailed: "Échec du masquage de l'espace de travail",
+        removeAgentFailed: "从 Paseo 移除会话失败",
+        updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
         archiveFailed: "Échec de l'archivage de l'espace de travail",
       },
     },

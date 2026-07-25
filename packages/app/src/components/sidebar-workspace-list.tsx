@@ -49,6 +49,7 @@ import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
+import { useSessionStore } from "@/stores/session-store";
 import type { PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 import {
   useSidebarWorkspacePinController,
@@ -121,6 +122,7 @@ import { redirectIfArchivingActiveWorkspace } from "@/utils/sidebar-workspace-ar
 import { openExternalUrl } from "@/utils/open-external-url";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
+import { useAgentInitialization } from "@/hooks/use-agent-initialization";
 import {
   getCurrentProjectRemoveReadiness,
   removeProjectFromHosts,
@@ -295,6 +297,9 @@ interface WorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  onReloadAgent?: () => void;
+  onRemoveAgent?: () => void;
+  isRemovingAgent?: boolean;
   reserveIdleStatusIndicatorSpace?: boolean;
 }
 
@@ -641,6 +646,9 @@ function WorkspaceRowRightGroup({
   onRename,
   isPinned,
   onTogglePin,
+  onReloadAgent,
+  onRemoveAgent,
+  isRemovingAgent,
 }: {
   workspace: SidebarWorkspaceEntry;
   isHovered: boolean;
@@ -659,6 +667,9 @@ function WorkspaceRowRightGroup({
   onRename?: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  onReloadAgent?: () => void;
+  onRemoveAgent?: () => void;
+  isRemovingAgent?: boolean;
 }) {
   const { t } = useTranslation();
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
@@ -698,6 +709,9 @@ function WorkspaceRowRightGroup({
                 archiveShortcutKeys={archiveShortcutKeys}
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
+                onReloadAgent={onReloadAgent}
+                onRemoveAgent={onRemoveAgent}
+                isRemovingAgent={isRemovingAgent}
               />
             ) : null}
           </SidebarWorkspaceTrailingActionOverlay>
@@ -1127,6 +1141,9 @@ function WorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  onReloadAgent,
+  onRemoveAgent,
+  isRemovingAgent,
   reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
   const _isCompact = useIsCompactFormFactor();
@@ -1217,6 +1234,9 @@ function WorkspaceRowInner({
                   onRename={onRename}
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
+                  onReloadAgent={onReloadAgent}
+                  onRemoveAgent={onRemoveAgent}
+                  isRemovingAgent={isRemovingAgent}
                 />
               </SidebarWorkspaceRowContent>
             </Pressable>
@@ -1260,7 +1280,29 @@ function WorkspaceRowWithMenu({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const workspaceAgent = useSessionStore((state) => {
+    const session = state.sessions[workspace.serverId];
+    if (!session) {
+      return null;
+    }
+    const agents = Array.from(session.agents.values()).filter(
+      (agent) =>
+        agent.workspaceId === workspace.workspaceId &&
+        agent.parentAgentId === null &&
+        !agent.archivedAt,
+    );
+    return agents.length === 1 ? agents[0] : null;
+  });
+  const supportsAgentRemoval = useSessionStore(
+    (state) => state.sessions[workspace.serverId]?.serverInfo?.features?.agentRemoval === true,
+  );
+  const hostClient = getHostRuntimeStore().getClient(workspace.serverId);
+  const { refreshAgent } = useAgentInitialization({
+    serverId: workspace.serverId,
+    client: hostClient,
+  });
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
+  const [isRemovingAgent, setIsRemovingAgent] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
   const redirectAfterArchive = useCallback(() => {
@@ -1357,6 +1399,65 @@ function WorkspaceRowWithMenu({
     });
   }, [clearAttention, toast]);
 
+  const handleReloadAgent = useCallback(() => {
+    if (!workspaceAgent) {
+      return;
+    }
+    toast.show(t("workspace.tabs.toasts.reloadingAgent"), { durationMs: null });
+    void refreshAgent(workspaceAgent.id)
+      .then(() => toast.show(t("workspace.tabs.toasts.reloadedAgent"), { variant: "success" }))
+      .catch((error: unknown) => {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.tabs.toasts.failedToReloadAgent"),
+        );
+      });
+  }, [refreshAgent, t, toast, workspaceAgent]);
+
+  const handleRemoveAgent = useCallback(async () => {
+    if (isRemovingAgent) {
+      return;
+    }
+    if (!supportsAgentRemoval) {
+      toast.error(t("sidebar.workspace.toasts.updateHostToRemoveAgent"));
+      return;
+    }
+    if (!workspaceAgent || !hostClient) {
+      toast.error(t("sidebar.workspace.toasts.hostDisconnected"));
+      return;
+    }
+    const confirmed = await confirmDialog({
+      title: t("sidebar.workspace.confirmations.removeAgentTitle"),
+      message: t("sidebar.workspace.confirmations.removeAgentMessage", {
+        workspaceName: workspace.title ?? workspace.name,
+      }),
+      confirmLabel: t("sidebar.workspace.confirmations.removeAgentConfirm"),
+      cancelLabel: t("sidebar.workspace.confirmations.cancel"),
+      destructive: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    setIsRemovingAgent(true);
+    try {
+      await hostClient.removeAgentFromPaseo(workspaceAgent.id);
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : t("sidebar.workspace.toasts.removeAgentFailed"),
+      );
+    } finally {
+      setIsRemovingAgent(false);
+    }
+  }, [
+    hostClient,
+    isRemovingAgent,
+    supportsAgentRemoval,
+    t,
+    toast,
+    workspace.name,
+    workspace.title,
+    workspaceAgent,
+  ]);
+
   useKeyboardActionHandler({
     handlerId: `workspace-archive-${workspace.workspaceKey}`,
     actions: ["workspace.archive"],
@@ -1405,6 +1506,9 @@ function WorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        onReloadAgent={workspaceAgent ? handleReloadAgent : undefined}
+        onRemoveAgent={workspaceAgent ? handleRemoveAgent : undefined}
+        isRemovingAgent={isRemovingAgent}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <AdaptiveRenameModal

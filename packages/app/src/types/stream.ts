@@ -3,6 +3,7 @@ import type { AgentAttachment, AgentStreamEventPayload } from "@getpaseo/protoco
 import type { AttachmentMetadata } from "@/attachments/types";
 import { extractTaskEntriesFromToolCall } from "../utils/tool-call-parsers";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+import { stripCodexGitDirectives } from "@/utils/codex-visible-message";
 
 /**
  * Simple hash function for deterministic ID generation
@@ -397,6 +398,74 @@ export function clearOptimisticUserMessages(state: StreamItem[]): StreamItem[] {
   return next.length === state.length ? state : next;
 }
 
+function transformAssistantText(
+  text: string,
+  transformText: ((text: string) => string) | undefined,
+): string {
+  return transformText ? transformText(text) : text;
+}
+
+interface AppendAssistantTextInput {
+  state: StreamItem[];
+  chunk: string;
+  timestamp: Date;
+  messageId?: string;
+  timelineCursor?: TimelinePosition;
+  transformText?: (text: string) => string;
+}
+
+function updateTrailingAssistantMessage(input: AppendAssistantTextInput): StreamItem[] | null {
+  const last = input.state.at(-1);
+  if (
+    last?.kind !== "assistant_message" ||
+    (input.messageId !== undefined && last.messageId !== input.messageId)
+  ) {
+    return null;
+  }
+  const mergedText = transformAssistantText(`${last.text}${input.chunk}`, input.transformText);
+  if (!mergedText) {
+    return input.state.slice(0, -1);
+  }
+  return [
+    ...input.state.slice(0, -1),
+    {
+      ...last,
+      text: mergedText,
+      timestamp: input.timestamp,
+      ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
+    },
+  ];
+}
+
+function updateAssistantBeforeOptimisticUser(
+  input: AppendAssistantTextInput & { source: StreamUpdateSource },
+): StreamItem[] | null {
+  const last = input.state.at(-1);
+  const assistant = input.state.at(-2);
+  if (
+    input.source !== "live" ||
+    last?.kind !== "user_message" ||
+    assistant?.kind !== "assistant_message" ||
+    (input.messageId !== undefined && assistant.messageId !== input.messageId)
+  ) {
+    return null;
+  }
+  const mergedText = transformAssistantText(`${assistant.text}${input.chunk}`, input.transformText);
+  if (!mergedText) {
+    return [...input.state.slice(0, -2), last];
+  }
+  return [
+    ...input.state.slice(0, -2),
+    {
+      ...assistant,
+      text: mergedText,
+      timestamp: input.timestamp,
+      ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
+    },
+    last,
+  ];
+}
+
 function appendAssistantMessage(
   state: StreamItem[],
   text: string,
@@ -405,57 +474,33 @@ function appendAssistantMessage(
   messageId?: string,
   reservedItemIds?: ReadonlySet<string>,
   timelineCursor?: TimelinePosition,
+  transformText?: (text: string) => string,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!chunk) {
     return state;
   }
 
-  const last = state[state.length - 1];
-  const shouldAppendToLast =
-    last &&
-    last.kind === "assistant_message" &&
-    (messageId === undefined || last.messageId === messageId);
-  if (shouldAppendToLast) {
-    const updated: AssistantMessageItem = {
-      ...last,
-      text: `${last.text}${chunk}`,
-      timestamp,
-      ...(timelineCursor ? { timelineCursor } : {}),
-    };
-    return [...state.slice(0, -1), updated];
-  }
+  const updateInput = { state, chunk, timestamp, messageId, timelineCursor, transformText };
+  const trailingUpdate = updateTrailingAssistantMessage(updateInput);
+  if (trailingUpdate) return trailingUpdate;
 
-  // If the last item is a user_message (optimistic append to head during
-  // interrupt), look one further back for the streaming assistant_message.
-  const secondLast = state[state.length - 2];
-  if (
-    source === "live" &&
-    last?.kind === "user_message" &&
-    secondLast?.kind === "assistant_message" &&
-    (messageId === undefined || secondLast.messageId === messageId)
-  ) {
-    const updated: AssistantMessageItem = {
-      ...secondLast,
-      text: `${secondLast.text}${chunk}`,
-      timestamp,
-      ...(timelineCursor ? { timelineCursor } : {}),
-    };
-    return [...state.slice(0, -2), updated, last];
-  }
+  const interruptedUpdate = updateAssistantBeforeOptimisticUser({ ...updateInput, source });
+  if (interruptedUpdate) return interruptedUpdate;
 
-  if (!hasContent) {
+  const visibleChunk = transformAssistantText(chunk, transformText);
+  if (!hasContent || !visibleChunk.trim()) {
     return state;
   }
 
-  const idSeed = chunk.trim() || chunk;
+  const idSeed = visibleChunk.trim() || visibleChunk;
   const entryId = createAssistantItemId(state, messageId, idSeed, timestamp, reservedItemIds);
   const item: AssistantMessageItem = {
     kind: "assistant_message",
     id: entryId,
     ...(messageId ? { messageId } : {}),
     ...(timelineCursor ? { timelineCursor } : {}),
-    text: chunk,
+    text: visibleChunk,
     timestamp,
   };
   return [...state, item];
@@ -865,9 +910,13 @@ function reduceTimelineEvent(
           item.messageId,
           reservedItemIds,
           timelineCursor,
+          event.provider === "codex" ? stripCodexGitDirectives : undefined,
         ),
       );
     case "reasoning":
+      if (event.provider === "codex") {
+        return state;
+      }
       return appendThought(state, item.text, timestamp);
     case "tool_call":
       return finalizeActiveThoughts(reduceTimelineToolCall(state, event, item, timestamp));
@@ -991,7 +1040,7 @@ function getEventItemKind(event: AgentStreamEventPayload): StreamItem["kind"] | 
     case "assistant_message":
       return "assistant_message";
     case "reasoning":
-      return "thought";
+      return event.provider === "codex" ? null : "thought";
     case "tool_call":
       return "tool_call";
     case "todo":

@@ -274,6 +274,74 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
   });
 });
 
+test("listImportableProviderSessions 按提供方原生会话 ID 去重", async () => {
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ providers: ["codex"] }),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions: async () => [
+        makeImportableSession({
+          sessionId: "codex-row-1",
+          nativeHandle: "same-thread",
+          title: "旧条目",
+          lastActivityAt: "2026-04-30T12:00:00.000Z",
+        }),
+        makeImportableSession({
+          sessionId: "codex-row-2",
+          nativeHandle: "same-thread",
+          title: "最新条目",
+          lastActivityAt: "2026-04-30T12:05:00.000Z",
+        }),
+      ],
+    },
+    agentStorage: { list: async () => [] },
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(result.entries).toHaveLength(1);
+  expect(result.entries[0]?.providerHandleId).toBe("same-thread");
+  expect(result.entries[0]?.title).toBe("最新条目");
+});
+
+test("listImportableProviderSessions 使用旧记录的运行时会话 ID 防重并补足限制数量", async () => {
+  const listImportableSessions = vi.fn(async () => [
+    makeImportableSession({
+      sessionId: "already-imported",
+      lastActivityAt: "2026-04-30T12:05:00.000Z",
+    }),
+    makeImportableSession({
+      sessionId: "available",
+      lastActivityAt: "2026-04-30T12:00:00.000Z",
+    }),
+  ]);
+  const result = await listImportableProviderSessions({
+    request: makeRequest({ providers: ["codex"], limit: 1 }),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions,
+    },
+    agentStorage: {
+      list: async () => [
+        {
+          id: "legacy-agent",
+          provider: "codex",
+          persistence: null,
+          runtimeInfo: { provider: "codex", sessionId: "already-imported" },
+        } as StoredAgentRecord,
+      ],
+    },
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(listImportableSessions).toHaveBeenCalledWith({
+    limit: 2,
+    providerFilter: new Set(["codex"]),
+    cwd: undefined,
+  });
+  expect(result.filteredAlreadyImportedCount).toBe(1);
+  expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["available"]);
+});
+
 test("listImportableProviderSessions 为旧导入记录生成 CLI 标题修复", async () => {
   const cwd = "/tmp/project";
   const agentId = "00000000-0000-4000-8000-000000000634";

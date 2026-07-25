@@ -28,7 +28,7 @@
 - 支持按智能体类型、会话标题、消息预览和工作目录搜索。
 - 提供按完整工作目录路径筛选的下拉框，不用文件夹名称作为唯一身份；路径相同但名称相同的不同目录不会混淆。
 - 会话按工作目录分组并显示目录信息，便于在大量历史会话中定位目标。
-- 已导入会话仍会被识别并从可导入列表中过滤。
+- 已导入会话仍会被识别并从可导入列表中过滤；Codex 使用“提供方 + 原生会话 ID”作为唯一身份，在导入候选、并发导入、历史记录匹配和客户端会话聚合中防止同一会话重复出现。
 
 主要涉及：
 
@@ -139,3 +139,24 @@
 - `scripts/build-desktop-windows.ps1`
 - `scripts/check-workspace-version-consistency.mjs`
 - `packages/desktop/electron-builder.yml`
+
+### 10. Codex 内容清理与侧栏会话管理
+
+- Codex 的 Thinking/reasoning 摘要不进入新时间线，客户端也会过滤旧时间线中的同类内容，避免历史导入和实时对话继续显示内部摘要。
+- Codex 助手消息末尾供 Codex App 使用的 Git 界面指令不会作为普通正文显示；Markdown 代码块内用于说明的相同文本仍会保留。
+- 侧边栏中只有一个根智能体的工作区提供“重新加载”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话。
+- 移除只删除 Paseo 自己的会话记录以及随之变空的工作区记录，不调用智能体提供方的归档或删除能力，也不修改原始会话文件；原生会话之后仍可从导入页面重新导入。
+- 新客户端只会在主机明确声明支持时发送移除请求；旧主机会提示更新，不会尝试调用不存在的接口。
+
+主要涉及：
+
+- `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/app/src/types/stream.ts`
+- `packages/app/src/utils/codex-visible-message.ts`
+- `packages/app/src/utils/aggregate-agents.ts`
+- `packages/app/src/components/sidebar-workspace-list.tsx`
+- `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx`
+- `packages/server/src/server/session.ts`
+- `packages/server/src/server/websocket-server.ts`
+- `packages/client/src/daemon-client.ts`
+- `packages/protocol/src/messages.ts`

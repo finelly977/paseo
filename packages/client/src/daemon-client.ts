@@ -2406,6 +2406,18 @@ export class DaemonClient {
     return { archivedAt: result.archivedAt };
   }
 
+  async removeAgentFromPaseo(agentId: string): Promise<void> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.remove.response">({
+      message: {
+        type: "agent.remove.request",
+        agentId,
+      },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "移除会话失败");
+    }
+  }
+
   async detachAgent(agentId: string): Promise<void> {
     const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.detach.response">({
       message: {

@@ -4370,7 +4370,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("streams Codex reasoning deltas and does not replay completed reasoning", () => {
+  test("完全忽略 Codex reasoning 摘要", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -4391,23 +4391,10 @@ describe("Codex app-server provider", () => {
       },
     });
 
-    expect(events).toEqual([
-      {
-        type: "timeline",
-        provider: "codex",
-        turnId: "test-turn",
-        item: { type: "reasoning", text: "Think" },
-      },
-      {
-        type: "timeline",
-        provider: "codex",
-        turnId: "test-turn",
-        item: { type: "reasoning", text: "ing" },
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 
-  test("emits only the missing reasoning suffix when completed reasoning extends streamed deltas", () => {
+  test("不会从完成事件补回 Codex reasoning 摘要", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -4428,26 +4415,7 @@ describe("Codex app-server provider", () => {
       },
     });
 
-    expect(events).toEqual([
-      {
-        type: "timeline",
-        provider: "codex",
-        turnId: "test-turn",
-        item: { type: "reasoning", text: "Think" },
-      },
-      {
-        type: "timeline",
-        provider: "codex",
-        turnId: "test-turn",
-        item: { type: "reasoning", text: "ing" },
-      },
-      {
-        type: "timeline",
-        provider: "codex",
-        turnId: "test-turn",
-        item: { type: "reasoning", text: "!" },
-      },
-    ]);
+    expect(events).toEqual([]);
   });
 
   test("approving a synthetic Codex plan permission disables plan mode, preserves fast mode, and returns follow-up prompt", async () => {

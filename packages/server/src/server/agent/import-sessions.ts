@@ -148,7 +148,7 @@ export async function listImportableProviderSessions(
   });
   let filteredAlreadyImportedCount = 0;
   const titleRepairs = new Map<string, ImportedSessionTitleRepair>();
-  const candidates: ManagedImportableProviderSession[] = [];
+  const candidatesByHandle = new Map<string, ManagedImportableProviderSession>();
   const matchesRequestCwd = request.cwd ? createRealpathAwarePathMatcher(request.cwd) : null;
   for (const session of sessions) {
     if (matchesRequestCwd && !matchesRequestCwd(session.cwd)) {
@@ -177,10 +177,13 @@ export async function listImportableProviderSessions(
       }
       continue;
     }
-    candidates.push(session);
+    const existingCandidate = candidatesByHandle.get(providerHandleKey);
+    if (!existingCandidate || session.lastActivityAt > existingCandidate.lastActivityAt) {
+      candidatesByHandle.set(providerHandleKey, session);
+    }
   }
 
-  const sortedCandidates = candidates.sort(
+  const sortedCandidates = Array.from(candidatesByHandle.values()).sort(
     (a, b) => b.lastActivityAt.getTime() - a.lastActivityAt.getTime(),
   );
   const entries = (limit === undefined ? sortedCandidates : sortedCandidates.slice(0, limit)).map(
@@ -387,10 +390,13 @@ function recordMatchesProviderHandle(
   record: StoredAgentRecord,
   identity: { provider: string; providerHandleId: string },
 ): boolean {
+  const persistedProvider =
+    record.persistence?.provider ?? record.runtimeInfo?.provider ?? record.provider;
   return (
-    record.persistence?.provider === identity.provider &&
-    (record.persistence.sessionId === identity.providerHandleId ||
-      record.persistence.nativeHandle === identity.providerHandleId)
+    persistedProvider === identity.provider &&
+    (record.persistence?.sessionId === identity.providerHandleId ||
+      record.persistence?.nativeHandle === identity.providerHandleId ||
+      record.runtimeInfo?.sessionId === identity.providerHandleId)
   );
 }
 
@@ -443,6 +449,15 @@ async function collectImportedProviderSessions(
       continue;
     }
     collect(record.provider, record.persistence);
+    if (record.runtimeInfo?.sessionId) {
+      const runtimeHandleKey = toProviderSessionHandleKey(
+        record.provider,
+        record.runtimeInfo.sessionId,
+      );
+      sessions.add(runtimeHandleKey);
+      handles.add(runtimeHandleKey);
+      recordsByHandle.set(runtimeHandleKey, record);
+    }
     for (const key of getProviderSessionHandleKeys(record.provider, record.persistence)) {
       recordsByHandle.set(key, record);
     }

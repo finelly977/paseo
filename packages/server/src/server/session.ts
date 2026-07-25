@@ -1928,6 +1928,8 @@ export class Session {
         return this.handleDeleteAgentRequest(msg.agentId, msg.requestId);
       case "archive_agent_request":
         return this.handleArchiveAgentRequest(msg.agentId, msg.requestId);
+      case "agent.remove.request":
+        return this.handleRemoveAgentFromPaseoRequest(msg.agentId, msg.requestId);
       case "close_items_request":
         return this.handleCloseItemsRequest(msg);
       case "update_agent_request":
@@ -2353,6 +2355,74 @@ export class Session {
 
     if (knownWorkspaceId) {
       await this.emitWorkspaceUpdateForWorkspaceId(knownWorkspaceId);
+    }
+  }
+
+  private async handleRemoveAgentFromPaseoRequest(
+    agentId: string,
+    requestId: string,
+  ): Promise<void> {
+    try {
+      const liveAgent = this.agentManager.getAgent(agentId);
+      const storedRecord = await this.agentStorage.get(agentId);
+      if (!liveAgent && !storedRecord) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+
+      const workspaceId = liveAgent?.workspaceId ?? storedRecord?.workspaceId ?? null;
+      if (liveAgent) {
+        await this.interruptAgentIfRunning(agentId);
+        beginAgentDeleteIfSupported(this.agentStorage, agentId);
+        await closeAgentCommand({ agentManager: this.agentManager }, agentId);
+        await this.agentManager.flush();
+      } else {
+        beginAgentDeleteIfSupported(this.agentStorage, agentId);
+      }
+
+      await this.agentStorage.remove(agentId);
+      await this.agentManager.deleteAgentState(agentId);
+
+      this.emit({
+        type: "agent_deleted",
+        payload: { agentId, requestId },
+      });
+      this.agentUpdates.removeAgent(agentId);
+
+      if (workspaceId) {
+        const remainingStoredAgents = (await this.agentStorage.list()).some(
+          (record) => record.workspaceId === workspaceId && !record.internal,
+        );
+        const remainingLiveAgents = this.agentManager
+          .listAgents()
+          .some((agent) => agent.workspaceId === workspaceId && agent.id !== agentId);
+        if (!remainingStoredAgents && !remainingLiveAgents) {
+          await this.workspaceRegistry.remove(workspaceId);
+        } else {
+          await this.emitWorkspaceUpdateForWorkspaceId(workspaceId);
+        }
+      }
+
+      this.emit({
+        type: "agent.remove.response",
+        payload: {
+          requestId,
+          agentId,
+          accepted: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.error({ err: error, agentId }, "Failed to remove agent from Paseo");
+      this.emit({
+        type: "agent.remove.response",
+        payload: {
+          requestId,
+          agentId,
+          accepted: false,
+          error: message,
+        },
+      });
     }
   }
 

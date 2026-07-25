@@ -979,6 +979,8 @@ export const en = {
         archive: "Archive",
         archiveWorkspace: "Archive workspace",
         hideFromSidebar: "Hide from sidebar",
+        removeAgent: "移除",
+        removingAgent: "正在移除...",
         archiving: "Archiving...",
         hiding: "Hiding...",
       },
@@ -987,6 +989,10 @@ export const en = {
         hideMessage:
           'Hide "{{workspaceName}}" from the sidebar?\n\nFiles on disk will not be changed.',
         hideConfirm: "Hide",
+        removeAgentTitle: "从 Paseo 移除会话？",
+        removeAgentMessage:
+          "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
+        removeAgentConfirm: "移除",
         cancel: "Cancel",
       },
       rename: {
@@ -1000,6 +1006,8 @@ export const en = {
         branchNameCopied: "Branch name copied",
         hostDisconnected: "Host is not connected",
         hideFailed: "Failed to hide workspace",
+        removeAgentFailed: "从 Paseo 移除会话失败",
+        updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
         archiveFailed: "Failed to archive workspace",
       },
     },

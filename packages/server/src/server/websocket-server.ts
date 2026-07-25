@@ -1445,6 +1445,8 @@ export class VoiceAssistantWebSocketServer {
         selectiveAgentTimeline: true,
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: true,
+        // COMPAT(agentRemoval): v0.2.0-beta.4 新增，2027-01-25 后移除能力门控。
+        agentRemoval: true,
       },
     };
   }

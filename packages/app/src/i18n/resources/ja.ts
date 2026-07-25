@@ -980,6 +980,8 @@ export const ja: TranslationResources = {
         archive: "アーカイブ",
         archiveWorkspace: "ワークスペースをアーカイブ",
         hideFromSidebar: "サイドバーから非表示",
+        removeAgent: "移除",
+        removingAgent: "正在移除...",
         archiving: "アーカイブ中...",
         hiding: "非表示にしています...",
       },
@@ -988,6 +990,10 @@ export const ja: TranslationResources = {
         hideMessage:
           '"{{workspaceName}}"をサイドバーから非表示にしますか？\n\nディスク上のファイルは変更されません。',
         hideConfirm: "非表示",
+        removeAgentTitle: "从 Paseo 移除会话？",
+        removeAgentMessage:
+          "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
+        removeAgentConfirm: "移除",
         cancel: "キャンセル",
       },
       rename: {
@@ -1001,6 +1007,8 @@ export const ja: TranslationResources = {
         branchNameCopied: "ブランチ名をコピーしました",
         hostDisconnected: "ホストが接続されていません",
         hideFailed: "ワークスペースの非表示に失敗しました",
+        removeAgentFailed: "从 Paseo 移除会话失败",
+        updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
         archiveFailed: "ワークスペースのアーカイブに失敗しました",
       },
     },

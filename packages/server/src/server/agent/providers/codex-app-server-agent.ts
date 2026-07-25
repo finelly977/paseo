@@ -1614,15 +1614,6 @@ function mapCodexThreadPlanItem(normalizedItem: Record<string, unknown>): AgentT
   });
 }
 
-function mapCodexThreadReasoningItem(
-  normalizedItem: Record<string, unknown>,
-): AgentTimelineItem | null {
-  const summary = Array.isArray(normalizedItem.summary) ? normalizedItem.summary.join("\n") : "";
-  const content = Array.isArray(normalizedItem.content) ? normalizedItem.content.join("\n") : "";
-  const text = summary || content;
-  return text ? { type: "reasoning", text } : null;
-}
-
 function mapCodexThreadUserMessageItem(
   normalizedItem: Record<string, unknown>,
   includeUserMessage: boolean,
@@ -1854,7 +1845,7 @@ export function threadItemToTimeline(
     case "plan":
       return mapCodexThreadPlanItem(normalizedItem);
     case "reasoning":
-      return mapCodexThreadReasoningItem(normalizedItem);
+      return null;
     case CODEX_CONTEXT_COMPACTION_TYPE:
       return {
         type: "compaction",
@@ -5277,29 +5268,6 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     if (parsed.kind === "reasoning_delta") {
-      const prev = this.pendingReasoning.get(parsed.itemId) ?? [];
-      prev.push(parsed.delta);
-      this.pendingReasoning.set(parsed.itemId, prev);
-      const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
-      if (subAgentCallId) {
-        if (parsed.threadId) {
-          this.emitProviderSubagentTimeline(parsed.threadId, {
-            type: "reasoning",
-            text: parsed.delta,
-          });
-        }
-        this.upsertSubAgentChildItem(subAgentCallId, parsed.itemId, {
-          type: "reasoning",
-          text: prev.join(""),
-        });
-        this.emitSubAgentActivityUpdate(subAgentCallId, "running");
-        return;
-      }
-      this.emitEvent({
-        type: "timeline",
-        provider: CODEX_PROVIDER,
-        item: { type: "reasoning", text: parsed.delta },
-      });
       return;
     }
     if (parsed.kind === "exec_command_output_delta") {

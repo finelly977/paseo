@@ -932,6 +932,7 @@ describe("relay external socket reconnect behavior", () => {
     });
 
     expect(serverInfo.features?.stableProjectIdentity).toBe(true);
+    expect(serverInfo.features?.agentRemoval).toBe(true);
     await server.close();
   });
 

@@ -798,6 +798,12 @@ export const ArchiveAgentRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+export const AgentRemoveRequestSchema = z.object({
+  type: z.literal("agent.remove.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
 export const CloseItemsRequestMessageSchema = z.object({
   type: z.literal("close_items_request"),
   agentIds: z.array(z.string()).default([]),
@@ -2423,6 +2429,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FetchAgentRequestMessageSchema,
   DeleteAgentRequestMessageSchema,
   ArchiveAgentRequestMessageSchema,
+  AgentRemoveRequestSchema,
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
@@ -2800,6 +2807,8 @@ export const ServerInfoStatusPayloadSchema = z
         selectiveAgentTimeline: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
         stableProjectIdentity: z.boolean().optional(),
+        // COMPAT(agentRemoval): v0.2.0-beta.4 新增，2027-01-25 后移除能力门控。
+        agentRemoval: z.boolean().optional(),
       })
       .optional(),
   })
@@ -3839,6 +3848,11 @@ export const AgentDeletedMessageSchema = z.object({
     agentId: z.string(),
     requestId: z.string(),
   }),
+});
+
+export const AgentRemoveResponseSchema = z.object({
+  type: z.literal("agent.remove.response"),
+  payload: AgentActionResponsePayloadSchema,
 });
 
 export const AgentArchivedMessageSchema = z.object({
@@ -5160,6 +5174,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,
   AgentDetachResponseMessageSchema,
+  AgentRemoveResponseSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,

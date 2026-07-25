@@ -990,6 +990,8 @@ export const ru: TranslationResources = {
         archive: "Архив",
         archiveWorkspace: "Архивировать рабочее пространство",
         hideFromSidebar: "Скрыть с боковой панели",
+        removeAgent: "移除",
+        removingAgent: "正在移除...",
         archiving: "Архивирование...",
         hiding: "Скрытие...",
       },
@@ -998,6 +1000,10 @@ export const ru: TranslationResources = {
         hideMessage:
           "Скрыть «{{workspaceName}}» на боковой панели?\n\n Файлы на диске не будут изменены.",
         hideConfirm: "Скрывать",
+        removeAgentTitle: "从 Paseo 移除会话？",
+        removeAgentMessage:
+          "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
+        removeAgentConfirm: "移除",
         cancel: "Отмена",
       },
       rename: {
@@ -1011,6 +1017,8 @@ export const ru: TranslationResources = {
         branchNameCopied: "Название филиала скопировано.",
         hostDisconnected: "Host не подключен",
         hideFailed: "Не удалось скрыть рабочую область.",
+        removeAgentFailed: "从 Paseo 移除会话失败",
+        updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
         archiveFailed: "Не удалось заархивировать рабочее пространство.",
       },
     },

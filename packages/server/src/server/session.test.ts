@@ -179,6 +179,73 @@ test("legacy cancel_agent_request reports refusal through the activity log", asy
   ]);
 });
 
+test("agent.remove.request 只移除 Paseo 记录和空工作区", async () => {
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  const workspaceId = "workspace-remove";
+  const messages: SessionOutboundMessage[] = [];
+  const removeAgentRecord = vi.fn().mockResolvedValue(undefined);
+  const removeWorkspace = vi.fn().mockResolvedValue(undefined);
+  const closeAgent = vi.fn().mockResolvedValue(undefined);
+  const deleteAgentState = vi.fn().mockResolvedValue(undefined);
+  const storedRecord = {
+    id: agentId,
+    provider: "codex",
+    cwd: "E:\\paseo",
+    workspaceId,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    updatedAt: "2026-07-25T00:00:00.000Z",
+    labels: {},
+    lastStatus: "closed",
+  } as StoredAgentRecord;
+  const session = createSessionForTest({
+    messages,
+    agentManager: {
+      getAgent: vi.fn(() => ({
+        id: agentId,
+        provider: "codex",
+        lifecycle: "idle",
+        workspaceId,
+      })),
+      hasInFlightRun: vi.fn(() => false),
+      closeAgent,
+      flush: vi.fn().mockResolvedValue(undefined),
+      deleteAgentState,
+      listAgents: vi.fn(() => []),
+    },
+    agentStorage: {
+      get: vi.fn().mockResolvedValue(storedRecord),
+      list: vi.fn().mockResolvedValue([]),
+      beginDelete: vi.fn(),
+      remove: removeAgentRecord,
+    },
+    workspaceRegistry: {
+      get: vi.fn(),
+      list: vi.fn().mockResolvedValue([]),
+      remove: removeWorkspace,
+    },
+  });
+
+  await session.handleMessage({
+    type: "agent.remove.request",
+    agentId,
+    requestId: "remove-agent",
+  });
+
+  expect(closeAgent).toHaveBeenCalledWith(agentId);
+  expect(removeAgentRecord).toHaveBeenCalledWith(agentId);
+  expect(deleteAgentState).toHaveBeenCalledWith(agentId);
+  expect(removeWorkspace).toHaveBeenCalledWith(workspaceId);
+  expect(messages).toContainEqual({
+    type: "agent.remove.response",
+    payload: {
+      requestId: "remove-agent",
+      agentId,
+      accepted: true,
+      error: null,
+    },
+  });
+});
+
 const checkoutGitMocks = vi.hoisted(() => ({
   checkoutResolvedBranch: vi.fn(),
   commitChanges: vi.fn(),
@@ -298,7 +365,7 @@ interface SessionForTestOptions {
     getWorkspaceGitMetadata?: ReturnType<typeof vi.fn>;
     getProjectSlug?: ReturnType<typeof vi.fn>;
   };
-  workspaceRegistry?: { get: ReturnType<typeof vi.fn> };
+  workspaceRegistry?: { [K in keyof SessionOptions["workspaceRegistry"]]?: unknown };
   projectRegistry?: Partial<SessionOptions["projectRegistry"]>;
   terminalManager?: SessionOptions["terminalManager"];
   serviceProxy?: SessionOptions["serviceProxy"];
