@@ -1,6 +1,7 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { app, BrowserWindow, Notification, ipcMain, nativeImage } from "electron";
+import { focusNotificationTargetWindow } from "./notification-window";
 
 interface NotificationInput {
   title?: unknown;
@@ -53,11 +54,7 @@ function focusSenderWindow(sender: Electron.WebContents): BrowserWindow | null {
   if (!win || win.isDestroyed()) {
     return null;
   }
-  win.show();
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  win.focus();
+  focusNotificationTargetWindow(win);
   return win;
 }
 

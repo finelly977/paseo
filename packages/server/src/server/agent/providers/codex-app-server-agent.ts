@@ -228,6 +228,11 @@ const CODEX_MODES: AgentMode[] = [
     label: "Full Access",
     description: "Edit files, run commands, and access the network without additional prompts.",
   },
+  {
+    id: "custom",
+    label: "自定义 (config.toml)",
+    description: "使用 config.toml 中定义的审批、沙盒和网络权限。",
+  },
 ];
 
 const DEFAULT_CODEX_MODE_ID = "auto";
@@ -255,11 +260,52 @@ interface CodexAppServerAgentDeps {
   ) => CodexAppServerClientLike;
 }
 
+const CodexApprovalPolicySchema = z.union([
+  z.enum(["untrusted", "on-request", "never"]),
+  z.object({
+    granular: z.object({
+      sandbox_approval: z.boolean(),
+      rules: z.boolean(),
+      skill_approval: z.boolean(),
+      request_permissions: z.boolean(),
+      mcp_elicitations: z.boolean(),
+    }),
+  }),
+]);
+const CodexSandboxModeSchema = z.enum(["read-only", "workspace-write", "danger-full-access"]);
+const CodexApprovalsReviewerSchema = z.enum(["user", "auto_review", "guardian_subagent"]);
+const CodexWorkspaceWriteConfigSchema = z.object({
+  writable_roots: z.array(z.string()),
+  network_access: z.boolean(),
+  exclude_tmpdir_env_var: z.boolean(),
+  exclude_slash_tmp: z.boolean(),
+});
+const CodexPermissionConfigResponseSchema = z.object({
+  config: z
+    .object({
+      approval_policy: CodexApprovalPolicySchema.nullable().optional(),
+      approvals_reviewer: CodexApprovalsReviewerSchema.nullable().optional(),
+      sandbox_mode: CodexSandboxModeSchema.nullable().optional(),
+      sandbox_workspace_write: CodexWorkspaceWriteConfigSchema.nullable().optional(),
+    })
+    .passthrough(),
+});
+
+type CodexApprovalPolicy = z.infer<typeof CodexApprovalPolicySchema>;
+
+interface CodexWorkspaceWritePolicy {
+  writableRoots: string[];
+  networkAccess: boolean;
+  excludeTmpdirEnvVar: boolean;
+  excludeSlashTmp: boolean;
+}
+
 interface CodexModePreset {
-  approvalPolicy: string;
+  approvalPolicy: CodexApprovalPolicy;
   sandbox: string;
   networkAccess?: boolean;
-  approvalsReviewer?: "auto_review";
+  approvalsReviewer?: z.infer<typeof CodexApprovalsReviewerSchema>;
+  workspaceWritePolicy?: CodexWorkspaceWritePolicy;
 }
 
 const MODE_PRESETS: Record<string, CodexModePreset> = {
@@ -298,7 +344,7 @@ function applyApprovalsReviewerParam(
 
 function shouldPromoteThreadResponseToAutoReview(params: {
   approvalsReviewer: string | undefined;
-  approvalPolicy: string;
+  approvalPolicy: CodexApprovalPolicy;
   sandbox: string;
 }): boolean {
   return (
@@ -308,11 +354,49 @@ function shouldPromoteThreadResponseToAutoReview(params: {
   );
 }
 
+function resolveCodexApprovalPolicy(
+  configured: string | undefined,
+  preset: CodexApprovalPolicy,
+): CodexApprovalPolicy {
+  return configured === undefined ? preset : CodexApprovalPolicySchema.parse(configured);
+}
+
 function validateCodexMode(modeId: string): void {
-  if (!(modeId in MODE_PRESETS)) {
-    const validModes = Object.keys(MODE_PRESETS).join(", ");
+  if (!(modeId in MODE_PRESETS) && modeId !== "custom") {
+    const validModes = [...Object.keys(MODE_PRESETS), "custom"].join(", ");
     throw new Error(`Invalid Codex mode "${modeId}". Valid modes are: ${validModes}`);
   }
+}
+
+async function readCodexCustomModePreset(
+  client: CodexAppServerClientLike,
+): Promise<CodexModePreset> {
+  const rawResponse = await client.request("config/read", {});
+  const parsedResponse = CodexPermissionConfigResponseSchema.safeParse(rawResponse);
+  if (!parsedResponse.success) {
+    throw new Error("Codex config.toml 中的自定义权限配置无效", {
+      cause: parsedResponse.error,
+    });
+  }
+  const response = parsedResponse.data;
+  const config = response.config;
+  const workspaceWrite = config.sandbox_workspace_write;
+
+  return {
+    approvalPolicy: config.approval_policy ?? "on-request",
+    approvalsReviewer: config.approvals_reviewer ?? "user",
+    sandbox: config.sandbox_mode ?? "workspace-write",
+    ...(workspaceWrite
+      ? {
+          workspaceWritePolicy: {
+            writableRoots: workspaceWrite.writable_roots,
+            networkAccess: workspaceWrite.network_access,
+            excludeTmpdirEnvVar: workspaceWrite.exclude_tmpdir_env_var,
+            excludeSlashTmp: workspaceWrite.exclude_slash_tmp,
+          },
+        }
+      : {}),
+  };
 }
 
 function normalizeCodexThinkingOptionId(
@@ -2003,16 +2087,30 @@ export async function rollbackCodexThread(
   return parseCodexThreadRollbackResponse(await client.request("thread/rollback", params));
 }
 
-function toSandboxPolicy(type: string, networkAccess?: boolean): Record<string, unknown> {
+function toSandboxPolicy(
+  type: string,
+  networkAccess?: boolean,
+  workspaceWritePolicy?: CodexWorkspaceWritePolicy,
+): Record<string, unknown> {
   switch (type) {
     case "read-only":
       return { type: "readOnly" };
     case "workspace-write":
-      return { type: "workspaceWrite", networkAccess: networkAccess ?? false };
+      return {
+        type: "workspaceWrite",
+        ...(workspaceWritePolicy
+          ? {
+              writableRoots: workspaceWritePolicy.writableRoots,
+              excludeTmpdirEnvVar: workspaceWritePolicy.excludeTmpdirEnvVar,
+              excludeSlashTmp: workspaceWritePolicy.excludeSlashTmp,
+            }
+          : {}),
+        networkAccess: networkAccess ?? workspaceWritePolicy?.networkAccess ?? false,
+      };
     case "danger-full-access":
       return { type: "dangerFullAccess" };
     default:
-      return { type: "workspaceWrite", networkAccess: networkAccess ?? false };
+      throw new Error(`无效的 Codex 沙盒模式：${type}`);
   }
 }
 
@@ -3218,6 +3316,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     name: string;
   } | null = null;
   private cachedSkills: Array<{ name: string; description: string; path: string }> = [];
+  private customModePreset: CodexModePreset | null = null;
 
   constructor(
     config: AgentSessionConfig,
@@ -3725,15 +3824,18 @@ export class CodexAppServerAgentSession implements AgentSession {
   ): Promise<{
     params: Record<string, unknown>;
     thinkingOptionId?: string;
-    approvalPolicy: string;
+    approvalPolicy: CodexApprovalPolicy;
     sandboxPolicyType: string;
     hasOutputSchema: boolean;
     hasDeveloperInstructions: boolean;
     hasCodexConfig: boolean;
   }> {
     const input = await this.buildUserInput(prompt);
-    const preset = MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
-    const approvalPolicy = this.config.approvalPolicy ?? preset.approvalPolicy;
+    const preset = await this.resolveCurrentModePreset();
+    const approvalPolicy = resolveCodexApprovalPolicy(
+      this.config.approvalPolicy,
+      preset.approvalPolicy,
+    );
     const sandboxPolicyType = this.config.sandboxMode ?? preset.sandbox;
 
     const params: Record<string, unknown> = {
@@ -3745,6 +3847,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         typeof this.config.networkAccess === "boolean"
           ? this.config.networkAccess
           : preset.networkAccess,
+        preset.workspaceWritePolicy,
       ),
     };
     applyApprovalsReviewerParam(params, preset);
@@ -3805,7 +3908,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }: {
     turnId: string;
     thinkingOptionId?: string;
-    approvalPolicy: string;
+    approvalPolicy: CodexApprovalPolicy;
     sandboxPolicyType: string;
     hasOutputSchema: boolean;
     hasDeveloperInstructions: boolean;
@@ -4028,6 +4131,9 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async setMode(modeId: string): Promise<void | AgentProviderNotice> {
     validateCodexMode(modeId);
+    if (modeId === "custom") {
+      this.customModePreset = null;
+    }
     this.currentMode = modeId;
     this.cachedRuntimeInfo = null;
     if (this.activeForegroundTurnId) {
@@ -4546,8 +4652,11 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.config.model = model;
     this.config.thinkingOptionId = thinkingOptionId;
 
-    const preset = MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
-    const approvalPolicy = this.config.approvalPolicy ?? preset.approvalPolicy;
+    const preset = await this.resolveCurrentModePreset();
+    const approvalPolicy = resolveCodexApprovalPolicy(
+      this.config.approvalPolicy,
+      preset.approvalPolicy,
+    );
     const sandbox = this.config.sandboxMode ?? preset.sandbox;
     const innerConfig = this.buildCodexInnerConfig();
     const developerInstructions = composeSystemPromptParts(
@@ -4584,6 +4693,24 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.cachedRuntimeInfo = null;
     }
     this.currentThreadId = threadId;
+  }
+
+  private async resolveCurrentModePreset(): Promise<CodexModePreset> {
+    const preset = MODE_PRESETS[this.currentMode];
+    if (preset) {
+      return preset;
+    }
+    if (this.currentMode !== "custom") {
+      throw new Error(`无效的 Codex 权限模式：${this.currentMode}`);
+    }
+    if (this.customModePreset) {
+      return this.customModePreset;
+    }
+    if (!this.client) {
+      throw new Error("Codex 自定义权限模式需要已连接的 app-server");
+    }
+    this.customModePreset = await readCodexCustomModePreset(this.client);
+    return this.customModePreset;
   }
 
   private buildCodexInnerConfig(): Record<string, unknown> | null {

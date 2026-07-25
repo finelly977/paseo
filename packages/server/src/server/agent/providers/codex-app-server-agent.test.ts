@@ -342,6 +342,97 @@ describe("Codex app-server provider", () => {
     );
   });
 
+  test("自定义权限模式读取并应用 config.toml 的权限设置", async () => {
+    const requests: Array<{ method: string; params: unknown }> = [];
+    const session = createSession({ modeId: "auto", thinkingOptionId: "medium" });
+    session.currentThreadId = null;
+    session.activeForegroundTurnId = null;
+    session.client = {
+      request: vi.fn(async (method: string, params: unknown) => {
+        requests.push({ method, params });
+        if (method === "config/read") {
+          return {
+            config: {
+              approval_policy: "untrusted",
+              approvals_reviewer: "user",
+              sandbox_mode: "workspace-write",
+              sandbox_workspace_write: {
+                writable_roots: ["D:/shared"],
+                network_access: true,
+                exclude_tmpdir_env_var: true,
+                exclude_slash_tmp: true,
+              },
+            },
+          };
+        }
+        if (method === "thread/start") {
+          return { thread: { id: "custom-permissions-thread" } };
+        }
+        if (method === "turn/start") {
+          return {};
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      }),
+    };
+
+    await expect(session.getAvailableModes()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "custom",
+          label: "自定义 (config.toml)",
+        }),
+      ]),
+    );
+    await session.setMode("custom");
+    await session.startTurn("使用自定义权限");
+
+    expect(requests.filter((request) => request.method === "config/read")).toHaveLength(1);
+    expect(requests.find((request) => request.method === "thread/start")?.params).toMatchObject({
+      approvalPolicy: "untrusted",
+      approvalsReviewer: "user",
+      sandbox: "workspace-write",
+    });
+    expect(requests.find((request) => request.method === "turn/start")?.params).toMatchObject({
+      approvalPolicy: "untrusted",
+      approvalsReviewer: "user",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        writableRoots: ["D:/shared"],
+        networkAccess: true,
+        excludeTmpdirEnvVar: true,
+        excludeSlashTmp: true,
+      },
+    });
+  });
+
+  test("自定义权限配置非法时明确终止而不是静默使用默认值", async () => {
+    const session = createSession({ modeId: "custom", thinkingOptionId: "medium" });
+    session.currentThreadId = null;
+    session.activeForegroundTurnId = null;
+    session.client = {
+      request: vi.fn(async (method: string) => {
+        if (method === "config/read") {
+          return {
+            config: {
+              sandbox_mode: "workspace-write",
+              sandbox_workspace_write: {
+                writable_roots: [],
+                network_access: "yes",
+                exclude_tmpdir_env_var: false,
+                exclude_slash_tmp: false,
+              },
+            },
+          };
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      }),
+    };
+
+    await expect(session.startTurn("使用非法自定义权限")).rejects.toThrow(
+      "Codex config.toml 中的自定义权限配置无效",
+    );
+  });
+
   test("setMode auto-review sends approvalsReviewer to thread/start", async () => {
     const requests: Array<{ method: string; params: unknown }> = [];
     const session = createSession(

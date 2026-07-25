@@ -104,6 +104,8 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { ConversationHistoryIndex } from "./history-index";
 import { buildConversationHistoryIndex, getStreamItemDomId } from "./history-index-model";
+import { ProviderImageMessage } from "./provider-image-message";
+import { isStandaloneMarkdownImage } from "./provider-image-message-model";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -688,6 +690,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
+        const messageProps = {
+          message: item.text,
+          timestamp: item.timestamp.getTime(),
+          workspaceRoot,
+          serverId: resolvedServerId,
+          client,
+          spacing: layoutItem.assistantSpacing,
+        } as const;
+        const shouldCollapseImage =
+          context.provider === "codex" && isStandaloneMarkdownImage(item.text);
+
         return (
           <AssistantFileLinkResolverProvider
             client={client}
@@ -696,18 +709,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onOpenWorkspaceFile={handleInlinePathPress}
             toast={toast}
           >
-            <AssistantMessage
-              message={item.text}
-              timestamp={item.timestamp.getTime()}
-              workspaceRoot={workspaceRoot}
-              serverId={resolvedServerId}
-              client={client}
-              spacing={layoutItem.assistantSpacing}
-            />
+            {shouldCollapseImage ? (
+              <ProviderImageMessage itemId={item.id} {...messageProps} />
+            ) : (
+              <AssistantMessage {...messageProps} />
+            )}
           </AssistantFileLinkResolverProvider>
         );
       },
-      [client, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [client, context.provider, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
     );
 
     const renderThoughtItem = useCallback(

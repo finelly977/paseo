@@ -103,6 +103,7 @@
 - 窗口获得或失去焦点时立即同步心跳，避免活动心跳节流造成通知决策滞后。
 - 心跳同时上报当前客户端是否具备本地桌面通知通道；活动时间过期后，仍可由已连接且具备本地通知能力的桌面客户端接收通知，不会误走没有令牌的推送路径。
 - 系统通知发送会等待客户端发送调用的结果；失败或系统拒绝时记录错误，并且只有真实发送成功才记录去重时间，后续事件仍可重试。
+- Windows 桌面端点击系统通知时会先恢复最小化状态再显示和聚焦窗口；如果通知前窗口处于最大化状态，返回应用后仍保持最大化。
 - 旧客户端不发送焦点字段时，守护进程在兼容期限内按原可见状态处理。
 
 主要涉及：
@@ -113,6 +114,8 @@
 - `packages/server/src/server/agent-attention-policy.ts`
 - `packages/server/src/server/session.ts`
 - `packages/server/src/server/websocket-server.ts`
+- `packages/desktop/src/features/notifications.ts`
+- `packages/desktop/src/features/notification-window.ts`
 
 ### 8. Windows PowerShell 工作区打开方式
 
@@ -140,10 +143,12 @@
 - `scripts/check-workspace-version-consistency.mjs`
 - `packages/desktop/electron-builder.yml`
 
-### 10. Codex 内容清理与侧栏会话管理
+### 10. Codex 内容清理、权限模式与侧栏会话管理
 
 - Codex 的 Thinking/reasoning 摘要不进入新时间线，客户端也会过滤旧时间线中的同类内容，避免历史导入和实时对话继续显示内部摘要。
 - Codex 助手消息末尾供 Codex App 使用的 Git 界面指令不会作为普通正文显示；Markdown 代码块内用于说明的相同文本仍会保留。
+- Codex 查看图片产生的纯图片工具结果默认折叠为紧凑入口，用户可以按需展开或再次收起；用户消息附件以及包含正文的普通助手图片不受影响。
+- Codex 权限选择器支持“自定义 (config.toml)”模式，实际读取并应用用户配置中的审批策略、审批人、沙盒类型、额外可写目录和工作区网络权限；配置结构非法时明确报错，不会静默退回默认权限。
 - 侧边栏中只有一个根智能体的工作区提供“重新加载”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话。
 - 移除只删除 Paseo 自己的会话记录以及随之变空的工作区记录，不调用智能体提供方的归档或删除能力，也不修改原始会话文件；原生会话之后仍可从导入页面重新导入。
 - 新客户端只会在主机明确声明支持时发送移除请求；旧主机会提示更新，不会尝试调用不存在的接口。
@@ -151,6 +156,9 @@
 主要涉及：
 
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/protocol/src/provider-manifest.ts`
+- `packages/app/src/agent-stream/provider-image-message.tsx`
+- `packages/app/src/agent-stream/provider-image-message-model.ts`
 - `packages/app/src/types/stream.ts`
 - `packages/app/src/utils/codex-visible-message.ts`
 - `packages/app/src/utils/aggregate-agents.ts`

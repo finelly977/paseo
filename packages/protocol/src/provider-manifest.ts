@@ -98,6 +98,13 @@ const CODEX_MODES: AgentProviderModeDefinition[] = [
     colorTier: "dangerous",
     isUnattended: true,
   },
+  {
+    id: "custom",
+    label: "自定义 (config.toml)",
+    description: "使用 config.toml 中定义的审批、沙盒和网络权限。",
+    icon: "ShieldPlus",
+    colorTier: "moderate",
+  },
 ];
 
 const COPILOT_MODES: AgentProviderModeDefinition[] = [
