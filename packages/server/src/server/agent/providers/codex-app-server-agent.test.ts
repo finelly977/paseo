@@ -4650,6 +4650,10 @@ describe("Codex importable sessions", () => {
       request: async (method: string, params?: unknown) => {
         calls.push({ method, params });
         if (method === "thread/list") {
+          const isArchived = typeof params === "object" && params !== null && "archived" in params;
+          if (isArchived) {
+            return { data: [] };
+          }
           const hasCursor = typeof params === "object" && params !== null && "cursor" in params;
           return hasCursor
             ? { data: [allThreads[1]] }
@@ -4707,8 +4711,68 @@ describe("Codex importable sessions", () => {
       { method: "thread/list", params: { limit: 100, cwd: "/workspace/project-a" } },
       {
         method: "thread/list",
+        params: { limit: 100, cwd: "/workspace/project-a", archived: true },
+      },
+      {
+        method: "thread/list",
         params: { limit: 100, cursor: "page-2", cwd: "/workspace/project-a" },
       },
     ]);
+  });
+
+  test("listImportableSessions includes archived Codex threads", async () => {
+    const calls: Array<{ method: string; params?: unknown }> = [];
+    const fakeClient = {
+      request: async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        if (method === "thread/list") {
+          const isArchived = typeof params === "object" && params !== null && "archived" in params;
+          return isArchived
+            ? {
+                data: [
+                  {
+                    id: "archived-thread",
+                    cwd: "/workspace/project-a",
+                    preview: "Archived session",
+                    updatedAt: 5000,
+                  },
+                ],
+              }
+            : { data: [] };
+        }
+        return {};
+      },
+      notify: () => {},
+      dispose: async () => {},
+    };
+
+    const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+      _createCodexClient: () => fakeClient,
+    });
+    castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
+      provider,
+    ).spawnAppServer = async () => {
+      const child = new EventEmitter() as ChildProcessWithoutNullStreams;
+      child.exitCode = 0;
+      child.signalCode = null;
+      child.stdin = new PassThrough();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.kill = vi.fn(() => true) as ChildProcessWithoutNullStreams["kill"];
+      return child;
+    };
+
+    await expect(provider.listImportableSessions({ cwd: "/workspace/project-a" })).resolves.toEqual(
+      [
+        expect.objectContaining({
+          providerHandleId: "archived-thread",
+          title: "Archived session",
+        }),
+      ],
+    );
+    expect(calls).toContainEqual({
+      method: "thread/list",
+      params: { limit: 100, cwd: "/workspace/project-a", archived: true },
+    });
   });
 });

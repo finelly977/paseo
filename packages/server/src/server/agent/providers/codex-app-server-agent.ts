@@ -881,9 +881,10 @@ function filterCodexThreadsByCwd(
   return threads.filter((thread) => typeof thread.cwd === "string" && matchesCwd(thread.cwd));
 }
 
-async function fetchAllCodexThreads(
+async function fetchCodexThreadList(
   client: CodexAppServerClientLike,
   options: ListImportableSessionsOptions | undefined,
+  archived: boolean,
 ): Promise<Array<Record<string, unknown>>> {
   const pageLimit = options?.limit === undefined ? 100 : Math.max(options.limit, 50);
   const allThreads: Array<Record<string, unknown>> = [];
@@ -894,6 +895,7 @@ async function fetchAllCodexThreads(
         limit: pageLimit,
         ...(cursor ? { cursor } : {}),
         ...(options?.cwd ? { cwd: options.cwd } : {}),
+        ...(archived ? { archived: true } : {}),
       }),
     );
     if (Array.isArray(response?.data)) {
@@ -909,6 +911,29 @@ async function fetchAllCodexThreads(
     cursor = nextCursor;
   }
   return filterCodexThreadsByCwd(allThreads, options?.cwd);
+}
+
+async function fetchAllCodexThreads(
+  client: CodexAppServerClientLike,
+  options: ListImportableSessionsOptions | undefined,
+): Promise<Array<Record<string, unknown>>> {
+  const [activeThreads, archivedThreads] = await Promise.all([
+    fetchCodexThreadList(client, options, false),
+    fetchCodexThreadList(client, options, true),
+  ]);
+  const seenThreadIds = new Set<string>();
+  const mergedThreads: Array<Record<string, unknown>> = [];
+  for (const thread of [...activeThreads, ...archivedThreads]) {
+    const threadId = typeof thread.id === "string" ? thread.id : null;
+    if (threadId !== null) {
+      if (seenThreadIds.has(threadId)) {
+        continue;
+      }
+      seenThreadIds.add(threadId);
+    }
+    mergedThreads.push(thread);
+  }
+  return mergedThreads;
 }
 
 export function toAgentUsage(tokenUsage: unknown): AgentUsage | undefined {

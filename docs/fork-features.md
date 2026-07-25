@@ -24,7 +24,7 @@
 ### 2. 会话导入支持完整历史、搜索和目录分组
 
 - 导入页面请求智能体 CLI 可提供的全部会话，不使用仅显示最近固定数量会话的前端限制。
-- Codex 会自动遍历分页，直到取完会话或满足显式限制；Claude、OpenCode、Pi、OMP 和 ACP 导入路径不再由导入界面强制截断。
+- Codex 会分别遍历活动会话和已归档会话的全部分页并合并去重，直到取完会话或满足显式限制；这样在 Paseo 中归档后又在 Codex App 中继续产生内容的会话仍可重新导入。Claude、OpenCode、Pi、OMP 和 ACP 导入路径不再由导入界面强制截断。
 - 支持按智能体类型、会话标题、消息预览和工作目录搜索。
 - 提供按完整工作目录路径筛选的下拉框，不用文件夹名称作为唯一身份；路径相同但名称相同的不同目录不会混淆。
 - 会话按工作目录分组并显示目录信息，便于在大量历史会话中定位目标。
@@ -127,3 +127,15 @@
 - `packages/desktop/src/features/editor-targets/target.ts`
 - `packages/desktop/src/features/editor-targets/registry.ts`
 - `packages/app/src/screens/workspace/workspace-open-in-editor-button.tsx`
+
+### 9. Windows 桌面安装包完整构建与二开更新隔离
+
+- 根目录提供 `npm run build:desktop:win`，固定生成 Windows x64 NSIS 安装包，并强制依次完成桌面界面依赖、Electron 专用 Expo 导出、服务端、CLI 和 Electron 主进程编译，不允许直接把遗留 `dist` 产物装入安装包。
+- 构建开始和打包前都会检查根包、全部工作区及 `package-lock.json` 的版本和内部依赖范围；发现不一致时明确列出问题并停止，不在构建过程中自动改写版本。
+- 二开桌面安装包只从 `finelly977/paseo` 检查应用更新，不再下载和安装 `getpaseo/paseo` 的原作者版本，避免二开功能被官方安装包覆盖并触发重复重启。
+
+主要涉及：
+
+- `scripts/build-desktop-windows.ps1`
+- `scripts/check-workspace-version-consistency.mjs`
+- `packages/desktop/electron-builder.yml`

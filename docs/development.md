@@ -13,6 +13,32 @@ npm run dev:app
 npm run dev:desktop
 ```
 
+## 构建 Windows 桌面安装包
+
+在 Windows 上只使用根目录的一键构建命令：
+
+```powershell
+npm run build:desktop:win
+```
+
+该命令固定生成 Windows x64 NSIS 安装包，并按顺序完成版本一致性检查、桌面界面依赖编译、Electron 专用 Expo 导出、服务端与 CLI 编译、Electron 主进程编译和最终打包。脚本会主动删除 App 与 Electron 主进程的旧 `dist` 目录，任何一步失败都会立即停止，因此不会把上一次构建的界面或主进程误装进新安装包。
+
+不要在 `packages/desktop` 中直接运行 `electron-builder`。该命令只负责打包现有产物，不会补做前置编译。也不要通过多层 npm 命令手动转发 `--win nsis --x64 --publish never`，Windows 下参数可能被 npm 重排。
+
+安装包输出位置：
+
+```text
+packages/desktop/release/Paseo-Setup-<版本号>-x64.exe
+```
+
+可单独运行以下命令检查根包、全部工作区和 `package-lock.json` 的版本与内部依赖范围：
+
+```powershell
+npm run version:check
+```
+
+检查失败时只报告具体差异，不会自动改写版本。需要同步版本时仍使用既有发布流程。
+
 Root checkout dev is intentionally split across terminals:
 
 - `npm run dev:server` runs the daemon on `127.0.0.1:6768`.
