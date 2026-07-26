@@ -183,6 +183,10 @@ export const ptBR: TranslationResources = {
       noPreview: "Sem prévia da resposta",
       untitled: "Mensagem sem título",
     },
+    completedTurn: {
+      expand: "{{count}} itens do processo recolhidos",
+      collapse: "Recolher processo intermediário",
+    },
     permission: {
       plan: "Plano",
       required: "Permissão necessária",

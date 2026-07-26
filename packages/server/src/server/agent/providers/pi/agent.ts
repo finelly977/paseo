@@ -1376,6 +1376,11 @@ export class PiRpcAgentSession implements AgentSession {
     };
   }
 
+  async getUsage(): Promise<AgentUsage | undefined> {
+    await this.refreshState();
+    return toAgentUsage(await this.runtimeSession.getSessionStats());
+  }
+
   async getAvailableModes(): Promise<AgentMode[]> {
     return [];
   }
@@ -2274,20 +2279,18 @@ export class PiRpcAgentSession implements AgentSession {
   }
 
   private async refreshAfterTurn(turnId: string | undefined): Promise<void> {
-    await this.refreshState().catch(() => undefined);
-    const usage = await this.runtimeSession
-      .getSessionStats()
-      .then((stats) => {
-        return toAgentUsage(stats);
-      })
-      .catch(() => undefined);
-    if (usage) {
-      this.emit({
-        type: "usage_updated",
-        provider: this.provider,
-        turnId,
-        usage,
-      });
+    try {
+      const usage = await this.getUsage();
+      if (usage) {
+        this.emit({
+          type: "usage_updated",
+          provider: this.provider,
+          turnId,
+          usage,
+        });
+      }
+    } catch (error) {
+      console.error("Pi 上下文用量刷新失败", error);
     }
   }
 }

@@ -449,4 +449,94 @@ describe("layoutStream", () => {
       expect(footerOwners(layout)).toEqual([]);
     },
   );
+
+  it.each(["web", "android"] as const)(
+    "marks successful %s turn process items while preserving the final answer",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        tail: [
+          userMessage("user", 1),
+          thought("thought", 2),
+          toolCall("tool", 3),
+          assistantMessage("draft", 4),
+          assistantMessage("conclusion-start", 5, { groupId: "conclusion", index: 0 }),
+          assistantMessage("final", 6, { groupId: "conclusion", index: 1 }),
+          userMessage("next-user", 7),
+        ],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "final",
+      )?.completedFooter;
+      expect(new Set(host?.processItemIds)).toEqual(new Set(["thought", "tool", "draft"]));
+      expect(host?.processItemIds).not.toContain("final");
+      expect(host?.processItemIds).not.toContain("conclusion-start");
+    },
+  );
+
+  it.each(["web", "android"] as const)("keeps failed %s turn process visible", (platform) => {
+    const error: StreamItem = {
+      kind: "activity_log",
+      id: "error",
+      activityType: "error",
+      message: "失败原因",
+      timestamp: timestamp(4),
+    };
+    const layout = layoutFor({
+      platform,
+      tail: [
+        userMessage("user", 1),
+        toolCall("tool", 2),
+        assistantMessage("final", 3),
+        error,
+        userMessage("next-user", 5),
+      ],
+    });
+
+    const host = [...layout.history, ...layout.liveHead].find(
+      (item) => item.completedFooter?.itemId === "final",
+    )?.completedFooter;
+    expect(host?.processItemIds).toEqual([]);
+  });
+
+  it.each(["web", "android"] as const)(
+    "keeps persisted system-error %s turn process visible",
+    (platform) => {
+      const systemError = {
+        ...assistantMessage("system-error", 3),
+        text: "[System Error] Provider run failed",
+      };
+      const layout = layoutFor({
+        platform,
+        tail: [
+          userMessage("user", 1),
+          toolCall("tool", 2),
+          systemError,
+          userMessage("next-user", 4),
+        ],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "system-error",
+      )?.completedFooter;
+      expect(host?.processItemIds).toEqual([]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "collects completed %s turn process across the history boundary",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        tail: [userMessage("user", 1), toolCall("history-tool", 2)],
+        head: [assistantMessage("final", 3), toolCall("head-tool", 4), userMessage("next-user", 5)],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "final",
+      )?.completedFooter;
+      expect(new Set(host?.processItemIds)).toEqual(new Set(["history-tool", "head-tool"]));
+    },
+  );
 });

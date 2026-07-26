@@ -96,6 +96,7 @@ describe("workspace agent activity index", () => {
           "workspace-a",
           {
             agentId: "permission",
+            provider: "codex",
             status: "needs_input",
             enteredAt: new Date("2026-06-01T10:01:00.000Z"),
           },
@@ -104,6 +105,7 @@ describe("workspace agent activity index", () => {
           "workspace-b",
           {
             agentId: "attention",
+            provider: "codex",
             status: "attention",
             enteredAt: new Date("2026-06-01T10:02:00.000Z"),
           },
@@ -150,6 +152,7 @@ describe("workspace agent activity index", () => {
 
     expect(index.get("workspace-a")).toEqual({
       agentId: "root",
+      provider: "codex",
       status: "running",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
     });
@@ -185,6 +188,7 @@ describe("workspace agent activity index", () => {
           "workspace-a",
           {
             agentId: "parent",
+            provider: "codex",
             status: "done",
             enteredAt: new Date("2026-06-01T10:00:00.000Z"),
           },
@@ -193,6 +197,7 @@ describe("workspace agent activity index", () => {
           "workspace-b",
           {
             agentId: "child",
+            provider: "codex",
             status: "running",
             enteredAt: new Date("2026-06-01T10:03:00.000Z"),
           },
@@ -269,6 +274,7 @@ describe("workspace agent activity index", () => {
     expect(next).not.toBe(previous);
     expect(next.get("workspace-a")).toEqual({
       agentId: "root",
+      provider: "codex",
       status: "needs_input",
       enteredAt: new Date("2026-06-01T10:05:00.000Z"),
     });

@@ -71,9 +71,10 @@
 
 ### 5. 对话 Markdown 使用更紧凑的排版密度
 
-- 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距。
+- 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距；Markdown 横线固定使用原主题间距的一半，减少分节时的空白带。
 - 在设置的“外观 → 间距”中可调整消息段落间距，范围为 0–32 像素，默认 8 像素；助手 Markdown 分块渲染和网页历史虚拟化估算使用同一设置，且不会重复叠加段落内部与消息块外部间距。
 - 超过 12 行或 1200 个字符的用户消息默认只展示 8 行，用户可以展开或收起；复制消息仍复制完整原文。
+- 助手消息中的本地文件链接优先按可见路径文本解析，Windows 盘符路径的末尾行号会作为编辑器定位信息，不会误并入文件名；外部网址仍按网页链接打开。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
 
 主要涉及：
@@ -84,13 +85,15 @@
 - `packages/app/src/screens/settings/appearance/appearance-section.tsx`
 - `packages/app/src/components/message.tsx`
 - `packages/app/src/components/user-message-collapse.ts`
+- `packages/app/src/assistant-file-links/`
 - `packages/app/src/agent-stream/web-virtualization.ts`
 
 ### 6. 对话历史索引与消息跳转
 
-- 桌面网页端在整个对话视口的最左侧显示历史索引刻度，不随居中的消息文字区域移动；每个刻度对应一轮用户消息。
+- 桌面网页端在整个对话视口的最左侧垂直居中显示紧凑历史刻度，不随居中的消息文字区域移动；每个刻度对应一轮用户消息。
 - 索引独立读取最近 50 轮对话的轻量标题、助手摘要和时间线位置，不受首次只加载 40 条时间线的限制，也不会为了显示索引把全部工具记录载入前端内存。
-- 悬停或聚焦刻度时显示用户消息标题和助手回复摘要；点击尚未加载的较早对话时按 40 条一页加载到目标位置后跳转，已加载消息直接定位。
+- 指针经过索引时，邻近刻度按距离形成平滑跟随的波峰并突出最近一项；悬停或聚焦刻度时显示用户消息标题和助手回复摘要，系统要求减少动态效果时停用过渡动画。
+- 点击尚未加载的较早对话时按 40 条一页加载到目标位置后跳转，已加载消息直接定位。
 - 长距离跳转会持续校正虚拟列表估算误差，直到目标消息真正位于视口中央，一次点击即可跨越较大的历史跨度。
 - 上滑加载旧历史时，加载指示器不占用消息布局；虚拟行重新测量只补偿视口上方的高度变化，避免已显示内容在分页期间反复上下抖动。
 
@@ -110,6 +113,7 @@
 - 心跳同时上报当前客户端是否具备本地桌面通知通道；活动时间过期后，仍可由已连接且具备本地通知能力的桌面客户端接收通知，不会误走没有令牌的推送路径。
 - 系统通知发送会等待客户端发送调用的结果；失败或系统拒绝时记录错误，并且只有真实发送成功才记录去重时间，后续事件仍可重试。
 - Windows 桌面端点击系统通知时会先恢复最小化状态再显示和聚焦窗口；如果通知前窗口处于最大化状态，返回应用后仍保持最大化。
+- 智能体回合最终失败并停止后也发送系统通知；提供方仍在自动重试时只记录过程错误，不会提前通知失败。
 - 旧客户端不发送焦点字段时，守护进程在兼容期限内按原可见状态处理。
 
 主要涉及：
@@ -159,6 +163,7 @@
 - 侧边栏中只有一个根智能体的工作区提供“重新加载”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话。
 - 移除只删除 Paseo 自己的会话记录以及随之变空的工作区记录，不调用智能体提供方的归档或删除能力，也不修改原始会话文件；原生会话之后仍可从导入页面重新导入。
 - 新客户端只会在主机明确声明支持时发送移除请求；旧主机会提示更新，不会尝试调用不存在的接口。
+- 侧栏会话名称前显示当前根智能体的提供方图标，Claude、Codex、OpenCode、OMP、Pi、Copilot 和 ACP 提供方复用统一图标解析规则。
 
 主要涉及：
 
@@ -177,7 +182,26 @@
 - `packages/client/src/daemon-client.ts`
 - `packages/protocol/src/messages.ts`
 
-### 11. Claude Code 后台子代理不会被空闲回收误杀
+### 11. 成功回合结论优先与旧会话上下文刷新
+
+- 智能体运行期间完整展示思考、工具调用、待办和中间助手消息；回合成功结束后默认收起这些中间过程，只保留模型最后一条助手消息作为最终结论。
+- 收起入口位于原过程开始位置，显示本回合隐藏的过程项数量，用户可以展开查看全部过程并再次收起；包含最终错误记录的失败回合保持完整展开，避免隐藏失败原因。
+- 恢复持久化旧会话时，在发布可交互状态前主动读取提供方当前上下文用量并与已保存用量合并，不必等待下一次对话才更新输入框旁的上下文进度。
+- Claude 使用 Agent SDK 上下文接口，Codex 使用恢复线程上报的最新用量，OpenCode 从原生会话消息读取最近用量，OMP 与 Pi 使用会话统计接口；提供方没有可用快照时保留已保存数据，查询失败会写入错误日志。
+
+主要涉及：
+
+- `packages/app/src/agent-stream/layout.ts`
+- `packages/app/src/agent-stream/view.tsx`
+- `packages/server/src/server/agent/agent-sdk-types.ts`
+- `packages/server/src/server/agent/agent-manager.ts`
+- `packages/server/src/server/agent/providers/claude/agent.ts`
+- `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/server/src/server/agent/providers/opencode-agent.ts`
+- `packages/server/src/server/agent/providers/omp/agent.ts`
+- `packages/server/src/server/agent/providers/pi/agent.ts`
+
+### 12. Claude Code 后台子代理不会被空闲回收误杀
 
 - 守护进程消费 Claude Agent SDK 的 `background_tasks_changed` 层级信号，按“整集替换”维护当前存活的后台任务集合；该信号是按进程发出的，因此每次 Claude CLI 进程启动或重启都从空集合开始，会话关闭时也清空。
 - 空闲运行时回收在原有条件之外，额外要求提供方没有存活的后台工作。Claude 把子代理转入后台后前台回合会立即返回，此前仅凭前台空闲判断会在两分钟后杀掉仍在运行子代理的 CLI 进程，导致子代理进程内状态丢失，并在下次打开会话时出现“Background agent … was running when the previous Claude Code process exited”的失败通知。

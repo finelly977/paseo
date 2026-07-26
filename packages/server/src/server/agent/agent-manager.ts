@@ -2786,6 +2786,9 @@ export class AgentManager {
       }
 
       await this.refreshSessionState(managed, { emit: false });
+      if (options?.persistence) {
+        await this.refreshUsage(managed, { emit: false });
+      }
       this.assertAgentRegistrationActive(managed);
       managed.lifecycle = "idle";
       this.touchUpdatedAt(managed);
@@ -3191,6 +3194,35 @@ export class AgentManager {
       }
     } catch {
       // Keep existing runtimeInfo if refresh fails.
+    }
+  }
+
+  private async refreshUsage(
+    agent: ActiveManagedAgent,
+    options?: { emit?: boolean },
+  ): Promise<void> {
+    if (!agent.session.getUsage) {
+      return;
+    }
+    try {
+      const usage = await agent.session.getUsage();
+      if (!usage) {
+        return;
+      }
+      agent.lastUsage = { ...agent.lastUsage, ...usage };
+      if (options?.emit !== false) {
+        this.emitState(agent);
+      }
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          agentId: agent.id,
+          provider: agent.provider,
+          sessionId: agent.persistence?.sessionId ?? undefined,
+        },
+        "刷新智能体上下文用量失败",
+      );
     }
   }
 

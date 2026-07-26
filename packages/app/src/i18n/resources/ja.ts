@@ -183,6 +183,10 @@ export const ja: TranslationResources = {
       noPreview: "返信のプレビューはありません",
       untitled: "無題のメッセージ",
     },
+    completedTurn: {
+      expand: "{{count}}件の途中経過を折りたたみ済み",
+      collapse: "途中経過を折りたたむ",
+    },
     permission: {
       plan: "プラン",
       required: "権限が必要です",

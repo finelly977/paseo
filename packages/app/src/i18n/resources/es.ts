@@ -183,6 +183,10 @@ export const es: TranslationResources = {
       noPreview: "Sin vista previa de respuesta",
       untitled: "Mensaje sin título",
     },
+    completedTurn: {
+      expand: "{{count}} elementos del proceso contraídos",
+      collapse: "Contraer proceso intermedio",
+    },
     permission: {
       plan: "Plan",
       required: "Permiso requerido",

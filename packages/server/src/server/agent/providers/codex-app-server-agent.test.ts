@@ -4317,7 +4317,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("emits usage_updated on token usage updates and keeps usage on turn completion", () => {
+  test("emits usage_updated on token usage updates and keeps usage on turn completion", async () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -4360,6 +4360,13 @@ describe("Codex app-server provider", () => {
         contextWindowMaxTokens: 200000,
         contextWindowUsedTokens: 50000,
       },
+    });
+    await expect(session.getUsage()).resolves.toEqual({
+      inputTokens: 30000,
+      cachedInputTokens: 5000,
+      outputTokens: 15000,
+      contextWindowMaxTokens: 200000,
+      contextWindowUsedTokens: 50000,
     });
   });
 

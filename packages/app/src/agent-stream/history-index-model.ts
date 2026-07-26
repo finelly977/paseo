@@ -2,6 +2,8 @@ import { i18n } from "@/i18n/i18next";
 import type { StreamItem } from "@/types/stream";
 
 export const MAX_HISTORY_INDEX_MARKERS = 60;
+const HISTORY_INDEX_WAVE_RADIUS = 0.14;
+const HISTORY_INDEX_WAVE_PEAK_SCALE = 2.75;
 
 export function getStreamItemDomId(itemId: string): string {
   return `paseo-stream-item-${encodeURIComponent(itemId)}`;
@@ -135,4 +137,20 @@ export function sampleConversationHistoryIndex(
     }
   }
   return sampled;
+}
+
+export function getHistoryIndexWaveScale(
+  markerFraction: number,
+  pointerFraction: number | null,
+): number {
+  if (pointerFraction === null) {
+    return 1;
+  }
+  const distance = Math.abs(markerFraction - pointerFraction);
+  if (distance >= HISTORY_INDEX_WAVE_RADIUS) {
+    return 1;
+  }
+  const normalizedDistance = distance / HISTORY_INDEX_WAVE_RADIUS;
+  const influence = (Math.cos(normalizedDistance * Math.PI) + 1) / 2;
+  return 1 + (HISTORY_INDEX_WAVE_PEAK_SCALE - 1) * influence;
 }

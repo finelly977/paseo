@@ -318,7 +318,7 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(pushNotifications.sent).toHaveLength(1);
   });
 
-  it("does not push error attention when the only connected client has never sent a heartbeat", async () => {
+  it("pushes terminal error attention when the only connected client has never sent a heartbeat", async () => {
     const { server, pushNotifications } = createServer();
     const ws = connectClient(server, null);
 
@@ -329,6 +329,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     });
 
     expect(readAttentionRequiredMessage(ws).shouldNotify).toBe(false);
-    expect(pushNotifications.sent).toEqual([]);
+    expect(pushNotifications.sent).toHaveLength(1);
   });
 });

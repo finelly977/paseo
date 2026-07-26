@@ -272,5 +272,34 @@ describe("getAssistantFileLinkToken", () => {
         sourceType: "inline-code",
       }),
     ).toBe("workspace-git-service.ts:1553");
+    expect(
+      getAssistantFileLinkToken({
+        href: "E:/paseo/docs/fork-features.md:92",
+        text: "E:/paseo/docs/fork-features.md:92",
+      }),
+    ).toBe("E:/paseo/docs/fork-features.md:92");
+  });
+
+  it("keeps the line suffix when a Windows file link is resolved", () => {
+    expect(
+      classifyForResolution(
+        {
+          href: "E:/paseo/docs/fork-features.md:92",
+          text: "E:/paseo/docs/fork-features.md:92",
+        },
+        { workspaceRoot: "E:/paseo" },
+      ),
+    ).toEqual({
+      kind: "resolved",
+      value: {
+        kind: "file",
+        target: {
+          raw: "E:/paseo/docs/fork-features.md:92",
+          path: "E:/paseo/docs/fork-features.md",
+          lineStart: 92,
+          lineEnd: undefined,
+        },
+      },
+    });
   });
 });

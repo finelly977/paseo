@@ -346,6 +346,57 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     rmSync(cwd, { recursive: true, force: true });
   }, 120_000);
 
+  test("reads context usage from restored session messages", async () => {
+    const { parent, openCode } = await createParentSession("session-usage", (client) => {
+      client.sessionGetResponse = {
+        data: { id: "session-usage", directory: "/workspace/repo", title: null },
+      };
+      client.sessionMessagesResponse = {
+        data: [
+          {
+            info: {
+              id: "message-usage",
+              sessionID: "session-usage",
+              role: "assistant",
+              providerID: "opencode",
+              modelID: "big-pickle",
+              time: { created: 1, completed: 2 },
+            },
+            parts: [
+              {
+                id: "step-usage",
+                sessionID: "session-usage",
+                messageID: "message-usage",
+                type: "step-finish",
+                reason: "stop",
+                cost: 0.25,
+                tokens: {
+                  input: 30_000,
+                  output: 12_000,
+                  reasoning: 10_000,
+                  cache: { read: 2_000, write: 1_000 },
+                },
+              },
+            ],
+          },
+        ],
+      };
+    });
+
+    await expect(parent.getUsage?.()).resolves.toEqual({
+      inputTokens: 30_000,
+      cachedInputTokens: 2_000,
+      outputTokens: 12_000,
+      contextWindowUsedTokens: 55_000,
+      totalCostUsd: 0.25,
+    });
+    expect(openCode.calls.sessionMessages).toEqual([
+      { sessionID: "session-usage", directory: "/workspace/repo" },
+    ]);
+
+    await parent.close();
+  });
+
   test("completed and structured assistant messages preserve OpenCode message IDs", async () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();

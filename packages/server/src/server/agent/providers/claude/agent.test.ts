@@ -699,6 +699,32 @@ describe("ClaudeAgentSession features", () => {
     await session.close();
   });
 
+  test("reads the current context usage without starting a turn", async () => {
+    const { queryFactory, queryMock } = createQueryMock();
+    queryMock.getContextUsage.mockResolvedValue({
+      categories: [],
+      totalTokens: 42_000,
+      maxTokens: 200_000,
+    });
+    const client = new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    const session = await client.createSession({
+      provider: "claude",
+      cwd: process.cwd(),
+    });
+
+    await expect(session.getUsage?.()).resolves.toEqual({
+      contextWindowMaxTokens: 200_000,
+      contextWindowUsedTokens: 42_000,
+    });
+    expect(queryMock.getContextUsage).toHaveBeenCalledOnce();
+
+    await session.close();
+  });
+
   test("maps Ultracode to xhigh effort and Claude ultracode settings", async () => {
     const { queryFactory } = createQueryMock();
     const client = new ClaudeAgentClient({

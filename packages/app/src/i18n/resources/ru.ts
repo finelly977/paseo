@@ -183,6 +183,10 @@ export const ru: TranslationResources = {
       noPreview: "Нет предпросмотра ответа",
       untitled: "Сообщение без названия",
     },
+    completedTurn: {
+      expand: "Промежуточные шаги свернуты: {{count}}",
+      collapse: "Свернуть промежуточные шаги",
+    },
     permission: {
       plan: "План",
       required: "Требуется разрешение",

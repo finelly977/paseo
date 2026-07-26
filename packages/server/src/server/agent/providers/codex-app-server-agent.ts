@@ -4186,6 +4186,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     return { ...info };
   }
 
+  async getUsage(): Promise<AgentUsage | undefined> {
+    return this.latestUsage ? { ...this.latestUsage } : undefined;
+  }
+
   async getAvailableModes(): Promise<AgentMode[]> {
     if (this.autoReviewEnabled) {
       return CODEX_MODES;

@@ -2,7 +2,7 @@ import type { PrHint } from "@/git/pr-hint";
 import { selectPrHintFromStatus } from "@/git/pr-hint";
 import { type HostProjectListItem } from "@/projects/host-project-model";
 import type { PendingCreateAttempt } from "@/stores/create-flow-store";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import type {
   WorkspaceStructureHostPlacement,
   WorkspaceStructureProject,
@@ -34,6 +34,7 @@ export interface SidebarStatusWorkspacePlacement extends SidebarWorkspacePlaceme
 }
 
 export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
+  agentProvider: Agent["provider"] | null;
   // Raw user-set title (null when the name is derived from branch/directory).
   // Prefills the rename input and signals whether a reset is available.
   title: string | null;
@@ -146,6 +147,7 @@ export function createSidebarWorkspaceEntry(input: {
 }): SidebarWorkspaceEntry {
   const projectKey = input.workspace.project?.projectKey ?? input.workspace.projectId;
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
+  const rootAgentActivity = input.workspaceAgentActivity?.get(input.workspace.id);
   return {
     workspaceKey: `${input.serverId}:${input.workspace.id}`,
     serverId: input.serverId,
@@ -157,6 +159,7 @@ export function createSidebarWorkspaceEntry(input: {
     projectKind: input.workspace.projectKind,
     workspaceKind: input.workspace.workspaceKind,
     name: input.workspace.name,
+    agentProvider: rootAgentActivity?.provider ?? null,
     title: input.workspace.title ?? null,
     pinnedAt: input.workspace.pinnedAt,
     currentBranch: normalizeCurrentBranch(input.workspace.gitRuntime?.currentBranch),

@@ -3,6 +3,7 @@ import type { StreamItem } from "@/types/stream";
 import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
+  getHistoryIndexWaveScale,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 
@@ -85,5 +86,13 @@ describe("conversation history index model", () => {
         seqStart: 420,
       },
     ]);
+  });
+
+  it("creates a smooth local wave around the pointer", () => {
+    expect(getHistoryIndexWaveScale(0.5, null)).toBe(1);
+    expect(getHistoryIndexWaveScale(0.5, 0.5)).toBe(2.75);
+    expect(getHistoryIndexWaveScale(0.43, 0.5)).toBeGreaterThan(1);
+    expect(getHistoryIndexWaveScale(0.3, 0.5)).toBe(1);
+    expect(getHistoryIndexWaveScale(0.43, 0.5)).toBeCloseTo(getHistoryIndexWaveScale(0.57, 0.5));
   });
 });

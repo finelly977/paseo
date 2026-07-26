@@ -638,6 +638,7 @@ export interface AgentSession {
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
+  getUsage?(): Promise<AgentUsage | undefined>;
   getAvailableModes(): Promise<AgentMode[]>;
   getCurrentMode(): Promise<string | null>;
   setMode(modeId: string): Promise<void | AgentProviderNotice>;

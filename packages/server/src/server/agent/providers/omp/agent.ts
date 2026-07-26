@@ -1109,6 +1109,12 @@ export class OmpAgentSession implements AgentSession {
     };
   }
 
+  async getUsage(): Promise<AgentUsage | undefined> {
+    await this.refreshState();
+    const stats = await this.runtimeSession.getSessionStats();
+    return mapOmpUsage({ stats, state: this.state, baseUsage: toAgentUsage(stats) });
+  }
+
   async getAvailableModes(): Promise<AgentMode[]> {
     return [...OMP_MODES];
   }
@@ -2227,21 +2233,18 @@ export class OmpAgentSession implements AgentSession {
   }
 
   private async refreshAfterTurn(turnId: string | undefined): Promise<void> {
-    await this.refreshState().catch(() => undefined);
-    const usage = await this.runtimeSession
-      .getSessionStats()
-      .then((stats) => {
-        const baseUsage = toAgentUsage(stats);
-        return mapOmpUsage({ stats, state: this.state, baseUsage });
-      })
-      .catch(() => undefined);
-    if (usage) {
-      this.emit({
-        type: "usage_updated",
-        provider: this.provider,
-        turnId,
-        usage,
-      });
+    try {
+      const usage = await this.getUsage();
+      if (usage) {
+        this.emit({
+          type: "usage_updated",
+          provider: this.provider,
+          turnId,
+          usage,
+        });
+      }
+    } catch (error) {
+      this.logger.error({ err: error, turnId }, "刷新 OMP 上下文用量失败");
     }
   }
 }

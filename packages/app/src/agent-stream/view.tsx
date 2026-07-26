@@ -149,17 +149,17 @@ function renderPendingPermissionsNode(input: {
 }
 
 function renderStreamItemWithTurnFooter(input: {
-  content: ReactNode;
+  content: ReactNode | null;
   layoutItem: StreamLayoutItem;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }): ReactNode {
-  if (!input.content) {
+  const footerHost = input.layoutItem.completedFooter;
+  if (!input.content && !footerHost) {
     return null;
   }
 
-  const footerHost = input.layoutItem.completedFooter;
   const footer = footerHost ? (
     <CompletedTurnFooterRow
       strategy={input.strategy}
@@ -170,11 +170,11 @@ function renderStreamItemWithTurnFooter(input: {
       onForkAssistantTurn={input.onForkAssistantTurn}
     />
   ) : null;
-  const content = (
+  const content = input.content ? (
     <StreamItemWrapper itemId={input.layoutItem.item.id} gapBelow={input.layoutItem.gapBelow}>
       {input.content}
     </StreamItemWrapper>
-  );
+  ) : null;
 
   if (input.layoutItem.frameOrder === "footer-then-content") {
     return (
@@ -277,6 +277,61 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
+const processToggleIconColorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
+const ThemedProcessToggleChevron = withUnistyles(ChevronDown);
+
+interface CompletedTurnProcessToggleModel {
+  turnId: string;
+  itemCount: number;
+}
+
+function CompletedTurnProcessToggle({
+  model,
+  expanded,
+  onToggle,
+}: {
+  model: CompletedTurnProcessToggleModel;
+  expanded: boolean;
+  onToggle: (turnId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const handlePress = useCallback(() => onToggle(model.turnId), [model.turnId, onToggle]);
+  const pressableStyle = useCallback(
+    ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      stylesheet.completedTurnProcessToggle,
+      Boolean(hovered) && stylesheet.completedTurnProcessToggleHovered,
+      pressed && stylesheet.completedTurnProcessTogglePressed,
+    ],
+    [],
+  );
+  const iconStyle = useMemo(
+    () => [stylesheet.completedTurnProcessToggleIcon, expanded && stylesheet.processToggleExpanded],
+    [expanded],
+  );
+  const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
+
+  return (
+    <View style={stylesheet.completedTurnProcessToggleRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={accessibilityState}
+        onPress={handlePress}
+        style={pressableStyle}
+      >
+        <View style={iconStyle}>
+          <ThemedProcessToggleChevron size={14} uniProps={processToggleIconColorMapping} />
+        </View>
+        <Text style={stylesheet.completedTurnProcessToggleText}>
+          {expanded
+            ? t("agentStream.completedTurn.collapse")
+            : t("agentStream.completedTurn.expand", { count: model.itemCount })}
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 
 function buildChatHistoryAttachment(input: {
@@ -370,6 +425,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
+    const [expandedCompletedTurnIds, setExpandedCompletedTurnIds] = useState<Set<string>>(
+      new Set(),
+    );
     const [pendingHistoryNavigation, setPendingHistoryNavigation] =
       useState<ConversationHistoryIndexEntry | null>(null);
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
@@ -430,6 +488,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
       setExpandedToolCallGroupIds(new Set());
+      setExpandedCompletedTurnIds(new Set());
       setPendingHistoryNavigation(null);
     }, [agentId]);
 
@@ -623,6 +682,47 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
       ],
     );
+    const completedTurnProcess = useMemo(() => {
+      const turnIdByProcessItemId = new Map<string, string>();
+      const toggleByItemId = new Map<string, CompletedTurnProcessToggleModel>();
+      const hosts = [
+        ...streamLayout.history.flatMap((item) =>
+          item.completedFooter ? [item.completedFooter] : [],
+        ),
+        ...streamLayout.liveHead.flatMap((item) =>
+          item.completedFooter ? [item.completedFooter] : [],
+        ),
+        ...(streamLayout.auxiliaryTurnFooter ? [streamLayout.auxiliaryTurnFooter] : []),
+      ];
+      for (const host of hosts) {
+        if (host.processItemIds.length === 0) {
+          continue;
+        }
+        for (const itemId of host.processItemIds) {
+          turnIdByProcessItemId.set(itemId, host.itemId);
+        }
+        const toggleItemId = host.processItemIds.at(-1);
+        if (toggleItemId) {
+          toggleByItemId.set(toggleItemId, {
+            turnId: host.itemId,
+            itemCount: host.processItemIds.length,
+          });
+        }
+      }
+      return { turnIdByProcessItemId, toggleByItemId };
+    }, [streamLayout.auxiliaryTurnFooter, streamLayout.history, streamLayout.liveHead]);
+
+    const toggleCompletedTurnProcess = useCallback((turnId: string) => {
+      setExpandedCompletedTurnIds((previous) => {
+        const next = new Set(previous);
+        if (next.has(turnId)) {
+          next.delete(turnId);
+        } else {
+          next.add(turnId);
+        }
+        return next;
+      });
+    }, []);
     const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
       const seen = new Set<string>();
@@ -1001,21 +1101,41 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderStreamItem = useCallback(
       (layoutItem: StreamLayoutItem) => {
-        const content = renderStreamItemContent(layoutItem);
-        return renderStreamItemWithTurnFooter({
+        const processTurnId = completedTurnProcess.turnIdByProcessItemId.get(layoutItem.item.id);
+        const processExpanded = processTurnId ? expandedCompletedTurnIds.has(processTurnId) : false;
+        const content =
+          processTurnId && !processExpanded ? null : renderStreamItemContent(layoutItem);
+        const renderedItem = renderStreamItemWithTurnFooter({
           content,
           layoutItem,
           strategy: streamRenderStrategy,
           supportsTimelineCursor: supportsAgentForkContextCursor,
           onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
         });
+        const toggle = completedTurnProcess.toggleByItemId.get(layoutItem.item.id);
+        if (!toggle) {
+          return renderedItem;
+        }
+        return (
+          <>
+            <CompletedTurnProcessToggle
+              model={toggle}
+              expanded={expandedCompletedTurnIds.has(toggle.turnId)}
+              onToggle={toggleCompletedTurnProcess}
+            />
+            {renderedItem}
+          </>
+        );
       },
       [
+        completedTurnProcess,
+        expandedCompletedTurnIds,
         handleForkAssistantTurn,
         readOnly,
         renderStreamItemContent,
         streamRenderStrategy,
         supportsAgentForkContextCursor,
+        toggleCompletedTurnProcess,
       ],
     );
 
@@ -1149,13 +1269,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const streamScrollEnabled =
       !streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion() ||
       expandedInlineToolCallIds.size === 0;
+    const historyDisplayStateIds = useMemo(
+      () => new Set([...expandedToolCallGroupIds, ...expandedCompletedTurnIds]),
+      [expandedCompletedTurnIds, expandedToolCallGroupIds],
+    );
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
-        displayStateById: expandedToolCallGroupIds,
+        displayStateById: historyDisplayStateIds,
         globalDisplayState: isMobile,
       }),
-      [expandedToolCallGroupIds, isMobile, projectedToolCalls.historyGroupUpdatesByHostId],
+      [historyDisplayStateIds, isMobile, projectedToolCalls.historyGroupUpdatesByHostId],
     );
 
     return (
@@ -1173,7 +1297,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               agentId,
               segments: renderModel.segments,
               historyRowRevision,
-              liveHeadRowRevision: expandedToolCallGroupIds,
+              liveHeadRowRevision: historyDisplayStateIds,
               boundary,
               renderers,
               listEmptyComponent,
@@ -1679,6 +1803,41 @@ const stylesheet = StyleSheet.create((theme) => ({
   syncingIndicatorText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+  },
+  completedTurnProcessToggleRow: {
+    width: "100%",
+    maxWidth: MAX_CONTENT_WIDTH,
+    alignSelf: "center",
+    paddingHorizontal: theme.spacing[2],
+    marginBottom: theme.spacing[2],
+  },
+  completedTurnProcessToggle: {
+    minHeight: 28,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+  },
+  completedTurnProcessToggleHovered: {
+    backgroundColor: theme.colors.surface1,
+  },
+  completedTurnProcessTogglePressed: {
+    opacity: 0.72,
+  },
+  completedTurnProcessToggleIcon: {
+    alignItems: "center",
+    justifyContent: "center",
+    transform: [{ rotate: "-90deg" }],
+  },
+  processToggleExpanded: {
+    transform: [{ rotate: "0deg" }],
+  },
+  completedTurnProcessToggleText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    lineHeight: 18,
   },
   invertedWrapper: {
     transform: [{ scaleY: -1 }],

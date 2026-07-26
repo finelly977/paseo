@@ -147,11 +147,14 @@ export function classifyForResolution(
 }
 
 export function getAssistantFileLinkToken(source: AssistantFileLinkSource): string {
-  if (isLinkifiedSource(source) || source.sourceType === "inline-code") {
-    const text = source.text?.trim();
-    if (text && isFileLookingAssistantToken(text)) {
-      return text;
-    }
+  const text = source.text?.trim();
+  const hrefIsExternalUrl = /^https?:\/\//iu.test(source.href.trim());
+  if (
+    text &&
+    isFileLookingAssistantToken(text) &&
+    (isLinkifiedSource(source) || source.sourceType === "inline-code" || !hrefIsExternalUrl)
+  ) {
+    return text;
   }
 
   return source.href;

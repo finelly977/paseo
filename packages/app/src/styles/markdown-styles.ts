@@ -320,8 +320,7 @@ export function createMarkdownStyles(theme: Theme) {
     hr: {
       backgroundColor: theme.colors.border,
       height: 1,
-      // Biggest source of empty bands between tables/sections in long replies.
-      marginVertical: theme.spacing[3],
+      marginVertical: theme.spacing[1.5],
     },
 
     // =========================================================================

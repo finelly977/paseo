@@ -32,6 +32,7 @@ import { isEmphasizedStatusDotBucket } from "@/utils/status-dot-color";
 import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
+import { getProviderIcon } from "@/components/provider-icons";
 
 const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
@@ -62,6 +63,19 @@ const ThemedFolder = withUnistyles(Folder);
 const ThemedFolderGit2 = withUnistyles(FolderGit2);
 const ThemedGlobe = withUnistyles(Globe);
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
+
+function WorkspaceProviderIcon({
+  provider,
+}: {
+  provider: NonNullable<SidebarWorkspaceEntry["agentProvider"]>;
+}) {
+  const ProviderIcon = useMemo(() => withUnistyles(getProviderIcon(provider)), [provider]);
+  return (
+    <View style={styles.workspaceProviderIcon} testID={`workspace-provider-icon-${provider}`}>
+      <ProviderIcon size={14} uniProps={foregroundMutedColorMapping} />
+    </View>
+  );
+}
 
 function renderChecksBadgeForgeIcon(icon: string) {
   return <ForgeBrandIcon iconKind={icon} size={10} uniProps={redColorMapping} />;
@@ -146,6 +160,9 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
         <View style={styles.workspaceContentColumn}>
           <View style={styles.workspaceTitleRow}>
             <View style={styles.workspaceTitleLeft}>
+              {workspace.agentProvider ? (
+                <WorkspaceProviderIcon provider={workspace.agentProvider} />
+              ) : null}
               <Text style={workspaceBranchTextStyle} numberOfLines={1}>
                 {workspaceLabel}
               </Text>
@@ -562,6 +579,13 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
   },
   workspaceTitleAccessory: {
+    height: 20,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  workspaceProviderIcon: {
+    width: 14,
     height: 20,
     flexShrink: 0,
     alignItems: "center",

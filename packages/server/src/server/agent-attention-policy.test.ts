@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   computeNotificationPlan,
-  isPushEligibleAttentionReason,
   type ClientPresenceState,
   PRESENCE_THRESHOLD_MS,
 } from "./agent-attention-policy.js";
@@ -280,13 +279,5 @@ describe("computeNotificationPlan", () => {
         nowMs,
       }),
     ).toEqual({ inAppRecipientIndex: null, shouldPush: true });
-  });
-});
-
-describe("isPushEligibleAttentionReason", () => {
-  it("allows push for finished and permission but not error", () => {
-    expect(isPushEligibleAttentionReason("finished")).toBe(true);
-    expect(isPushEligibleAttentionReason("permission")).toBe(true);
-    expect(isPushEligibleAttentionReason("error")).toBe(false);
   });
 });

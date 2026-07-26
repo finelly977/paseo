@@ -181,6 +181,10 @@ export const en = {
       noPreview: "No response preview",
       untitled: "Untitled message",
     },
+    completedTurn: {
+      expand: "{{count}} process items collapsed",
+      collapse: "Collapse intermediate process",
+    },
     permission: {
       plan: "Plan",
       required: "Permission Required",

@@ -2056,6 +2056,53 @@ test("resumeAgentFromPersistence drops stored internal paseo MCP when runtime in
   expect(snapshot.config.mcpServers).toBeUndefined();
 });
 
+test("resumeAgentFromPersistence refreshes context usage before publishing the restored agent", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-usage-refresh-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  class UsageSession extends TestAgentSession {
+    override async getUsage() {
+      return {
+        contextWindowMaxTokens: 200_000,
+        contextWindowUsedTokens: 42_000,
+      };
+    }
+  }
+  class UsageClient extends TestAgentClient {
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new UsageSession({
+        provider: "codex",
+        cwd: config?.cwd ?? workdir,
+      });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new UsageClient() },
+    registry: storage,
+    logger,
+  });
+
+  try {
+    const snapshot = await manager.resumeAgentFromPersistence(
+      {
+        provider: "codex",
+        sessionId: "session-with-usage",
+        metadata: { cwd: workdir },
+      },
+      { cwd: workdir },
+    );
+
+    expect(snapshot.lastUsage).toEqual({
+      contextWindowMaxTokens: 200_000,
+      contextWindowUsedTokens: 42_000,
+    });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("createAgent preserves a user-provided paseo MCP config", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

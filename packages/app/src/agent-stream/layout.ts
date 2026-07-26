@@ -10,6 +10,7 @@ export interface TurnFooterHost {
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
+  processItemIds: string[];
 }
 
 export interface StreamLayoutItem {
@@ -62,9 +63,14 @@ interface AssistantFooterSource {
 }
 
 function createTurnFooterHost(input: {
+  strategy: StreamStrategy;
   item: StreamItem;
   items: StreamItem[];
   index: number;
+  processItems: StreamItem[];
+  turnEndIndex: number;
+  processBoundaryAboveItems?: StreamItem[] | null;
+  processBoundaryAboveIndex?: number | null;
   timingByAssistantId: Map<string, TurnTiming>;
 }): TurnFooterHost {
   return {
@@ -72,7 +78,72 @@ function createTurnFooterHost(input: {
     items: input.items,
     timing: input.timingByAssistantId.get(input.item.id),
     startIndex: input.index,
+    processItemIds: collectCompletedTurnProcessItemIds({
+      strategy: input.strategy,
+      items: input.processItems,
+      finalAssistant: input.item,
+      turnEndIndex: input.turnEndIndex,
+      boundaryAboveItems: input.processBoundaryAboveItems,
+      boundaryAboveIndex: input.processBoundaryAboveIndex,
+    }),
   };
+}
+
+export function collectCompletedTurnProcessItemIds(input: {
+  strategy: StreamStrategy;
+  items: StreamItem[];
+  finalAssistant: StreamItem;
+  turnEndIndex: number;
+  boundaryAboveItems?: StreamItem[] | null;
+  boundaryAboveIndex?: number | null;
+}): string[] {
+  const processItemIds: string[] = [];
+  const finalAssistantBlockGroupId =
+    input.finalAssistant.kind === "assistant_message"
+      ? input.finalAssistant.blockGroupId
+      : undefined;
+  let items = input.items;
+  let index = input.turnEndIndex;
+  let canCrossBoundary = true;
+
+  while (true) {
+    for (
+      ;
+      index >= 0 && index < items.length;
+      index = input.strategy.getNeighborIndex(index, "above")
+    ) {
+      const item = items[index];
+      if (!item || item.kind === "user_message") {
+        return processItemIds;
+      }
+      const isFailureItem =
+        (item.kind === "activity_log" && item.activityType === "error") ||
+        (item.kind === "assistant_message" && item.text.trimStart().startsWith("[System Error]"));
+      if (isFailureItem) {
+        return [];
+      }
+      const belongsToFinalAssistantBlockGroup =
+        finalAssistantBlockGroupId !== undefined &&
+        item.kind === "assistant_message" &&
+        item.blockGroupId === finalAssistantBlockGroupId;
+      if (item.id !== input.finalAssistant.id && !belongsToFinalAssistantBlockGroup) {
+        processItemIds.push(item.id);
+      }
+    }
+
+    if (
+      !canCrossBoundary ||
+      !input.boundaryAboveItems ||
+      input.boundaryAboveIndex === null ||
+      input.boundaryAboveIndex === undefined
+    ) {
+      return processItemIds;
+    }
+
+    items = input.boundaryAboveItems;
+    index = input.boundaryAboveIndex;
+    canCrossBoundary = false;
+  }
 }
 
 function findLatestAssistantInTurn(input: {
@@ -126,20 +197,31 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
   if (latestIndex === null) {
     return null;
   }
+  const boundaryAboveItems = input.liveHead.length > 0 ? input.history : null;
+  const boundaryAboveIndex = boundaryAboveItems
+    ? input.strategy.getHistoryLiveBoundaryIndex(boundaryAboveItems)
+    : null;
 
   const assistant = findLatestAssistantInTurn({
     strategy: input.strategy,
     items: footerItems,
     startIndex: latestIndex,
+    boundaryAboveItems,
+    boundaryAboveIndex,
   });
   if (!assistant) {
     return null;
   }
 
   return createTurnFooterHost({
+    strategy: input.strategy,
     item: assistant.item,
     items: assistant.items,
     index: assistant.index,
+    processItems: footerItems,
+    turnEndIndex: latestIndex,
+    processBoundaryAboveItems: boundaryAboveItems,
+    processBoundaryAboveIndex: boundaryAboveIndex,
     timingByAssistantId: input.timingByAssistantId,
   });
 }
@@ -170,9 +252,14 @@ function resolveCompletedFooter(input: {
     return null;
   }
   return createTurnFooterHost({
+    strategy: input.strategy,
     item: assistant.item,
     items: assistant.items,
     index: assistant.index,
+    processItems: input.items,
+    turnEndIndex: input.index,
+    processBoundaryAboveItems: input.boundaryAboveItems,
+    processBoundaryAboveIndex: input.boundaryAboveIndex,
     timingByAssistantId: input.timingByAssistantId,
   });
 }

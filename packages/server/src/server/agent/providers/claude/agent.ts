@@ -2100,6 +2100,14 @@ class ClaudeAgentSession implements AgentSession {
     return { ...info };
   }
 
+  async getUsage(): Promise<AgentUsage> {
+    const usage = await (await this.ensureQuery()).getContextUsage();
+    return {
+      contextWindowMaxTokens: usage.maxTokens,
+      contextWindowUsedTokens: usage.totalTokens,
+    };
+  }
+
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
     const result = await runProviderTurn({
       prompt,

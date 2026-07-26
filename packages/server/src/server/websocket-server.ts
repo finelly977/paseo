@@ -53,11 +53,7 @@ import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
-import {
-  computeNotificationPlan,
-  isPushEligibleAttentionReason,
-  type ClientPresenceState,
-} from "./agent-attention-policy.js";
+import { computeNotificationPlan, type ClientPresenceState } from "./agent-attention-policy.js";
 import {
   buildAgentAttentionNotificationPayload,
   findLatestPermissionRequest,
@@ -2215,7 +2211,7 @@ export class VoiceAssistantWebSocketServer {
     const plan = computeNotificationPlan({
       allStates,
       focusTarget: { kind: "agent", id: params.agentId },
-      pushEligible: isPushEligibleAttentionReason(params.reason),
+      pushEligible: true,
       nowMs,
     });
 

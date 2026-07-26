@@ -1,5 +1,3 @@
-import type { AgentAttentionReason } from "@getpaseo/protocol/agent-attention-notification";
-
 export const PRESENCE_THRESHOLD_MS = 180_000;
 
 export interface ClientPresenceState {
@@ -88,8 +86,4 @@ export function computeNotificationPlan({
   }
 
   return { inAppRecipientIndex: null, shouldPush: pushEligible };
-}
-
-export function isPushEligibleAttentionReason(reason: AgentAttentionReason): boolean {
-  return reason !== "error";
 }

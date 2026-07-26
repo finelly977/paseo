@@ -2976,6 +2976,47 @@ class OpenCodeAgentSession implements AgentSession {
     };
   }
 
+  async getUsage(): Promise<AgentUsage | undefined> {
+    const sessionResponse = await this.client.session.get({
+      sessionID: this.sessionId,
+      directory: this.config.cwd,
+    });
+    if (sessionResponse.error || !sessionResponse.data) {
+      throw new Error(
+        `读取 OpenCode 会话上下文用量失败：${toDiagnosticErrorMessage(sessionResponse.error)}`,
+      );
+    }
+    const messages = await readOpenCodeSessionMessagesFromSdk(
+      this.client,
+      sessionResponse.data as OpenCodePersistedSession,
+    );
+    const usage: AgentUsage = {};
+    let sessionTotalCostUsd = 0;
+    for (const message of messages) {
+      if (message.info.role !== "assistant") {
+        continue;
+      }
+      const modelLookupKey = resolveOpenCodeModelLookupKeyFromAssistantMessage(message.info);
+      if (modelLookupKey) {
+        const contextWindowMaxTokens = this.modelContextWindowsByModelKey.get(modelLookupKey);
+        if (contextWindowMaxTokens !== undefined) {
+          usage.contextWindowMaxTokens = contextWindowMaxTokens;
+        }
+      }
+      for (const part of message.parts) {
+        if (part.type !== "step-finish") {
+          continue;
+        }
+        sessionTotalCostUsd += readPositiveFiniteNumber(part.cost) ?? 0;
+        mergeOpenCodeStepFinishUsage(usage, part, { totalCostUsd: sessionTotalCostUsd });
+      }
+    }
+    if (usage.contextWindowMaxTokens === undefined) {
+      usage.contextWindowMaxTokens = this.resolveSelectedModelContextWindowMaxTokens();
+    }
+    return hasNormalizedOpenCodeUsage(usage) ? usage : undefined;
+  }
+
   async setModel(modelId: string | null): Promise<void> {
     const normalizedModelId =
       typeof modelId === "string" && modelId.trim().length > 0 ? modelId : null;

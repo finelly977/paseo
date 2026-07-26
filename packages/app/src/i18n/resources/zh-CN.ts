@@ -183,6 +183,10 @@ export const zhCN: TranslationResources = {
       noPreview: "暂无回复摘要",
       untitled: "未命名消息",
     },
+    completedTurn: {
+      expand: "已收起 {{count}} 项中间过程",
+      collapse: "收起中间过程",
+    },
     permission: {
       plan: "Plan",
       required: "需要权限",

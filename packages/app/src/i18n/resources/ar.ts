@@ -183,6 +183,10 @@ export const ar: TranslationResources = {
       noPreview: "لا توجد معاينة للرد",
       untitled: "رسالة بلا عنوان",
     },
+    completedTurn: {
+      expand: "تم طي {{count}} من عناصر العملية",
+      collapse: "طي العملية الوسيطة",
+    },
     permission: {
       plan: "يخطط",
       required: "الإذن مطلوب",

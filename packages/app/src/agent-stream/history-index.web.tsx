@@ -5,13 +5,18 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type RefObject,
 } from "react";
 import { Pressable, Text, View, type ViewStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
-import { getStreamItemDomId, sampleConversationHistoryIndex } from "./history-index-model";
+import {
+  getHistoryIndexWaveScale,
+  getStreamItemDomId,
+  sampleConversationHistoryIndex,
+} from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
 
 export interface ConversationHistoryIndexProps {
@@ -23,13 +28,13 @@ export interface ConversationHistoryIndexProps {
 const railStyle: CSSProperties = {
   position: "absolute",
   zIndex: 10,
-  top: 16,
-  bottom: 16,
-  // 索引属于对话区域的导航层，固定贴在整个对话视口左边缘，
-  // 不随居中的消息文字列宽度移动。
+  top: "50%",
+  height: "min(46vh, 360px)",
+  minHeight: 220,
   left: 0,
-  width: 24,
-  pointerEvents: "none",
+  width: 32,
+  transform: "translateY(-50%)",
+  pointerEvents: "auto",
 };
 const ACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: true } as const;
 const INACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: false } as const;
@@ -43,6 +48,9 @@ interface ConversationHistoryIndexMarkerProps {
   entry: ConversationHistoryIndexEntry;
   fraction: number;
   isActive: boolean;
+  isPointerHovered: boolean;
+  pointerFraction: number | null;
+  reduceMotion: boolean;
   viewportRef: RefObject<StreamViewportHandle | null>;
   onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }
@@ -51,36 +59,50 @@ function ConversationHistoryIndexMarker({
   entry,
   fraction,
   isActive,
+  isPointerHovered,
+  pointerFraction,
+  reduceMotion,
   viewportRef,
   onNavigate,
 }: ConversationHistoryIndexMarkerProps) {
   const { t } = useTranslation();
-  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const markerStyle = useMemo<ViewStyle>(
     () => ({
       position: "absolute",
       top: `${fraction * 100}%`,
       left: 0,
-      width: 24,
-      height: 16,
+      width: 32,
+      height: 12,
       display: "flex",
-      alignItems: "center",
+      alignItems: "flex-start",
       justifyContent: "center",
-      transform: [{ translateY: -8 }],
+      paddingLeft: 4,
+      transform: [{ translateY: -6 }],
     }),
     [fraction],
   );
-  let tickStyle = styles.tickInactive;
-  if (isHovered) {
-    tickStyle = styles.tickHovered;
-  }
-  if (isActive) {
-    tickStyle = styles.tickActive;
-  }
-  const handleHoverIn = useCallback(() => setIsHovered(true), []);
-  const handleHoverOut = useCallback(() => setIsHovered(false), []);
-  const handleFocus = useCallback(() => setIsHovered(true), []);
-  const handleBlur = useCallback(() => setIsHovered(false), []);
+  const isHighlighted = isPointerHovered || isFocused;
+  const waveScale = Math.max(
+    getHistoryIndexWaveScale(fraction, pointerFraction),
+    isActive ? 1.6 : 1,
+  );
+  const tickWaveStyle = useMemo<CSSProperties>(
+    () => ({
+      width: 8,
+      height: 2,
+      display: "flex",
+      alignItems: "center",
+      transform: `scaleX(${waveScale})`,
+      transformOrigin: "left center",
+      transitionProperty: "transform, opacity",
+      transitionDuration: reduceMotion ? "0ms" : "180ms",
+      transitionTimingFunction: "cubic-bezier(0.16, 1, 0.3, 1)",
+    }),
+    [reduceMotion, waveScale],
+  );
+  const handleFocus = useCallback(() => setIsFocused(true), []);
+  const handleBlur = useCallback(() => setIsFocused(false), []);
   const handlePress = useCallback(() => {
     if (onNavigate) {
       void onNavigate(entry);
@@ -94,8 +116,6 @@ function ConversationHistoryIndexMarker({
       pointerEvents="auto"
       accessibilityLabel={t("agentStream.historyIndex.jumpTo", { title: entry.title })}
       style={markerStyle}
-      onHoverIn={handleHoverIn}
-      onHoverOut={handleHoverOut}
       onFocus={handleFocus}
       onBlur={handleBlur}
       onPress={handlePress}
@@ -104,8 +124,12 @@ function ConversationHistoryIndexMarker({
         isActive ? ACTIVE_MARKER_ACCESSIBILITY_STATE : INACTIVE_MARKER_ACCESSIBILITY_STATE
       }
     >
-      <View style={tickStyle} />
-      {isHovered ? (
+      <div aria-hidden style={tickWaveStyle}>
+        <View
+          style={[styles.tick, isHighlighted && styles.tickHovered, isActive && styles.tickActive]}
+        />
+      </div>
+      {isHighlighted ? (
         <View style={styles.tooltip} pointerEvents="none">
           <Text style={styles.tooltipTitle}>{entry.title}</Text>
           <Text style={styles.tooltipPreview}>
@@ -125,10 +149,67 @@ export function ConversationHistoryIndex({
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pointerFraction, setPointerFraction] = useState<number | null>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const pointerFrameRef = useRef<number | null>(null);
   const visibleEntries = useMemo(() => sampleConversationHistoryIndex(entries), [entries]);
   const entryByDomId = useMemo(
     () => new Map(entries.map((entry) => [getStreamItemDomId(entry.id), entry])),
     [entries],
+  );
+  const hoveredIndex = useMemo(() => {
+    if (pointerFraction === null || visibleEntries.length === 0) {
+      return null;
+    }
+    return Math.round(pointerFraction * (visibleEntries.length - 1));
+  }, [pointerFraction, visibleEntries.length]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setReduceMotion(mediaQuery.matches);
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+    return () => mediaQuery.removeEventListener("change", updatePreference);
+  }, []);
+
+  const handleMouseMove = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const nextFraction = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+    if (pointerFrameRef.current !== null) {
+      cancelAnimationFrame(pointerFrameRef.current);
+    }
+    pointerFrameRef.current = requestAnimationFrame(() => {
+      pointerFrameRef.current = null;
+      setPointerFraction(nextFraction);
+    });
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    if (pointerFrameRef.current !== null) {
+      cancelAnimationFrame(pointerFrameRef.current);
+      pointerFrameRef.current = null;
+    }
+    setPointerFraction(null);
+  }, []);
+
+  const handleClickCapture = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (event.detail === 0 || hoveredIndex === null) {
+        return;
+      }
+      const entry = visibleEntries[hoveredIndex];
+      if (!entry) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (onNavigate) {
+        void onNavigate(entry);
+        return;
+      }
+      viewportRef.current?.scrollToItem(entry.id);
+    },
+    [hoveredIndex, onNavigate, viewportRef, visibleEntries],
   );
 
   const updateActiveMarker = useCallback(() => {
@@ -195,6 +276,10 @@ export function ConversationHistoryIndex({
       if (frame !== null) {
         cancelAnimationFrame(frame);
       }
+      if (pointerFrameRef.current !== null) {
+        cancelAnimationFrame(pointerFrameRef.current);
+        pointerFrameRef.current = null;
+      }
     };
   }, [updateActiveMarker]);
 
@@ -208,14 +293,19 @@ export function ConversationHistoryIndex({
       role="navigation"
       aria-label={t("agentStream.historyIndex.label")}
       style={railStyle}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onClickCapture={handleClickCapture}
     >
-      <View pointerEvents="none" style={styles.track} />
       {visibleEntries.map((entry, index) => (
         <ConversationHistoryIndexMarker
           key={entry.id}
           entry={entry}
           fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
           isActive={activeId === entry.id}
+          isPointerHovered={hoveredIndex === index}
+          pointerFraction={pointerFraction}
+          reduceMotion={reduceMotion}
           viewportRef={viewportRef}
           onNavigate={onNavigate}
         />
@@ -225,16 +315,7 @@ export function ConversationHistoryIndex({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  track: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 8,
-    width: 2,
-    backgroundColor: theme.colors.border,
-    opacity: 0.7,
-  },
-  tickInactive: {
+  tick: {
     width: 8,
     height: 1,
     borderRadius: 999,
@@ -242,22 +323,17 @@ const styles = StyleSheet.create((theme) => ({
     opacity: 0.65,
   },
   tickHovered: {
-    width: 20,
-    height: 1,
-    borderRadius: 999,
     backgroundColor: theme.colors.foreground,
     opacity: 1,
   },
   tickActive: {
-    width: 20,
     height: 2,
-    borderRadius: 999,
     backgroundColor: theme.colors.foreground,
     opacity: 1,
   },
   tooltip: {
     position: "absolute",
-    left: 28,
+    left: 32,
     top: -18,
     width: 280,
     padding: 12,

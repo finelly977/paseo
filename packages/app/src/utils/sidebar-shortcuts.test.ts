@@ -30,6 +30,7 @@ function workspace(input: {
     projectKind: "git",
     workspaceKind: "checkout",
     name: input.name,
+    agentProvider: null,
     title: null,
     currentBranch: null,
     statusBucket: input.statusBucket ?? "done",
