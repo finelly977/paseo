@@ -492,6 +492,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const clearAgentStreamHead = useSessionStore((state) => state.clearAgentStreamHead);
   const setAgentTimelineCursor = useSessionStore((state) => state.setAgentTimelineCursor);
   const setAgentTimelineHasOlder = useSessionStore((state) => state.setAgentTimelineHasOlder);
+  const setAgentConversationIndex = useSessionStore((state) => state.setAgentConversationIndex);
   const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
   const bumpHistorySyncGeneration = useSessionStore((state) => state.bumpHistorySyncGeneration);
   const markAgentHistorySynchronized = useSessionStore(
@@ -736,6 +737,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       const currentTail = session?.agentStreamTail.get(agentId) ?? [];
       const currentHead = session?.agentStreamHead.get(agentId) ?? [];
 
+      if (payload.conversationIndex) {
+        setAgentConversationIndex(serverId, agentId, payload.conversationIndex);
+      }
+
       setAgentTimelineHasOlder(serverId, (prev) => {
         if (prev.get(agentId) === payload.hasOlder) {
           return prev;
@@ -806,6 +811,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       setAgentStreamTail,
       setAgentTimelineCursor,
       setAgentTimelineHasOlder,
+      setAgentConversationIndex,
       setInitializingAgents,
     ],
   );

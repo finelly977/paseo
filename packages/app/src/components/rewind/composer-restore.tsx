@@ -7,14 +7,20 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import type { UserComposerAttachment } from "@/attachments/types";
 
 interface RewindComposerRestoreContextValue {
-  restoreTextIfComposerEmpty: (text: string) => void;
+  restoreDraftIfComposerEmpty: (input: {
+    text: string;
+    attachments: UserComposerAttachment[];
+  }) => void;
 }
 
 interface RewindComposerRestoreProviderProps {
   text: string;
   setText: (text: string) => void;
+  attachments: UserComposerAttachment[];
+  setAttachments: (attachments: UserComposerAttachment[]) => void;
   children: ReactNode;
 }
 
@@ -30,31 +36,57 @@ export function restoreComposerTextIfEmpty(input: {
   return input.rewoundText;
 }
 
+export function restoreComposerDraftIfEmpty(input: {
+  currentText: string;
+  currentAttachments: UserComposerAttachment[];
+  rewoundText: string;
+  rewoundAttachments: UserComposerAttachment[];
+}): { text: string; attachments: UserComposerAttachment[] } {
+  if (input.currentText.length > 0 || input.currentAttachments.length > 0) {
+    return { text: input.currentText, attachments: input.currentAttachments };
+  }
+  return { text: input.rewoundText, attachments: input.rewoundAttachments };
+}
+
 export function RewindComposerRestoreProvider({
   text,
   setText,
+  attachments,
+  setAttachments,
   children,
 }: RewindComposerRestoreProviderProps) {
   const textRef = useRef(text);
+  const attachmentsRef = useRef(attachments);
 
   useEffect(() => {
     textRef.current = text;
   }, [text]);
 
-  const restoreTextIfComposerEmpty = useCallback(
-    (rewoundText: string) => {
-      const nextText = restoreComposerTextIfEmpty({
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  const restoreDraftIfComposerEmpty = useCallback(
+    (rewound: { text: string; attachments: UserComposerAttachment[] }) => {
+      const restored = restoreComposerDraftIfEmpty({
         currentText: textRef.current,
-        rewoundText,
+        currentAttachments: attachmentsRef.current,
+        rewoundText: rewound.text,
+        rewoundAttachments: rewound.attachments,
       });
-      if (nextText !== textRef.current) {
-        setText(nextText);
+      if (restored.text !== textRef.current) {
+        textRef.current = restored.text;
+        setText(restored.text);
+      }
+      if (restored.attachments !== attachmentsRef.current) {
+        attachmentsRef.current = restored.attachments;
+        setAttachments(restored.attachments);
       }
     },
-    [setText],
+    [setAttachments, setText],
   );
 
-  const value = useMemo(() => ({ restoreTextIfComposerEmpty }), [restoreTextIfComposerEmpty]);
+  const value = useMemo(() => ({ restoreDraftIfComposerEmpty }), [restoreDraftIfComposerEmpty]);
 
   return (
     <RewindComposerRestoreContext.Provider value={value}>

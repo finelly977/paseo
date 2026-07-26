@@ -1229,7 +1229,12 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   const contentContainer = <View style={styles.contentContainer}>{streamContent}</View>;
 
   return (
-    <RewindComposerRestoreProvider text={agentInputDraft.text} setText={agentInputDraft.setText}>
+    <RewindComposerRestoreProvider
+      text={agentInputDraft.text}
+      setText={agentInputDraft.setText}
+      attachments={agentInputDraft.attachments}
+      setAttachments={agentInputDraft.setAttachments}
+    >
       <View style={styles.root}>
         <FileDropZone style={styles.container} disabled={isArchivingCurrentAgent}>
           {contentContainer}

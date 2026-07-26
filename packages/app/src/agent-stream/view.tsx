@@ -103,7 +103,13 @@ import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tab
 import { toErrorMessage } from "@/utils/error-messages";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { ConversationHistoryIndex } from "./history-index";
-import { buildConversationHistoryIndex, getStreamItemDomId } from "./history-index-model";
+import {
+  buildConversationHistoryIndex,
+  buildConversationHistoryIndexFromSummaries,
+  getStreamItemDomId,
+  type ConversationHistoryIndexEntry,
+} from "./history-index-model";
+import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
 import { isStandaloneMarkdownImage } from "./provider-image-message-model";
 
@@ -270,6 +276,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 ];
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
+const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 
 function buildChatHistoryAttachment(input: {
@@ -363,6 +370,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
+    const [pendingHistoryNavigation, setPendingHistoryNavigation] =
+      useState<ConversationHistoryIndexEntry | null>(null);
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
     const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
 
@@ -374,6 +383,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
     const streamHead = providedStreamHead ?? sessionStreamHead;
+    const conversationIndexSummaries = useSessionStore(
+      (state) =>
+        state.sessions[resolvedServerId]?.agentConversationIndex.get(agentId) ??
+        EMPTY_CONVERSATION_INDEX,
+    );
     const supportsAgentForkContext = useSessionStore(
       (state) =>
         !readOnly &&
@@ -416,6 +430,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
       setExpandedToolCallGroupIds(new Set());
+      setPendingHistoryNavigation(null);
     }, [agentId]);
 
     const handleInlinePathPress = useStableEvent(
@@ -608,7 +623,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
       ],
     );
-    const historyIndexEntries = useMemo(() => {
+    const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
       const seen = new Set<string>();
       for (const layoutItem of [...streamLayout.history, ...streamLayout.liveHead]) {
@@ -620,6 +635,111 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }
       return buildConversationHistoryIndex(items);
     }, [streamLayout.history, streamLayout.liveHead]);
+    const historyIndexEntries = useMemo(() => {
+      if (conversationIndexSummaries.length === 0) {
+        return loadedHistoryIndexEntries.slice(-50);
+      }
+
+      const summaries = buildConversationHistoryIndexFromSummaries(conversationIndexSummaries);
+      const loadedBySeq = new Map(
+        loadedHistoryIndexEntries.flatMap((entry) =>
+          entry.seqStart === undefined ? [] : ([[entry.seqStart, entry]] as const),
+        ),
+      );
+      const indexed: ConversationHistoryIndexEntry[] = [];
+      for (const entry of summaries) {
+        const loaded = entry.seqStart === undefined ? undefined : loadedBySeq.get(entry.seqStart);
+        indexed.push(loaded ? { ...entry, id: loaded.id } : entry);
+      }
+      const newestIndexedSeq = indexed.at(-1)?.seqStart ?? -1;
+      const liveEntries = loadedHistoryIndexEntries.filter(
+        (entry) => entry.seqStart === undefined || entry.seqStart > newestIndexedSeq,
+      );
+      const recentEntries = [...indexed, ...liveEntries].slice(-50);
+      const reindexed: ConversationHistoryIndexEntry[] = [];
+      for (const [sourceIndex, entry] of recentEntries.entries()) {
+        reindexed.push({ ...entry, sourceIndex });
+      }
+      return reindexed;
+    }, [conversationIndexSummaries, loadedHistoryIndexEntries]);
+
+    const findLoadedHistoryAnchorId = useCallback(
+      (entry: ConversationHistoryIndexEntry): string | null => {
+        const session = useSessionStore.getState().sessions[resolvedServerId];
+        const items = [
+          ...(session?.agentStreamTail.get(agentId) ?? []),
+          ...(session?.agentStreamHead.get(agentId) ?? []),
+        ];
+        const match = items.find(
+          (item) =>
+            item.kind === "user_message" &&
+            (item.id === entry.id ||
+              (entry.seqStart !== undefined && item.timelineCursor?.seq === entry.seqStart)),
+        );
+        return match?.id ?? null;
+      },
+      [agentId, resolvedServerId],
+    );
+
+    useEffect(() => {
+      if (!pendingHistoryNavigation) {
+        return;
+      }
+      const loaded = loadedHistoryIndexEntries.find(
+        (entry) =>
+          entry.id === pendingHistoryNavigation.id ||
+          (entry.seqStart !== undefined && entry.seqStart === pendingHistoryNavigation.seqStart),
+      );
+      if (!loaded) {
+        return;
+      }
+      viewportRef.current?.scrollToItem(loaded.id);
+      setPendingHistoryNavigation(null);
+    }, [loadedHistoryIndexEntries, pendingHistoryNavigation]);
+
+    const navigateHistoryIndex = useCallback(
+      async (entry: ConversationHistoryIndexEntry) => {
+        const loaded = loadedHistoryIndexEntries.find(
+          (candidate) =>
+            candidate.id === entry.id ||
+            (candidate.seqStart !== undefined && candidate.seqStart === entry.seqStart),
+        );
+        if (loaded) {
+          setPendingHistoryNavigation(null);
+          viewportRef.current?.scrollToItem(loaded.id);
+          return;
+        }
+        if (entry.seqStart === undefined || historyPagination) {
+          return;
+        }
+
+        setPendingHistoryNavigation(entry);
+        for (;;) {
+          const before = useSessionStore
+            .getState()
+            .sessions[resolvedServerId]?.agentTimelineCursor.get(agentId)?.startSeq;
+          await agentHistoryPagination.loadOlder();
+          const anchorId = findLoadedHistoryAnchorId(entry);
+          if (anchorId) {
+            return;
+          }
+          const session = useSessionStore.getState().sessions[resolvedServerId];
+          const after = session?.agentTimelineCursor.get(agentId)?.startSeq;
+          if (session?.agentTimelineHasOlder.get(agentId) !== true || after === before) {
+            setPendingHistoryNavigation(null);
+            return;
+          }
+        }
+      },
+      [
+        agentHistoryPagination,
+        agentId,
+        findLoadedHistoryAnchorId,
+        historyPagination,
+        loadedHistoryIndexEntries,
+        resolvedServerId,
+      ],
+    );
     useImperativeHandle(
       ref,
       () => ({
@@ -676,6 +796,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             messageId={item.id}
             message={item.text}
             images={item.images}
+            providerImages={item.providerImages}
             attachments={item.attachments}
             timestamp={item.timestamp.getTime()}
             capabilities={context.capabilities}
@@ -1041,7 +1162,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       <ToolCallSheetProvider>
         <View style={stylesheet.container}>
           {isWeb && !isMobile ? (
-            <ConversationHistoryIndex entries={historyIndexEntries} viewportRef={viewportRef} />
+            <ConversationHistoryIndex
+              entries={historyIndexEntries}
+              viewportRef={viewportRef}
+              onNavigate={navigateHistoryIndex}
+            />
           ) : null}
           <MessageOuterSpacingProvider disableOuterSpacing>
             {streamRenderStrategy.render({

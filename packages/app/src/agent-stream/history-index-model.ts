@@ -12,6 +12,15 @@ export interface ConversationHistoryIndexEntry {
   title: string;
   preview: string;
   sourceIndex: number;
+  seqStart?: number;
+}
+
+export interface ConversationHistoryIndexSummary {
+  messageId: string | null;
+  clientMessageId: string | null;
+  text: string;
+  assistantPreview: string;
+  seqStart: number;
 }
 
 function normalizePreviewText(text: string): string {
@@ -77,9 +86,24 @@ export function buildConversationHistoryIndex(
       title: getUserTitle(item),
       preview: getTurnPreview(items, index),
       sourceIndex: index,
+      ...(item.timelineCursor ? { seqStart: item.timelineCursor.seq } : {}),
     });
   }
   return entries;
+}
+
+export function buildConversationHistoryIndexFromSummaries(
+  summaries: readonly ConversationHistoryIndexSummary[],
+): ConversationHistoryIndexEntry[] {
+  return summaries.map((summary, index) => ({
+    id: summary.messageId ?? summary.clientMessageId ?? `timeline-user-${summary.seqStart}`,
+    title:
+      truncate(normalizePreviewText(summary.text.split(/\r?\n/u)[0] ?? ""), 72) ||
+      i18n.t("agentStream.historyIndex.untitled"),
+    preview: truncate(normalizePreviewText(summary.assistantPreview), 220),
+    sourceIndex: index,
+    seqStart: summary.seqStart,
+  }));
 }
 
 /**

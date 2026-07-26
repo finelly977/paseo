@@ -99,6 +99,7 @@ import {
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { buildAgentConversationIndex } from "./agent/agent-conversation-index.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -6093,6 +6094,9 @@ export class Session {
         selectedTimeline.endSeq !== null
           ? { epoch: selectedTimeline.timeline.epoch, seq: selectedTimeline.endSeq }
           : null;
+      const conversationIndex = buildAgentConversationIndex(
+        this.agentManager.fetchTimeline(msg.agentId, { direction: "tail", limit: 0 }).rows,
+      );
 
       this.emit({
         type: "fetch_agent_timeline_response",
@@ -6122,6 +6126,7 @@ export class Session {
               ? entry.collapsed
               : entry.collapsed.filter((value) => value !== "reasoning_merge"),
           })),
+          conversationIndex,
           error: null,
         },
       });
@@ -6148,6 +6153,7 @@ export class Session {
           hasOlder: false,
           hasNewer: false,
           entries: [],
+          conversationIndex: [],
           error: error instanceof Error ? error.message : String(error),
         },
       });

@@ -337,8 +337,19 @@ export interface CompactionTimelineItem {
   preTokens?: number;
 }
 
+export interface AgentUserMessageImage {
+  path: string;
+  mimeType?: string;
+}
+
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      images?: AgentUserMessageImage[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

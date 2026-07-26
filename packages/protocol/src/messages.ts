@@ -571,6 +571,14 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    images: z
+      .array(
+        z.object({
+          path: z.string(),
+          mimeType: z.string().optional(),
+        }),
+      )
+      .optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -3478,6 +3486,19 @@ export const FetchAgentTimelineResponseMessageSchema = z.object({
     hasOlder: z.boolean(),
     hasNewer: z.boolean(),
     entries: z.array(AgentTimelineEntryPayloadSchema),
+    conversationIndex: z
+      .array(
+        z.object({
+          messageId: z.string().nullable(),
+          clientMessageId: z.string().nullable(),
+          text: z.string(),
+          assistantPreview: z.string(),
+          timestamp: z.string(),
+          seqStart: z.number().int().nonnegative(),
+        }),
+      )
+      .max(50)
+      .optional(),
     error: z.string().nullable(),
   }),
 });

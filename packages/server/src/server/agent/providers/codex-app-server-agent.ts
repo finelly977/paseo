@@ -1039,19 +1039,86 @@ export function toAgentUsage(tokenUsage: unknown): AgentUsage | undefined {
   };
 }
 
-function extractUserText(content: unknown): string | null {
-  if (!Array.isArray(content)) return null;
+const CODEX_USER_IMAGE_OPEN_TAG = /^\s*<image\b[^>]*\bpath="([^"]+)"[^>]*>\s*$/u;
+const CODEX_USER_IMAGE_CLOSE_TAG = /^\s*<\/image>\s*$/u;
+
+function imageMimeTypeFromPath(imagePath: string): string | undefined {
+  switch (path.extname(imagePath).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    default:
+      return undefined;
+  }
+}
+
+function extractUserContent(content: unknown): {
+  text: string;
+  images: Array<{ path: string; mimeType?: string }>;
+} {
+  if (!Array.isArray(content)) return { text: "", images: [] };
   const parts: string[] = [];
+  const images: Array<{ path: string; mimeType?: string }> = [];
+  const seenImagePaths = new Set<string>();
+  let pendingWrappedImagePath: string | null = null;
+  const appendImage = (imagePath: string) => {
+    if (seenImagePaths.has(imagePath)) return;
+    seenImagePaths.add(imagePath);
+    const mimeType = imageMimeTypeFromPath(imagePath);
+    images.push({ path: imagePath, ...(mimeType ? { mimeType } : {}) });
+  };
   for (const item of content) {
     const record = toObjectRecord(item);
     if (!record) {
       continue;
     }
     if (record.type === "text" && typeof record.text === "string") {
+      const imageTag = CODEX_USER_IMAGE_OPEN_TAG.exec(record.text);
+      if (imageTag?.[1]) {
+        pendingWrappedImagePath = imageTag[1];
+        continue;
+      }
+      if (CODEX_USER_IMAGE_CLOSE_TAG.test(record.text)) {
+        if (pendingWrappedImagePath) {
+          appendImage(pendingWrappedImagePath);
+          pendingWrappedImagePath = null;
+        }
+        continue;
+      }
       parts.push(record.text);
+      continue;
+    }
+    if (record.type === "image") {
+      const imageData = nonEmptyString(record.imageUrl ?? record.image_url);
+      if (imageData?.startsWith("data:image/")) {
+        appendImage(materializeProviderImage({ data: imageData, mimeType: null }).path);
+        pendingWrappedImagePath = null;
+        continue;
+      }
+      if (pendingWrappedImagePath) {
+        appendImage(pendingWrappedImagePath);
+        pendingWrappedImagePath = null;
+      }
+      continue;
+    }
+    if (
+      (record.type === "localImage" || record.type === "local_image") &&
+      typeof record.path === "string" &&
+      record.path.length > 0
+    ) {
+      appendImage(record.path);
     }
   }
-  return parts.length > 0 ? parts.join("\n") : null;
+  if (pendingWrappedImagePath) {
+    appendImage(pendingWrappedImagePath);
+  }
+  return { text: parts.join("\n"), images };
 }
 
 function normalizePlanMarkdown(text: string): string {
@@ -1705,12 +1772,13 @@ function mapCodexThreadUserMessageItem(
   if (!includeUserMessage) {
     return null;
   }
-  const text = extractUserText(normalizedItem.content) ?? "";
+  const content = extractUserContent(normalizedItem.content);
   const messageId = nonEmptyString(normalizedItem.id);
   return {
     type: "user_message",
-    text,
+    text: content.text,
     ...(messageId ? { messageId } : {}),
+    ...(content.images.length > 0 ? { images: content.images } : {}),
   };
 }
 

@@ -9,6 +9,7 @@ import { useSessionStore } from "@/stores/session-store";
 import { shouldRestoreComposerForRewindMode } from "./rewind-mode";
 import { clearOptimisticUserMessages } from "@/types/stream";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import type { UserMessageImageAttachment } from "@/types/stream";
 
 interface UseRewindAgentMutationInput {
   serverId?: string;
@@ -20,6 +21,7 @@ interface UseRewindAgentMutationInput {
 interface RewindAgentInput {
   mode: RewindMode;
   rewoundText: string;
+  rewoundImages: UserMessageImageAttachment[];
 }
 
 export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
@@ -60,7 +62,10 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
       if (!shouldRestoreComposerForRewindMode(variables.mode)) {
         return;
       }
-      composerRestore?.restoreTextIfComposerEmpty(variables.rewoundText);
+      composerRestore?.restoreDraftIfComposerEmpty({
+        text: variables.rewoundText,
+        attachments: variables.rewoundImages.map((metadata) => ({ kind: "image", metadata })),
+      });
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : t("rewind.errors.failed"));

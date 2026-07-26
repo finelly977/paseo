@@ -95,9 +95,9 @@ export function useLoadOlderAgentHistory({
     [agentId, serverId, setOlderFetchInFlight],
   );
 
-  const loadOlder = useCallback(() => {
+  const loadOlder = useCallback(async () => {
     const session = useSessionStore.getState().sessions[serverId];
-    void loadOlderAgentHistory(agentId, {
+    await loadOlderAgentHistory(agentId, {
       client: session?.client
         ? {
             fetchAgentTimeline: (timelineAgentId, request) =>

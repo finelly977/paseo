@@ -22,9 +22,9 @@ describe("shared messages stream parsing", () => {
         reset: false,
         staleCursor: false,
         gap: false,
-        window: { minSeq: 1, maxSeq: 2, nextSeq: 3 },
+        window: { minSeq: 1, maxSeq: 3, nextSeq: 4 },
         startCursor: { epoch: "epoch-1", seq: 1 },
-        endCursor: { epoch: "epoch-1", seq: 2 },
+        endCursor: { epoch: "epoch-1", seq: 3 },
         hasOlder: false,
         hasNewer: false,
         entries: [
@@ -37,13 +37,44 @@ describe("shared messages stream parsing", () => {
             sourceSeqRanges: [{ startSeq: 1, endSeq: 2 }],
             collapsed: ["assistant_merge"],
           },
+          {
+            provider: "codex",
+            item: {
+              type: "user_message",
+              text: "查看图片",
+              messageId: "user-2",
+              images: [{ path: "C:\\Temp\\history.png", mimeType: "image/png" }],
+            },
+            timestamp: "2026-02-08T20:11:00.000Z",
+            seqStart: 3,
+            seqEnd: 3,
+            sourceSeqRanges: [{ startSeq: 3, endSeq: 3 }],
+            collapsed: [],
+          },
+        ],
+        conversationIndex: [
+          {
+            messageId: "user-2",
+            clientMessageId: null,
+            text: "查看图片",
+            assistantPreview: "已经查看。",
+            timestamp: "2026-02-08T20:11:00.000Z",
+            seqStart: 3,
+          },
         ],
         error: null,
       },
     });
 
-    expect(parsed.payload.entries).toHaveLength(1);
+    expect(parsed.payload.entries).toHaveLength(2);
     expect(parsed.payload.entries[0]?.item.type).toBe("assistant_message");
+    expect(parsed.payload.entries[1]?.item).toMatchObject({
+      type: "user_message",
+      images: [{ path: "C:\\Temp\\history.png", mimeType: "image/png" }],
+    });
+    expect(parsed.payload.conversationIndex).toEqual([
+      expect.objectContaining({ messageId: "user-2", seqStart: 3 }),
+    ]);
   });
 
   it("parses legacy worktree setup timeline entries without per-command log", () => {

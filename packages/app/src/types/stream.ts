@@ -1,4 +1,8 @@
-import type { AgentProvider, ToolCallDetail } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentProvider,
+  AgentUserMessageImage,
+  ToolCallDetail,
+} from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment, AgentStreamEventPayload } from "@getpaseo/protocol/messages";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { extractTaskEntriesFromToolCall } from "../utils/tool-call-parsers";
@@ -90,8 +94,10 @@ export interface UserMessageItem {
   clientMessageId?: string;
   text: string;
   timestamp: Date;
+  timelineCursor?: TimelinePosition;
   optimistic?: true;
   images?: UserMessageImageAttachment[];
+  providerImages?: AgentUserMessageImage[];
   attachments?: AgentAttachment[];
 }
 
@@ -243,6 +249,8 @@ function buildUserMessageItem(input: {
   clientMessageId?: string;
   text: string;
   timestamp: Date;
+  timelineCursor?: TimelinePosition;
+  providerImages?: AgentUserMessageImage[];
   optimistic?: UserMessageItem | null;
 }): UserMessageItem {
   if (input.optimistic) {
@@ -252,11 +260,17 @@ function buildUserMessageItem(input: {
       ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
       text: input.optimistic.text,
       timestamp: input.optimistic.timestamp,
+      ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
       ...(input.optimistic.images && input.optimistic.images.length > 0
         ? { images: input.optimistic.images }
         : {}),
       ...(input.optimistic.attachments && input.optimistic.attachments.length > 0
         ? { attachments: input.optimistic.attachments }
+        : {}),
+      ...(input.providerImages &&
+      input.providerImages.length > 0 &&
+      (!input.optimistic.images || input.optimistic.images.length === 0)
+        ? { providerImages: input.providerImages }
         : {}),
     };
   }
@@ -267,6 +281,10 @@ function buildUserMessageItem(input: {
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     text: input.text,
     timestamp: input.timestamp,
+    ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
+    ...(input.providerImages && input.providerImages.length > 0
+      ? { providerImages: input.providerImages }
+      : {}),
   };
 }
 
@@ -358,13 +376,16 @@ function appendUserMessage(
   source: StreamUpdateSource,
   messageId?: string,
   clientMessageId?: string,
+  providerImages?: AgentUserMessageImage[],
+  timelineCursor?: TimelinePosition,
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
-  if (!hasContent) {
+  if (!hasContent && (!providerImages || providerImages.length === 0)) {
     return state;
   }
 
-  const chunkSeed = chunk.trim() || chunk;
+  const chunkSeed =
+    chunk.trim() || providerImages?.map((image) => image.path).join("\n") || "image";
   const entryId = messageId ?? createUniqueTimelineId(state, "user", chunkSeed, timestamp);
   const optimisticIndex = state.findIndex(
     (entry) =>
@@ -381,6 +402,8 @@ function appendUserMessage(
     clientMessageId,
     text: chunk,
     timestamp,
+    timelineCursor,
+    providerImages,
     optimistic,
   });
 
@@ -898,6 +921,8 @@ function reduceTimelineEvent(
           source,
           item.messageId,
           item.clientMessageId,
+          item.images,
+          timelineCursor,
         ),
       );
     case "assistant_message":

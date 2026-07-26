@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { restoreComposerTextIfEmpty } from "./composer-restore";
+import { restoreComposerDraftIfEmpty, restoreComposerTextIfEmpty } from "./composer-restore";
 import { shouldRestoreComposerForRewindMode } from "./rewind-mode";
 
 describe("restoreComposerTextIfEmpty", () => {
@@ -19,6 +19,30 @@ describe("restoreComposerTextIfEmpty", () => {
         rewoundText: "message before rewind",
       }),
     ).toBe("keep this draft");
+  });
+});
+
+describe("restoreComposerDraftIfEmpty", () => {
+  test("restores the rewound text and image attachments together", () => {
+    const image = {
+      kind: "image" as const,
+      metadata: {
+        id: "rewound-image",
+        mimeType: "image/png",
+        storageType: "desktop-file" as const,
+        storageKey: "C:\\attachments\\rewound-image.png",
+        createdAt: 1,
+      },
+    };
+
+    expect(
+      restoreComposerDraftIfEmpty({
+        currentText: "",
+        currentAttachments: [],
+        rewoundText: "message before rewind",
+        rewoundAttachments: [image],
+      }),
+    ).toEqual({ text: "message before rewind", attachments: [image] });
   });
 });
 

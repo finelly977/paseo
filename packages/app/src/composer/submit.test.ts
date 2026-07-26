@@ -56,6 +56,10 @@ describe("submitAgentInput", () => {
     deferred.resolve();
 
     await expect(submitPromise).resolves.toBe("submitted");
+    expect(setUserInput).toHaveBeenCalledTimes(2);
+    expect(setUserInput).toHaveBeenNthCalledWith(2, "");
+    expect(setAttachments).toHaveBeenCalledTimes(2);
+    expect(setAttachments).toHaveBeenNthCalledWith(2, []);
     expect(clearDraft).toHaveBeenCalledWith("sent");
   });
 

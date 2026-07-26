@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import {
   buildConversationHistoryIndex,
+  buildConversationHistoryIndexFromSummaries,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 
@@ -62,5 +63,27 @@ describe("conversation history index model", () => {
       { id: "u-2", title: "二", preview: "", sourceIndex: 1 },
     ];
     expect(sampleConversationHistoryIndex(entries, 1).map((entry) => entry.id)).toEqual(["u-1"]);
+  });
+
+  it("builds lightweight entries from the server conversation index", () => {
+    expect(
+      buildConversationHistoryIndexFromSummaries([
+        {
+          messageId: "user-42",
+          clientMessageId: null,
+          text: "检查历史索引\n只保留首行标题",
+          assistantPreview: "已经完成 **检查**。",
+          seqStart: 420,
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "user-42",
+        title: "检查历史索引",
+        preview: "已经完成 检查。",
+        sourceIndex: 0,
+        seqStart: 420,
+      },
+    ]);
   });
 });

@@ -17,6 +17,7 @@ import type { StreamViewportHandle } from "./strategy";
 export interface ConversationHistoryIndexProps {
   entries: readonly ConversationHistoryIndexEntry[];
   viewportRef: RefObject<StreamViewportHandle | null>;
+  onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }
 
 const railStyle: CSSProperties = {
@@ -43,6 +44,7 @@ interface ConversationHistoryIndexMarkerProps {
   fraction: number;
   isActive: boolean;
   viewportRef: RefObject<StreamViewportHandle | null>;
+  onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }
 
 function ConversationHistoryIndexMarker({
@@ -50,6 +52,7 @@ function ConversationHistoryIndexMarker({
   fraction,
   isActive,
   viewportRef,
+  onNavigate,
 }: ConversationHistoryIndexMarkerProps) {
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
@@ -79,8 +82,12 @@ function ConversationHistoryIndexMarker({
   const handleFocus = useCallback(() => setIsHovered(true), []);
   const handleBlur = useCallback(() => setIsHovered(false), []);
   const handlePress = useCallback(() => {
+    if (onNavigate) {
+      void onNavigate(entry);
+      return;
+    }
     viewportRef.current?.scrollToItem(entry.id);
-  }, [entry.id, viewportRef]);
+  }, [entry, onNavigate, viewportRef]);
 
   return (
     <Pressable
@@ -110,7 +117,11 @@ function ConversationHistoryIndexMarker({
   );
 }
 
-export function ConversationHistoryIndex({ entries, viewportRef }: ConversationHistoryIndexProps) {
+export function ConversationHistoryIndex({
+  entries,
+  viewportRef,
+  onNavigate,
+}: ConversationHistoryIndexProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -206,6 +217,7 @@ export function ConversationHistoryIndex({ entries, viewportRef }: ConversationH
           fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
           isActive={activeId === entry.id}
           viewportRef={viewportRef}
+          onNavigate={onNavigate}
         />
       ))}
     </div>

@@ -24,6 +24,7 @@ import {
   mapCodexPatchNotificationToToolCall,
   mapCodexPlanToToolCall,
   normalizeCodexOutputSchema,
+  threadItemToTimeline,
   toAgentUsage,
 } from "./codex-app-server-agent.js";
 import { CodexAppServerClient } from "./codex/app-server-transport.js";
@@ -3452,6 +3453,34 @@ describe("Codex app-server provider", () => {
     } finally {
       await session.close();
     }
+  });
+
+  test("restores Codex user images without exposing image wrapper paths as message text", () => {
+    const timelineItem = threadItemToTimeline({
+      type: "userMessage",
+      id: "user-with-image",
+      content: [
+        { type: "text", text: "Check this screenshot." },
+        {
+          type: "text",
+          text: '<image name=[Image #1] path="C:\\Temp\\missing-paseo-image.png">',
+        },
+        { type: "image", imageUrl: `data:image/png;base64,${ONE_BY_ONE_PNG_BASE64}` },
+        { type: "text", text: "</image>" },
+      ],
+    });
+
+    expect(timelineItem).toMatchObject({
+      type: "user_message",
+      text: "Check this screenshot.",
+      messageId: "user-with-image",
+    });
+    if (timelineItem?.type !== "user_message") {
+      throw new Error("预期得到已恢复的 Codex 用户消息");
+    }
+    expect(timelineItem.images).toHaveLength(1);
+    expect(timelineItem.images?.[0]?.mimeType).toBe("image/png");
+    expect(existsSync(timelineItem.images?.[0]?.path ?? "")).toBe(true);
   });
 
   test("uses Codex turn timestamps for timestamp-less persisted history items", async () => {

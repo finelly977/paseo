@@ -59,6 +59,7 @@
 - Codex 直接在当前线程中原地回退对话，不创建新的线程副本；Codex 的对话回退不会撤销已经写入磁盘的文件修改。
 - Claude 使用原生分支能力创建回退后的新会话，并把回退前的原会话标记为已归档，避免原分支继续出现在正常导入列表中。
 - Claude 的“同时回退对话和文件”仍先执行文件检查点回退，再切换到新的会话分支。
+- 对话回退会把目标用户消息的文本和图片一起恢复到输入框；重新发送成功后会再次确认清空输入内容和附件，避免已发送内容残留。
 
 主要涉及：
 
@@ -66,6 +67,7 @@
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
 - `packages/server/src/server/agent/providers/claude/rewind.ts`
 - `packages/server/src/server/agent/providers/claude/agent.ts`
+- `packages/app/src/components/rewind/`
 
 ### 5. 对话 Markdown 使用更紧凑的排版密度
 
@@ -87,8 +89,8 @@
 ### 6. 对话历史索引与消息跳转
 
 - 桌面网页端在整个对话视口的最左侧显示历史索引刻度，不随居中的消息文字区域移动；每个刻度对应一轮用户消息。
-- 悬停或聚焦刻度时显示用户消息标题和助手回复摘要，点击后跳转到对应消息；长历史最多显示 60 个刻度，首尾保留并均匀采样。
-- 虚拟化历史使用虚拟列表定位，已挂载消息使用 DOM 滚动定位，不一次性额外渲染全部历史内容。
+- 索引独立读取最近 50 轮对话的轻量标题、助手摘要和时间线位置，不受首次只加载 40 条时间线的限制，也不会为了显示索引把全部工具记录载入前端内存。
+- 悬停或聚焦刻度时显示用户消息标题和助手回复摘要；点击尚未加载的较早对话时按 40 条一页加载到目标位置后跳转，已加载消息直接定位。
 
 主要涉及：
 
@@ -96,6 +98,8 @@
 - `packages/app/src/agent-stream/history-index.web.tsx`
 - `packages/app/src/agent-stream/strategy-web.tsx`
 - `packages/app/src/agent-stream/view.tsx`
+- `packages/server/src/server/agent/agent-conversation-index.ts`
+- `packages/protocol/src/messages.ts`
 
 ### 7. 窗口焦点感知与智能体完成通知可靠性
 
@@ -148,6 +152,7 @@
 - Codex 的 Thinking/reasoning 摘要不进入新时间线，客户端也会过滤旧时间线中的同类内容，避免历史导入和实时对话继续显示内部摘要。
 - Codex 助手消息末尾供 Codex App 使用的 Git 界面指令不会作为普通正文显示；Markdown 代码块内用于说明的相同文本仍会保留。
 - Codex 查看图片产生的纯图片工具结果默认折叠为紧凑入口，用户可以按需展开或再次收起；用户消息附件以及包含正文的普通助手图片不受影响。
+- 重新进入 Codex 老会话时，用户消息中的图片包装路径不会再显示成正文；图片会作为结构化历史附件按需恢复，并可在回退后重新发送。
 - Codex 权限选择器支持“自定义 (config.toml)”模式，实际读取并应用用户配置中的审批策略、审批人、沙盒类型、额外可写目录和工作区网络权限；配置结构非法时明确报错，不会静默退回默认权限。
 - 侧边栏中只有一个根智能体的工作区提供“重新加载”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话。
 - 移除只删除 Paseo 自己的会话记录以及随之变空的工作区记录，不调用智能体提供方的归档或删除能力，也不修改原始会话文件；原生会话之后仍可从导入页面重新导入。
@@ -159,6 +164,7 @@
 - `packages/protocol/src/provider-manifest.ts`
 - `packages/app/src/agent-stream/provider-image-message.tsx`
 - `packages/app/src/agent-stream/provider-image-message-model.ts`
+- `packages/app/src/attachments/provider-user-image.ts`
 - `packages/app/src/types/stream.ts`
 - `packages/app/src/utils/codex-visible-message.ts`
 - `packages/app/src/utils/aggregate-agents.ts`

@@ -63,9 +63,9 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "reac
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
-import type { TodoEntry, UserMessageImageAttachment } from "@/types/stream";
+import type { StreamItem, TodoEntry, UserMessageImageAttachment } from "@/types/stream";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
-import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
+import type { AgentUserMessageImage, ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
 import { resolveToolCallIcon } from "@/utils/tool-call-icon";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
@@ -111,6 +111,8 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { AttachmentLightbox } from "@/components/attachment-lightbox";
+import { resolveProviderUserImage } from "@/attachments/provider-user-image";
+import { useSessionStore } from "@/stores/session-store";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { isWeb, isNative } from "@/constants/platform";
 import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
@@ -132,6 +134,7 @@ interface UserMessageProps {
   messageId?: string;
   message: string;
   images?: UserMessageImageAttachment[];
+  providerImages?: AgentUserMessageImage[];
   attachments?: AgentAttachment[];
   timestamp: number;
   capabilities?: AgentCapabilityFlags;
@@ -140,6 +143,8 @@ interface UserMessageProps {
   isLastInGroup?: boolean;
   disableOuterSpacing?: boolean;
 }
+
+const EMPTY_PROVIDER_USER_IMAGES: AgentUserMessageImage[] = [];
 
 const MessageOuterSpacingContext = createContext(false);
 
@@ -450,6 +455,45 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
   );
 }
 
+function useResolvedProviderUserImages(images: readonly AgentUserMessageImage[]): {
+  images: UserMessageImageAttachment[];
+  isLoading: boolean;
+  failed: boolean;
+} {
+  const [resolved, setResolved] = useState<UserMessageImageAttachment[]>([]);
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  useEffect(() => {
+    if (images.length === 0) {
+      setResolved([]);
+      setStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setStatus("loading");
+
+    async function restoreImages() {
+      try {
+        const next = await Promise.all(images.map(resolveProviderUserImage));
+        if (cancelled) return;
+        setResolved(next);
+        setStatus("ready");
+      } catch (error) {
+        console.error("[用户消息] 恢复智能体历史图片失败", { images, error });
+        if (cancelled) return;
+        setResolved([]);
+        setStatus("failed");
+      }
+    }
+
+    void restoreImages();
+    return () => {
+      cancelled = true;
+    };
+  }, [images]);
+
+  return { images: resolved, isLoading: status === "loading", failed: status === "failed" };
+}
+
 interface UserMessageCollapseToggleProps {
   isExpanded: boolean;
   onToggle: () => void;
@@ -500,6 +544,7 @@ export const UserMessage = memo(function UserMessage({
   messageId,
   message,
   images = [],
+  providerImages = EMPTY_PROVIDER_USER_IMAGES,
   attachments = [],
   timestamp,
   capabilities,
@@ -515,7 +560,50 @@ export const UserMessage = memo(function UserMessage({
   const handleLightboxClose = useCallback(() => setLightboxMetadata(null), []);
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
-  const hasImages = images.length > 0;
+  const restoredProviderImages = useResolvedProviderUserImages(providerImages);
+  const allImages = useMemo(() => {
+    const merged = [...images];
+    const imageIds = new Set(images.map((image) => image.id));
+    for (const image of restoredProviderImages.images) {
+      if (!imageIds.has(image.id)) {
+        imageIds.add(image.id);
+        merged.push(image);
+      }
+    }
+    return merged;
+  }, [images, restoredProviderImages.images]);
+  useEffect(() => {
+    if (restoredProviderImages.images.length === 0 || !serverId || !agentId || !messageId) {
+      return;
+    }
+    const store = useSessionStore.getState();
+    const mergeResolvedImages = (streams: Map<string, StreamItem[]>) => {
+      const current = streams.get(agentId);
+      if (!current) return streams;
+      const index = current.findIndex(
+        (item) => item.kind === "user_message" && item.id === messageId && item.providerImages,
+      );
+      const item = current[index];
+      if (index < 0 || !item || item.kind !== "user_message") return streams;
+      const imageIds = new Set(item.images?.map((image) => image.id) ?? []);
+      const nextItem = {
+        ...item,
+        images: [
+          ...(item.images ?? []),
+          ...restoredProviderImages.images.filter((image) => !imageIds.has(image.id)),
+        ],
+        providerImages: undefined,
+      };
+      const nextItems = [...current];
+      nextItems[index] = nextItem;
+      const next = new Map(streams);
+      next.set(agentId, nextItems);
+      return next;
+    };
+    store.setAgentStreamTail(serverId, mergeResolvedImages);
+    store.setAgentStreamHead(serverId, mergeResolvedImages);
+  }, [agentId, messageId, restoredProviderImages.images, serverId]);
+  const hasImages = allImages.length > 0;
   const hasAttachments = attachments.length > 0;
   const shouldCollapse = useMemo(() => shouldCollapseUserMessage(message), [message]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -531,7 +619,11 @@ export const UserMessage = memo(function UserMessage({
   const handleToggleExpanded = useCallback(() => setIsExpanded((expanded) => !expanded), []);
   const getMessageContent = useCallback(() => message, [message]);
   const handleRewind = useCallback(
-    (input: { mode: RewindMode; rewoundText: string }) => {
+    (input: {
+      mode: RewindMode;
+      rewoundText: string;
+      rewoundImages: UserMessageImageAttachment[];
+    }) => {
       return rewindMutation.rewindAgent(input);
     },
     [rewindMutation],
@@ -582,7 +674,7 @@ export const UserMessage = memo(function UserMessage({
         <View style={userMessageStylesheet.bubble}>
           {hasImages ? (
             <View style={imagePreviewContainerStyle}>
-              {images.map((image) => (
+              {allImages.map((image) => (
                 <UserMessageImagePill
                   key={image.id}
                   image={image}
@@ -591,6 +683,11 @@ export const UserMessage = memo(function UserMessage({
                 />
               ))}
             </View>
+          ) : null}
+          {restoredProviderImages.failed ? (
+            <Text style={userMessageStylesheet.timestampText}>
+              {t("message.attachments.imageLoadFailed")}
+            </Text>
           ) : null}
           {hasAttachments ? (
             <View style={attachmentPreviewContainerStyle}>
@@ -632,8 +729,9 @@ export const UserMessage = memo(function UserMessage({
             {capabilities ? (
               <RewindMenu
                 capabilities={capabilities}
-                isPending={rewindMutation.isPending}
+                isPending={rewindMutation.isPending || restoredProviderImages.isLoading}
                 rewoundText={message}
+                rewoundImages={allImages}
                 onRewind={handleRewind}
               />
             ) : null}

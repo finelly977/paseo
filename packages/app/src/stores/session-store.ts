@@ -27,6 +27,7 @@ import type {
   ServerCapabilities,
   WorkspaceDescriptorPayload,
   WorkspaceProjectDescriptorPayload,
+  FetchAgentTimelineResponseMessage,
 } from "@getpaseo/protocol/messages";
 import {
   normalizeWorkspaceOpaqueId,
@@ -322,6 +323,10 @@ export interface AgentTimelineCursorState {
   endSeq: number;
 }
 
+export type AgentConversationIndexEntry = NonNullable<
+  FetchAgentTimelineResponseMessage["payload"]["conversationIndex"]
+>[number];
+
 export interface SessionReplicaTimeline {
   agentId: string;
   items: StreamItem[];
@@ -371,6 +376,7 @@ export interface SessionState {
   agentTimelineCursor: Map<string, AgentTimelineCursorState>;
   agentTimelineHasOlder: Map<string, boolean>;
   agentTimelineOlderFetchInFlight: Map<string, boolean>;
+  agentConversationIndex: Map<string, AgentConversationIndexEntry[]>;
   historySyncGeneration: number;
   agentHistorySyncGeneration: Map<string, number>;
   agentAuthoritativeHistoryApplied: Map<string, boolean>;
@@ -480,6 +486,11 @@ interface SessionStoreActions {
   setAgentTimelineOlderFetchInFlight: (
     serverId: string,
     state: Map<string, boolean> | ((prev: Map<string, boolean>) => Map<string, boolean>),
+  ) => void;
+  setAgentConversationIndex: (
+    serverId: string,
+    agentId: string,
+    entries: AgentConversationIndexEntry[],
   ) => void;
   bumpHistorySyncGeneration: (serverId: string) => void;
   markAgentHistorySynchronized: (serverId: string, agentId: string) => void;
@@ -591,6 +602,7 @@ function createInitialSessionState(
     agentTimelineCursor: new Map(),
     agentTimelineHasOlder: new Map(),
     agentTimelineOlderFetchInFlight: new Map(),
+    agentConversationIndex: new Map(),
     historySyncGeneration: 0,
     agentHistorySyncGeneration: new Map(),
     agentAuthoritativeHistoryApplied: new Map(),
@@ -1186,6 +1198,28 @@ export const useSessionStore = create<SessionStore>()(
             sessions: {
               ...prev.sessions,
               [serverId]: { ...session, agentTimelineOlderFetchInFlight: nextState },
+            },
+          };
+        });
+      },
+
+      setAgentConversationIndex: (serverId, agentId, entries) => {
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session) {
+            return prev;
+          }
+          const current = session.agentConversationIndex.get(agentId);
+          if (current && equal(current, entries)) {
+            return prev;
+          }
+          const next = new Map(session.agentConversationIndex);
+          next.set(agentId, entries);
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: { ...session, agentConversationIndex: next },
             },
           };
         });

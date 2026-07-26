@@ -1283,10 +1283,11 @@ describe("turn lifecycle events", () => {
           text: "server-rendered attachment text",
           messageId: "provider-owned-canonical",
           clientMessageId: optimistic.id,
+          images: [{ path: "C:\\provider\\image.png", mimeType: "image/png" }],
         },
       },
       new Date("2025-01-01T15:03:11Z"),
-      { source: "canonical" },
+      { source: "canonical", timelineCursor: { epoch: "epoch-1", seq: 77 } },
     );
 
     const userMessages = state.filter((item) => item.kind === "user_message");
@@ -1299,6 +1300,33 @@ describe("turn lifecycle events", () => {
     assert.strictEqual(userMessage.optimistic, undefined);
     assert.deepStrictEqual(userMessage.images, [image]);
     assert.deepStrictEqual(userMessage.attachments, [attachment]);
+    assert.strictEqual(userMessage.providerImages, undefined);
+    assert.deepStrictEqual(userMessage.timelineCursor, { epoch: "epoch-1", seq: 77 });
+  });
+
+  it("hydrates an image-only provider user message with its timeline position", () => {
+    const state = reduceStreamUpdate(
+      [],
+      {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "user_message",
+          text: "",
+          messageId: "provider-image-only",
+          images: [{ path: "C:\\provider\\image-only.png", mimeType: "image/png" }],
+        },
+      },
+      new Date("2025-01-01T15:03:12Z"),
+      { source: "canonical", timelineCursor: { epoch: "epoch-1", seq: 78 } },
+    );
+
+    const message = state[0];
+    invariant(message?.kind === "user_message");
+    assert.deepStrictEqual(message.providerImages, [
+      { path: "C:\\provider\\image-only.png", mimeType: "image/png" },
+    ]);
+    assert.deepStrictEqual(message.timelineCursor, { epoch: "epoch-1", seq: 78 });
   });
 
   it("places optimistic user messages through one append helper", () => {

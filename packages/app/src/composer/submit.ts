@@ -61,6 +61,10 @@ export async function submitAgentInput<TAttachment>(
 
   try {
     await input.submitMessage({ message: trimmedMessage, attachments });
+    if (shouldClearOnSubmit) {
+      input.setUserInput("");
+      input.setAttachments([]);
+    }
     input.clearDraft("sent");
     input.setIsProcessing(false);
     return "submitted";
