@@ -4,6 +4,7 @@ import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
   getHistoryIndexWaveScale,
+  resolveHistoryIndexMarkerTop,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 
@@ -86,6 +87,18 @@ describe("conversation history index model", () => {
         seqStart: 420,
       },
     ]);
+  });
+
+  it("snaps marker positions to whole pixels once the rail is measured", () => {
+    // 220px rail, 60 markers: raw offsets land on fractions like 74.576px and would
+    // otherwise be antialiased across two rows, making the hairlines look uneven.
+    expect(resolveHistoryIndexMarkerTop(0.339, 220)).toBe(75);
+    expect(resolveHistoryIndexMarkerTop(0, 220)).toBe(0);
+    expect(resolveHistoryIndexMarkerTop(1, 220)).toBe(220);
+  });
+
+  it("falls back to a percentage offset before the rail has been measured", () => {
+    expect(resolveHistoryIndexMarkerTop(0.25, 0)).toBe("25%");
   });
 
   it("creates a smooth local wave around the pointer", () => {

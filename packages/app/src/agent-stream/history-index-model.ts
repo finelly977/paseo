@@ -139,6 +139,20 @@ export function sampleConversationHistoryIndex(
   return sampled;
 }
 
+/**
+ * 刻度是 1 像素细线，落在小数像素上会被抗锯齿摊成两行，看起来粗细不一。
+ * 量到轨道高度后按整像素定位；测量完成前退回百分比，避免首帧全部堆叠。
+ */
+export function resolveHistoryIndexMarkerTop(
+  fraction: number,
+  railHeight: number,
+): number | `${number}%` {
+  if (railHeight <= 0) {
+    return `${fraction * 100}%`;
+  }
+  return Math.round(fraction * railHeight);
+}
+
 export function getHistoryIndexWaveScale(
   markerFraction: number,
   pointerFraction: number | null,

@@ -15,6 +15,7 @@ import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   getHistoryIndexWaveScale,
   getStreamItemDomId,
+  resolveHistoryIndexMarkerTop,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
@@ -38,6 +39,7 @@ const railStyle: CSSProperties = {
 };
 const ACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: true } as const;
 const INACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: false } as const;
+const MARKER_HIT_HEIGHT = 12;
 
 function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
   const candidate = root?.parentElement?.querySelector('[data-testid="agent-chat-scroll"]');
@@ -47,6 +49,7 @@ function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
 interface ConversationHistoryIndexMarkerProps {
   entry: ConversationHistoryIndexEntry;
   fraction: number;
+  railHeight: number;
   isActive: boolean;
   isPointerHovered: boolean;
   pointerFraction: number | null;
@@ -58,6 +61,7 @@ interface ConversationHistoryIndexMarkerProps {
 function ConversationHistoryIndexMarker({
   entry,
   fraction,
+  railHeight,
   isActive,
   isPointerHovered,
   pointerFraction,
@@ -70,17 +74,17 @@ function ConversationHistoryIndexMarker({
   const markerStyle = useMemo<ViewStyle>(
     () => ({
       position: "absolute",
-      top: `${fraction * 100}%`,
+      top: resolveHistoryIndexMarkerTop(fraction, railHeight),
       left: 0,
       width: 32,
-      height: 12,
+      height: MARKER_HIT_HEIGHT,
       display: "flex",
       alignItems: "flex-start",
       justifyContent: "center",
       paddingLeft: 4,
-      transform: [{ translateY: -6 }],
+      transform: [{ translateY: -MARKER_HIT_HEIGHT / 2 }],
     }),
-    [fraction],
+    [fraction, railHeight],
   );
   const isHighlighted = isPointerHovered || isFocused;
   const waveScale = Math.max(
@@ -90,9 +94,13 @@ function ConversationHistoryIndexMarker({
   const tickWaveStyle = useMemo<CSSProperties>(
     () => ({
       width: 8,
-      height: 2,
+      height: MARKER_HIT_HEIGHT,
       display: "flex",
-      alignItems: "center",
+      // Centring a 1px hairline in an even-height box puts it on a half pixel, so it
+      // antialiases across two rows while the 2px active tick stays crisp. Pin every
+      // tick to the same whole-pixel baseline instead.
+      alignItems: "flex-start",
+      paddingTop: MARKER_HIT_HEIGHT / 2,
       transform: `scaleX(${waveScale})`,
       transformOrigin: "left center",
       transitionProperty: "transform, opacity",
@@ -150,6 +158,7 @@ export function ConversationHistoryIndex({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pointerFraction, setPointerFraction] = useState<number | null>(null);
+  const [railHeight, setRailHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const pointerFrameRef = useRef<number | null>(null);
   const visibleEntries = useMemo(() => sampleConversationHistoryIndex(entries), [entries]);
@@ -172,6 +181,32 @@ export function ConversationHistoryIndex({
     return () => mediaQuery.removeEventListener("change", updatePreference);
   }, []);
 
+  useEffect(() => {
+    const rail = rootRef.current;
+    if (!rail) {
+      return;
+    }
+    const observer = new ResizeObserver((observed) => {
+      const measured = observed[0]?.contentRect.height ?? 0;
+      setRailHeight(measured);
+    });
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, []);
+
+  /** 跳转后收起浮层：指针仍停在轨道上，仅靠 mouseleave 无法结束悬停态。 */
+  const dismissHover = useCallback(() => {
+    if (pointerFrameRef.current !== null) {
+      cancelAnimationFrame(pointerFrameRef.current);
+      pointerFrameRef.current = null;
+    }
+    setPointerFraction(null);
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && rootRef.current?.contains(focused)) {
+      focused.blur();
+    }
+  }, []);
+
   const handleMouseMove = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     const nextFraction = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
@@ -192,6 +227,17 @@ export function ConversationHistoryIndex({
     setPointerFraction(null);
   }, []);
 
+  const handleMarkerNavigate = useCallback(
+    (entry: ConversationHistoryIndexEntry) => {
+      dismissHover();
+      if (onNavigate) {
+        return onNavigate(entry);
+      }
+      viewportRef.current?.scrollToItem(entry.id);
+    },
+    [dismissHover, onNavigate, viewportRef],
+  );
+
   const handleClickCapture = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
       if (event.detail === 0 || hoveredIndex === null) {
@@ -203,13 +249,14 @@ export function ConversationHistoryIndex({
       }
       event.preventDefault();
       event.stopPropagation();
+      dismissHover();
       if (onNavigate) {
         void onNavigate(entry);
         return;
       }
       viewportRef.current?.scrollToItem(entry.id);
     },
-    [hoveredIndex, onNavigate, viewportRef, visibleEntries],
+    [dismissHover, hoveredIndex, onNavigate, viewportRef, visibleEntries],
   );
 
   const updateActiveMarker = useCallback(() => {
@@ -302,12 +349,13 @@ export function ConversationHistoryIndex({
           key={entry.id}
           entry={entry}
           fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
+          railHeight={railHeight}
           isActive={activeId === entry.id}
           isPointerHovered={hoveredIndex === index}
           pointerFraction={pointerFraction}
           reduceMotion={reduceMotion}
           viewportRef={viewportRef}
-          onNavigate={onNavigate}
+          onNavigate={handleMarkerNavigate}
         />
       ))}
     </div>
@@ -326,8 +374,9 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.foreground,
     opacity: 1,
   },
+  // Every tick keeps the 1px height so they share one whole-pixel baseline; the
+  // active one reads as heavier through colour, not by growing off the baseline.
   tickActive: {
-    height: 2,
     backgroundColor: theme.colors.foreground,
     opacity: 1,
   },

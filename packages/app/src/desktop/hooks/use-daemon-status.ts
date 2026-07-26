@@ -22,11 +22,14 @@ export function useDaemonStatus() {
   const queryClient = useQueryClient();
   const enabled = shouldUseDesktopDaemon();
 
+  // Each fetch spawns the bundled CLI in the main process, so an "always" remount
+  // refetch makes every settings tab switch pay for a Node process launch — visible
+  // on Windows as a busy cursor. Honour staleTime instead; mutations that change the
+  // daemon call refetch() explicitly.
   const query = useQuery<DaemonStatusData, Error>({
     queryKey: DAEMON_STATUS_QUERY_KEY,
     enabled,
     staleTime: 30_000,
-    refetchOnMount: "always",
     retry: false,
     queryFn: async () => {
       const [status, logs] = await Promise.all([getDesktopDaemonStatus(), getDesktopDaemonLogs()]);

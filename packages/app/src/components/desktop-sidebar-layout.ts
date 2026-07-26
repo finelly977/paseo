@@ -8,6 +8,26 @@ import {
 
 export const MIN_DESKTOP_CENTER_WIDTH = 400;
 
+/**
+ * Mount and visibility are separate decisions. Settings hides the sidebar but keeps
+ * it mounted, because rebuilding the workspace projection on the way back to a
+ * conversation is a visible stall.
+ */
+export function resolveDesktopSidebarPresence(input: {
+  chromeEnabled: boolean;
+  retained: boolean;
+  focusModeEnabled: boolean;
+  isCompactLayout: boolean;
+  agentListOpen: boolean;
+  canShareWidth: boolean;
+}) {
+  const mounted = (input.chromeEnabled || input.retained) && !input.focusModeEnabled;
+  return {
+    mounted,
+    visible: mounted && !input.isCompactLayout && input.agentListOpen && input.canShareWidth,
+  };
+}
+
 export function resolveDesktopAppChromeLayout(input: {
   desktopSidebarRendered: boolean;
   hasTopLeftWindowControls: boolean;

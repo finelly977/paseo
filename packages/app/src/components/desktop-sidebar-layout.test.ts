@@ -4,8 +4,73 @@ import {
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
   resolveDesktopExplorerWidth,
+  resolveDesktopSidebarPresence,
   resolveDesktopSidebarWidth,
 } from "@/components/desktop-sidebar-layout";
+
+const SIDEBAR_PRESENCE_BASE = {
+  chromeEnabled: true,
+  retained: false,
+  focusModeEnabled: false,
+  isCompactLayout: false,
+  agentListOpen: true,
+  canShareWidth: true,
+} as const;
+
+describe("desktop sidebar presence", () => {
+  it("keeps a retained sidebar mounted while hiding it", () => {
+    expect(
+      resolveDesktopSidebarPresence({
+        ...SIDEBAR_PRESENCE_BASE,
+        chromeEnabled: false,
+        retained: true,
+      }),
+    ).toEqual({ mounted: true, visible: true });
+  });
+
+  it("unmounts the sidebar when nothing asks to keep it", () => {
+    expect(
+      resolveDesktopSidebarPresence({
+        ...SIDEBAR_PRESENCE_BASE,
+        chromeEnabled: false,
+        retained: false,
+      }),
+    ).toEqual({ mounted: false, visible: false });
+  });
+
+  it("hides but keeps a retained sidebar mounted when the agent list is closed", () => {
+    expect(
+      resolveDesktopSidebarPresence({
+        ...SIDEBAR_PRESENCE_BASE,
+        chromeEnabled: false,
+        retained: true,
+        agentListOpen: false,
+      }),
+    ).toEqual({ mounted: true, visible: false });
+  });
+
+  it("unmounts the sidebar in focus mode even when retained", () => {
+    expect(
+      resolveDesktopSidebarPresence({
+        ...SIDEBAR_PRESENCE_BASE,
+        retained: true,
+        focusModeEnabled: true,
+      }),
+    ).toEqual({ mounted: false, visible: false });
+  });
+
+  it("never renders the desktop sidebar in a compact layout", () => {
+    expect(
+      resolveDesktopSidebarPresence({ ...SIDEBAR_PRESENCE_BASE, isCompactLayout: true }),
+    ).toEqual({ mounted: true, visible: false });
+  });
+
+  it("hides the sidebar when it cannot share width with the content pane", () => {
+    expect(
+      resolveDesktopSidebarPresence({ ...SIDEBAR_PRESENCE_BASE, canShareWidth: false }),
+    ).toEqual({ mounted: true, visible: false });
+  });
+});
 
 describe("desktop sidebar layout", () => {
   it("keeps the sidebar toggle window-owned beside left window controls", () => {

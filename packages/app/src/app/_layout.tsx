@@ -49,6 +49,7 @@ import {
   canDesktopAppSidebarShare,
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
+  resolveDesktopSidebarPresence,
 } from "@/components/desktop-sidebar-layout";
 import { isNative, isWeb } from "@/constants/platform";
 import { HorizontalScrollProvider } from "@/contexts/horizontal-scroll-context";
@@ -414,12 +415,17 @@ const MOBILE_WEB_GESTURE_TOUCH_ACTION = isWeb ? "auto" : "pan-y";
 interface AppContainerProps {
   children: ReactNode;
   chromeEnabled?: boolean;
+  retainDesktopSidebar?: boolean;
 }
 
 const THEME_CYCLE_ORDER: ThemeName[] = ["dark", "zinc", "midnight", "claude", "ghostty", "light"];
 const WINDOW_SIDEBAR_TOGGLE_HORIZONTAL_PADDING = 12;
 
-function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppContainerProps) {
+function AppContainer({
+  children,
+  chromeEnabled: chromeEnabledOverride,
+  retainDesktopSidebar = false,
+}: AppContainerProps) {
   const daemons = useHosts();
   const { settings, updateSettings } = useAppSettings();
   const toggleMobileAgentList = usePanelStore((state) => state.toggleMobileAgentList);
@@ -485,15 +491,18 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
     requestedExplorerWidth: explorerWidth,
     viewportWidth,
   });
-  const desktopSidebarMounted = chromeEnabled && !isWorkspaceFocusModeEnabled;
-  const desktopSidebarVisible =
-    !isCompactLayout &&
-    desktopSidebarMounted &&
-    isDesktopAgentListOpen &&
-    canDesktopAppSidebarShare({
-      contentMinimumWidth: appContentMinimumWidth,
-      requestedSidebarWidth: sidebarWidth,
-      viewportWidth,
+  const { mounted: desktopSidebarMounted, visible: desktopSidebarVisible } =
+    resolveDesktopSidebarPresence({
+      chromeEnabled,
+      retained: retainDesktopSidebar,
+      focusModeEnabled: isWorkspaceFocusModeEnabled,
+      isCompactLayout,
+      agentListOpen: isDesktopAgentListOpen,
+      canShareWidth: canDesktopAppSidebarShare({
+        contentMinimumWidth: appContentMinimumWidth,
+        requestedSidebarWidth: sidebarWidth,
+        viewportWidth,
+      }),
     });
   const hasTopLeftWindowControls = useHasWindowChromeObstruction("top-left");
   const appChromeLayout = resolveDesktopAppChromeLayout({
@@ -857,8 +866,13 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/sessions" ||
       pathname === "/schedules" ||
       routeHasKnownHost);
+  const isSettingsRoute = pathname.startsWith("/settings");
 
-  return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
+  return (
+    <AppContainer chromeEnabled={shouldShowAppChrome} retainDesktopSidebar={isSettingsRoute}>
+      {children}
+    </AppContainer>
+  );
 }
 
 function FaviconStatusSync() {
