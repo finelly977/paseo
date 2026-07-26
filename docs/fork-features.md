@@ -174,3 +174,16 @@
 - `packages/server/src/server/websocket-server.ts`
 - `packages/client/src/daemon-client.ts`
 - `packages/protocol/src/messages.ts`
+
+### 11. Claude Code 后台子代理不会被空闲回收误杀
+
+- 守护进程消费 Claude Agent SDK 的 `background_tasks_changed` 层级信号，按“整集替换”维护当前存活的后台任务集合；该信号是按进程发出的，因此每次 Claude CLI 进程启动或重启都从空集合开始，会话关闭时也清空。
+- 空闲运行时回收在原有条件之外，额外要求提供方没有存活的后台工作。Claude 把子代理转入后台后前台回合会立即返回，此前仅凭前台空闲判断会在两分钟后杀掉仍在运行子代理的 CLI 进程，导致子代理进程内状态丢失，并在下次打开会话时出现“Background agent … was running when the previous Claude Code process exited”的失败通知。
+- `task_notification` 是单个后台任务的终结边沿，不再据此开启自主回合。Claude 未针对该通知继续作答时，原实现会留下一个永不结束的回合，把智能体钉死在“运行中”而无法继续对话；确实需要继续作答时，其助手消息仍会照常开启自主回合。
+- 该能力位为可选接口，未实现的提供方按“没有后台工作”处理，回收行为与原先一致。
+
+主要涉及：
+
+- `packages/server/src/server/agent/agent-sdk-types.ts`
+- `packages/server/src/server/agent/agent-manager.ts`
+- `packages/server/src/server/agent/providers/claude/agent.ts`

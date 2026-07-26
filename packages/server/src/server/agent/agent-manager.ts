@@ -1466,10 +1466,17 @@ export class AgentManager {
       !options.protectedAgentIds.has(agent.id) &&
       agent.activeForegroundTurnId === null &&
       !this.runs.hasRun(agent.id) &&
+      !this.hasLiveProviderBackgroundWork(agent) &&
       !agent.pendingReplacement &&
       agent.pendingPermissions.size === 0 &&
       agent.inFlightPermissionResponses.size === 0
     );
+  }
+
+  // 提供方在前台空闲时仍可能持有存活任务。Claude Code 会在前台回合返回后
+  // 继续通过同一进程运行后台子代理；此时回收运行时会中断任务并丢失进程内状态。
+  private hasLiveProviderBackgroundWork(agent: LiveManagedAgent): boolean {
+    return agent.session.hasLiveBackgroundWork?.() ?? false;
   }
 
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {

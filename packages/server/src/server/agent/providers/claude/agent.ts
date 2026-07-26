@@ -2012,6 +2012,7 @@ class ClaudeAgentSession implements AgentSession {
   private lastOptionsModel: string | null = null;
   private lastRuntimeModel: string | null = null;
   private compacting = false;
+  private liveBackgroundTaskIds = new Set<string>();
   private queryPumpPromise: Promise<void> | null = null;
   private queryRestartNeeded = false;
   private pendingInterruptAbort = false;
@@ -2482,6 +2483,7 @@ class ClaudeAgentSession implements AgentSession {
     this.cancelCurrentTurn = null;
     this.turnState = "idle";
     this.sidechainTracker.clear();
+    this.liveBackgroundTaskIds = new Set();
     this.input?.end();
     this.query?.close?.();
     await this.awaitWithTimeout(this.query?.interrupt?.(), "close query interrupt");
@@ -2933,6 +2935,9 @@ class ClaudeAgentSession implements AgentSession {
     const options = await this.buildOptions();
     this.logger.debug({ options: summarizeClaudeOptionsForLog(options) }, "claude query");
     this.input = input;
+    // 后台任务集合属于当前 CLI 进程，进程启动时不会主动上报初始状态。
+    // 新进程必须从空集合开始，等待下一次成员变化信号重新填充。
+    this.liveBackgroundTaskIds = new Set();
     this.query = claudeQuery(
       { prompt: input.iterable, options },
       {
@@ -3557,12 +3562,13 @@ class ClaudeAgentSession implements AgentSession {
     return false;
   }
 
+  // task_notification 只表示单个后台任务结束，不代表提供方开始新的工作，
+  // 后续也不保证产生结果。Claude 如果决定继续作答，其助手消息会自行开启自主回合。
   private isAssistantishMessage(message: SDKMessage): boolean {
     return (
       message.type === "assistant" ||
       message.type === "stream_event" ||
-      message.type === "tool_progress" ||
-      (message.type === "system" && message.subtype === "task_notification")
+      message.type === "tool_progress"
     );
   }
 
@@ -3871,6 +3877,10 @@ class ClaudeAgentSession implements AgentSession {
       events.push(this.contextUsage.buildCompactionUsageEvent(compactMetadata?.postTokens));
       return;
     }
+    if (message.subtype === "background_tasks_changed") {
+      this.replaceLiveBackgroundTasks(message.tasks);
+      return;
+    }
     if (message.subtype === "task_notification") {
       this.appendTaskNotificationEvents(message, events);
       return;
@@ -3878,6 +3888,20 @@ class ClaudeAgentSession implements AgentSession {
     if (message.subtype === "task_progress") {
       return;
     }
+  }
+
+  // background_tasks_changed 携带变化后的完整存活任务集合，因此直接整集替换，
+  // 不根据开始和结束事件增删，避免丢失单个事件后运行时永远无法回收。
+  private replaceLiveBackgroundTasks(tasks: ReadonlyArray<{ task_id: string }>): void {
+    this.liveBackgroundTaskIds = new Set(tasks.map((task) => task.task_id));
+    this.logger.debug(
+      { agentId: this.agentId, liveBackgroundTasks: this.liveBackgroundTaskIds.size },
+      "provider.claude.background_tasks_changed",
+    );
+  }
+
+  hasLiveBackgroundWork(): boolean {
+    return this.liveBackgroundTaskIds.size > 0;
   }
 
   private appendTaskNotificationEvents(

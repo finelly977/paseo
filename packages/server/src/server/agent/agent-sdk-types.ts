@@ -648,6 +648,11 @@ export interface AgentSession {
   ): Promise<AgentPermissionResult | void>;
   describePersistence(): AgentPersistenceHandle | null;
   interrupt(): Promise<void>;
+  /**
+   * 在前台回合结束后仍由提供方进程持有的后台任务。
+   * 空闲运行时回收前必须检查此状态，避免关闭会话时中断后台任务。
+   */
+  hasLiveBackgroundWork?(): boolean;
   /** Release live runtime resources without archiving or deleting the durable native session. */
   close(): Promise<void>;
   listCommands?(): Promise<AgentSlashCommand[]>;

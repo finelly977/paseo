@@ -7674,6 +7674,58 @@ test("collectIdleAgents leaves recent, protected, internal, running, and error a
   }
 });
 
+// Claude Code 会在前台回合返回后继续通过同一进程运行后台子代理。
+// 此时回收运行时会中断子代理并丢失进程内状态。
+test("collectIdleAgents leaves an agent resident while its provider owns live background work", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-background-work-"));
+  let liveBackgroundWork = true;
+  const client = new (class extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new (class extends TestAgentSession {
+        override hasLiveBackgroundWork(): boolean {
+          return liveBackgroundWork;
+        }
+      })(config);
+    }
+  })();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000216",
+  });
+
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await manager.flush();
+
+    const sweepWhileBackgroundWorkRuns = await manager.collectIdleAgents({
+      cutoff: new Date(Date.now() + 1_000),
+      protectedAgentIds: new Set(),
+    });
+
+    expect(sweepWhileBackgroundWorkRuns.collected).toEqual([]);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+
+    liveBackgroundWork = false;
+    const sweepAfterBackgroundWorkSettles = await manager.collectIdleAgents({
+      cutoff: new Date(Date.now() + 1_000),
+      protectedAgentIds: new Set(),
+    });
+
+    expect(sweepAfterBackgroundWorkSettles.collected.map((entry) => entry.agentId)).toEqual([
+      agent.id,
+    ]);
+  } finally {
+    try {
+      await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("load waits for an in-flight collection close and creates only one resumed runtime", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-close-race-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
