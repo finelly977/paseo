@@ -1,4 +1,8 @@
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  useSidebarRowHover,
+  type SidebarRowHoverHandlers,
+} from "@/components/sidebar/use-sidebar-row-hover";
 import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
@@ -92,20 +96,15 @@ export function SidebarWorkspaceRowFrame({
   isDragging?: boolean;
   children: (input: {
     isHovered: boolean;
-    hoverHandlers: { onPointerEnter: () => void; onPointerLeave: () => void };
+    hoverHandlers: SidebarRowHoverHandlers;
+    revalidateHover: () => void;
   }) => ReactNode;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const handlePointerEnter = useCallback(() => setIsHovered(true), []);
-  const handlePointerLeave = useCallback(() => setIsHovered(false), []);
-  const hoverHandlers = useMemo(
-    () => ({ onPointerEnter: handlePointerEnter, onPointerLeave: handlePointerLeave }),
-    [handlePointerEnter, handlePointerLeave],
-  );
+  const { isHovered, hoverHandlers, revalidateHover } = useSidebarRowHover();
 
   return (
     <WorkspaceHoverCard workspace={workspace} prHint={workspace.prHint} isDragging={isDragging}>
-      {children({ isHovered, hoverHandlers })}
+      {children({ isHovered, hoverHandlers, revalidateHover })}
     </WorkspaceHoverCard>
   );
 }

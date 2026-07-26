@@ -4,7 +4,8 @@ import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
   getHistoryIndexWaveScale,
-  resolveHistoryIndexMarkerTop,
+  HISTORY_INDEX_MARKER_PITCH,
+  resolveHistoryIndexRailLayout,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 
@@ -89,16 +90,40 @@ describe("conversation history index model", () => {
     ]);
   });
 
-  it("snaps marker positions to whole pixels once the rail is measured", () => {
-    // 220px rail, 60 markers: raw offsets land on fractions like 74.576px and would
-    // otherwise be antialiased across two rows, making the hairlines look uneven.
-    expect(resolveHistoryIndexMarkerTop(0.339, 220)).toBe(75);
-    expect(resolveHistoryIndexMarkerTop(0, 220)).toBe(0);
-    expect(resolveHistoryIndexMarkerTop(1, 220)).toBe(220);
+  it("keeps a short history compact instead of spreading it over the rail", () => {
+    // Four turns in a tall viewport stay at the fixed pitch rather than being spaced
+    // ~120px apart, and the rail is centred on a whole pixel.
+    expect(
+      resolveHistoryIndexRailLayout({ entryCount: 4, availableHeight: 400, markerHeight: 12 }),
+    ).toEqual({
+      markerCount: 4,
+      railHeight: 3 * HISTORY_INDEX_MARKER_PITCH + 12,
+      railTop: 182,
+    });
   });
 
-  it("falls back to a percentage offset before the rail has been measured", () => {
-    expect(resolveHistoryIndexMarkerTop(0.25, 0)).toBe("25%");
+  it("drops markers rather than tightening the pitch when height runs out", () => {
+    const layout = resolveHistoryIndexRailLayout({
+      entryCount: 200,
+      availableHeight: 100,
+      markerHeight: 12,
+    });
+    expect(layout.markerCount).toBe(12);
+    expect(layout.railHeight).toBe(11 * HISTORY_INDEX_MARKER_PITCH + 12);
+    expect(layout.railHeight).toBeLessThanOrEqual(100);
+  });
+
+  it("caps the rail at the marker ceiling in a tall viewport", () => {
+    expect(
+      resolveHistoryIndexRailLayout({ entryCount: 500, availableHeight: 4000, markerHeight: 12 })
+        .markerCount,
+    ).toBe(60);
+  });
+
+  it("reports an empty rail before the band has been measured", () => {
+    expect(
+      resolveHistoryIndexRailLayout({ entryCount: 10, availableHeight: 0, markerHeight: 12 }),
+    ).toEqual({ markerCount: 0, railHeight: 0, railTop: 0 });
   });
 
   it("creates a smooth local wave around the pointer", () => {

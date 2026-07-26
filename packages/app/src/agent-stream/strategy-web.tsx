@@ -139,7 +139,6 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const pendingAutoScrollFrameRef = useRef<number | null>(null);
   const pendingAutoScrollTimeoutRef = useRef<number | null>(null);
   const pendingItemJumpFrameRef = useRef<number | null>(null);
-  const pendingVirtualRowMeasureFramesRef = useRef(new Map<Element, number>());
   const historyStartReadyRef = useRef(false);
   const shouldUseVirtualizer = segments.historyVirtualized.length > 0;
   const {
@@ -187,37 +186,17 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualTotalSize = rowVirtualizer.getTotalSize();
 
+  // Measure during commit, not a frame later. Deferring guarantees one painted frame
+  // at the estimated height before the correction lands, which reads as the row
+  // expanding/collapsing while scrolling up into unmeasured history. Rows that resize
+  // afterwards (markdown, images) are still caught by the virtualizer's
+  // ResizeObserver, which runs on an animation frame.
   const measureVirtualizedRowElement = useCallback(
     (node: HTMLDivElement | null) => {
-      if (!node) {
-        rowVirtualizer.measureElement(null);
-        return;
-      }
-      const pendingFrames = pendingVirtualRowMeasureFramesRef.current;
-      const existingFrame = pendingFrames.get(node);
-      if (existingFrame !== undefined) {
-        window.cancelAnimationFrame(existingFrame);
-      }
-      const frame = window.requestAnimationFrame(() => {
-        pendingFrames.delete(node);
-        if (node.isConnected) {
-          rowVirtualizer.measureElement(node);
-        }
-      });
-      pendingFrames.set(node, frame);
+      rowVirtualizer.measureElement(node);
     },
     [rowVirtualizer],
   );
-
-  useEffect(() => {
-    const pendingFrames = pendingVirtualRowMeasureFramesRef.current;
-    return () => {
-      for (const frame of pendingFrames.values()) {
-        window.cancelAnimationFrame(frame);
-      }
-      pendingFrames.clear();
-    };
-  }, []);
 
   useEffect(() => {
     return () => {

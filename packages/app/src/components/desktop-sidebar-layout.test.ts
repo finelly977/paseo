@@ -18,14 +18,21 @@ const SIDEBAR_PRESENCE_BASE = {
 } as const;
 
 describe("desktop sidebar presence", () => {
-  it("keeps a retained sidebar mounted while hiding it", () => {
+  it("keeps a retained sidebar mounted but off screen", () => {
     expect(
       resolveDesktopSidebarPresence({
         ...SIDEBAR_PRESENCE_BASE,
         chromeEnabled: false,
         retained: true,
       }),
-    ).toEqual({ mounted: true, visible: true });
+    ).toEqual({ mounted: true, visible: false });
+  });
+
+  it("shows the sidebar on a route that owns app chrome", () => {
+    expect(resolveDesktopSidebarPresence(SIDEBAR_PRESENCE_BASE)).toEqual({
+      mounted: true,
+      visible: true,
+    });
   });
 
   it("unmounts the sidebar when nothing asks to keep it", () => {

@@ -109,7 +109,7 @@ describe("createWebStreamStrategy", () => {
     vi.restoreAllMocks();
   });
 
-  it("mounts virtualized history without recursive row measurement updates", () => {
+  it("settles virtualized row measurement instead of looping", () => {
     const rowRenderCount = vi.fn();
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
     const viewportRef = React.createRef<StreamViewportHandle>();
@@ -152,8 +152,12 @@ describe("createWebStreamStrategy", () => {
       );
     });
 
+    // Rows are measured during commit so they never paint at their estimated height.
+    // That costs one correction pass per newly mounted row — jsdom reports a zero
+    // height for every row, so each one differs from its estimate exactly once. A
+    // measurement loop would blow far past this bound instead of settling.
     expect(rowRenderCount.mock.calls.length).toBeGreaterThan(0);
-    expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length);
+    expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length * 2);
   });
 
   it("让旧历史加载指示器脱离消息布局", () => {

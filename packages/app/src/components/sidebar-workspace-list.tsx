@@ -631,6 +631,7 @@ function ProjectKebabMenu({
 function WorkspaceRowRightGroup({
   workspace,
   isHovered,
+  onMenuOpenChange,
   isTouchPlatform,
   isCreating,
   showShortcutBadge,
@@ -652,6 +653,7 @@ function WorkspaceRowRightGroup({
 }: {
   workspace: SidebarWorkspaceEntry;
   isHovered: boolean;
+  onMenuOpenChange: () => void;
   isTouchPlatform: boolean;
   isCreating: boolean;
   showShortcutBadge: boolean;
@@ -698,6 +700,7 @@ function WorkspaceRowRightGroup({
             {onArchive ? (
               <SidebarWorkspaceMenu
                 workspaceKey={workspace.workspaceKey}
+                onOpenChange={onMenuOpenChange}
                 onCopyPath={onCopyPath}
                 onCopyBranchName={onCopyBranchName}
                 onRename={onRename}
@@ -1171,7 +1174,7 @@ function WorkspaceRowInner({
 
   return (
     <SidebarWorkspaceRowFrame workspace={workspace} isDragging={isDragging}>
-      {({ isHovered, hoverHandlers }) => {
+      {({ isHovered, hoverHandlers, revalidateHover }) => {
         const isDesktop = !isTouchPlatform;
         const showScriptsIcon = isDesktop && workspace.hasRunningScripts;
         const hasRunningService = workspace.scripts.some(
@@ -1220,6 +1223,7 @@ function WorkspaceRowInner({
                 <WorkspaceRowRightGroup
                   workspace={workspace}
                   isHovered={isHovered}
+                  onMenuOpenChange={revalidateHover}
                   isTouchPlatform={isTouchPlatform}
                   isCreating={isCreating}
                   showShortcutBadge={showShortcutBadge}

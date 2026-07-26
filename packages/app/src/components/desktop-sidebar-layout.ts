@@ -9,9 +9,10 @@ import {
 export const MIN_DESKTOP_CENTER_WIDTH = 400;
 
 /**
- * Mount and visibility are separate decisions. Settings hides the sidebar but keeps
- * it mounted, because rebuilding the workspace projection on the way back to a
- * conversation is a visible stall.
+ * Mount and visibility are separate decisions. A retained sidebar stays mounted but
+ * hidden — settings keeps it off screen while avoiding the workspace-projection
+ * rebuild that stalls the way back to a conversation. Only `chromeEnabled` routes
+ * may actually show it.
  */
 export function resolveDesktopSidebarPresence(input: {
   chromeEnabled: boolean;
@@ -21,10 +22,15 @@ export function resolveDesktopSidebarPresence(input: {
   agentListOpen: boolean;
   canShareWidth: boolean;
 }) {
-  const mounted = (input.chromeEnabled || input.retained) && !input.focusModeEnabled;
+  const allowed = !input.focusModeEnabled;
   return {
-    mounted,
-    visible: mounted && !input.isCompactLayout && input.agentListOpen && input.canShareWidth,
+    mounted: (input.chromeEnabled || input.retained) && allowed,
+    visible:
+      input.chromeEnabled &&
+      allowed &&
+      !input.isCompactLayout &&
+      input.agentListOpen &&
+      input.canShareWidth,
   };
 }
 

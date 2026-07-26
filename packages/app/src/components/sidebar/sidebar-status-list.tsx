@@ -654,7 +654,7 @@ function StatusWorkspaceRowInner({
 
   return (
     <SidebarWorkspaceRowFrame workspace={workspace}>
-      {({ isHovered, hoverHandlers }) => {
+      {({ isHovered, hoverHandlers, revalidateHover }) => {
         const showShortcut = showShortcutBadge && shortcutNumber !== null;
         const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
         const showKebabInSlot = showKebab && !showShortcut;
@@ -685,6 +685,7 @@ function StatusWorkspaceRowInner({
                     workspace={workspace}
                     showBase={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
                     showKebab={showKebabInSlot}
+                    onMenuOpenChange={revalidateHover}
                     isPinned={isPinned}
                     onTogglePin={onTogglePin}
                     onCopyPath={onCopyPath}
@@ -711,6 +712,7 @@ function StatusWorkspaceActionSlot({
   workspace,
   showBase,
   showKebab,
+  onMenuOpenChange,
   isPinned,
   onTogglePin,
   onCopyPath,
@@ -726,6 +728,7 @@ function StatusWorkspaceActionSlot({
   workspace: SidebarWorkspaceEntry;
   showBase: boolean;
   showKebab: boolean;
+  onMenuOpenChange: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
   onCopyPath?: () => void;
@@ -752,6 +755,7 @@ function StatusWorkspaceActionSlot({
         {showKebab && onArchive ? (
           <SidebarWorkspaceMenu
             workspaceKey={workspace.workspaceKey}
+            onOpenChange={onMenuOpenChange}
             onCopyPath={onCopyPath}
             onCopyBranchName={onCopyBranchName}
             onRename={onRename}

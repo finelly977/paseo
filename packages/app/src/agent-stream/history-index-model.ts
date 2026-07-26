@@ -139,18 +139,40 @@ export function sampleConversationHistoryIndex(
   return sampled;
 }
 
+/** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
+export const HISTORY_INDEX_MARKER_PITCH = 8;
+
+export interface HistoryIndexRailLayout {
+  markerCount: number;
+  railHeight: number;
+  railTop: number;
+}
+
 /**
- * 刻度是 1 像素细线，落在小数像素上会被抗锯齿摊成两行，看起来粗细不一。
- * 量到轨道高度后按整像素定位；测量完成前退回百分比，避免首帧全部堆叠。
+ * 刻度按固定间距紧密排列，而不是均摊到整条轨道上。固定间距同时消除了两个问题：
+ * 会话很短时刻度不再被拉开，而且每个刻度都落在整像素上，1 像素细线不会被抗锯齿
+ * 摊成两行造成粗细不均。可用高度不足时先减少刻度数量，不压缩间距。
  */
-export function resolveHistoryIndexMarkerTop(
-  fraction: number,
-  railHeight: number,
-): number | `${number}%` {
-  if (railHeight <= 0) {
-    return `${fraction * 100}%`;
+export function resolveHistoryIndexRailLayout(input: {
+  entryCount: number;
+  availableHeight: number;
+  markerHeight: number;
+}): HistoryIndexRailLayout {
+  if (input.entryCount <= 0 || input.availableHeight <= 0) {
+    return { markerCount: 0, railHeight: 0, railTop: 0 };
   }
-  return Math.round(fraction * railHeight);
+  const spans = Math.floor(
+    Math.max(0, input.availableHeight - input.markerHeight) / HISTORY_INDEX_MARKER_PITCH,
+  );
+  const markerCount = Math.min(input.entryCount, MAX_HISTORY_INDEX_MARKERS, spans + 1);
+  const railHeight = (markerCount - 1) * HISTORY_INDEX_MARKER_PITCH + input.markerHeight;
+  return {
+    markerCount,
+    railHeight,
+    // Round the centring offset too: a fractional container origin would put every
+    // whole-pixel marker back on a half pixel.
+    railTop: Math.round((input.availableHeight - railHeight) / 2),
+  };
 }
 
 export function getHistoryIndexWaveScale(

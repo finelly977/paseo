@@ -15,7 +15,8 @@ import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   getHistoryIndexWaveScale,
   getStreamItemDomId,
-  resolveHistoryIndexMarkerTop,
+  HISTORY_INDEX_MARKER_PITCH,
+  resolveHistoryIndexRailLayout,
   sampleConversationHistoryIndex,
 } from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
@@ -26,16 +27,15 @@ export interface ConversationHistoryIndexProps {
   onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }
 
-const railStyle: CSSProperties = {
+/** The measured band the rail may occupy; the rail itself only claims what its markers need. */
+const railBandStyle: CSSProperties = {
   position: "absolute",
   zIndex: 10,
-  top: "50%",
-  height: "min(46vh, 360px)",
-  minHeight: 220,
+  top: 0,
+  bottom: 0,
   left: 0,
   width: 32,
-  transform: "translateY(-50%)",
-  pointerEvents: "auto",
+  pointerEvents: "none",
 };
 const ACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: true } as const;
 const INACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: false } as const;
@@ -49,7 +49,7 @@ function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
 interface ConversationHistoryIndexMarkerProps {
   entry: ConversationHistoryIndexEntry;
   fraction: number;
-  railHeight: number;
+  offset: number;
   isActive: boolean;
   isPointerHovered: boolean;
   pointerFraction: number | null;
@@ -61,7 +61,7 @@ interface ConversationHistoryIndexMarkerProps {
 function ConversationHistoryIndexMarker({
   entry,
   fraction,
-  railHeight,
+  offset,
   isActive,
   isPointerHovered,
   pointerFraction,
@@ -74,7 +74,7 @@ function ConversationHistoryIndexMarker({
   const markerStyle = useMemo<ViewStyle>(
     () => ({
       position: "absolute",
-      top: resolveHistoryIndexMarkerTop(fraction, railHeight),
+      top: offset,
       left: 0,
       width: 32,
       height: MARKER_HIT_HEIGHT,
@@ -82,9 +82,8 @@ function ConversationHistoryIndexMarker({
       alignItems: "flex-start",
       justifyContent: "center",
       paddingLeft: 4,
-      transform: [{ translateY: -MARKER_HIT_HEIGHT / 2 }],
     }),
-    [fraction, railHeight],
+    [offset],
   );
   const isHighlighted = isPointerHovered || isFocused;
   const waveScale = Math.max(
@@ -158,13 +157,36 @@ export function ConversationHistoryIndex({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pointerFraction, setPointerFraction] = useState<number | null>(null);
-  const [railHeight, setRailHeight] = useState(0);
+  const [bandHeight, setBandHeight] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const pointerFrameRef = useRef<number | null>(null);
-  const visibleEntries = useMemo(() => sampleConversationHistoryIndex(entries), [entries]);
+  const railLayout = useMemo(
+    () =>
+      resolveHistoryIndexRailLayout({
+        entryCount: entries.length,
+        availableHeight: bandHeight,
+        markerHeight: MARKER_HIT_HEIGHT,
+      }),
+    [bandHeight, entries.length],
+  );
+  const visibleEntries = useMemo(
+    () => sampleConversationHistoryIndex(entries, railLayout.markerCount),
+    [entries, railLayout.markerCount],
+  );
   const entryByDomId = useMemo(
     () => new Map(entries.map((entry) => [getStreamItemDomId(entry.id), entry])),
     [entries],
+  );
+  const railStyle = useMemo<CSSProperties>(
+    () => ({
+      position: "absolute",
+      top: railLayout.railTop,
+      left: 0,
+      width: 32,
+      height: railLayout.railHeight,
+      pointerEvents: "auto",
+    }),
+    [railLayout.railHeight, railLayout.railTop],
   );
   const hoveredIndex = useMemo(() => {
     if (pointerFraction === null || visibleEntries.length === 0) {
@@ -182,15 +204,14 @@ export function ConversationHistoryIndex({
   }, []);
 
   useEffect(() => {
-    const rail = rootRef.current;
-    if (!rail) {
+    const band = rootRef.current;
+    if (!band) {
       return;
     }
     const observer = new ResizeObserver((observed) => {
-      const measured = observed[0]?.contentRect.height ?? 0;
-      setRailHeight(measured);
+      setBandHeight(observed[0]?.contentRect.height ?? 0);
     });
-    observer.observe(rail);
+    observer.observe(band);
     return () => observer.disconnect();
   }, []);
 
@@ -330,34 +351,35 @@ export function ConversationHistoryIndex({
     };
   }, [updateActiveMarker]);
 
-  if (visibleEntries.length === 0) {
-    return null;
-  }
-
+  // The band always renders so its ResizeObserver can measure the available height;
+  // without a measurement the rail would have no marker budget and never appear.
   return (
-    <div
-      ref={rootRef}
-      role="navigation"
-      aria-label={t("agentStream.historyIndex.label")}
-      style={railStyle}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      onClickCapture={handleClickCapture}
-    >
-      {visibleEntries.map((entry, index) => (
-        <ConversationHistoryIndexMarker
-          key={entry.id}
-          entry={entry}
-          fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
-          railHeight={railHeight}
-          isActive={activeId === entry.id}
-          isPointerHovered={hoveredIndex === index}
-          pointerFraction={pointerFraction}
-          reduceMotion={reduceMotion}
-          viewportRef={viewportRef}
-          onNavigate={handleMarkerNavigate}
-        />
-      ))}
+    <div ref={rootRef} style={railBandStyle}>
+      {visibleEntries.length > 0 ? (
+        <div
+          role="navigation"
+          aria-label={t("agentStream.historyIndex.label")}
+          style={railStyle}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onClickCapture={handleClickCapture}
+        >
+          {visibleEntries.map((entry, index) => (
+            <ConversationHistoryIndexMarker
+              key={entry.id}
+              entry={entry}
+              fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
+              offset={index * HISTORY_INDEX_MARKER_PITCH}
+              isActive={activeId === entry.id}
+              isPointerHovered={hoveredIndex === index}
+              pointerFraction={pointerFraction}
+              reduceMotion={reduceMotion}
+              viewportRef={viewportRef}
+              onNavigate={handleMarkerNavigate}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

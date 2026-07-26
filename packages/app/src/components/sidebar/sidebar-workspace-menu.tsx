@@ -61,6 +61,7 @@ function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
 
 interface SidebarWorkspaceMenuProps {
   workspaceKey: string;
+  onOpenChange?: (open: boolean) => void;
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
   onRename?: () => void;
@@ -79,6 +80,7 @@ interface SidebarWorkspaceMenuProps {
 
 export function SidebarWorkspaceMenu({
   workspaceKey,
+  onOpenChange,
   onCopyPath,
   onCopyBranchName,
   onRename,
@@ -101,7 +103,7 @@ export function SidebarWorkspaceMenu({
   );
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         hitSlop={8}
         style={triggerStyle}

@@ -276,7 +276,7 @@ function WorkspaceRowBody({
 
   return (
     <SidebarWorkspaceRowFrame workspace={workspace} isDragging={isDragging}>
-      {({ isHovered, hoverHandlers }) => {
+      {({ isHovered, hoverHandlers, revalidateHover }) => {
         const isDesktop = !isTouchPlatform;
         const showScriptsIcon = isDesktop && workspace.hasRunningScripts;
         const hasRunningService = workspace.scripts.some(
@@ -322,6 +322,7 @@ function WorkspaceRowBody({
                 <WorkspaceRowTrailingActions
                   workspace={workspace}
                   isHovered={isHovered}
+                  onMenuOpenChange={revalidateHover}
                   isTouchPlatform={isTouchPlatform}
                   isCreating={isCreating}
                   showShortcutBadge={showShortcutBadge}
@@ -348,6 +349,7 @@ function WorkspaceRowBody({
 function WorkspaceRowTrailingActions({
   workspace,
   isHovered,
+  onMenuOpenChange,
   isTouchPlatform,
   isCreating,
   showShortcutBadge,
@@ -364,6 +366,7 @@ function WorkspaceRowTrailingActions({
 }: {
   workspace: SidebarWorkspaceEntry;
   isHovered: boolean;
+  onMenuOpenChange: () => void;
   isTouchPlatform: boolean;
   isCreating: boolean;
   showShortcutBadge: boolean;
@@ -405,6 +408,7 @@ function WorkspaceRowTrailingActions({
             {onArchive ? (
               <SidebarWorkspaceMenu
                 workspaceKey={workspace.workspaceKey}
+                onOpenChange={onMenuOpenChange}
                 onCopyPath={onCopyPath}
                 onCopyBranchName={onCopyBranchName}
                 onRename={onRename}
