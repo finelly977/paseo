@@ -45,6 +45,15 @@ export interface WebVirtualizedHistoryWindow {
   mountedEntries: IndexedStreamItem[];
 }
 
+export function shouldAdjustScrollForMeasuredItem(input: {
+  itemStart: number;
+  scrollOffset: number;
+  distanceFromBottom: number;
+  bottomThreshold: number;
+}): boolean {
+  return input.distanceFromBottom > input.bottomThreshold && input.itemStart < input.scrollOffset;
+}
+
 export function estimateStreamItemHeight(
   item: StreamItem,
   messageParagraphSpacing?: number,

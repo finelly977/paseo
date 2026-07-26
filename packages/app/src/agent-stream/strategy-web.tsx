@@ -10,7 +10,7 @@ import React, {
 } from "react";
 import { ActivityIndicator } from "react-native";
 import { measureElement as measureVirtualElement, useVirtualizer } from "@tanstack/react-virtual";
-import { estimateStreamItemHeight } from "./web-virtualization";
+import { estimateStreamItemHeight, shouldAdjustScrollForMeasuredItem } from "./web-virtualization";
 import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
@@ -27,14 +27,19 @@ const BOTTOM_OVERSCROLL_TOLERANCE_PX = 2;
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const AUTO_SCROLL_RESUME_THRESHOLD_PX = 1;
 const HISTORY_START_THRESHOLD_PX = 96;
+const ITEM_JUMP_MAX_FRAMES = 120;
+const ITEM_JUMP_CENTER_TOLERANCE_PX = 2;
+const ITEM_JUMP_STABLE_FRAMES = 2;
 
 const historyStartSlotStyle: CSSProperties = {
+  position: "sticky",
+  top: 4,
+  zIndex: 1,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  minHeight: 32,
-  paddingTop: 4,
-  paddingBottom: 8,
+  height: 0,
+  pointerEvents: "none",
 };
 
 function isScrollContainerNearBottom(
@@ -164,11 +169,16 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     overscan: 8,
   });
   useEffect(() => {
-    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (_item, _delta, instance) => {
+    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
       const viewportHeight = instance.scrollRect?.height ?? 0;
       const scrollOffset = instance.scrollOffset ?? 0;
       const remainingDistance = instance.getTotalSize() - (scrollOffset + viewportHeight);
-      return remainingDistance > AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
+      return shouldAdjustScrollForMeasuredItem({
+        itemStart: item.start,
+        scrollOffset,
+        distanceFromBottom: remainingDistance,
+        bottomThreshold: AUTO_SCROLL_BOTTOM_THRESHOLD_PX,
+      });
     };
     return () => {
       rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
@@ -541,7 +551,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         window.cancelAnimationFrame(pendingItemJumpFrameRef.current);
         pendingItemJumpFrameRef.current = null;
       }
-      const centerMountedTarget = (): boolean => {
+      const virtualIndex = segments.historyVirtualized.findIndex((item) => item.id === itemId);
+      let remainingFrames = ITEM_JUMP_MAX_FRAMES;
+      let stableFrames = 0;
+      let requestedDomCenter = false;
+      const settleTarget = () => {
+        pendingItemJumpFrameRef.current = null;
         const scrollContainer = scrollContainerRef.current;
         const target = scrollContainer ? document.getElementById(getStreamItemDomId(itemId)) : null;
         if (
@@ -549,27 +564,44 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
           !(target instanceof HTMLElement) ||
           !scrollContainer.contains(target)
         ) {
-          return false;
-        }
-        target.scrollIntoView({ behavior: "smooth", block: "center" });
-        return true;
-      };
-      const virtualIndex = segments.historyVirtualized.findIndex((item) => item.id === itemId);
-      if (virtualIndex >= 0) {
-        rowVirtualizer.scrollToIndex(virtualIndex, { align: "center" });
-        let remainingFrames = 8;
-        const centerAfterMount = () => {
-          pendingItemJumpFrameRef.current = null;
-          if (centerMountedTarget() || remainingFrames <= 0) {
-            return;
+          stableFrames = 0;
+          if (virtualIndex >= 0) {
+            rowVirtualizer.scrollToIndex(virtualIndex, { align: "center", behavior: "auto" });
           }
-          remainingFrames -= 1;
-          pendingItemJumpFrameRef.current = window.requestAnimationFrame(centerAfterMount);
-        };
-        pendingItemJumpFrameRef.current = window.requestAnimationFrame(centerAfterMount);
-        return;
-      }
-      centerMountedTarget();
+        } else {
+          const scrollBounds = scrollContainer.getBoundingClientRect();
+          const targetBounds = target.getBoundingClientRect();
+          const centerDelta =
+            targetBounds.top +
+            targetBounds.height / 2 -
+            (scrollBounds.top + scrollBounds.height / 2);
+          const isCentered = Math.abs(centerDelta) <= ITEM_JUMP_CENTER_TOLERANCE_PX;
+          const isAtTopBoundary =
+            scrollContainer.scrollTop <= ITEM_JUMP_CENTER_TOLERANCE_PX && centerDelta < 0;
+          const isAtBottomBoundary =
+            getScrollContainerDistanceFromBottom(scrollContainer) <=
+              ITEM_JUMP_CENTER_TOLERANCE_PX && centerDelta > 0;
+          const isAtBestReachablePosition = isCentered || isAtTopBoundary || isAtBottomBoundary;
+          if (!requestedDomCenter || !isAtBestReachablePosition) {
+            target.scrollIntoView({ behavior: "auto", block: "center" });
+            requestedDomCenter = true;
+            stableFrames = 0;
+          } else {
+            stableFrames += 1;
+            if (stableFrames >= ITEM_JUMP_STABLE_FRAMES) {
+              return;
+            }
+          }
+        }
+
+        remainingFrames -= 1;
+        if (remainingFrames <= 0) {
+          console.warn("[对话历史索引] 跳转未在限定时间内完成", { itemId, virtualIndex });
+          return;
+        }
+        pendingItemJumpFrameRef.current = window.requestAnimationFrame(settleTarget);
+      };
+      settleTarget();
     },
     [cancelPendingStickToBottom, rowVirtualizer, segments.historyVirtualized],
   );

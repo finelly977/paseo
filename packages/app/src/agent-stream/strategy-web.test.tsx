@@ -156,6 +156,53 @@ describe("createWebStreamStrategy", () => {
     expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length);
   });
 
+  it("让旧历史加载指示器脱离消息布局", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        strategy.render({
+          agentId: "agent",
+          segments: {
+            historyVirtualized: [],
+            historyMounted: [userMessage(1)],
+            liveHead: [],
+          },
+          boundary: {
+            hasVirtualizedHistory: false,
+            hasMountedHistory: true,
+            hasLiveHead: false,
+          },
+          renderers: createRenderers(vi.fn()),
+          listEmptyComponent: null,
+          viewportRef,
+          routeBottomAnchorRequest: null,
+          isAuthoritativeHistoryReady: true,
+          onNearBottomChange: vi.fn(),
+          onNearHistoryStart: vi.fn(),
+          isLoadingOlderHistory: true,
+          hasOlderHistory: true,
+          scrollEnabled: true,
+          messageParagraphSpacing: 8,
+          listStyle: null,
+          baseListContentContainerStyle: null,
+          forwardListContentContainerStyle: null,
+        }),
+      );
+    });
+
+    const spinner = container.querySelector('[data-testid="load-older-history-spinner"]');
+    if (!(spinner instanceof HTMLElement)) {
+      throw new Error("缺少旧历史加载指示器");
+    }
+    expect(spinner.style.position).toBe("sticky");
+    expect(spinner.style.height).toBe("0px");
+  });
+
   it("jumps to a mounted history item through the viewport handle", () => {
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
     const viewportRef = React.createRef<StreamViewportHandle>();
@@ -205,9 +252,85 @@ describe("createWebStreamStrategy", () => {
     });
 
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({
-      behavior: "smooth",
+      behavior: "auto",
       block: "center",
     });
+  });
+
+  it("keeps correcting an index jump until the target is centered", async () => {
+    let centerRequestCount = 0;
+    const scrollIntoView = vi.fn(() => {
+      centerRequestCount += 1;
+    });
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    const target = userMessage(1);
+    const renderInput: StreamRenderInput = {
+      agentId: "agent",
+      segments: {
+        historyVirtualized: [],
+        historyMounted: [target],
+        liveHead: [],
+      },
+      boundary: {
+        hasVirtualizedHistory: false,
+        hasMountedHistory: true,
+        hasLiveHead: false,
+      },
+      renderers: {
+        renderHistoryVirtualizedRow: () => null,
+        renderHistoryMountedRow: (item) => <div id={getStreamItemDomId(item.id)}>{item.id}</div>,
+        renderLiveHeadRow: () => null,
+        renderLiveAuxiliary: () => null,
+      },
+      listEmptyComponent: null,
+      viewportRef,
+      routeBottomAnchorRequest: null,
+      isAuthoritativeHistoryReady: true,
+      onNearBottomChange: vi.fn(),
+      onNearHistoryStart: vi.fn(),
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+      scrollEnabled: true,
+      messageParagraphSpacing: 8,
+      listStyle: null,
+      baseListContentContainerStyle: null,
+      forwardListContentContainerStyle: null,
+    };
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(strategy.render(renderInput));
+    });
+    const scrollContainer = container.querySelector('[data-testid="agent-chat-scroll"]');
+    const targetElement = document.getElementById(getStreamItemDomId(target.id));
+    if (!(scrollContainer instanceof HTMLElement) || !(targetElement instanceof HTMLElement)) {
+      throw new Error("缺少已挂载的目标消息或滚动容器");
+    }
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 2_000 });
+    Object.defineProperty(scrollContainer, "scrollTop", { configurable: true, value: 500 });
+    scrollContainer.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 400, height: 400, left: 0, right: 800, width: 800 }) as DOMRect;
+    targetElement.getBoundingClientRect = () => {
+      const top = centerRequestCount >= 3 ? 188 : 900;
+      return { top, bottom: top + 24, height: 24, left: 0, right: 800, width: 800 } as DOMRect;
+    };
+
+    act(() => {
+      viewportRef.current?.scrollToItem(target.id);
+    });
+    await act(async () => {
+      for (let frame = 0; frame < 5; frame += 1) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+    });
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(3);
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: "auto", block: "center" });
   });
 
   it("rerenders a stable live-head row when its revision changes", () => {
