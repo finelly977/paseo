@@ -151,6 +151,11 @@ describe("estimateStreamItemHeight", () => {
     expect(estimateStreamItemHeight(thought("thought", 2))).toBe(40);
   });
 
+  it("uses the rendered display-height override for collapsed process rows", () => {
+    expect(estimateStreamItemHeight(toolCall("hidden-tool", 1), undefined, 0)).toBe(0);
+    expect(estimateStreamItemHeight(toolCall("process-toggle", 2), undefined, 36)).toBe(36);
+  });
+
   it("uses a larger estimate for user messages with image attachments", () => {
     const item: StreamItem = {
       kind: "user_message",

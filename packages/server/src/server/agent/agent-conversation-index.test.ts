@@ -7,7 +7,7 @@ function row(seq: number, item: AgentTimelineRow["item"]): AgentTimelineRow {
 }
 
 describe("buildAgentConversationIndex", () => {
-  test("只返回最近 50 轮对话并合并助手摘要", () => {
+  test("返回全部对话并合并助手摘要", () => {
     const rows = Array.from({ length: 55 }, (_, index) => [
       row(index * 2 + 1, {
         type: "user_message" as const,
@@ -22,12 +22,12 @@ describe("buildAgentConversationIndex", () => {
 
     const index = buildAgentConversationIndex(rows);
 
-    expect(index).toHaveLength(50);
+    expect(index).toHaveLength(55);
     expect(index[0]).toMatchObject({
-      messageId: "user-6",
-      text: "问题 6",
-      assistantPreview: "回答 6",
-      seqStart: 11,
+      messageId: "user-1",
+      text: "问题 1",
+      assistantPreview: "回答 1",
+      seqStart: 1,
     });
     expect(index.at(-1)).toMatchObject({ messageId: "user-55", seqStart: 109 });
   });

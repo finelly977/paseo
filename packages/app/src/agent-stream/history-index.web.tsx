@@ -15,9 +15,7 @@ import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   getHistoryIndexWaveScale,
   getStreamItemDomId,
-  HISTORY_INDEX_MARKER_PITCH,
   resolveHistoryIndexRailLayout,
-  sampleConversationHistoryIndex,
 } from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
 
@@ -170,7 +168,7 @@ export function ConversationHistoryIndex({
     [bandHeight, entries.length],
   );
   const visibleEntries = useMemo(
-    () => sampleConversationHistoryIndex(entries, railLayout.markerCount),
+    () => (railLayout.markerCount > 0 ? entries : []),
     [entries, railLayout.markerCount],
   );
   const entryByDomId = useMemo(
@@ -369,7 +367,7 @@ export function ConversationHistoryIndex({
               key={entry.id}
               entry={entry}
               fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
-              offset={index * HISTORY_INDEX_MARKER_PITCH}
+              offset={index * railLayout.markerPitch}
               isActive={activeId === entry.id}
               isPointerHovered={hoveredIndex === index}
               pointerFraction={pointerFraction}

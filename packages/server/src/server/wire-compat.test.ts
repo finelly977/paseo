@@ -39,6 +39,19 @@ const LegacyFetchAgentTimelineResponseMessageSchema = z.object({
   type: z.literal("fetch_agent_timeline_response"),
   payload: FetchAgentTimelineResponseMessageSchema.shape.payload.extend({
     entries: z.array(LegacyTimelineEntryPayloadSchema),
+    conversationIndex: z
+      .array(
+        z.object({
+          messageId: z.string().nullable(),
+          clientMessageId: z.string().nullable(),
+          text: z.string(),
+          assistantPreview: z.string(),
+          timestamp: z.string(),
+          seqStart: z.number().int().nonnegative(),
+        }),
+      )
+      .max(50)
+      .optional(),
   }),
 });
 
@@ -134,12 +147,14 @@ class InMemoryAgentManager {
   }
 
   fetchTimeline() {
+    const minSeq = this.rows[0]?.seq ?? 0;
+    const maxSeq = this.rows.at(-1)?.seq ?? 0;
     return {
       epoch: "epoch-1",
       reset: false,
       staleCursor: false,
       gap: false,
-      window: { minSeq: 1, maxSeq: 3, nextSeq: 4 },
+      window: { minSeq, maxSeq, nextSeq: maxSeq + 1 },
       rows: this.rows,
       hasOlder: false,
       hasNewer: false,
@@ -218,9 +233,10 @@ class InMemoryWorktreeWorkflow {
 function createSessionForWireCompatTest(options?: {
   clientCapabilities?: Record<string, unknown> | null;
   messages?: SessionOutboundMessage[];
+  rows?: AgentTimelineRow[];
 }): Session {
   const messages = options?.messages ?? [];
-  const rows: AgentTimelineRow[] = [
+  const rows: AgentTimelineRow[] = options?.rows ?? [
     {
       seq: 1,
       timestamp: "2026-05-02T00:00:00.000Z",
@@ -310,9 +326,10 @@ function createSessionForWireCompatTest(options?: {
 
 async function emitTimelineResponse(
   clientCapabilities?: Record<string, unknown> | null,
+  rows?: AgentTimelineRow[],
 ): Promise<Extract<SessionOutboundMessage, { type: "fetch_agent_timeline_response" }>> {
   const messages: SessionOutboundMessage[] = [];
-  const session = createSessionForWireCompatTest({ clientCapabilities, messages });
+  const session = createSessionForWireCompatTest({ clientCapabilities, messages, rows });
   const internals = session as unknown as SessionInternals;
 
   await internals.handleFetchAgentTimelineRequest({
@@ -464,6 +481,38 @@ describe("wire compatibility", () => {
 
     const currentParsed = FetchAgentTimelineResponseMessageSchema.parse(response);
     expect(currentParsed.payload.entries[0]?.collapsed).toContain("reasoning_merge");
+  });
+
+  test("只向声明支持的客户端发送完整对话索引", async () => {
+    const rows = Array.from({ length: 55 }, (_, index) => [
+      {
+        seq: index * 2 + 1,
+        timestamp: "2026-07-27T00:00:00.000Z",
+        item: {
+          type: "user_message" as const,
+          text: `问题 ${index + 1}`,
+          messageId: `user-${index + 1}`,
+        },
+      },
+      {
+        seq: index * 2 + 2,
+        timestamp: "2026-07-27T00:00:01.000Z",
+        item: { type: "assistant_message" as const, text: `回答 ${index + 1}` },
+      },
+    ]).flat();
+
+    const legacyResponse = await emitTimelineResponse(null, rows);
+    const capableResponse = await emitTimelineResponse(
+      { [CLIENT_CAPS.fullConversationIndex]: true },
+      rows,
+    );
+
+    expect(legacyResponse.payload.conversationIndex).toHaveLength(50);
+    expect(legacyResponse.payload.conversationIndex?.[0]?.messageId).toBe("user-6");
+    expect(() => LegacyFetchAgentTimelineResponseMessageSchema.parse(legacyResponse)).not.toThrow();
+    expect(capableResponse.payload.conversationIndex).toHaveLength(55);
+    expect(capableResponse.payload.conversationIndex?.[0]?.messageId).toBe("user-1");
+    expect(() => LegacyFetchAgentTimelineResponseMessageSchema.parse(capableResponse)).toThrow();
   });
 
   test("sub_agent tool-call payload still parses against the v0.1.65-beta.3 schema", () => {

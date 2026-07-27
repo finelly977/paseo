@@ -6,7 +6,6 @@ import {
   getHistoryIndexWaveScale,
   HISTORY_INDEX_MARKER_PITCH,
   resolveHistoryIndexRailLayout,
-  sampleConversationHistoryIndex,
 } from "./history-index-model";
 
 function user(id: string, text: string): StreamItem {
@@ -46,28 +45,6 @@ describe("conversation history index model", () => {
     ]);
   });
 
-  it("samples long histories evenly while preserving the endpoints", () => {
-    const entries = Array.from({ length: 101 }, (_, index) => ({
-      id: `u-${index}`,
-      title: `消息 ${index}`,
-      preview: "",
-      sourceIndex: index,
-    }));
-
-    const sampled = sampleConversationHistoryIndex(entries, 10);
-    expect(sampled).toHaveLength(10);
-    expect(sampled[0]?.id).toBe("u-0");
-    expect(sampled.at(-1)?.id).toBe("u-100");
-  });
-
-  it("keeps the first entry when only one marker is allowed", () => {
-    const entries = [
-      { id: "u-1", title: "一", preview: "", sourceIndex: 0 },
-      { id: "u-2", title: "二", preview: "", sourceIndex: 1 },
-    ];
-    expect(sampleConversationHistoryIndex(entries, 1).map((entry) => entry.id)).toEqual(["u-1"]);
-  });
-
   it("builds lightweight entries from the server conversation index", () => {
     expect(
       buildConversationHistoryIndexFromSummaries([
@@ -97,33 +74,27 @@ describe("conversation history index model", () => {
       resolveHistoryIndexRailLayout({ entryCount: 4, availableHeight: 400, markerHeight: 12 }),
     ).toEqual({
       markerCount: 4,
+      markerPitch: HISTORY_INDEX_MARKER_PITCH,
       railHeight: 3 * HISTORY_INDEX_MARKER_PITCH + 12,
       railTop: 182,
     });
   });
 
-  it("drops markers rather than tightening the pitch when height runs out", () => {
+  it("压缩刻度间距并保留全部索引", () => {
     const layout = resolveHistoryIndexRailLayout({
       entryCount: 200,
       availableHeight: 100,
       markerHeight: 12,
     });
-    expect(layout.markerCount).toBe(12);
-    expect(layout.railHeight).toBe(11 * HISTORY_INDEX_MARKER_PITCH + 12);
-    expect(layout.railHeight).toBeLessThanOrEqual(100);
-  });
-
-  it("caps the rail at the marker ceiling in a tall viewport", () => {
-    expect(
-      resolveHistoryIndexRailLayout({ entryCount: 500, availableHeight: 4000, markerHeight: 12 })
-        .markerCount,
-    ).toBe(60);
+    expect(layout.markerCount).toBe(200);
+    expect(layout.markerPitch).toBeCloseTo(88 / 199);
+    expect(layout.railHeight).toBe(100);
   });
 
   it("reports an empty rail before the band has been measured", () => {
     expect(
       resolveHistoryIndexRailLayout({ entryCount: 10, availableHeight: 0, markerHeight: 12 }),
-    ).toEqual({ markerCount: 0, railHeight: 0, railTop: 0 });
+    ).toEqual({ markerCount: 0, markerPitch: 0, railHeight: 0, railTop: 0 });
   });
 
   it("creates a smooth local wave around the pointer", () => {

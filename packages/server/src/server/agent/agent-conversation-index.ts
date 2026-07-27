@@ -1,7 +1,7 @@
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 import { projectTimelineRows } from "./timeline-projection.js";
 
-const CONVERSATION_INDEX_LIMIT = 50;
+export const LEGACY_CONVERSATION_INDEX_LIMIT = 50;
 const CONVERSATION_INDEX_TEXT_LIMIT = 320;
 const CONVERSATION_INDEX_PREVIEW_LIMIT = 640;
 
@@ -43,5 +43,5 @@ export function buildAgentConversationIndex(rows: readonly AgentTimelineRow[]) {
     );
   }
 
-  return entries.slice(-CONVERSATION_INDEX_LIMIT);
+  return entries;
 }

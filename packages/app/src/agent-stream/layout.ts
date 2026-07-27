@@ -137,7 +137,9 @@ export function collectCompletedTurnProcessItemIds(input: {
       input.boundaryAboveIndex === null ||
       input.boundaryAboveIndex === undefined
     ) {
-      return processItemIds;
+      // 当前分页从一轮对话中间开始。加载到用户消息边界前保持过程展开，避免每次
+      // 加载更早分页时再次收起一个片段并改变视口高度。
+      return [];
     }
 
     items = input.boundaryAboveItems;

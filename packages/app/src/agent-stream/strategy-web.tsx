@@ -102,6 +102,7 @@ function isScrollContainerOverscrolledPastBottom(
 function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: boolean }) {
   const {
     segments,
+    historyRowRevision,
     liveHeadRowRevision,
     boundary,
     renderers,
@@ -158,10 +159,23 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     count: segments.historyVirtualized.length,
     enabled: shouldUseVirtualizer,
     getScrollElement: () => scrollContainerRef.current,
-    getItemKey: (index: number) => segments.historyVirtualized[index]?.id ?? index,
+    getItemKey: (index: number) => {
+      const row = segments.historyVirtualized[index];
+      if (!row) {
+        return index;
+      }
+      const heightOverride = historyRowRevision?.estimatedHeightById.get(row.id);
+      return heightOverride === undefined ? row.id : `${row.id}:display-height-${heightOverride}`;
+    },
     estimateSize: (index: number) => {
       const row = segments.historyVirtualized[index];
-      return row ? estimateStreamItemHeight(row, messageParagraphSpacing) : 120;
+      return row
+        ? estimateStreamItemHeight(
+            row,
+            messageParagraphSpacing,
+            historyRowRevision?.estimatedHeightById.get(row.id),
+          )
+        : 120;
     },
     measureElement: measureVirtualElement,
     useAnimationFrameWithResizeObserver: true,

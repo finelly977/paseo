@@ -665,6 +665,7 @@ test("advertises client capabilities in hello", async () => {
     protocolVersion: 1,
     capabilities: {
       custom_mode_icons: true,
+      full_conversation_index: true,
       project_updates: true,
       provider_subagents: true,
       reasoning_merge_enum: true,

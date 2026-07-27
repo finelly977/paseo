@@ -1,7 +1,6 @@
 import { i18n } from "@/i18n/i18next";
 import type { StreamItem } from "@/types/stream";
 
-export const MAX_HISTORY_INDEX_MARKERS = 60;
 const HISTORY_INDEX_WAVE_RADIUS = 0.14;
 const HISTORY_INDEX_WAVE_PEAK_SCALE = 2.75;
 
@@ -108,50 +107,18 @@ export function buildConversationHistoryIndexFromSummaries(
   }));
 }
 
-/**
- * 将超长历史压缩为固定数量的刻度，保留首尾并按原始位置均匀采样。
- * 点击刻度仍使用原消息 ID，因此不会丢失跳转目标。
- */
-export function sampleConversationHistoryIndex(
-  entries: readonly ConversationHistoryIndexEntry[],
-  maxMarkers = MAX_HISTORY_INDEX_MARKERS,
-): ConversationHistoryIndexEntry[] {
-  if (maxMarkers < 1 || entries.length === 0) {
-    return [];
-  }
-  if (entries.length <= maxMarkers) {
-    return [...entries];
-  }
-  if (maxMarkers === 1) {
-    const first = entries[0];
-    return first ? [first] : [];
-  }
-  const sampled: ConversationHistoryIndexEntry[] = [];
-  const seen = new Set<string>();
-  for (let index = 0; index < maxMarkers; index += 1) {
-    const sourceIndex = Math.round((index * (entries.length - 1)) / (maxMarkers - 1));
-    const entry = entries[sourceIndex];
-    if (entry && !seen.has(entry.id)) {
-      seen.add(entry.id);
-      sampled.push(entry);
-    }
-  }
-  return sampled;
-}
-
 /** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
 export const HISTORY_INDEX_MARKER_PITCH = 8;
 
 export interface HistoryIndexRailLayout {
   markerCount: number;
+  markerPitch: number;
   railHeight: number;
   railTop: number;
 }
 
 /**
- * 刻度按固定间距紧密排列，而不是均摊到整条轨道上。固定间距同时消除了两个问题：
- * 会话很短时刻度不再被拉开，而且每个刻度都落在整像素上，1 像素细线不会被抗锯齿
- * 摊成两行造成粗细不均。可用高度不足时先减少刻度数量，不压缩间距。
+ * 短会话按固定间距紧密排列；索引超过可用高度时压缩间距，但不丢弃任何一轮对话。
  */
 export function resolveHistoryIndexRailLayout(input: {
   entryCount: number;
@@ -159,18 +126,21 @@ export function resolveHistoryIndexRailLayout(input: {
   markerHeight: number;
 }): HistoryIndexRailLayout {
   if (input.entryCount <= 0 || input.availableHeight <= 0) {
-    return { markerCount: 0, railHeight: 0, railTop: 0 };
+    return { markerCount: 0, markerPitch: 0, railHeight: 0, railTop: 0 };
   }
-  const spans = Math.floor(
-    Math.max(0, input.availableHeight - input.markerHeight) / HISTORY_INDEX_MARKER_PITCH,
+  const markerCount = input.entryCount;
+  const availableSpan = Math.max(0, input.availableHeight - input.markerHeight);
+  const markerPitch =
+    markerCount === 1 ? 0 : Math.min(HISTORY_INDEX_MARKER_PITCH, availableSpan / (markerCount - 1));
+  const railHeight = Math.min(
+    input.availableHeight,
+    (markerCount - 1) * markerPitch + input.markerHeight,
   );
-  const markerCount = Math.min(input.entryCount, MAX_HISTORY_INDEX_MARKERS, spans + 1);
-  const railHeight = (markerCount - 1) * HISTORY_INDEX_MARKER_PITCH + input.markerHeight;
   return {
     markerCount,
+    markerPitch,
     railHeight,
-    // Round the centring offset too: a fractional container origin would put every
-    // whole-pixel marker back on a half pixel.
+    // 居中偏移也取整，避免容器原点的小数像素让所有整数刻度重新落到半像素上。
     railTop: Math.round((input.availableHeight - railHeight) / 2),
   };
 }

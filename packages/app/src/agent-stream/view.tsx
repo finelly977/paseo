@@ -277,6 +277,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
+const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 36;
 const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -737,7 +738,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }, [streamLayout.history, streamLayout.liveHead]);
     const historyIndexEntries = useMemo(() => {
       if (conversationIndexSummaries.length === 0) {
-        return loadedHistoryIndexEntries.slice(-50);
+        return loadedHistoryIndexEntries;
       }
 
       const summaries = buildConversationHistoryIndexFromSummaries(conversationIndexSummaries);
@@ -755,9 +756,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       const liveEntries = loadedHistoryIndexEntries.filter(
         (entry) => entry.seqStart === undefined || entry.seqStart > newestIndexedSeq,
       );
-      const recentEntries = [...indexed, ...liveEntries].slice(-50);
+      const allEntries = [...indexed, ...liveEntries];
       const reindexed: ConversationHistoryIndexEntry[] = [];
-      for (const [sourceIndex, entry] of recentEntries.entries()) {
+      for (const [sourceIndex, entry] of allEntries.entries()) {
         reindexed.push({ ...entry, sourceIndex });
       }
       return reindexed;
@@ -1273,13 +1274,33 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       () => new Set([...expandedToolCallGroupIds, ...expandedCompletedTurnIds]),
       [expandedCompletedTurnIds, expandedToolCallGroupIds],
     );
+    const estimatedCollapsedProcessHeightById = useMemo(() => {
+      const heights = new Map<string, number>();
+      for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
+        if (!expandedCompletedTurnIds.has(turnId)) {
+          heights.set(itemId, 0);
+        }
+      }
+      for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
+        if (!expandedCompletedTurnIds.has(toggle.turnId)) {
+          heights.set(itemId, COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE);
+        }
+      }
+      return heights;
+    }, [completedTurnProcess, expandedCompletedTurnIds]);
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
         displayStateById: historyDisplayStateIds,
+        estimatedHeightById: estimatedCollapsedProcessHeightById,
         globalDisplayState: isMobile,
       }),
-      [historyDisplayStateIds, isMobile, projectedToolCalls.historyGroupUpdatesByHostId],
+      [
+        estimatedCollapsedProcessHeightById,
+        historyDisplayStateIds,
+        isMobile,
+        projectedToolCalls.historyGroupUpdatesByHostId,
+      ],
     );
 
     return (

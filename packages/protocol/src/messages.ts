@@ -3497,7 +3497,6 @@ export const FetchAgentTimelineResponseMessageSchema = z.object({
           seqStart: z.number().int().nonnegative(),
         }),
       )
-      .max(50)
       .optional(),
     error: z.string().nullable(),
   }),
@@ -5728,6 +5727,7 @@ export const WSHelloMessageSchema = z.object({
       [CLIENT_CAPS.terminalReflowableSnapshot]: z.boolean().optional(),
       [CLIENT_CAPS.providerSubagents]: z.boolean().optional(),
       [CLIENT_CAPS.projectUpdates]: z.boolean().optional(),
+      [CLIENT_CAPS.fullConversationIndex]: z.boolean().optional(),
       [CLIENT_CAPS.browserHost]: BrowserAutomationHostCapabilitySchema.optional(),
     })
     .passthrough()

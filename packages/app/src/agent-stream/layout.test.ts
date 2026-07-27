@@ -539,4 +539,19 @@ describe("layoutStream", () => {
       expect(new Set(host?.processItemIds)).toEqual(new Set(["history-tool", "head-tool"]));
     },
   );
+
+  it.each(["web", "android"] as const)(
+    "分页只加载到半轮 %s 对话时保持展开，直到用户消息边界可用",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        tail: [toolCall("partial-tool", 1), assistantMessage("final", 2), userMessage("next", 3)],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "final",
+      )?.completedFooter;
+      expect(host?.processItemIds).toEqual([]);
+    },
+  );
 });

@@ -57,7 +57,11 @@ export function shouldAdjustScrollForMeasuredItem(input: {
 export function estimateStreamItemHeight(
   item: StreamItem,
   messageParagraphSpacing?: number,
+  displayHeightOverride?: number,
 ): number {
+  if (displayHeightOverride !== undefined) {
+    return displayHeightOverride;
+  }
   switch (item.kind) {
     case "user_message":
       if (shouldCollapseUserMessage(item.text)) {

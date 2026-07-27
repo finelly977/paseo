@@ -3749,6 +3749,45 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
+  test("旧的未配对通知不会吞掉后续压缩完成事件", () => {
+    const session = createSession();
+    session.activeForegroundTurnId = null;
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("thread/compacted", {
+      threadId: "test-thread",
+      turnId: "old-compact-turn",
+    });
+    asInternals(session).handleNotification("item/started", {
+      threadId: "test-thread",
+      item: { type: "contextCompaction", id: "new-compact-item" },
+    });
+    asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
+      item: { type: "contextCompaction", id: "new-compact-item" },
+    });
+
+    expect(events).toEqual([
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "old-compact-turn",
+        item: { type: "compaction", status: "completed" },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "compaction", status: "loading" },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "compaction", status: "completed" },
+      },
+    ]);
+  });
+
   test("does not replace a persisted Codex thread when app-server resume fails", async () => {
     const session = createSession({ thinkingOptionId: "medium" });
     session.currentThreadId = "archived-thread-id";

@@ -5236,6 +5236,7 @@ export class DaemonClient {
             [CLIENT_CAPS.terminalReflowableSnapshot]: true,
             [CLIENT_CAPS.providerSubagents]: true,
             [CLIENT_CAPS.projectUpdates]: true,
+            [CLIENT_CAPS.fullConversationIndex]: true,
             ...this.config.capabilities,
           },
           ...(this.config.appVersion ? { appVersion: this.config.appVersion } : {}),

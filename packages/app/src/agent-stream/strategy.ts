@@ -55,6 +55,7 @@ export interface StreamSegmentRenderers {
 export interface StreamHistoryRowRevision {
   contentById: { has(id: string): boolean };
   displayStateById: { has(id: string): boolean };
+  estimatedHeightById: ReadonlyMap<string, number>;
   globalDisplayState: boolean;
 }
 

@@ -20,6 +20,9 @@ export const CLIENT_CAPS = {
   providerSubagents: "provider_subagents",
   // COMPAT(projectUpdates): added in v0.1.109, remove gate after 2027-01-15.
   projectUpdates: "project_updates",
+  // COMPAT(fullConversationIndex): v0.2.0-beta.4 新增。旧客户端会拒绝超过 50 条的
+  // 对话索引，因此在最低支持版本达到该版本前继续截断响应；2027-01-27 后移除。
+  fullConversationIndex: "full_conversation_index",
   browserHost: "browser_host",
 } as const;
 

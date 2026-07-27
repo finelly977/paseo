@@ -5997,6 +5997,8 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     if (this.isContextCompactionItem(parsed.item)) {
+      // 没有匹配项目的旧完成通知不能吞掉当前项目随后到达的完成事件。
+      this.unpairedCompactionNotificationCompletions = 0;
       this.emitEvent({
         type: "timeline",
         provider: CODEX_PROVIDER,

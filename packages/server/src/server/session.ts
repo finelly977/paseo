@@ -99,7 +99,10 @@ import {
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
-import { buildAgentConversationIndex } from "./agent/agent-conversation-index.js";
+import {
+  buildAgentConversationIndex,
+  LEGACY_CONVERSATION_INDEX_LIMIT,
+} from "./agent/agent-conversation-index.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -6094,9 +6097,12 @@ export class Session {
         selectedTimeline.endSeq !== null
           ? { epoch: selectedTimeline.timeline.epoch, seq: selectedTimeline.endSeq }
           : null;
-      const conversationIndex = buildAgentConversationIndex(
+      const fullConversationIndex = buildAgentConversationIndex(
         this.agentManager.fetchTimeline(msg.agentId, { direction: "tail", limit: 0 }).rows,
       );
+      const conversationIndex = this.supports(CLIENT_CAPS.fullConversationIndex)
+        ? fullConversationIndex
+        : fullConversationIndex.slice(-LEGACY_CONVERSATION_INDEX_LIMIT);
 
       this.emit({
         type: "fetch_agent_timeline_response",
