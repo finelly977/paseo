@@ -3531,7 +3531,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     try {
       const response = toObjectRecord(
         await this.client.request("skills/list", {
-          cwd: [this.config.cwd],
+          cwds: [this.config.cwd],
         }),
       );
       const entries = Array.isArray(response?.data) ? response.data : [];
