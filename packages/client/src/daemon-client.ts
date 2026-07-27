@@ -39,6 +39,7 @@ import type {
   CheckoutMergeFromBaseResponse,
   CheckoutPullResponse,
   CheckoutPushResponse,
+  CheckoutFetchResponse,
   CheckoutRefreshResponse,
   CheckoutPrCreateResponse,
   CheckoutPrMergeResponse,
@@ -380,6 +381,7 @@ type CheckoutMergePayload = CheckoutMergeResponse["payload"];
 type CheckoutMergeFromBasePayload = CheckoutMergeFromBaseResponse["payload"];
 type CheckoutPullPayload = CheckoutPullResponse["payload"];
 type CheckoutPushPayload = CheckoutPushResponse["payload"];
+type CheckoutFetchPayload = CheckoutFetchResponse["payload"];
 type CheckoutRefreshPayload = CheckoutRefreshResponse["payload"];
 type CheckoutPrCreatePayload = CheckoutPrCreateResponse["payload"];
 type CheckoutPrMergePayload = CheckoutPrMergeResponse["payload"];
@@ -3607,6 +3609,17 @@ export class DaemonClient {
     });
   }
 
+  async checkoutFetch(cwd: string, requestId?: string): Promise<CheckoutFetchPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.fetch.response">({
+      requestId,
+      message: {
+        type: "checkout.fetch.request",
+        cwd,
+      },
+      timeout: 120000,
+    });
+  }
+
   async checkoutRefresh(cwd: string, requestId?: string): Promise<CheckoutRefreshPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId,
@@ -3620,21 +3633,36 @@ export class DaemonClient {
 
   async listCheckoutCommits(
     cwd: string,
-    requestId?: string,
-  ): Promise<{ baseRef: string | null; commits: CheckoutCommit[] }> {
+    requestIdOrPagination?: string | { cursor: number; limit: number; requestId?: string },
+  ): Promise<{
+    baseRef: string | null;
+    commits: CheckoutCommit[];
+    nextCursor?: number | null;
+  }> {
+    const pagination =
+      typeof requestIdOrPagination === "object" ? requestIdOrPagination : undefined;
+    const requestId =
+      typeof requestIdOrPagination === "string"
+        ? requestIdOrPagination
+        : requestIdOrPagination?.requestId;
     const payload =
       await this.sendNamespacedCorrelatedSessionRequest<"checkout.commits.list.response">({
         requestId,
         message: {
           type: "checkout.commits.list.request",
           cwd,
+          ...(pagination ? { cursor: pagination.cursor, limit: pagination.limit } : {}),
         },
         timeout: 60000,
       });
     if (payload.error) {
       throw new Error(payload.error.message);
     }
-    return { baseRef: payload.baseRef, commits: payload.commits };
+    return {
+      baseRef: payload.baseRef,
+      commits: payload.commits,
+      ...(payload.nextCursor !== undefined ? { nextCursor: payload.nextCursor } : {}),
+    };
   }
 
   async getCommitFileDiff(

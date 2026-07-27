@@ -3,6 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   CheckoutCommitsListRequestSchema,
   CheckoutCommitsListResponseSchema,
+  CheckoutFetchRequestSchema,
+  CheckoutFetchResponseSchema,
+  CheckoutStatusResponseSchema,
   ServerInfoStatusPayloadSchema,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
@@ -21,6 +24,18 @@ describe("checkout.commits.list schemas", () => {
       cwd: "/tmp/repo",
       requestId: "request-commits",
     });
+  });
+
+  test("parses commit history pagination fields", () => {
+    expect(
+      CheckoutCommitsListRequestSchema.parse({
+        type: "checkout.commits.list.request",
+        cwd: "/tmp/repo",
+        cursor: 40,
+        limit: 40,
+        requestId: "request-commits-page-2",
+      }),
+    ).toMatchObject({ cursor: 40, limit: 40 });
   });
 
   test("parses a valid response with local-only and remote commits", () => {
@@ -53,6 +68,7 @@ describe("checkout.commits.list schemas", () => {
         },
       ],
       error: null,
+      nextCursor: 2,
       requestId: "request-commits",
     };
 
@@ -144,9 +160,43 @@ describe("checkout.commits.list schemas", () => {
         features: {
           commitsList: true,
           commitBaseClassification: true,
+          commitsPagination: true,
+          stagedFileCount: true,
+          checkoutFetch: true,
         },
       }).features,
-    ).toEqual({ commitsList: true, commitBaseClassification: true });
+    ).toEqual({
+      commitsList: true,
+      commitBaseClassification: true,
+      commitsPagination: true,
+      stagedFileCount: true,
+      checkoutFetch: true,
+    });
+  });
+
+  test("defaults staged file counts from older checkout status payloads", () => {
+    const parsed = CheckoutStatusResponseSchema.parse({
+      type: "checkout_status_response",
+      payload: {
+        cwd: "/tmp/repo",
+        isGit: true,
+        isPaseoOwnedWorktree: false,
+        repoRoot: "/tmp/repo",
+        mainRepoRoot: null,
+        currentBranch: "main",
+        isDirty: true,
+        baseRef: null,
+        aheadBehind: null,
+        aheadOfOrigin: 0,
+        behindOfOrigin: 0,
+        hasRemote: true,
+        remoteUrl: "https://example.invalid/repo.git",
+        error: null,
+        requestId: "request-status",
+      },
+    });
+
+    expect(parsed.payload.stagedFileCount).toBe(0);
   });
 
   test("still parses server_info without the commitsList feature flag", () => {
@@ -159,5 +209,33 @@ describe("checkout.commits.list schemas", () => {
         },
       }).features,
     ).toEqual({ providersSnapshot: true });
+  });
+});
+
+describe("checkout.fetch schemas", () => {
+  test("通过入站联合类型解析 Fetch 请求", () => {
+    const request = {
+      type: "checkout.fetch.request" as const,
+      cwd: "/tmp/repo",
+      requestId: "request-fetch",
+    };
+
+    expect(CheckoutFetchRequestSchema.parse(request)).toEqual(request);
+    expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  });
+
+  test("通过出站联合类型解析 Fetch 响应", () => {
+    const response = {
+      type: "checkout.fetch.response" as const,
+      payload: {
+        cwd: "/tmp/repo",
+        success: true,
+        error: null,
+        requestId: "request-fetch",
+      },
+    };
+
+    expect(CheckoutFetchResponseSchema.parse(response)).toEqual(response);
+    expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
   });
 });

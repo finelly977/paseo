@@ -262,7 +262,7 @@ describe("translation resources", () => {
     expect(en.workspace.tabs.actions.newAgent).toBe("New agent");
     expect(en.workspace.header.actions.copyPath).toBe("Copy workspace path");
     expect(en.workspace.scripts.actions.run).toBe("Run");
-    expect(en.workspace.git.panel.sourceControl).toBe("Source control");
+    expect(en.workspace.git.panel.sourceControl).toBe("Git");
     expect(en.workspace.git.panel.repository).toBe("Repositories");
     expect(en.workspace.git.panel.commitPlaceholder).toBe('Message to commit on "{{branch}}"');
     expect(en.workspace.git.actions.commit.label).toBe("Commit");

@@ -97,7 +97,7 @@ import {
 } from "@/git/source-control-panel";
 import { buildForgeSignInCommand, getForgePresentation, type Forge } from "@/git/forge";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
-import type { ForgeAuthState } from "@getpaseo/protocol/messages";
+import type { CheckoutStatusResponse, ForgeAuthState } from "@getpaseo/protocol/messages";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore } from "@/stores/session-store";
@@ -1742,13 +1742,12 @@ function computeEmptyMessage(
   diffMode: "uncommitted" | "base",
   baseRefLabel: string,
   labels: {
-    hiddenWhitespace: string;
     uncommitted: string;
     againstBase: (baseRefLabel: string) => string;
   },
-): string {
+): string | null {
   if (hideWhitespace) {
-    return labels.hiddenWhitespace;
+    return null;
   }
   if (diffMode === "uncommitted") {
     return labels.uncommitted;
@@ -1763,7 +1762,7 @@ interface DiffBodyContentProps {
   isDiffLoading: boolean;
   diffErrorMessage: string | null;
   hasChanges: boolean;
-  emptyMessage: string;
+  emptyMessage: string | null;
   children: ReactElement;
   checkingRepositoryLabel: string;
   notRepositoryLabel: string;
@@ -1820,7 +1819,7 @@ function DiffBodyContent({
   if (!hasChanges) {
     return (
       <View style={styles.emptyContainer}>
-        <Text style={styles.emptyText}>{emptyMessage}</Text>
+        {emptyMessage ? <Text style={styles.emptyText}>{emptyMessage}</Text> : null}
       </View>
     );
   }
@@ -2355,13 +2354,45 @@ function repositoryMenuActions(gitActions: GitActions): GitActions {
     ...gitActions.secondary,
     ...gitActions.menu,
   ].filter((action) => {
-    if (action.id === "commit" || seen.has(action.id)) {
+    if (
+      action.id === "commit" ||
+      action.id === "pull" ||
+      action.id === "push" ||
+      action.id === "pull-and-push" ||
+      seen.has(action.id)
+    ) {
       return false;
     }
     seen.add(action.id);
     return true;
   });
   return { primary: null, secondary: [], menu };
+}
+
+function resolveStagedFileCount({
+  supported,
+  status,
+}: {
+  supported: boolean;
+  status: CheckoutStatusResponse["payload"] | null | undefined;
+}): number {
+  if (!supported || !status || !status.isGit) {
+    return 0;
+  }
+  return status.stagedFileCount;
+}
+
+function StagedChangesHeader({ title, count }: { title: string; count: number }) {
+  if (count === 0) {
+    return null;
+  }
+  return (
+    <SourceControlSectionHeader
+      title={title}
+      count={count}
+      testID="source-control-staged-changes-heading"
+    />
+  );
 }
 
 function computePrErrorMessage(
@@ -2695,8 +2726,20 @@ export function GitDiffPane({
   const refreshSupported = useSessionStore(
     (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
   );
+  // COMPAT(checkoutFetch): v0.2.2 新增，2027-01-27 后移除能力门控。
+  const fetchSupported = useSessionStore(
+    (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutFetch === true,
+  );
+  // COMPAT(stagedFileCount): v0.2.2 新增，2027-01-27 后移除能力门控。
+  const stagedFileCountSupported = useSessionStore(
+    (s) => s.sessions[serverId]?.serverInfo?.features?.stagedFileCount === true,
+  );
   const runRefresh = useCheckoutGitActionsStore((s) => s.refresh);
+  const runFetch = useCheckoutGitActionsStore((s) => s.fetch);
   const runCommit = useCheckoutGitActionsStore((s) => s.commit);
+  const isFetching =
+    useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "fetch" })) ===
+    "pending";
   const isRefreshing =
     useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "refresh" })) ===
     "pending";
@@ -2712,6 +2755,17 @@ export function GitDiffPane({
       toast.error(error instanceof Error ? error.message : t("workspace.git.diff.failedRefresh"));
     });
   }, [cwd, isRefreshing, runRefresh, serverId, t, toast]);
+
+  const handleFetch = useCallback(() => {
+    if (isFetching) {
+      return;
+    }
+    void runFetch({ serverId, cwd }).catch((error) => {
+      toast.error(
+        error instanceof Error ? error.message : t("workspace.git.actions.toasts.failedFetch"),
+      );
+    });
+  }, [cwd, isFetching, runFetch, serverId, t, toast]);
 
   const handleCommit = useCallback(
     async (message: string) => {
@@ -2860,6 +2914,10 @@ export function GitDiffPane({
 
   const hasChanges = files.length > 0;
   const hasUncommittedChanges = Boolean(status?.isGit && status.isDirty);
+  const stagedFileCount = resolveStagedFileCount({
+    supported: stagedFileCountSupported,
+    status,
+  });
   const diffErrorMessage = diffPayloadError?.message ?? null;
   const prErrorMessage = computePrErrorMessage(githubFeaturesEnabled, prPayloadError);
   const baseRefLabel = useMemo(
@@ -2897,7 +2955,6 @@ export function GitDiffPane({
     diffMode,
     baseRefLabel,
     {
-      hiddenWhitespace: t("workspace.git.diff.emptyHiddenWhitespace"),
       uncommitted: t("workspace.git.diff.emptyUncommitted"),
       againstBase: (label) => t("workspace.git.diff.emptyAgainstBase", { baseRef: label }),
     },
@@ -2930,9 +2987,6 @@ export function GitDiffPane({
           <SourceControlRepositoryHeader
             repositoryName={repositoryName}
             gitActions={repositoryGitActions}
-            refreshSupported={refreshSupported}
-            isRefreshing={isRefreshing}
-            onRefresh={handleRefresh}
           >
             <BranchSwitcher
               currentBranchName={currentBranchName}
@@ -2943,6 +2997,10 @@ export function GitDiffPane({
               testID="changes-branch-switcher"
             />
           </SourceControlRepositoryHeader>
+          <StagedChangesHeader
+            title={t("workspace.git.panel.stagedChanges")}
+            count={stagedFileCount}
+          />
           <SourceControlSectionHeader
             title={t("workspace.git.panel.changes")}
             count={files.length}
@@ -3017,7 +3075,19 @@ export function GitDiffPane({
 
       <View style={styles.diffContainer}>{bodyContent}</View>
 
-      <CommitsSection serverId={serverId} cwd={cwd} onCommitPress={handleCommitPress} />
+      <CommitsSection
+        serverId={serverId}
+        cwd={cwd}
+        gitActions={gitActions}
+        fetchSupported={fetchSupported}
+        hasRemote={status?.hasRemote === true}
+        isFetching={isFetching}
+        onFetch={handleFetch}
+        refreshSupported={refreshSupported}
+        isRefreshing={isRefreshing}
+        onRefresh={handleRefresh}
+        onCommitPress={handleCommitPress}
+      />
     </View>
   );
 }

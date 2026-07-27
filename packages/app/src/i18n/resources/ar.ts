@@ -653,9 +653,10 @@ export const ar: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "التحكم بالمصدر",
+        sourceControl: "Git",
         repository: "المستودعات",
         changes: "التغييرات",
+        stagedChanges: "التغييرات المرحلية",
         commitPlaceholder: 'رسالة للإيداع في "{{branch}}"',
         commit: "إيداع",
         committing: "جارٍ الإيداع...",
@@ -768,6 +769,7 @@ export const ar: TranslationResources = {
         },
         toasts: {
           failedCommit: "فشل في الالتزام",
+          failedFetch: "فشل في جلب التغييرات",
           failedPull: "فشل في السحب",
           failedPush: "فشل في الدفع",
           failedPullAndPush: "فشل في السحب والدفع",
@@ -817,7 +819,6 @@ export const ar: TranslationResources = {
         refresh: "ينعش",
         refreshState: "تحديث حالة git و{{brand}}",
         failedRefresh: "فشل تحديث حالة git.",
-        emptyHiddenWhitespace: "لا توجد تغييرات مرئية بعد إخفاء المسافة البيضاء",
         emptyUncommitted: "لا توجد تغييرات غير ملتزم بها",
         emptyAgainstBase: "لا توجد تغييرات مقابل{{baseRef}}",
         checkingRepository: "فحص المستودع...",
@@ -831,6 +832,8 @@ export const ar: TranslationResources = {
         deletedFile: "تم الحذف",
         commits: {
           title: "الرسم البياني",
+          filesChanged: "تم تغيير {{count}} من الملفات",
+          moreFiles: "{{count}} من الملفات الإضافية",
           countLabel: "{{count}} إيداعات",
           fileDiffEmpty: "لا توجد تغييرات لعرضها",
           fileDiffError: "تعذّر تحميل فروق الملف",

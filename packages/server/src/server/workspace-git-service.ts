@@ -78,6 +78,7 @@ export interface WorkspaceGitRuntimeSnapshot {
     remoteUrl: string | null;
     isPaseoOwnedWorktree: boolean;
     isDirty: boolean | null;
+    stagedFileCount: number | null;
     baseRef: string | null;
     aheadBehind: { ahead: number; behind: number } | null;
     aheadOfOrigin: number | null;
@@ -165,6 +166,7 @@ export interface WorkspaceGitService {
   resolveRepoRoot(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveDefaultBranch(cwdOrRepoRoot: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveRepoRemoteUrl(cwd: string, options?: WorkspaceGitReadOptions): Promise<string | null>;
+  fetch(cwd: string): Promise<void>;
   refresh(cwd: string, options?: { priority?: "normal" | "high" }): Promise<void>;
   requestWorkingTreeWatch(
     cwd: string,
@@ -714,6 +716,19 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   ): Promise<string | null> {
     const snapshot = await this.getSnapshot(cwd, options);
     return snapshot.git.remoteUrl;
+  }
+
+  async fetch(cwd: string): Promise<void> {
+    cwd = resolve(cwd);
+    await this.deps.runGitFetch(cwd);
+    const target = this.ensureWorkspaceTarget(cwd);
+    await this.refreshWorkspaceTarget(target, {
+      force: true,
+      includeForge: false,
+      reason: "manual-fetch",
+      notify: true,
+    });
+    this.scheduleWorkspaceObservationSetup(target);
   }
 
   async refresh(cwd: string, _options?: { priority?: "normal" | "high" }): Promise<void> {
@@ -1835,6 +1850,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       remoteUrl: checkoutStatus.remoteUrl,
       isPaseoOwnedWorktree: checkoutStatus.isPaseoOwnedWorktree,
       isDirty: checkoutStatus.isDirty,
+      stagedFileCount: checkoutStatus.stagedFileCount,
       baseRef: checkoutStatus.baseRef,
       aheadBehind: checkoutStatus.aheadBehind,
       aheadOfOrigin: checkoutStatus.aheadOfOrigin,
@@ -2204,6 +2220,7 @@ function buildNotGitSnapshot(cwd: string): WorkspaceGitRuntimeSnapshot {
       remoteUrl: null,
       isPaseoOwnedWorktree: false,
       isDirty: null,
+      stagedFileCount: null,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,

@@ -7,6 +7,7 @@ import type {
   BranchSuggestionsRequest,
   CheckoutCommitsListRequest,
   CheckoutCommitFileDiffRequest,
+  CheckoutFetchRequest,
   CheckoutRefreshRequest,
   CheckoutRenameBranchRequest,
   CheckoutStatusRequest,
@@ -251,6 +252,7 @@ export class CheckoutSession {
           repoRoot: null,
           currentBranch: null,
           isDirty: null,
+          stagedFileCount: null,
           baseRef: null,
           aheadBehind: null,
           aheadOfOrigin: null,
@@ -266,13 +268,24 @@ export class CheckoutSession {
   }
 
   async handleCommitsListRequest(msg: CheckoutCommitsListRequest): Promise<void> {
-    const { cwd, requestId } = msg;
+    const { cwd, requestId, cursor, limit } = msg;
 
     try {
-      const { baseRef, commits } = await listCheckoutCommits({ cwd: expandTilde(cwd) });
+      const { baseRef, commits, nextCursor } = await listCheckoutCommits({
+        cwd: expandTilde(cwd),
+        cursor,
+        limit,
+      });
       this.host.emit({
         type: "checkout.commits.list.response",
-        payload: { cwd, baseRef, commits, error: null, requestId },
+        payload: {
+          cwd,
+          baseRef,
+          commits,
+          ...(nextCursor !== undefined ? { nextCursor } : {}),
+          error: null,
+          requestId,
+        },
       });
     } catch (error) {
       this.host.emit({
@@ -466,6 +479,34 @@ export class CheckoutSession {
     } catch (error) {
       this.host.emit({
         type: "checkout.refresh.response",
+        payload: {
+          cwd,
+          success: false,
+          error: toCheckoutError(error),
+          requestId,
+        },
+      });
+    }
+  }
+
+  async handleFetchRequest(msg: CheckoutFetchRequest): Promise<void> {
+    const { cwd, requestId } = msg;
+    const resolvedCwd = expandTilde(cwd);
+
+    try {
+      await this.workspaceGitService.fetch(resolvedCwd);
+      this.host.emit({
+        type: "checkout.fetch.response",
+        payload: {
+          cwd,
+          success: true,
+          error: null,
+          requestId,
+        },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.fetch.response",
         payload: {
           cwd,
           success: false,

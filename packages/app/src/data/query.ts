@@ -1,9 +1,13 @@
 import {
   keepPreviousData,
   skipToken,
+  useInfiniteQuery,
   useQueries,
   useQuery,
+  type InfiniteData,
   type QueryKey,
+  type UseInfiniteQueryOptions,
+  type UseInfiniteQueryResult,
   type UseQueryOptions,
   type UseQueryResult,
 } from "@tanstack/react-query";
@@ -33,6 +37,20 @@ type FetchQueryInput<TQueryFnData, TError, TData, TQueryKey extends QueryKey> = 
   staleTimeMs: number;
 };
 
+type InfiniteFetchQueryInput<
+  TQueryFnData,
+  TError,
+  TData,
+  TQueryKey extends QueryKey,
+  TPageParam,
+> = Omit<
+  UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+  "initialData" | "placeholderData" | "refetchOnMount" | "staleTime"
+> & {
+  dataShape: "list" | "value";
+  staleTimeMs: number;
+};
+
 export function useReplicaQuery<
   TQueryFnData,
   TError = Error,
@@ -55,6 +73,35 @@ export function useFetchQueries<TData>(
   inputs: FetchQueryInput<TData, Error, TData, QueryKey>[],
 ): UseQueryResult<TData, Error>[] {
   return useQueries({ queries: inputs.map((input) => fetchQueryOptions(input)) });
+}
+
+export function useInfiniteFetchQuery<
+  TQueryFnData,
+  TError = Error,
+  TData = InfiniteData<TQueryFnData>,
+  TQueryKey extends QueryKey = QueryKey,
+  TPageParam = unknown,
+>(
+  input: InfiniteFetchQueryInput<TQueryFnData, TError, TData, TQueryKey, TPageParam>,
+): UseInfiniteQueryResult<TData, TError> {
+  if (!Number.isFinite(input.staleTimeMs)) {
+    throw new Error("无限查询必须声明有限的过期时间");
+  }
+
+  const { dataShape, meta, staleTimeMs, ...options } = input;
+  return useInfiniteQuery({
+    ...options,
+    ...(dataShape === "list" ? { placeholderData: keepPreviousData } : {}),
+    meta: {
+      ...meta,
+      serverDataPolicy: {
+        class: "fetch",
+        dataShape,
+      },
+    },
+    refetchOnMount: "always",
+    staleTime: staleTimeMs,
+  });
 }
 
 function replicaQueryOptions<

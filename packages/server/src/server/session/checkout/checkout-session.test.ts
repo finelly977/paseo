@@ -187,6 +187,7 @@ function createGitSnapshot(
       remoteUrl: null,
       isPaseoOwnedWorktree: false,
       isDirty: overrides?.isDirty ?? false,
+      stagedFileCount: 0,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,
@@ -436,6 +437,61 @@ describe("CheckoutSession", () => {
       const resolvedCwd = expandTilde("~/repo");
       expect(snapshotCalls).toEqual([resolvedCwd]);
       expect(refreshedCwds).toEqual([resolvedCwd]);
+    });
+  });
+
+  describe("Fetch", () => {
+    it("抓取远端后返回成功，并在执行前展开工作目录", async () => {
+      const fetchedCwds: string[] = [];
+      const { checkout, emitted } = makeCheckoutSession({
+        git: {
+          fetch: async (cwd) => {
+            fetchedCwds.push(cwd);
+          },
+        },
+      });
+
+      await checkout.handleFetchRequest({
+        type: "checkout.fetch.request",
+        cwd: "~/repo",
+        requestId: "r-fetch",
+      });
+
+      expect(fetchedCwds).toEqual([expandTilde("~/repo")]);
+      expect(emitted).toEqual([
+        {
+          type: "checkout.fetch.response",
+          payload: { cwd: "~/repo", success: true, error: null, requestId: "r-fetch" },
+        },
+      ]);
+    });
+
+    it("向客户端返回抓取错误", async () => {
+      const { checkout, emitted } = makeCheckoutSession({
+        git: {
+          fetch: async () => {
+            throw new Error("remote unavailable");
+          },
+        },
+      });
+
+      await checkout.handleFetchRequest({
+        type: "checkout.fetch.request",
+        cwd: "/repo",
+        requestId: "r-fetch-error",
+      });
+
+      expect(emitted).toEqual([
+        {
+          type: "checkout.fetch.response",
+          payload: {
+            cwd: "/repo",
+            success: false,
+            error: { code: "UNKNOWN", message: "remote unavailable" },
+            requestId: "r-fetch-error",
+          },
+        },
+      ]);
     });
   });
 

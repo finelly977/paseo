@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,13 +7,12 @@ import {
   View,
   type PressableStateCallbackType,
 } from "react-native";
-import { Check, GitBranch, MessageSquarePlus, RefreshCcw } from "lucide-react-native";
+import { Check, GitBranch, MessageSquarePlus } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { CheckoutGitActionStatus } from "@/git/actions-store";
 import type { GitActions } from "@/git/policy";
 import { GitActionsSplitButton } from "@/git/actions-split-button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedMessageSquarePlus = withUnistyles(MessageSquarePlus);
@@ -21,18 +20,12 @@ const ThemedMessageSquarePlus = withUnistyles(MessageSquarePlus);
 export interface SourceControlRepositoryHeaderProps {
   repositoryName: string;
   gitActions: GitActions;
-  refreshSupported: boolean;
-  isRefreshing: boolean;
-  onRefresh: () => void;
   children: ReactNode;
 }
 
 export function SourceControlRepositoryHeader({
   repositoryName,
   gitActions,
-  refreshSupported,
-  isRefreshing,
-  onRefresh,
   children,
 }: SourceControlRepositoryHeaderProps) {
   const { t } = useTranslation();
@@ -50,29 +43,6 @@ export function SourceControlRepositoryHeader({
         </View>
         <View style={styles.repositoryBranch}>{children}</View>
         <View style={styles.repositoryActions}>
-          {refreshSupported ? (
-            <Tooltip delayDuration={300}>
-              <TooltipTrigger asChild>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("workspace.git.diff.refresh")}
-                  disabled={isRefreshing}
-                  onPress={onRefresh}
-                  style={repositoryActionButtonStyle}
-                  testID="source-control-refresh"
-                >
-                  {isRefreshing ? (
-                    <ActivityIndicator size="small" color={styles.repositoryActionIcon.color} />
-                  ) : (
-                    <RefreshCcw size={15} color={styles.repositoryActionIcon.color} />
-                  )}
-                </Pressable>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <Text style={styles.tooltipText}>{t("workspace.git.diff.refresh")}</Text>
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
           <GitActionsSplitButton gitActions={gitActions} hideLabels />
         </View>
       </View>
@@ -142,10 +112,6 @@ export function SourceControlCommitComposer({
       });
   }, [canCommit, message, onCommit]);
 
-  const inputStyle = useMemo(
-    () => [styles.commitInput, !hasChanges && styles.commitInputDisabled],
-    [hasChanges],
-  );
   const commitButtonStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.commitButton,
@@ -164,13 +130,13 @@ export function SourceControlCommitComposer({
           value={message}
           onChangeText={setMessage}
           onSubmitEditing={submit}
-          editable={hasChanges && !isPending}
+          editable={!isPending}
           placeholder={commitPlaceholder}
           placeholderTextColor={styles.commitInputPlaceholder.color}
           returnKeyType="send"
           accessibilityLabel={commitPlaceholder}
           testID="source-control-commit-message"
-          style={inputStyle}
+          style={styles.commitInput}
         />
       </View>
       <Pressable
@@ -197,13 +163,6 @@ export function SourceControlCommitComposer({
 const mutedIconColorMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
 });
-
-function repositoryActionButtonStyle({
-  hovered,
-  pressed,
-}: PressableStateCallbackType & { hovered?: boolean }) {
-  return [styles.repositoryActionButton, (Boolean(hovered) || pressed) && styles.controlActive];
-}
 
 const styles = StyleSheet.create((theme) => ({
   repositorySection: {
@@ -249,23 +208,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     flexShrink: 0,
-  },
-  repositoryActionButton: {
-    width: 30,
-    height: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.borderRadius.md,
-  },
-  repositoryActionIcon: {
-    color: theme.colors.foregroundMuted,
-  },
-  controlActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  tooltipText: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.popoverForeground,
   },
   changesHeading: {
     minHeight: 38,
@@ -323,9 +265,6 @@ const styles = StyleSheet.create((theme) => ({
     padding: 0,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
-  },
-  commitInputDisabled: {
-    opacity: 0.55,
   },
   commitInputPlaceholder: {
     color: theme.colors.foregroundMuted,

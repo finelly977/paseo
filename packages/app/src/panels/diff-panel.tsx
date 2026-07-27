@@ -129,14 +129,10 @@ function WorkingDiffBody({
     return <PanelState message={t("workspace.tabs.loading")} testID="working-diff-loading" />;
   }
   if (workingDiff.files.length === 0) {
-    return (
-      <PanelState
-        message={
-          hideWhitespace ? t("workspace.git.diff.emptyHiddenWhitespace") : t("panels.diff.empty")
-        }
-        testID="working-diff-empty"
-      />
-    );
+    if (hideWhitespace) {
+      return <View style={styles.container} testID="working-diff-empty" />;
+    }
+    return <PanelState message={t("panels.diff.empty")} testID="working-diff-empty" />;
   }
   return (
     <SharedDiffView files={workingDiff.files} displayPreferences={displayPreferences} mode={mode} />

@@ -657,9 +657,10 @@ export const ru: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "Управление исходным кодом",
+        sourceControl: "Git",
         repository: "Репозитории",
         changes: "Изменения",
+        stagedChanges: "Индексированные изменения",
         commitPlaceholder: 'Сообщение для коммита в "{{branch}}"',
         commit: "Зафиксировать",
         committing: "Фиксация...",
@@ -789,6 +790,7 @@ export const ru: TranslationResources = {
         },
         toasts: {
           failedCommit: "Не удалось совершить фиксацию",
+          failedFetch: "Не удалось получить изменения",
           failedPull: "Не удалось вытащить",
           failedPush: "Не удалось нажать",
           failedPullAndPush: "Не удалось тянуть и толкать",
@@ -838,7 +840,6 @@ export const ru: TranslationResources = {
         refresh: "Обновить",
         refreshState: "Обновить состояние git и {{brand}}",
         failedRefresh: "Не удалось обновить состояние git.",
-        emptyHiddenWhitespace: "Никаких видимых изменений после скрытия пробелов",
         emptyUncommitted: "Нет незафиксированных изменений",
         emptyAgainstBase: "Никаких изменений по сравнению с{{baseRef}}",
         checkingRepository: "Проверяем репозиторий...",
@@ -851,6 +852,8 @@ export const ru: TranslationResources = {
         newFile: "Новый",
         deletedFile: "Удалено",
         commits: {
+          filesChanged: "Изменено файлов: {{count}}",
+          moreFiles: "Ещё файлов: {{count}}",
           title: "Граф",
           countLabel: "Коммитов: {{count}}",
           fileDiffEmpty: "Нет изменений для отображения",

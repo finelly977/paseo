@@ -13,6 +13,7 @@ export function createNoGitWorkspaceRuntimeSnapshot(cwd: string): WorkspaceGitRu
       remoteUrl: null,
       isPaseoOwnedWorktree: false,
       isDirty: null,
+      stagedFileCount: null,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,
@@ -63,6 +64,7 @@ export function createNoopWorkspaceGitService(
     resolveRepoRoot: async (cwd: string) => cwd,
     resolveDefaultBranch: async () => "main",
     resolveRepoRemoteUrl: async () => null,
+    fetch: async () => {},
     refresh: async () => {},
     requestWorkingTreeWatch: async () => ({
       repoRoot: null,

@@ -660,9 +660,10 @@ export const es: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "Control de código fuente",
+        sourceControl: "Git",
         repository: "Repositorios",
         changes: "Cambios",
+        stagedChanges: "Cambios preparados",
         commitPlaceholder: 'Mensaje para confirmar en "{{branch}}"',
         commit: "Confirmar",
         committing: "Confirmando...",
@@ -800,6 +801,7 @@ export const es: TranslationResources = {
         },
         toasts: {
           failedCommit: "No se pudo comprometer",
+          failedFetch: "No se pudieron obtener los cambios",
           failedPull: "No se pudo tirar",
           failedPush: "No se pudo empujar",
           failedPullAndPush: "No se pudo tirar y empujar",
@@ -849,7 +851,6 @@ export const es: TranslationResources = {
         refresh: "Refrescar",
         refreshState: "Actualizar el estado de git y {{brand}}",
         failedRefresh: "No se pudo actualizar el estado de git.",
-        emptyHiddenWhitespace: "No hay cambios visibles después de ocultar espacios en blanco",
         emptyUncommitted: "Sin cambios no confirmados",
         emptyAgainstBase: "Sin cambios frente a{{baseRef}}",
         checkingRepository: "Comprobando repositorio...",
@@ -863,6 +864,8 @@ export const es: TranslationResources = {
         deletedFile: "Eliminado",
         commits: {
           title: "Gráfico",
+          filesChanged: "{{count}} archivos modificados",
+          moreFiles: "{{count}} archivos más",
           countLabel: "{{count}} commits",
           fileDiffEmpty: "No hay cambios para mostrar",
           fileDiffError: "Error al cargar el diff del archivo",

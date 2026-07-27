@@ -165,6 +165,29 @@ describe("checkout-git-actions-store", () => {
     ).toBe("idle");
   });
 
+  it("Fetch 使用独立操作状态并调用守护进程", async () => {
+    const client = {
+      checkoutFetch: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: {
+        ...state.sessions,
+        [serverId]: { client } as unknown as (typeof state.sessions)[string],
+      },
+    }));
+
+    await useCheckoutGitActionsStore.getState().fetch({ serverId, cwd });
+
+    expect(client.checkoutFetch).toHaveBeenCalledWith(cwd);
+    expect(
+      useCheckoutGitActionsStore.getState().getStatus({ serverId, cwd, actionId: "fetch" }),
+    ).toBe("success");
+    expect(
+      useCheckoutGitActionsStore.getState().getStatus({ serverId, cwd, actionId: "refresh" }),
+    ).toBe("idle");
+  });
+
   it("refreshes git and GitHub state and reports success", async () => {
     const client = {
       checkoutRefresh: vi.fn(async () => ({ success: true, error: null })),

@@ -2043,6 +2043,8 @@ export class Session {
         return this.checkoutSession.handleCheckoutPullRequest(msg);
       case "checkout_push_request":
         return this.checkoutSession.handleCheckoutPushRequest(msg);
+      case "checkout.fetch.request":
+        return this.checkoutSession.handleFetchRequest(msg);
       case "checkout.refresh.request":
         return this.checkoutSession.handleRefreshRequest(msg);
       case "checkout_pr_create_request":

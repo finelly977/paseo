@@ -731,6 +731,7 @@ export interface CheckoutStatusGitNonPaseo {
   mainRepoRoot: string | null;
   currentBranch: string | null;
   isDirty: boolean;
+  stagedFileCount: number;
   baseRef: string | null;
   aheadBehind: AheadBehind | null;
   aheadOfOrigin: number | null;
@@ -746,6 +747,7 @@ export interface CheckoutStatusGitPaseo {
   mainRepoRoot: string;
   currentBranch: string | null;
   isDirty: boolean;
+  stagedFileCount: number;
   baseRef: string;
   aheadBehind: AheadBehind | null;
   aheadOfOrigin: number | null;
@@ -1141,6 +1143,15 @@ async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promi
     logger: context?.logger,
   });
   return stdout.trim().length > 0;
+}
+
+async function getStagedFileCount(cwd: string, context?: CheckoutContext): Promise<number> {
+  const { stdout } = await runGitCommand(["diff", "--cached", "--name-only", "-z"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+    logger: context?.logger,
+  });
+  return stdout.split("\x00").filter((path) => path.length > 0).length;
 }
 
 export async function getOriginRemoteUrl(cwd: string): Promise<string | null> {
@@ -1938,7 +1949,10 @@ export async function getCheckoutStatus(
   const currentBranch = facts.currentBranch;
   const remoteUrl = facts.remoteUrl;
   const paseoWorktree = facts.paseoWorktree;
-  const isDirty = await isWorkingTreeDirty(cwd, context);
+  const [isDirty, stagedFileCount] = await Promise.all([
+    isWorkingTreeDirty(cwd, context),
+    getStagedFileCount(cwd, context),
+  ]);
   const hasRemote = remoteUrl !== null;
   const baseRef = facts.resolvedBaseRef;
   const mainRepoRoot = facts.mainRepoRoot;
@@ -1961,6 +1975,7 @@ export async function getCheckoutStatus(
       mainRepoRoot: mainRepoRoot ?? worktreeRoot,
       currentBranch,
       isDirty,
+      stagedFileCount,
       baseRef,
       aheadBehind,
       aheadOfOrigin,
@@ -1978,6 +1993,7 @@ export async function getCheckoutStatus(
       mainRepoRoot && resolve(mainRepoRoot) !== resolve(worktreeRoot) ? mainRepoRoot : null,
     currentBranch,
     isDirty,
+    stagedFileCount,
     baseRef,
     aheadBehind,
     aheadOfOrigin,
@@ -2014,6 +2030,7 @@ interface CheckoutCommitLogInput {
   cwd: string;
   revision: string;
   maxCount?: number;
+  skip?: number;
 }
 
 function mapNameStatusLetter(letter: string): CheckoutCommitFileStatus | undefined {
@@ -2157,6 +2174,7 @@ async function getCheckoutCommitRecords({
   cwd,
   revision,
   maxCount,
+  skip,
 }: CheckoutCommitLogInput): Promise<ParsedCheckoutCommit[]> {
   const args = [
     "log",
@@ -2170,6 +2188,9 @@ async function getCheckoutCommitRecords({
   if (maxCount !== undefined) {
     args.splice(2, 0, `--max-count=${maxCount}`);
   }
+  if (skip !== undefined) {
+    args.splice(2, 0, `--skip=${skip}`);
+  }
 
   const result = await runGitCommand(args, { cwd, envOverlay: READ_ONLY_GIT_ENV });
   if (result.truncated) {
@@ -2181,6 +2202,35 @@ async function getCheckoutCommitRecords({
 export interface CheckoutCommitsResult {
   baseRef: string | null;
   commits: CheckoutCommit[];
+  nextCursor?: number | null;
+}
+
+async function getRevisionCommitCount(cwd: string, revision: string): Promise<number> {
+  const { stdout } = await runGitCommand(["rev-list", "--count", revision], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  const count = Number.parseInt(stdout.trim(), 10);
+  if (!Number.isInteger(count) || count < 0) {
+    throw new Error("Git 返回了无效的提交数量");
+  }
+  return count;
+}
+
+function buildCheckoutCommits(
+  records: Array<{ record: ParsedCheckoutCommit; isOnBase: boolean }>,
+  unpushedShas: Set<string>,
+): CheckoutCommit[] {
+  return records.map(({ record, isOnBase }) => ({
+    sha: record.sha,
+    shortSha: record.shortSha,
+    subject: record.subject,
+    authorName: record.authorName,
+    authorDate: record.authorDate,
+    isOnRemote: !unpushedShas.has(record.sha),
+    isOnBase,
+    files: record.files,
+  }));
 }
 
 async function tryResolveCheckoutCommitsBaseRef(
@@ -2198,18 +2248,44 @@ async function tryResolveCheckoutCommitsBaseRef(
   return resolveMostAheadBaseRef(cwd, normalizedBaseRef).catch(() => null);
 }
 
-export async function listCheckoutCommits({
-  cwd,
-  context,
-}: {
-  cwd: string;
-  context?: CheckoutContext;
-}): Promise<CheckoutCommitsResult> {
-  const currentBranch = await getCurrentBranch(cwd);
-  if (!currentBranch) {
-    return { baseRef: null, commits: [] };
-  }
+interface CheckoutCommitPagination {
+  requested: boolean;
+  cursor: number;
+  limit: number;
+}
 
+interface CheckoutCommitHistoryRevisions {
+  comparisonBaseRef: string | null;
+  workspaceRevision: string | null;
+  baseRevision: string;
+}
+
+function resolveCheckoutCommitPagination(
+  cursor: number | undefined,
+  limit: number | undefined,
+): CheckoutCommitPagination {
+  const pagination = {
+    requested: cursor !== undefined || limit !== undefined,
+    cursor: cursor ?? 0,
+    limit: limit ?? 40,
+  };
+  if (
+    !Number.isInteger(pagination.cursor) ||
+    pagination.cursor < 0 ||
+    !Number.isInteger(pagination.limit) ||
+    pagination.limit <= 0 ||
+    pagination.limit > 100
+  ) {
+    throw new Error("提交历史分页参数无效");
+  }
+  return pagination;
+}
+
+async function resolveCheckoutCommitHistoryRevisions(
+  cwd: string,
+  currentBranch: string,
+  context?: CheckoutContext,
+): Promise<CheckoutCommitHistoryRevisions> {
   const { resolvedBaseRef } = await resolveBaseRefForCwd(cwd, context);
   const normalizedBaseRef = resolvedBaseRef ? normalizeLocalBranchRefName(resolvedBaseRef) : null;
   let comparisonBaseRef = await tryResolveCheckoutCommitsBaseRef(
@@ -2218,52 +2294,136 @@ export async function listCheckoutCommits({
     currentBranch,
   );
   if (!comparisonBaseRef && normalizedBaseRef && normalizedBaseRef !== currentBranch) {
-    // Saved worktree metadata can outlive a renamed or deleted base branch.
     comparisonBaseRef = await tryResolveCheckoutCommitsBaseRef(
       cwd,
       await resolveBaseRef(cwd),
       currentBranch,
     );
   }
+  if (!comparisonBaseRef) {
+    return { comparisonBaseRef: null, workspaceRevision: null, baseRevision: "HEAD" };
+  }
+  return {
+    comparisonBaseRef,
+    workspaceRevision: `${comparisonBaseRef}..HEAD`,
+    baseRevision: (await tryResolveMergeBase(cwd, comparisonBaseRef)) ?? "",
+  };
+}
 
-  let workspaceRecords: ParsedCheckoutCommit[] = [];
-  let baseRevision = "HEAD";
-  if (comparisonBaseRef) {
-    const [records, mergeBase] = await Promise.all([
-      getCheckoutCommitRecords({ cwd, revision: `${comparisonBaseRef}..HEAD` }),
-      tryResolveMergeBase(cwd, comparisonBaseRef),
-    ]);
-    workspaceRecords = records;
-    baseRevision = mergeBase ?? "";
+async function listPaginatedCheckoutCommits({
+  cwd,
+  context,
+  pagination,
+  revisions,
+}: {
+  cwd: string;
+  context?: CheckoutContext;
+  pagination: CheckoutCommitPagination;
+  revisions: CheckoutCommitHistoryRevisions;
+}): Promise<CheckoutCommitsResult> {
+  const workspaceCount = revisions.workspaceRevision
+    ? await getRevisionCommitCount(cwd, revisions.workspaceRevision)
+    : 0;
+  const requestedRecordCount = pagination.limit + 1;
+  const classifiedRecords: Array<{
+    record: ParsedCheckoutCommit;
+    isOnBase: boolean;
+  }> = [];
+
+  if (revisions.workspaceRevision && pagination.cursor < workspaceCount) {
+    const page = await getCheckoutCommitRecords({
+      cwd,
+      revision: revisions.workspaceRevision,
+      skip: pagination.cursor,
+      maxCount: requestedRecordCount,
+    });
+    classifiedRecords.push(...page.map((record) => ({ record, isOnBase: false })));
   }
 
-  const baseRecords = baseRevision
-    ? await getCheckoutCommitRecords({
-        cwd,
-        revision: baseRevision,
-        maxCount: CHECKOUT_BASE_COMMIT_LIMIT,
-      })
-    : [];
+  if (revisions.baseRevision && classifiedRecords.length < requestedRecordCount) {
+    const baseSkip = Math.max(0, pagination.cursor - workspaceCount);
+    const page = await getCheckoutCommitRecords({
+      cwd,
+      revision: revisions.baseRevision,
+      skip: baseSkip,
+      maxCount: requestedRecordCount - classifiedRecords.length,
+    });
+    classifiedRecords.push(...page.map((record) => ({ record, isOnBase: true })));
+  }
+
+  const hasNextPage = classifiedRecords.length > pagination.limit;
+  const pageRecords = classifiedRecords.slice(0, pagination.limit);
+  if (pageRecords.length === 0) {
+    return { baseRef: revisions.comparisonBaseRef, commits: [], nextCursor: null };
+  }
+  const unpushedShas = await getUnpushedCommitShas(cwd, context);
+  return {
+    baseRef: revisions.comparisonBaseRef,
+    commits: buildCheckoutCommits(pageRecords, unpushedShas),
+    nextCursor: hasNextPage ? pagination.cursor + pageRecords.length : null,
+  };
+}
+
+async function listLegacyCheckoutCommits({
+  cwd,
+  context,
+  revisions,
+}: {
+  cwd: string;
+  context?: CheckoutContext;
+  revisions: CheckoutCommitHistoryRevisions;
+}): Promise<CheckoutCommitsResult> {
+  const [workspaceRecords, baseRecords] = await Promise.all([
+    revisions.workspaceRevision
+      ? getCheckoutCommitRecords({ cwd, revision: revisions.workspaceRevision })
+      : Promise.resolve([]),
+    revisions.baseRevision
+      ? getCheckoutCommitRecords({
+          cwd,
+          revision: revisions.baseRevision,
+          maxCount: CHECKOUT_BASE_COMMIT_LIMIT,
+        })
+      : Promise.resolve([]),
+  ]);
   const records = [...workspaceRecords, ...baseRecords];
   if (records.length === 0) {
-    return { baseRef: comparisonBaseRef, commits: [] };
+    return { baseRef: revisions.comparisonBaseRef, commits: [] };
   }
-
-  const unpushedShas = await getUnpushedCommitShas(cwd);
+  const unpushedShas = await getUnpushedCommitShas(cwd, context);
   const workspaceShas = new Set(workspaceRecords.map((record) => record.sha));
+  return {
+    baseRef: revisions.comparisonBaseRef,
+    commits: buildCheckoutCommits(
+      records.map((record) => ({ record, isOnBase: !workspaceShas.has(record.sha) })),
+      unpushedShas,
+    ),
+  };
+}
 
-  const commits = records.map((record) => ({
-    sha: record.sha,
-    shortSha: record.shortSha,
-    subject: record.subject,
-    authorName: record.authorName,
-    authorDate: record.authorDate,
-    isOnRemote: !unpushedShas.has(record.sha),
-    isOnBase: !workspaceShas.has(record.sha),
-    files: record.files,
-  }));
-
-  return { baseRef: comparisonBaseRef, commits };
+export async function listCheckoutCommits({
+  cwd,
+  context,
+  cursor,
+  limit,
+}: {
+  cwd: string;
+  context?: CheckoutContext;
+  cursor?: number;
+  limit?: number;
+}): Promise<CheckoutCommitsResult> {
+  const pagination = resolveCheckoutCommitPagination(cursor, limit);
+  const currentBranch = await getCurrentBranch(cwd);
+  if (!currentBranch) {
+    return {
+      baseRef: null,
+      commits: [],
+      ...(pagination.requested ? { nextCursor: null } : {}),
+    };
+  }
+  const revisions = await resolveCheckoutCommitHistoryRevisions(cwd, currentBranch, context);
+  return pagination.requested
+    ? listPaginatedCheckoutCommits({ cwd, context, pagination, revisions })
+    : listLegacyCheckoutCommits({ cwd, context, revisions });
 }
 
 /**

@@ -1,17 +1,58 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+  StyleSheet as RNStyleSheet,
+} from "react-native";
+import { Gesture } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useTranslation } from "react-i18next";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import { useChangesPreferences } from "@/hooks/use-changes-preferences";
-import { useCheckoutCommitsQuery, type CheckoutCommitsQueryResult } from "@/git/use-commits-query";
+import type { GitActions } from "@/git/policy";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
+import {
+  useCheckoutCommitsQuery,
+  type CheckoutCommitsQueryResult,
+  type ClassifiedCheckoutCommit,
+} from "@/git/use-commits-query";
+import { useChangesPreferences } from "@/hooks/use-changes-preferences";
 import { CommitRow } from "./commit-row";
+import { GraphActions } from "./graph-actions";
+import { GraphResizeHandle } from "./graph-resize-handle";
+
+const MIN_GRAPH_HEIGHT = 140;
+const MAX_GRAPH_HEIGHT = 720;
+const MAX_GRAPH_VIEWPORT_RATIO = 0.7;
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
+
+const activityIndicatorColorMapping = (theme: { colors: { foregroundMuted: string } }) => ({
+  color: theme.colors.foregroundMuted,
+});
+
+const commitKeyExtractor = (commit: ClassifiedCheckoutCommit) => commit.sha;
 
 interface CommitsSectionProps {
   serverId: string;
   cwd: string;
+  gitActions: GitActions;
+  fetchSupported: boolean;
+  hasRemote: boolean;
+  isFetching: boolean;
+  onFetch: () => void;
+  refreshSupported: boolean;
+  isRefreshing: boolean;
+  onRefresh: () => void;
   onCommitPress: (sha: string) => void;
+}
+
+function resolveGraphHeight(requestedHeight: number, viewportHeight: number): number {
+  const viewportMaximum = Math.max(MIN_GRAPH_HEIGHT, viewportHeight * MAX_GRAPH_VIEWPORT_RATIO);
+  return Math.min(Math.max(requestedHeight, MIN_GRAPH_HEIGHT), MAX_GRAPH_HEIGHT, viewportMaximum);
 }
 
 function CommitsSectionSkeleton() {
@@ -44,6 +85,33 @@ function CommitsSectionContent({
   onCommitPress: (sha: string) => void;
 }) {
   const { t } = useTranslation();
+  const loadedCommitCount = query.status === "loaded" ? query.data.commits.length : 0;
+  const isFetchingNextPage = query.status === "loaded" && query.isFetchingNextPage;
+  const renderCommit = useCallback(
+    ({ item, index }: { item: ClassifiedCheckoutCommit; index: number }) => (
+      <CommitRow
+        commit={item}
+        isFirst={index === 0}
+        isLast={index === loadedCommitCount - 1}
+        now={now}
+        onCommitPress={onCommitPress}
+      />
+    ),
+    [loadedCommitCount, now, onCommitPress],
+  );
+  const renderFooter = useCallback(
+    () =>
+      isFetchingNextPage ? (
+        <ThemedActivityIndicator
+          size="small"
+          uniProps={activityIndicatorColorMapping}
+          style={styles.loadingMore}
+          testID="commits-section-loading-more"
+        />
+      ) : null,
+    [isFetchingNextPage],
+  );
+
   if (query.status === "error") {
     return (
       <Text style={styles.errorRow} testID="commits-section-error">
@@ -54,35 +122,49 @@ function CommitsSectionContent({
   if (query.status !== "loaded") {
     return <CommitsSectionSkeleton />;
   }
-  const commits = query.data.commits;
-  if (commits.length === 0) {
+  if (query.data.commits.length === 0) {
     return (
       <View style={styles.emptyRow} testID="commits-section-empty">
         <Text style={styles.emptyText}>{t("workspace.git.diff.commits.empty")}</Text>
       </View>
     );
   }
+
   return (
-    <View style={styles.list}>
-      {commits.map((commit, index) => (
-        <CommitRow
-          key={commit.sha}
-          commit={commit}
-          isFirst={index === 0}
-          isLast={index === commits.length - 1}
-          now={now}
-          onCommitPress={onCommitPress}
-        />
-      ))}
-    </View>
+    <FlatList
+      data={query.data.commits}
+      renderItem={renderCommit}
+      keyExtractor={commitKeyExtractor}
+      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      onEndReached={query.hasNextPage ? query.loadMore : undefined}
+      onEndReachedThreshold={0.35}
+      ListFooterComponent={renderFooter}
+    />
   );
 }
 
-export function CommitsSection({ serverId, cwd, onCommitPress }: CommitsSectionProps) {
+export function CommitsSection({
+  serverId,
+  cwd,
+  gitActions,
+  fetchSupported,
+  hasRemote,
+  isFetching,
+  onFetch,
+  refreshSupported,
+  isRefreshing,
+  onRefresh,
+  onCommitPress,
+}: CommitsSectionProps) {
   const { t } = useTranslation();
+  const { height: viewportHeight } = useWindowDimensions();
   const { preferences, updatePreferences } = useChangesPreferences();
   const isPanelActive = useRetainedPanelActive();
   const collapsed = preferences.commitsCollapsed;
+  const resolvedHeight = resolveGraphHeight(preferences.commitsHeight, viewportHeight);
+  const startHeightRef = useRef(resolvedHeight);
+  const resizeHeight = useSharedValue(resolvedHeight);
   const [now, setNow] = useState(() => new Date());
   const displayNow = useMemo(() => (isPanelActive ? new Date() : now), [isPanelActive, now]);
   const query = useCheckoutCommitsQuery({
@@ -91,12 +173,46 @@ export function CommitsSection({ serverId, cwd, onCommitPress }: CommitsSectionP
     enabled: !collapsed,
   });
 
+  useEffect(() => {
+    resizeHeight.value = resolvedHeight;
+  }, [resizeHeight, resolvedHeight]);
+
   const handleToggleSection = useCallback(() => {
     if (collapsed) {
       setNow(new Date());
     }
     void updatePreferences({ commitsCollapsed: !collapsed });
   }, [collapsed, updatePreferences]);
+
+  const persistGraphHeight = useCallback(
+    (height: number) => {
+      void updatePreferences({ commitsHeight: height });
+    },
+    [updatePreferences],
+  );
+
+  const resizeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!collapsed)
+        .hitSlop({ top: 8, bottom: 8, left: 0, right: 0 })
+        .onStart(() => {
+          startHeightRef.current = resolvedHeight;
+          resizeHeight.value = resolvedHeight;
+        })
+        .onUpdate((event) => {
+          resizeHeight.value = resolveGraphHeight(
+            startHeightRef.current - event.translationY,
+            viewportHeight,
+          );
+        })
+        .onEnd(() => {
+          runOnJS(persistGraphHeight)(resizeHeight.value);
+        }),
+    [collapsed, persistGraphHeight, resizeHeight, resolvedHeight, viewportHeight],
+  );
+
+  const expandedHeightStyle = useAnimatedStyle(() => ({ height: resizeHeight.value }));
 
   useEffect(() => {
     if (collapsed || !isPanelActive) {
@@ -118,49 +234,80 @@ export function CommitsSection({ serverId, cwd, onCommitPress }: CommitsSectionP
 
   return (
     <View style={styles.container}>
-      <Pressable
-        accessibilityRole="button"
-        testID="commits-section-header"
-        onPress={handleToggleSection}
-        style={styles.header}
-      >
-        <View style={headerChevronStyle}>
-          <ThemedChevron size={14} uniProps={chevronColorMapping} />
-        </View>
-        <Text style={styles.title}>{t("workspace.git.diff.commits.title")}</Text>
-        {commitCount === null ? (
-          <View style={styles.countSpacer} />
-        ) : (
-          <Text
-            style={styles.count}
-            accessibilityLabel={t("workspace.git.diff.commits.countLabel", {
-              count: commitCount,
-            })}
+      <Animated.View style={[animatedStaticStyles.container, !collapsed && expandedHeightStyle]}>
+        {collapsed ? null : <GraphResizeHandle gesture={resizeGesture} />}
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            testID="commits-section-header"
+            onPress={handleToggleSection}
+            style={styles.headerToggle}
           >
-            {commitCount}
-          </Text>
+            <View style={headerChevronStyle}>
+              <ThemedChevron size={14} uniProps={chevronColorMapping} />
+            </View>
+            <Text style={styles.title}>{t("workspace.git.diff.commits.title")}</Text>
+            {commitCount === null ? (
+              <View style={styles.countSpacer} />
+            ) : (
+              <Text
+                style={styles.count}
+                accessibilityLabel={t("workspace.git.diff.commits.countLabel", {
+                  count: commitCount,
+                })}
+              >
+                {commitCount}
+              </Text>
+            )}
+          </Pressable>
+          <GraphActions
+            gitActions={gitActions}
+            fetchSupported={fetchSupported}
+            hasRemote={hasRemote}
+            isFetching={isFetching}
+            onFetch={onFetch}
+            refreshSupported={refreshSupported}
+            isRefreshing={isRefreshing}
+            onRefresh={onRefresh}
+          />
+        </View>
+        {collapsed ? null : (
+          <View style={styles.body}>
+            <CommitsSectionContent query={query} now={displayNow} onCommitPress={onCommitPress} />
+          </View>
         )}
-      </Pressable>
-      {collapsed ? null : (
-        <CommitsSectionContent query={query} now={displayNow} onCommitPress={onCommitPress} />
-      )}
+      </Animated.View>
     </View>
   );
 }
 
+const animatedStaticStyles = RNStyleSheet.create({
+  container: {
+    position: "relative",
+  },
+});
+
 const styles = StyleSheet.create((theme) => ({
   container: {
+    flexShrink: 0,
     borderTopWidth: theme.borderWidth[1],
     borderTopColor: theme.colors.border,
   },
   header: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: theme.spacing[2],
+    flexShrink: 0,
+  },
+  headerToggle: {
+    minHeight: 34,
+    flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
     paddingLeft: theme.spacing[2],
-    paddingRight: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
-    flexShrink: 0,
   },
   headerChevron: {
     width: 16,
@@ -184,8 +331,18 @@ const styles = StyleSheet.create((theme) => ({
   countSpacer: {
     flex: 1,
   },
+  body: {
+    flex: 1,
+    minHeight: 0,
+  },
   list: {
+    flex: 1,
+  },
+  listContent: {
     paddingBottom: theme.spacing[1],
+  },
+  loadingMore: {
+    marginVertical: theme.spacing[2],
   },
   emptyRow: {
     flexDirection: "row",

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listCheckoutCommits } from "./checkout-git.js";
+import { getCheckoutStatus, listCheckoutCommits } from "./checkout-git.js";
 import { writePaseoWorktreeMetadata } from "./worktree-metadata.js";
 
 const tempDirs: string[] = [];
@@ -185,6 +185,49 @@ describe("listCheckoutCommits", () => {
       Array.from({ length: 10 }, (_, index) => `Base ${14 - index}`),
     );
     expect(commits.slice(24).every((entry) => entry.isOnBase === true)).toBe(true);
+  }, 20_000);
+
+  it("paginates all workspace and base commits without the legacy base limit", async () => {
+    const { repoDir } = initRepoOnMain();
+    for (let index = 1; index <= 14; index += 1) {
+      commitFile(repoDir, "base-history.txt", `${index}\n`, `Base ${index}`);
+    }
+    git(["checkout", "-b", "feature"], repoDir);
+    for (let index = 1; index <= 24; index += 1) {
+      commitFile(repoDir, "workspace-history.txt", `${index}\n`, `Workspace ${index}`);
+    }
+
+    const first = await listCheckoutCommits({ cwd: repoDir, cursor: 0, limit: 10 });
+    const second = await listCheckoutCommits({ cwd: repoDir, cursor: 10, limit: 10 });
+    const third = await listCheckoutCommits({ cwd: repoDir, cursor: 20, limit: 10 });
+    const fourth = await listCheckoutCommits({ cwd: repoDir, cursor: 30, limit: 10 });
+
+    expect(first.nextCursor).toBe(10);
+    expect(second.nextCursor).toBe(20);
+    expect(third.nextCursor).toBe(30);
+    expect(fourth.nextCursor).toBeNull();
+    expect([...first.commits, ...second.commits, ...third.commits, ...fourth.commits]).toHaveLength(
+      39,
+    );
+    expect(third.commits.slice(0, 4).every((entry) => entry.isOnBase === false)).toBe(true);
+    expect(third.commits.slice(4).every((entry) => entry.isOnBase === true)).toBe(true);
+    expect(fourth.commits.at(-1)?.subject).toBe("initial");
+  }, 20_000);
+
+  it("reports the real staged file count independently from other changes", async () => {
+    const { repoDir } = initRepoOnMain();
+    writeFileSync(join(repoDir, "staged.txt"), "staged\n");
+    writeFileSync(join(repoDir, "unstaged.txt"), "unstaged\n");
+    git(["add", "staged.txt"], repoDir);
+
+    const status = await getCheckoutStatus(repoDir);
+
+    expect(status.isGit).toBe(true);
+    if (!status.isGit) {
+      throw new Error("Expected a Git checkout");
+    }
+    expect(status.isDirty).toBe(true);
+    expect(status.stagedFileCount).toBe(1);
   });
 
   it("starts base context at the fork point when the base branch has advanced", async () => {

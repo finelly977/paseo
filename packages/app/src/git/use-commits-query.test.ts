@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveCheckoutCommitsQueryResult, type CheckoutCommitsData } from "./use-commits-query";
 
+vi.hoisted(() => {
+  (globalThis as typeof globalThis & { __DEV__?: boolean }).__DEV__ = false;
+});
+
 const EMPTY_COMMITS: CheckoutCommitsData = { baseRef: "main", commits: [] };
+const PAGINATION = {
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  loadMore: () => {},
+};
 
 describe("resolveCheckoutCommitsQueryResult", () => {
   it("stays idle while the collapsed section has never loaded", () => {
@@ -13,6 +22,7 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: undefined,
         isPlaceholderData: false,
         error: null,
+        pagination: PAGINATION,
       }),
     ).toEqual({ status: "idle" });
   });
@@ -26,6 +36,7 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: undefined,
         isPlaceholderData: false,
         error: null,
+        pagination: PAGINATION,
       }),
     ).toEqual({ status: "loading" });
   });
@@ -39,8 +50,9 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: EMPTY_COMMITS,
         isPlaceholderData: false,
         error: null,
+        pagination: PAGINATION,
       }),
-    ).toEqual({ status: "loaded", data: EMPTY_COMMITS });
+    ).toEqual({ status: "loaded", data: EMPTY_COMMITS, ...PAGINATION });
   });
 
   it("surfaces a cold-load error", () => {
@@ -53,6 +65,7 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: undefined,
         isPlaceholderData: false,
         error,
+        pagination: PAGINATION,
       }),
     ).toEqual({ status: "error", error });
   });
@@ -66,8 +79,9 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: EMPTY_COMMITS,
         isPlaceholderData: false,
         error: null,
+        pagination: PAGINATION,
       }),
-    ).toEqual({ status: "loaded", data: EMPTY_COMMITS });
+    ).toEqual({ status: "loaded", data: EMPTY_COMMITS, ...PAGINATION });
   });
 
   it("keeps previous-checkout placeholder data in loading state", () => {
@@ -79,6 +93,7 @@ describe("resolveCheckoutCommitsQueryResult", () => {
         data: EMPTY_COMMITS,
         isPlaceholderData: true,
         error: null,
+        pagination: PAGINATION,
       }),
     ).toEqual({ status: "loading" });
   });

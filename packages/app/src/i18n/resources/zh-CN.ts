@@ -649,9 +649,10 @@ export const zhCN: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "源代码管理",
+        sourceControl: "Git",
         repository: "存储库",
         changes: "更改",
+        stagedChanges: "暂存的更改",
         commitPlaceholder: "消息（在“{{branch}}”上提交）",
         commit: "提交",
         committing: "正在提交...",
@@ -760,6 +761,7 @@ export const zhCN: TranslationResources = {
         },
         toasts: {
           failedCommit: "Commit 失败",
+          failedFetch: "Fetch 失败",
           failedPull: "Pull 失败",
           failedPush: "Push 失败",
           failedPullAndPush: "Pull 并 push 失败",
@@ -809,7 +811,6 @@ export const zhCN: TranslationResources = {
         refresh: "刷新",
         refreshState: "刷新 git 和 {{brand}} 状态",
         failedRefresh: "刷新 git 状态失败。",
-        emptyHiddenWhitespace: "隐藏空白差异后没有可见变更",
         emptyUncommitted: "没有未 commit 的变更",
         emptyAgainstBase: "相对于 {{baseRef}} 没有变更",
         checkingRepository: "正在检查 repository...",
@@ -823,6 +824,8 @@ export const zhCN: TranslationResources = {
         deletedFile: "已删除",
         commits: {
           title: "图表",
+          filesChanged: "变更了 {{count}} 个文件",
+          moreFiles: "另有 {{count}} 个文件",
           countLabel: "{{count}} 个提交",
           fileDiffEmpty: "没有可显示的更改",
           fileDiffError: "加载文件差异失败",

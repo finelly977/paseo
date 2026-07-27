@@ -261,9 +261,13 @@
 
 ### 16. 右侧 Git 面板采用 VS Code 式源代码管理工作流
 
-- 工作区右侧 Git 面板按“存储库、变更、提交历史”组织信息：存储库行集中显示仓库名、当前分支、刷新和拉取、推送、合并等操作；变更区显示文件数量、差异模式、树形或平铺视图、展开控制和差异选项。
-- 有未提交变更时可直接填写提交说明并提交全部变更；提交说明会原样发送给守护进程，提交成功后清空输入，提交失败时保留输入并显示错误，不会退回自动生成说明。
-- 变更文件仍可原地展开差异或在独立标签页查看；可点击的提交图谱显示当前分支全部提交以及最近 10 条基础分支提交，并用不同轨道颜色区分，保留 Paseo 原有的工作区差异审阅能力。
+- 工作区右侧面板以“Git”为标题，按“存储库、暂存的更改、变更、图表”组织信息；默认展示未提交差异，即使工作区干净也不会自动切到分支对比。隐藏空白后没有剩余差异时保持内容区为空，不显示重复的空状态说明。
+- 提交说明输入框始终可编辑，只有工作区没有未提交变更、正在提交或说明为空时才禁用提交按钮；说明会原样发送给守护进程，提交成功后清空输入，失败时保留输入并显示错误。
+- 暂存区文件数量由守护进程直接读取 Git 索引，不能用总差异数量推算；只有存在暂存文件时才显示暂存区标题和真实数量。
+- 图表标题右侧提供 Fetch、Refresh、Pull、Push、Sync 纯图标操作，悬停显示英文名称；Fetch 会真正执行远端抓取并刷新分支状态，不会用本地 Refresh 冒充。合并、拉取请求和归档等低频操作保留在存储库菜单。图表高度可以从顶部边界上下拖动并持久保存，受窗口高度和合理最小、最大值约束。
+- 提交行悬停时显示提交主题、作者、完整时间、完整提交标识和变更文件摘要；点击仍打开该提交的文件差异。
+- 提交历史每页加载 40 条，滚动到底部继续加载当前分支和基础分支的更早记录，不再固定为最近 10 条基础分支提交；服务端在分页边界保持分支归属和远端状态分类，旧守护进程仍使用原有单页结果。
+- 变更文件仍可原地展开差异或在独立标签页查看，提交图谱用不同轨道颜色区分当前分支和基础分支，保留 Paseo 原有的工作区差异审阅能力。
 - 面板复用现有跨平台组件和 Git RPC，桌面、网页和移动端保持同一操作语义；各语言资源具有相同结构。
 
 主要涉及：
@@ -271,6 +275,14 @@
 - `packages/app/src/git/source-control-panel.tsx`
 - `packages/app/src/git/diff-pane.tsx`
 - `packages/app/src/git/commits-section/commits-section.tsx`
+- `packages/app/src/git/commits-section/commit-row.tsx`
+- `packages/app/src/git/commits-section/graph-actions.tsx`
+- `packages/app/src/git/commits-section/graph-resize-handle.tsx`
+- `packages/app/src/git/use-commits-query.ts`
+- `packages/app/src/panels/diff-panel.tsx`
 - `packages/app/src/git/actions-store.ts`
 - `packages/app/src/components/explorer-sidebar.tsx`
+- `packages/protocol/src/messages.ts`
+- `packages/client/src/daemon-client.ts`
+- `packages/server/src/utils/checkout-git.ts`
 - `packages/app/src/i18n/resources/`

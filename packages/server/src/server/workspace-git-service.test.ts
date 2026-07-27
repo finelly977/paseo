@@ -43,6 +43,7 @@ function createSnapshot(
       remoteUrl: "https://github.com/acme/repo.git",
       isPaseoOwnedWorktree: false,
       isDirty: false,
+      stagedFileCount: 0,
       baseRef: "main",
       aheadBehind: { ahead: 0, behind: 0 },
       aheadOfOrigin: 0,
@@ -133,6 +134,7 @@ function createCheckoutStatus(
     mainRepoRoot: null,
     currentBranch: "main",
     isDirty: false,
+    stagedFileCount: 0,
     baseRef: "main",
     aheadBehind: { ahead: 0, behind: 0 },
     aheadOfOrigin: 0,
@@ -600,6 +602,23 @@ describe("WorkspaceGitServiceImpl", () => {
 
     first.unsubscribe();
     second.unsubscribe();
+    service.dispose();
+  });
+
+  test("手动 Fetch 等待远端抓取并强制刷新工作区状态", async () => {
+    const runGitFetch = vi.fn(async () => {});
+    const getCheckoutStatus = vi.fn(async (cwd: string) =>
+      createCheckoutStatus(cwd, { behindOfOrigin: 2 }),
+    );
+    const service = createService({ runGitFetch, getCheckoutStatus });
+
+    await service.fetch(REPO_CWD);
+
+    expect(runGitFetch).toHaveBeenCalledTimes(1);
+    expect(runGitFetch).toHaveBeenCalledWith(REPO_CWD);
+    expect(getCheckoutStatus).toHaveBeenCalledTimes(1);
+    expect(service.peekSnapshot(REPO_CWD)?.git.behindOfOrigin).toBe(2);
+
     service.dispose();
   });
 

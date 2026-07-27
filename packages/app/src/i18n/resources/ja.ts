@@ -655,9 +655,10 @@ export const ja: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "ソース管理",
+        sourceControl: "Git",
         repository: "リポジトリ",
         changes: "変更",
+        stagedChanges: "ステージされた変更",
         commitPlaceholder: "「{{branch}}」にコミットするメッセージ",
         commit: "コミット",
         committing: "コミット中...",
@@ -779,6 +780,7 @@ export const ja: TranslationResources = {
         },
         toasts: {
           failedCommit: "コミットに失敗しました",
+          failedFetch: "フェッチに失敗しました",
           failedPull: "プルに失敗しました",
           failedPush: "プッシュに失敗しました",
           failedPullAndPush: "プル＆プッシュに失敗しました",
@@ -828,7 +830,6 @@ export const ja: TranslationResources = {
         refresh: "更新",
         refreshState: "gitと{{brand}}の状態を更新",
         failedRefresh: "gitの状態の更新に失敗しました。",
-        emptyHiddenWhitespace: "空白を非表示にすると変更は表示されません",
         emptyUncommitted: "未コミットの変更なし",
         emptyAgainstBase: "{{baseRef}}との差分なし",
         checkingRepository: "リポジトリを確認中...",
@@ -842,6 +843,8 @@ export const ja: TranslationResources = {
         deletedFile: "削除済み",
         commits: {
           title: "グラフ",
+          filesChanged: "{{count}} 個のファイルを変更",
+          moreFiles: "他 {{count}} 個のファイル",
           countLabel: "{{count}} 件のコミット",
           fileDiffEmpty: "表示する変更はありません",
           fileDiffError: "ファイル差分の読み込みに失敗しました",

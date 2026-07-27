@@ -1693,6 +1693,12 @@ export const CheckoutPushRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const CheckoutFetchRequestSchema = z.object({
+  type: z.literal("checkout.fetch.request"),
+  cwd: z.string(),
+  requestId: z.string(),
+});
+
 export const CheckoutRefreshRequestSchema = z.object({
   type: z.literal("checkout.refresh.request"),
   cwd: z.string(),
@@ -1755,6 +1761,9 @@ const CheckoutCommitSchema = z.object({
 export const CheckoutCommitsListRequestSchema = z.object({
   type: z.literal("checkout.commits.list.request"),
   cwd: z.string(),
+  // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除可选兼容。
+  cursor: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().max(100).optional(),
   requestId: z.string(),
 });
 
@@ -2499,6 +2508,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutMergeFromBaseRequestSchema,
   CheckoutPullRequestSchema,
   CheckoutPushRequestSchema,
+  CheckoutFetchRequestSchema,
   CheckoutRefreshRequestSchema,
   CheckoutPrCreateRequestSchema,
   CheckoutPrMergeRequestSchema,
@@ -2763,6 +2773,8 @@ export const ServerInfoStatusPayloadSchema = z
         rewind: z.boolean().optional(),
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.
         checkoutRefresh: z.boolean().optional(),
+        // COMPAT(checkoutFetch): v0.2.2 新增，2027-01-27 后移除能力门控。
+        checkoutFetch: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -2803,6 +2815,10 @@ export const ServerInfoStatusPayloadSchema = z
         commitsList: z.boolean().optional(),
         // COMPAT(commitBaseClassification): added in v0.2.0, remove gate after 2027-01-23.
         commitBaseClassification: z.boolean().optional(),
+        // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除能力门控。
+        commitsPagination: z.boolean().optional(),
+        // COMPAT(stagedFileCount): v0.2.2 新增，2027-01-27 后移除能力门控。
+        stagedFileCount: z.boolean().optional(),
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
         providerRemoval: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
@@ -3920,6 +3936,7 @@ const CheckoutStatusNotGitSchema = CheckoutStatusCommonSchema.extend({
   repoRoot: z.null(),
   currentBranch: z.null(),
   isDirty: z.null(),
+  stagedFileCount: z.null().optional().default(null),
   baseRef: z.null(),
   aheadBehind: z.null(),
   aheadOfOrigin: z.null(),
@@ -3935,6 +3952,7 @@ const CheckoutStatusGitNonPaseoSchema = CheckoutStatusCommonSchema.extend({
   mainRepoRoot: z.string().nullable().optional().default(null),
   currentBranch: z.string().nullable(),
   isDirty: z.boolean(),
+  stagedFileCount: z.number().int().nonnegative().optional().default(0),
   baseRef: z.string().nullable(),
   aheadBehind: AheadBehindSchema.nullable(),
   aheadOfOrigin: z.number().nullable(),
@@ -3950,6 +3968,7 @@ const CheckoutStatusGitPaseoSchema = CheckoutStatusCommonSchema.extend({
   mainRepoRoot: z.string(),
   currentBranch: z.string().nullable(),
   isDirty: z.boolean(),
+  stagedFileCount: z.number().int().nonnegative().optional().default(0),
   baseRef: z.string(),
   aheadBehind: AheadBehindSchema.nullable(),
   aheadOfOrigin: z.number().nullable(),
@@ -4170,6 +4189,16 @@ export const CheckoutPushResponseSchema = z.object({
   }),
 });
 
+export const CheckoutFetchResponseSchema = z.object({
+  type: z.literal("checkout.fetch.response"),
+  payload: z.object({
+    cwd: z.string(),
+    success: z.boolean(),
+    error: CheckoutErrorSchema.nullable(),
+    requestId: z.string(),
+  }),
+});
+
 export const CheckoutRefreshResponseSchema = z.object({
   type: z.literal("checkout.refresh.response"),
   payload: z.object({
@@ -4231,6 +4260,8 @@ export const CheckoutCommitsListResponseSchema = z.object({
     cwd: z.string(),
     baseRef: z.string().nullable(),
     commits: z.array(CheckoutCommitSchema),
+    // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除可选兼容。
+    nextCursor: z.number().int().nonnegative().nullable().optional(),
     error: CheckoutErrorSchema.nullable(),
     requestId: z.string(),
   }),
@@ -5218,6 +5249,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutMergeFromBaseResponseSchema,
   CheckoutPullResponseSchema,
   CheckoutPushResponseSchema,
+  CheckoutFetchResponseSchema,
   CheckoutRefreshResponseSchema,
   CheckoutPrCreateResponseSchema,
   CheckoutPrMergeResponseSchema,
@@ -5543,6 +5575,8 @@ export type CheckoutPullRequest = z.infer<typeof CheckoutPullRequestSchema>;
 export type CheckoutPullResponse = z.infer<typeof CheckoutPullResponseSchema>;
 export type CheckoutPushRequest = z.infer<typeof CheckoutPushRequestSchema>;
 export type CheckoutPushResponse = z.infer<typeof CheckoutPushResponseSchema>;
+export type CheckoutFetchRequest = z.infer<typeof CheckoutFetchRequestSchema>;
+export type CheckoutFetchResponse = z.infer<typeof CheckoutFetchResponseSchema>;
 export type CheckoutRefreshRequest = z.infer<typeof CheckoutRefreshRequestSchema>;
 export type CheckoutRefreshResponse = z.infer<typeof CheckoutRefreshResponseSchema>;
 export type CheckoutCommitFile = z.infer<typeof CheckoutCommitFileSchema>;

@@ -650,9 +650,10 @@ export const en = {
     },
     git: {
       panel: {
-        sourceControl: "Source control",
+        sourceControl: "Git",
         repository: "Repositories",
         changes: "Changes",
+        stagedChanges: "Staged Changes",
         commitPlaceholder: 'Message to commit on "{{branch}}"',
         commit: "Commit",
         committing: "Committing...",
@@ -778,6 +779,7 @@ export const en = {
         },
         toasts: {
           failedCommit: "Failed to commit",
+          failedFetch: "Failed to fetch",
           failedPull: "Failed to pull",
           failedPush: "Failed to push",
           failedPullAndPush: "Failed to pull and push",
@@ -827,7 +829,6 @@ export const en = {
         refresh: "Refresh",
         refreshState: "Refresh git and {{brand}} state",
         failedRefresh: "Failed to refresh git state.",
-        emptyHiddenWhitespace: "No visible changes after hiding whitespace",
         emptyUncommitted: "No uncommitted changes",
         emptyAgainstBase: "No changes vs {{baseRef}}",
         checkingRepository: "Checking repository...",
@@ -841,6 +842,8 @@ export const en = {
         deletedFile: "Deleted",
         commits: {
           title: "Graph",
+          filesChanged: "{{count}} files changed",
+          moreFiles: "{{count}} more files",
           countLabel: "{{count}} commits",
           fileDiffEmpty: "No changes to display",
           fileDiffError: "Failed to load file diff",

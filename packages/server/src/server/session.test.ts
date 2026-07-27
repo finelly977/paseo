@@ -1605,6 +1605,7 @@ function createWorkspaceGitSnapshot(
       remoteUrl: "https://github.com/getpaseo/paseo.git",
       isPaseoOwnedWorktree: false,
       isDirty: true,
+      stagedFileCount: 0,
       baseRef: "main",
       aheadBehind: { ahead: 2, behind: 1 },
       aheadOfOrigin: 2,

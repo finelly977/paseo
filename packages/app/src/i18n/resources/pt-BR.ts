@@ -656,9 +656,10 @@ export const ptBR: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "Controle de código-fonte",
+        sourceControl: "Git",
         repository: "Repositórios",
         changes: "Alterações",
+        stagedChanges: "Alterações preparadas",
         commitPlaceholder: 'Mensagem para commit em "{{branch}}"',
         commit: "Fazer commit",
         committing: "Fazendo commit...",
@@ -790,6 +791,7 @@ export const ptBR: TranslationResources = {
         },
         toasts: {
           failedCommit: "Falha ao fazer commit",
+          failedFetch: "Falha ao buscar alterações",
           failedPull: "Falha ao fazer pull",
           failedPush: "Falha ao fazer push",
           failedPullAndPush: "Falha ao fazer pull e push",
@@ -839,7 +841,6 @@ export const ptBR: TranslationResources = {
         refresh: "Atualizar",
         refreshState: "Atualizar estado do git e do {{brand}}",
         failedRefresh: "Falha ao atualizar estado do git.",
-        emptyHiddenWhitespace: "Nenhuma alteração visível após ocultar espaços em branco",
         emptyUncommitted: "Nenhuma alteração sem commit",
         emptyAgainstBase: "Nenhuma alteração vs {{baseRef}}",
         checkingRepository: "Verificando repositório...",
@@ -853,6 +854,8 @@ export const ptBR: TranslationResources = {
         deletedFile: "Excluído",
         commits: {
           title: "Gráfico",
+          filesChanged: "{{count}} arquivos alterados",
+          moreFiles: "Mais {{count}} arquivos",
           countLabel: "{{count}} commits",
           fileDiffEmpty: "Nenhuma alteração para exibir",
           fileDiffError: "Falha ao carregar diff do arquivo",

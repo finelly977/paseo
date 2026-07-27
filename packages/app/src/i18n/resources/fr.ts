@@ -659,9 +659,10 @@ export const fr: TranslationResources = {
     },
     git: {
       panel: {
-        sourceControl: "Gestion de code source",
+        sourceControl: "Git",
         repository: "Dépôts",
         changes: "Modifications",
+        stagedChanges: "Modifications indexées",
         commitPlaceholder: "Message à valider sur « {{branch}} »",
         commit: "Valider",
         committing: "Validation...",
@@ -798,6 +799,7 @@ export const fr: TranslationResources = {
         },
         toasts: {
           failedCommit: "Échec de la validation",
+          failedFetch: "Échec de la récupération",
           failedPull: "Échec de l'extraction",
           failedPush: "Échec de la poussée",
           failedPullAndPush: "Impossible de tirer et de pousser",
@@ -847,7 +849,6 @@ export const fr: TranslationResources = {
         refresh: "Rafraîchir",
         refreshState: "Actualiser l'état de git et de {{brand}}",
         failedRefresh: "Échec de l'actualisation de l'état git.",
-        emptyHiddenWhitespace: "Aucun changement visible après avoir masqué les espaces",
         emptyUncommitted: "Aucune modification non validée",
         emptyAgainstBase: "Aucun changement par rapport à{{baseRef}}",
         checkingRepository: "Vérification du référentiel...",
@@ -860,6 +861,8 @@ export const fr: TranslationResources = {
         newFile: "Nouveau",
         deletedFile: "Supprimé",
         commits: {
+          filesChanged: "{{count}} fichiers modifiés",
+          moreFiles: "{{count}} fichiers supplémentaires",
           title: "Graphe",
           countLabel: "{{count}} commits",
           fileDiffEmpty: "Aucune modification à afficher",
