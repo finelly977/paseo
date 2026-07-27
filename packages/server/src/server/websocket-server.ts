@@ -92,6 +92,7 @@ import {
   outboundFrameByteLength,
   physicalSocketHasCapacity,
   sendBoundedPhysicalFrame,
+  sendBoundedPhysicalFrameAndWait,
 } from "./websocket/physical-socket.js";
 
 const WS_CLOSE_DAEMON_AUTH_FAILED = 4401;
@@ -369,7 +370,10 @@ function getBrowserHostCapability(
 export interface WebSocketLike {
   readyState: number;
   bufferedAmount?: number;
-  send: (data: string | Uint8Array | ArrayBuffer) => void;
+  send: (
+    data: string | Uint8Array | ArrayBuffer,
+    callback?: (error?: Error) => void,
+  ) => void | Promise<void>;
   close: (code?: number, reason?: string) => void;
   terminate?: () => void;
   on: (event: "message" | "close" | "error", listener: (...args: unknown[]) => void) => void;
@@ -421,6 +425,7 @@ interface SocketSessionOptions {
   onMessage: (message: SessionOutboundMessage) => void;
   onMessageToSource?: (source: object, message: SessionOutboundMessage) => void;
   onBinaryMessage?: (frame: Uint8Array) => void;
+  onBinaryMessageToSource?: (source: object, frame: Uint8Array) => Promise<void>;
   getTransportBufferedAmount?: () => number | null;
   onLifecycleIntent?: (intent: SessionLifecycleIntent) => void;
   hubExecutionAgents?: HubExecutionAgents;
@@ -1052,6 +1057,23 @@ export class VoiceAssistantWebSocketServer {
     });
   }
 
+  private async sendBinaryToClientAndWait(ws: WebSocketLike, frame: Uint8Array): Promise<void> {
+    try {
+      const sent = await sendBoundedPhysicalFrameAndWait({
+        socket: ws,
+        frame,
+        onHighWater: () => this.closeAtOutboundHighWater(ws),
+      });
+      if (!sent) {
+        throw new Error("Physical WebSocket is not open");
+      }
+      this.runtimeMetrics.recordOutboundBinaryFrame(ws.bufferedAmount);
+    } catch (err) {
+      this.logger.warn({ err }, "ws_send_failed");
+      throw err;
+    }
+  }
+
   private sendFrameToClient(
     ws: WebSocketLike,
     frame: string | Uint8Array,
@@ -1224,6 +1246,12 @@ export class VoiceAssistantWebSocketServer {
         }
         this.sendBinaryToConnection(connection, frame);
       },
+      onBinaryMessageToSource: async (source, frame) => {
+        if (!connection || !connection.sockets.has(source as WebSocketLike)) {
+          throw new Error("File transfer source socket is no longer attached");
+        }
+        await this.sendBinaryToClientAndWait(source as WebSocketLike, frame);
+      },
       getTransportBufferedAmount: () => {
         if (!connection) {
           return null;
@@ -1269,6 +1297,7 @@ export class VoiceAssistantWebSocketServer {
       onMessage: options.onMessage,
       onMessageToSource: options.onMessageToSource,
       onBinaryMessage: options.onBinaryMessage,
+      onBinaryMessageToSource: options.onBinaryMessageToSource,
       getTransportBufferedAmount: options.getTransportBufferedAmount,
       onLifecycleIntent: options.onLifecycleIntent,
       logger: options.connectionLogger.child({ module: "session" }),
