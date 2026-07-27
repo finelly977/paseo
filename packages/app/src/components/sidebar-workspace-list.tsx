@@ -133,6 +133,7 @@ import {
   getIsElectron,
 } from "@/constants/platform";
 import { getDesktopHost } from "@/desktop/host";
+import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
@@ -614,6 +615,10 @@ function ProjectKebabMenu({
             {t("sidebar.project.actions.openNewWindow")}
           </DropdownMenuItem>
         ) : null}
+        <OpenInFileManagerMenuItem
+          path={projectPath}
+          testID={`sidebar-project-menu-open-folder-${projectKey}`}
+        />
         <DropdownMenuItem
           testID={`sidebar-project-menu-remove-${projectKey}`}
           leading={trash2LeadingIcon}
@@ -673,6 +678,7 @@ function WorkspaceRowRightGroup({
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
 }) {
+  const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
@@ -715,6 +721,7 @@ function WorkspaceRowRightGroup({
                 onReloadAgent={onReloadAgent}
                 onRemoveAgent={onRemoveAgent}
                 isRemovingAgent={isRemovingAgent}
+                openInFileManagerPath={workspacePath}
               />
             ) : null}
           </SidebarWorkspaceTrailingActionOverlay>
