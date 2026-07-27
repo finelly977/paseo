@@ -258,3 +258,19 @@
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/server/src/server/agent/providers/claude/query.ts`
 - `packages/server/src/server/bootstrap.ts`
+
+### 16. 右侧 Git 面板采用 VS Code 式源代码管理工作流
+
+- 工作区右侧 Git 面板按“存储库、变更、提交历史”组织信息：存储库行集中显示仓库名、当前分支、刷新和拉取、推送、合并等操作；变更区显示文件数量、差异模式、树形或平铺视图、展开控制和差异选项。
+- 有未提交变更时可直接填写提交说明并提交全部变更；提交说明会原样发送给守护进程，提交成功后清空输入，提交失败时保留输入并显示错误，不会退回自动生成说明。
+- 变更文件仍可原地展开差异或在独立标签页查看；可点击的提交图谱显示当前分支全部提交以及最近 10 条基础分支提交，并用不同轨道颜色区分，保留 Paseo 原有的工作区差异审阅能力。
+- 面板复用现有跨平台组件和 Git RPC，桌面、网页和移动端保持同一操作语义；各语言资源具有相同结构。
+
+主要涉及：
+
+- `packages/app/src/git/source-control-panel.tsx`
+- `packages/app/src/git/diff-pane.tsx`
+- `packages/app/src/git/commits-section/commits-section.tsx`
+- `packages/app/src/git/actions-store.ts`
+- `packages/app/src/components/explorer-sidebar.tsx`
+- `packages/app/src/i18n/resources/`

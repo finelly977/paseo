@@ -654,6 +654,14 @@ export const ja: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "ソース管理",
+        repository: "リポジトリ",
+        changes: "変更",
+        commitPlaceholder: "「{{branch}}」にコミットするメッセージ",
+        commit: "コミット",
+        committing: "コミット中...",
+      },
       actions: {
         moreOptions: "その他のオプション",
         moreActions: "その他のアクション",
@@ -833,9 +841,8 @@ export const ja: TranslationResources = {
         newFile: "新規",
         deletedFile: "削除済み",
         commits: {
-          title: "コミット",
-          countLabel: "ワークスペースのコミット数: {{count}}",
-          noneAhead: "{{baseRef}} より先のコミットはまだありません",
+          title: "グラフ",
+          countLabel: "{{count}} 件のコミット",
           fileDiffEmpty: "表示する変更はありません",
           fileDiffError: "ファイル差分の読み込みに失敗しました",
           loading: "コミットを読み込み中…",

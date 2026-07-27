@@ -333,7 +333,7 @@ function ExplorerSidebarContent({
             <ExplorerTabButton
               tab="changes"
               active={resolvedTab === "changes"}
-              label={t("workspace.tabs.explorer.changes")}
+              label={t("workspace.git.panel.sourceControl")}
               onTabPress={onTabPress}
               testID="explorer-tab-changes"
             />

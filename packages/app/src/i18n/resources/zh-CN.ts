@@ -648,6 +648,14 @@ export const zhCN: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "源代码管理",
+        repository: "存储库",
+        changes: "更改",
+        commitPlaceholder: "消息（在“{{branch}}”上提交）",
+        commit: "提交",
+        committing: "正在提交...",
+      },
       actions: {
         moreOptions: "更多选项",
         moreActions: "更多操作",
@@ -814,9 +822,8 @@ export const zhCN: TranslationResources = {
         newFile: "新增",
         deletedFile: "已删除",
         commits: {
-          title: "提交",
-          countLabel: "{{count}} 个工作区提交",
-          noneAhead: "尚无领先于 {{baseRef}} 的提交",
+          title: "图表",
+          countLabel: "{{count}} 个提交",
           fileDiffEmpty: "没有可显示的更改",
           fileDiffError: "加载文件差异失败",
           loading: "正在加载提交…",

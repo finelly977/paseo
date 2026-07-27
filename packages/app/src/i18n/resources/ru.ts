@@ -656,6 +656,14 @@ export const ru: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "Управление исходным кодом",
+        repository: "Репозитории",
+        changes: "Изменения",
+        commitPlaceholder: 'Сообщение для коммита в "{{branch}}"',
+        commit: "Зафиксировать",
+        committing: "Фиксация...",
+      },
       actions: {
         moreOptions: "Больше возможностей",
         moreActions: "Дополнительные действия",
@@ -843,9 +851,8 @@ export const ru: TranslationResources = {
         newFile: "Новый",
         deletedFile: "Удалено",
         commits: {
-          title: "Коммиты",
-          countLabel: "{{count}} коммитов рабочего пространства",
-          noneAhead: "Коммитов впереди {{baseRef}} пока нет",
+          title: "Граф",
+          countLabel: "Коммитов: {{count}}",
           fileDiffEmpty: "Нет изменений для отображения",
           fileDiffError: "Не удалось загрузить различия файла",
           loading: "Загрузка коммитов…",

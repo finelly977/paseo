@@ -73,6 +73,28 @@ describe("checkout-git-actions-store", () => {
     expect(store.getStatus({ serverId, cwd, actionId: "commit" })).toBe("idle");
   });
 
+  it("forwards the user-entered commit message", async () => {
+    const client = {
+      checkoutCommit: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: {
+        ...state.sessions,
+        [serverId]: { client } as unknown as (typeof state.sessions)[string],
+      },
+    }));
+
+    await useCheckoutGitActionsStore
+      .getState()
+      .commit({ serverId, cwd, message: "功能：重构源代码管理面板" });
+
+    expect(client.checkoutCommit).toHaveBeenCalledWith(cwd, {
+      addAll: true,
+      message: "功能：重构源代码管理面板",
+    });
+  });
+
   it("runs pull then push sequentially for pull-and-push", async () => {
     const order: string[] = [];
     const client = {

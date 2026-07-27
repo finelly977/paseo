@@ -658,6 +658,14 @@ export const fr: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "Gestion de code source",
+        repository: "Dépôts",
+        changes: "Modifications",
+        commitPlaceholder: "Message à valider sur « {{branch}} »",
+        commit: "Valider",
+        committing: "Validation...",
+      },
       actions: {
         moreOptions: "Plus d'options",
         moreActions: "Plus de propositions",
@@ -852,9 +860,8 @@ export const fr: TranslationResources = {
         newFile: "Nouveau",
         deletedFile: "Supprimé",
         commits: {
-          title: "Commits",
-          countLabel: "{{count}} commits de l’espace de travail",
-          noneAhead: "Aucun commit en avance sur {{baseRef}} pour le moment",
+          title: "Graphe",
+          countLabel: "{{count}} commits",
           fileDiffEmpty: "Aucune modification à afficher",
           fileDiffError: "Échec du chargement du diff du fichier",
           loading: "Chargement des commits…",

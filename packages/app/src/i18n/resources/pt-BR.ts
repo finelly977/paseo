@@ -655,6 +655,14 @@ export const ptBR: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "Controle de código-fonte",
+        repository: "Repositórios",
+        changes: "Alterações",
+        commitPlaceholder: 'Mensagem para commit em "{{branch}}"',
+        commit: "Fazer commit",
+        committing: "Fazendo commit...",
+      },
       actions: {
         moreOptions: "Mais opções",
         moreActions: "Mais ações",
@@ -844,9 +852,8 @@ export const ptBR: TranslationResources = {
         newFile: "Novo",
         deletedFile: "Excluído",
         commits: {
-          title: "Commits",
-          countLabel: "{{count}} commits do espaço de trabalho",
-          noneAhead: "Ainda não há commits à frente de {{baseRef}}",
+          title: "Gráfico",
+          countLabel: "{{count}} commits",
           fileDiffEmpty: "Nenhuma alteração para exibir",
           fileDiffError: "Falha ao carregar diff do arquivo",
           loading: "Carregando commits…",

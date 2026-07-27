@@ -652,6 +652,14 @@ export const ar: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "التحكم بالمصدر",
+        repository: "المستودعات",
+        changes: "التغييرات",
+        commitPlaceholder: 'رسالة للإيداع في "{{branch}}"',
+        commit: "إيداع",
+        committing: "جارٍ الإيداع...",
+      },
       actions: {
         moreOptions: "المزيد من الخيارات",
         moreActions: "المزيد من الإجراءات",
@@ -822,9 +830,8 @@ export const ar: TranslationResources = {
         newFile: "جديد",
         deletedFile: "تم الحذف",
         commits: {
-          title: "الإيداعات",
-          countLabel: "{{count}} من إيداعات مساحة العمل",
-          noneAhead: "لا توجد إيداعات متقدمة على {{baseRef}} بعد",
+          title: "الرسم البياني",
+          countLabel: "{{count}} إيداعات",
           fileDiffEmpty: "لا توجد تغييرات لعرضها",
           fileDiffError: "تعذّر تحميل فروق الملف",
           loading: "جارٍ تحميل الإيداعات…",

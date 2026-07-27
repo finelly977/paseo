@@ -28,7 +28,7 @@ import {
 } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { BORDER_WIDTH, ICON_SIZE, SPACING, type Theme } from "@/styles/theme";
-import { useIsCompactFormFactor, WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import {
   AlignJustify,
   Archive,
@@ -88,9 +88,13 @@ import { useFileDownload } from "@/hooks/use-file-download";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { lineNumberGutterWidth } from "@/components/code-insets";
-import { GitActionsSplitButton } from "@/git/actions-split-button";
 import { BranchSwitcher } from "@/components/branch-switcher";
 import { useGitActions } from "@/git/use-actions";
+import {
+  SourceControlCommitComposer,
+  SourceControlRepositoryHeader,
+  SourceControlSectionHeader,
+} from "@/git/source-control-panel";
 import { buildForgeSignInCommand, getForgePresentation, type Forge } from "@/git/forge";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import type { ForgeAuthState } from "@getpaseo/protocol/messages";
@@ -120,6 +124,7 @@ import {
   type InlineReviewActions,
 } from "@/review";
 import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
+import type { GitActions } from "@/git/policy";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -2337,6 +2342,28 @@ function computeCommittedDiffDescription(
   return branchLabel === baseRefLabel ? undefined : `${branchLabel} -> ${baseRefLabel}`;
 }
 
+function repositoryDisplayName(repoRoot: string | null | undefined, cwd: string): string {
+  const normalizedPath = (repoRoot ?? cwd).replace(/[\\/]+$/, "");
+  const pathParts = normalizedPath.split(/[\\/]/);
+  return pathParts[pathParts.length - 1] || normalizedPath;
+}
+
+function repositoryMenuActions(gitActions: GitActions): GitActions {
+  const seen = new Set<string>();
+  const menu = [
+    ...(gitActions.primary ? [gitActions.primary] : []),
+    ...gitActions.secondary,
+    ...gitActions.menu,
+  ].filter((action) => {
+    if (action.id === "commit" || seen.has(action.id)) {
+      return false;
+    }
+    seen.add(action.id);
+    return true;
+  });
+  return { primary: null, secondary: [], menu };
+}
+
 function computePrErrorMessage(
   githubFeaturesEnabled: boolean,
   prPayloadError: { message?: string } | null | undefined,
@@ -2669,9 +2696,13 @@ export function GitDiffPane({
     (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
   );
   const runRefresh = useCheckoutGitActionsStore((s) => s.refresh);
+  const runCommit = useCheckoutGitActionsStore((s) => s.commit);
   const isRefreshing =
     useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "refresh" })) ===
     "pending";
+  const commitStatus = useCheckoutGitActionsStore((s) =>
+    s.getStatus({ serverId, cwd, actionId: "commit" }),
+  );
 
   const handleRefresh = useCallback(() => {
     if (isRefreshing) {
@@ -2681,6 +2712,22 @@ export function GitDiffPane({
       toast.error(error instanceof Error ? error.message : t("workspace.git.diff.failedRefresh"));
     });
   }, [cwd, isRefreshing, runRefresh, serverId, t, toast]);
+
+  const handleCommit = useCallback(
+    async (message: string) => {
+      try {
+        await runCommit({ serverId, cwd, message });
+        toast.show(t("workspace.git.actions.commit.success"), { variant: "success" });
+        return true;
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.git.actions.toasts.failedCommit"),
+        );
+        return false;
+      }
+    },
+    [cwd, runCommit, serverId, t, toast],
+  );
 
   const {
     status,
@@ -2812,6 +2859,7 @@ export function GitDiffPane({
   );
 
   const hasChanges = files.length > 0;
+  const hasUncommittedChanges = Boolean(status?.isGit && status.isDirty);
   const diffErrorMessage = diffPayloadError?.message ?? null;
   const prErrorMessage = computePrErrorMessage(githubFeaturesEnabled, prPayloadError);
   const baseRefLabel = useMemo(
@@ -2835,6 +2883,11 @@ export function GitDiffPane({
     cwd,
     icons: gitActionsIcons,
   });
+  const repositoryGitActions = useMemo(() => repositoryMenuActions(gitActions), [gitActions]);
+  const repositoryName = useMemo(
+    () => repositoryDisplayName(status?.repoRoot, cwd),
+    [cwd, status?.repoRoot],
+  );
   const committedDiffDescription = useMemo(
     () => computeCommittedDiffDescription(branchLabel, baseRefLabel),
     [baseRefLabel, branchLabel],
@@ -2872,30 +2925,36 @@ export function GitDiffPane({
 
   return (
     <View style={styles.container}>
-      {isGit && (currentBranchName || isMobile) ? (
-        <View style={styles.header} testID="changes-header">
-          <BranchSwitcher
-            currentBranchName={currentBranchName}
-            serverId={serverId}
-            workspaceId={workspaceId ?? cwd}
-            workspaceDirectory={cwd}
-            isGitCheckout={isGit}
-            testID="changes-branch-switcher"
-          />
-          {isMobile ? <GitActionsSplitButton gitActions={gitActions} /> : null}
-        </View>
-      ) : null}
-
       {isGit ? (
-        <View style={styles.diffStatusContainer}>
-          <View style={styles.diffStatusInner}>
-            <DiffModeMenu
-              diffMode={diffMode}
-              committedDescription={committedDiffDescription}
-              onSelectUncommitted={handleSelectUncommitted}
-              onSelectBase={handleSelectBase}
+        <>
+          <SourceControlRepositoryHeader
+            repositoryName={repositoryName}
+            gitActions={repositoryGitActions}
+            refreshSupported={refreshSupported}
+            isRefreshing={isRefreshing}
+            onRefresh={handleRefresh}
+          >
+            <BranchSwitcher
+              currentBranchName={currentBranchName}
+              serverId={serverId}
+              workspaceId={workspaceId ?? cwd}
+              workspaceDirectory={cwd}
+              isGitCheckout={isGit}
+              testID="changes-branch-switcher"
             />
+          </SourceControlRepositoryHeader>
+          <SourceControlSectionHeader
+            title={t("workspace.git.panel.changes")}
+            count={files.length}
+            testID="source-control-changes-heading"
+          >
             <View style={styles.diffStatusButtons}>
+              <DiffModeMenu
+                diffMode={diffMode}
+                committedDescription={committedDiffDescription}
+                onSelectUncommitted={handleSelectUncommitted}
+                onSelectBase={handleSelectBase}
+              />
               <ChangesTabToggle
                 isMobile={isMobile}
                 selected={changesTabOpen}
@@ -2938,8 +2997,14 @@ export function GitDiffPane({
                 onToggleWrapLines={handleToggleWrapLines}
               />
             </View>
-          </View>
-        </View>
+          </SourceControlSectionHeader>
+          <SourceControlCommitComposer
+            branchName={branchLabel}
+            hasChanges={hasUncommittedChanges}
+            status={commitStatus}
+            onCommit={handleCommit}
+          />
+        </>
       ) : null}
 
       {forgeSetupMessage ? (
@@ -2962,35 +3027,11 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minHeight: 0,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  diffStatusContainer: {
-    height: WORKSPACE_SECONDARY_HEADER_HEIGHT,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  diffStatusInner: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingRight: theme.spacing[3],
-  },
   diffModeTrigger: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: theme.spacing[1],
-    // Align text with header branch icon (at spacing[3] from edge, minus our horizontal padding)
-    marginLeft: theme.spacing[3] - theme.spacing[1],
     paddingHorizontal: theme.spacing[1],
     height: {
       xs: 28,

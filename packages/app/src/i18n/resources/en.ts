@@ -649,6 +649,14 @@ export const en = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "Source control",
+        repository: "Repositories",
+        changes: "Changes",
+        commitPlaceholder: 'Message to commit on "{{branch}}"',
+        commit: "Commit",
+        committing: "Committing...",
+      },
       actions: {
         moreOptions: "More options",
         moreActions: "More actions",
@@ -832,9 +840,8 @@ export const en = {
         newFile: "New",
         deletedFile: "Deleted",
         commits: {
-          title: "Commits",
-          countLabel: "{{count}} workspace commits",
-          noneAhead: "No commits ahead of {{baseRef}} yet",
+          title: "Graph",
+          countLabel: "{{count}} commits",
           fileDiffEmpty: "No changes to display",
           fileDiffError: "Failed to load file diff",
           loading: "Loading commits…",

@@ -659,6 +659,14 @@ export const es: TranslationResources = {
       },
     },
     git: {
+      panel: {
+        sourceControl: "Control de código fuente",
+        repository: "Repositorios",
+        changes: "Cambios",
+        commitPlaceholder: 'Mensaje para confirmar en "{{branch}}"',
+        commit: "Confirmar",
+        committing: "Confirmando...",
+      },
       actions: {
         moreOptions: "Más opciones",
         moreActions: "Más acciones",
@@ -854,9 +862,8 @@ export const es: TranslationResources = {
         newFile: "Nuevo",
         deletedFile: "Eliminado",
         commits: {
-          title: "Commits",
-          countLabel: "{{count}} commits del espacio de trabajo",
-          noneAhead: "Aún no hay commits por delante de {{baseRef}}",
+          title: "Gráfico",
+          countLabel: "{{count}} commits",
           fileDiffEmpty: "No hay cambios para mostrar",
           fileDiffError: "Error al cargar el diff del archivo",
           loading: "Cargando commits…",
