@@ -245,3 +245,16 @@
 - `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx`
 - `packages/app/src/components/sidebar/sidebar-status-list.tsx`
 - `packages/app/src/components/sidebar-workspace-list.tsx`
+
+### 15. Paseo 创建的 Claude 会话在 Claude CLI 中可见
+
+- Paseo 启动 Claude Agent SDK 时固定使用普通 Claude CLI 来源标记，新建会话、恢复会话以及后续追加内容都会被 Claude CLI 的 `/resume` 选择器识别，不再因 SDK 来源而隐藏。
+- 守护进程启动时会遍历 Paseo 已保存的 Claude 原生会话句柄，把现有会话 JSONL 中的 SDK 来源结构化转换为 CLI 来源；转换采用原子写入，读取期间发生变化的文件会拒绝覆盖并写入完整错误日志。
+- 迁移只处理 Paseo 持有持久化句柄的 Claude 会话，不扫描或修改其他应用创建的 Claude SDK 会话。
+
+主要涉及：
+
+- `packages/server/src/server/agent/providers/claude/session-entrypoint.ts`
+- `packages/server/src/server/agent/providers/claude/agent.ts`
+- `packages/server/src/server/agent/providers/claude/query.ts`
+- `packages/server/src/server/bootstrap.ts`

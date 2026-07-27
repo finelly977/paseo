@@ -82,6 +82,7 @@ describe("Claude SDK env", () => {
       expect(result.sessionId).toBe("managed-agent-env-session");
       expect(capturedEnv?.PASEO_AGENT_ID).toBe(launchContext.env?.PASEO_AGENT_ID);
       expect(capturedEnv?.PASEO_TEST_FLAG).toBe(launchContext.env?.PASEO_TEST_FLAG);
+      expect(capturedEnv?.CLAUDE_CODE_ENTRYPOINT).toBe("cli");
     } finally {
       await session.close();
     }
@@ -146,6 +147,7 @@ describe("Claude SDK env", () => {
       expect(result.sessionId).toBe("persisted-session");
       expect(capturedEnv?.PASEO_AGENT_ID).toBe(launchContext.env?.PASEO_AGENT_ID);
       expect(capturedEnv?.PASEO_TEST_FLAG).toBe(launchContext.env?.PASEO_TEST_FLAG);
+      expect(capturedEnv?.CLAUDE_CODE_ENTRYPOINT).toBe("cli");
     } finally {
       await session.close();
     }

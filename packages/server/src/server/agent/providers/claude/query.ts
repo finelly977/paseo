@@ -8,6 +8,7 @@ import {
 } from "../../provider-launch-config.js";
 import { buildSelfNodeCommand } from "../../../paseo-env.js";
 import { spawnProcess } from "../../../../utils/spawn.js";
+import { CLAUDE_CLI_ENTRYPOINT } from "./session-entrypoint.js";
 
 // Keep the raw SDK query import in this module only. Claude process launch behavior
 // must stay shared between production and tests so Windows .cmd/.bat handling cannot
@@ -79,6 +80,8 @@ function applyRuntimeSettingsToClaudeOptions(
         runtimeSettings,
         overlays: [launchEnv],
       });
+      providerEnvSpec.envOverlay.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
+      providerEnv.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
       const selfNodeCommand = isDefaultRuntime
         ? buildSelfNodeCommand(resolved.args, providerEnv)
         : null;

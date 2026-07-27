@@ -42,6 +42,7 @@ import {
 } from "./model-manifest.js";
 import { parsePartialJsonObject } from "./partial-json.js";
 import { ClaudeSidechainTracker } from "./sidechain-tracker.js";
+import { CLAUDE_CLI_ENTRYPOINT } from "./session-entrypoint.js";
 import { buildClaudeFeatures, claudeModelSupportsFastMode } from "./feature-definitions.js";
 import {
   buildBinaryDiagnosticRows,
@@ -3043,7 +3044,7 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private buildSdkEnv(extraClaudeOptions: Partial<ClaudeOptions> | undefined): NodeJS.ProcessEnv {
-    return createProviderEnv({
+    const env = createProviderEnv({
       baseEnv: process.env,
       runtimeSettings: this.runtimeSettings,
       overlays: [
@@ -3056,6 +3057,8 @@ class ClaudeAgentSession implements AgentSession {
         this.launchEnv,
       ],
     });
+    env.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
+    return env;
   }
 
   private async buildOptions(): Promise<ClaudeOptions> {

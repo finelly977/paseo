@@ -128,6 +128,8 @@ import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { createProviderEnv } from "./agent/provider-launch-config.js";
+import { migrateClaudeSdkSessionsToCliEntrypoint } from "./agent/providers/claude/session-entrypoint.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import { createAgentMcpServer } from "./agent/mcp-server.js";
 import {
@@ -828,6 +830,41 @@ export async function createPaseoDaemon(
   );
   await agentStorage.initialize();
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
+  try {
+    const storedAgents = await agentStorage.list();
+    const claudeEnv = createProviderEnv({
+      baseEnv: process.env,
+      runtimeSettings: config.agentProviderSettings?.claude,
+    });
+    const migration = await migrateClaudeSdkSessionsToCliEntrypoint({
+      sessions: storedAgents.flatMap((agent) =>
+        agent.provider === "claude" && agent.persistence?.provider === "claude"
+          ? [{ cwd: agent.cwd, sessionId: agent.persistence.sessionId }]
+          : [],
+      ),
+      ...(typeof claudeEnv.CLAUDE_CONFIG_DIR === "string"
+        ? { configDir: claudeEnv.CLAUDE_CONFIG_DIR }
+        : {}),
+    });
+    for (const failure of migration.failures) {
+      logger.error(
+        { err: failure.error, sessionPath: failure.sessionPath },
+        "Claude SDK 会话来源转换失败",
+      );
+    }
+    logger.info(
+      {
+        scannedFiles: migration.scannedFiles,
+        migratedFiles: migration.migratedFiles,
+        changedEntries: migration.changedEntries,
+        missingFiles: migration.missingFiles,
+        failedFiles: migration.failures.length,
+      },
+      "Claude SDK 会话来源转换完成",
+    );
+  } catch (error) {
+    logger.error({ err: error }, "Claude SDK 会话来源批量转换失败");
+  }
   await bootstrapWorkspaceRegistries({
     paseoHome: config.paseoHome,
     agentStorage,

@@ -101,5 +101,61 @@ describe("Claude spawn override", () => {
     expect(claudeSpawnCall).toBeDefined();
     const spawnOptions = claudeSpawnCall?.[2];
     expect(spawnOptions?.shell).toBe(false);
+    expect(spawnOptions?.env?.CLAUDE_CODE_ENTRYPOINT).toBe("cli");
+  });
+
+  test("forces the CLI entrypoint when spawning the native Claude binary", async () => {
+    let capturedOptions: Options | undefined;
+    const queryFactory = vi.fn(({ options }: ClaudeQueryInput) => {
+      capturedOptions = options;
+      return createQueryMock([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "claude-native-entrypoint-session",
+          permissionMode: "default",
+          model: "opus",
+        },
+        {
+          type: "result",
+          subtype: "success",
+          usage: {
+            input_tokens: 1,
+            cache_read_input_tokens: 0,
+            output_tokens: 1,
+          },
+          total_cost_usd: 0,
+        },
+      ]);
+    });
+    const spawnSpy = vi.spyOn(spawnUtils, "spawnProcess").mockReturnValue(createChildProcessStub());
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      queryFactory,
+      resolveBinary: async () => "C:\\Claude\\claude.exe",
+    });
+    const session = await client.createSession({
+      provider: "claude",
+      cwd: process.cwd(),
+    });
+
+    try {
+      await session.run("native entrypoint regression");
+      capturedOptions?.spawnClaudeCodeProcess?.({
+        command: "C:\\Claude\\claude.exe",
+        args: ["--output-format", "stream-json"],
+        cwd: process.cwd(),
+        env: {},
+        signal: new AbortController().signal,
+      } satisfies ClaudeSpawnOptions);
+    } finally {
+      await session.close();
+    }
+
+    const nativeSpawnCall = spawnSpy.mock.calls.find(
+      ([command]) => command === "C:\\Claude\\claude.exe",
+    );
+    expect(nativeSpawnCall).toBeDefined();
+    expect(nativeSpawnCall?.[2]?.envOverlay?.CLAUDE_CODE_ENTRYPOINT).toBe("cli");
   });
 });
