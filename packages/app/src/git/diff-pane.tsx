@@ -95,7 +95,12 @@ import {
   SourceControlRepositoryHeader,
   SourceControlSectionHeader,
 } from "@/git/source-control-panel";
-import { buildForgeSignInCommand, getForgePresentation, type Forge } from "@/git/forge";
+import {
+  buildForgeSignInCommand,
+  forgeFromRemoteUrl,
+  getForgePresentation,
+  type Forge,
+} from "@/git/forge";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import type { CheckoutStatusResponse, ForgeAuthState } from "@getpaseo/protocol/messages";
 import { useCheckoutGitActionsStore } from "@/git/actions-store";
@@ -2395,12 +2400,11 @@ function StagedChangesHeader({ title, count }: { title: string; count: number })
   );
 }
 
-function computePrErrorMessage(
-  githubFeaturesEnabled: boolean,
-  prPayloadError: { message?: string } | null | undefined,
-): string | null {
-  if (!githubFeaturesEnabled) return null;
-  return prPayloadError?.message ?? null;
+function resolveDisplayedForge(
+  resolvedForge: string | null,
+  remoteUrl: string | null | undefined,
+): string {
+  return resolvedForge ?? forgeFromRemoteUrl(remoteUrl) ?? "git";
 }
 
 // The precise setup step a workspace needs before its forge features work, or
@@ -2813,16 +2817,12 @@ export function GitDiffPane({
     attachment: reviewAttachment,
     enabled: !changesTabOpen,
   });
-  const {
-    githubFeaturesEnabled,
-    forge,
-    authState,
-    payloadError: prPayloadError,
-  } = useCheckoutPrStatusQuery({
+  const { resolvedForge, authState } = useCheckoutPrStatusQuery({
     serverId,
     cwd,
-    enabled: isGit,
+    enabled: false,
   });
+  const forge = resolveDisplayedForge(resolvedForge, status?.remoteUrl);
   const forgeProvidersSupported = useSessionStore(
     (s) => s.sessions[serverId]?.serverInfo?.features?.forgeProviders === true,
   );
@@ -2919,7 +2919,6 @@ export function GitDiffPane({
     status,
   });
   const diffErrorMessage = diffPayloadError?.message ?? null;
-  const prErrorMessage = computePrErrorMessage(githubFeaturesEnabled, prPayloadError);
   const baseRefLabel = useMemo(
     () => computeBaseRefLabel(baseRef, t("workspace.git.diff.base")),
     [baseRef, t],
@@ -3071,8 +3070,6 @@ export function GitDiffPane({
         </View>
       ) : null}
 
-      {prErrorMessage ? <Text style={styles.actionErrorText}>{prErrorMessage}</Text> : null}
-
       <View style={styles.diffContainer}>{bodyContent}</View>
 
       <CommitsSection
@@ -3086,6 +3083,7 @@ export function GitDiffPane({
         refreshSupported={refreshSupported}
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
+        currentBranchName={currentBranchName}
         onCommitPress={handleCommitPress}
       />
     </View>
@@ -3171,12 +3169,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     borderRadius: theme.borderRadius.base,
     flexShrink: 0,
-  },
-  actionErrorText: {
-    paddingHorizontal: theme.spacing[3],
-    paddingBottom: theme.spacing[1],
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.destructive,
   },
   forgeSetupCallout: {
     marginHorizontal: theme.spacing[3],

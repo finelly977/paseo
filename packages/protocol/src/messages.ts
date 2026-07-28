@@ -1750,6 +1750,10 @@ const CheckoutCommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
   subject: z.string(),
+  // 完整提交说明，旧守护进程可能不返回该字段。
+  message: z.string().optional(),
+  // 指向该提交的本地分支、远端分支或标签，旧守护进程可能不返回。
+  refs: z.array(z.string()).optional(),
   authorName: z.string(),
   authorDate: z.string(), // ISO 8601
   isOnRemote: z.boolean(), // false = local-only (unpushed)

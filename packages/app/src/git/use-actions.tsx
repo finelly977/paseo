@@ -2,11 +2,12 @@ import { useState, useCallback, useEffect, useMemo, type ReactElement } from "re
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import type { Theme } from "@/styles/theme";
-import { getForgePresentation, type Forge } from "@/git/forge";
+import { forgeFromRemoteUrl, getForgePresentation, type Forge } from "@/git/forge";
 import { ForgeBrandIcon, getForgeBrandColorMapping } from "@/git/forge-icon";
 import { type CheckoutGitActionStatus, useCheckoutGitActionsStore } from "@/git/actions-store";
 import { type CheckoutStatusPayload, useCheckoutStatusQuery } from "@/git/use-status-query";
 import { type CheckoutPrStatusPayload, useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
+import { openOrCreatePullRequest } from "@/git/pr-action-routing";
 import {
   buildGitActions,
   narrowPullRequestState,
@@ -80,6 +81,13 @@ function formatBaseRefLabel(baseRef: string | undefined, fallbackLabel: string):
   if (!baseRef) return fallbackLabel;
   const trimmed = baseRef.replace(/^refs\/(heads|remotes)\//, "").trim();
   return trimmed.startsWith("origin/") ? trimmed.slice("origin/".length) : trimmed;
+}
+
+function resolveActionForge(
+  resolvedForge: string | null,
+  remoteUrl: string | null | undefined,
+): string {
+  return resolvedForge ?? forgeFromRemoteUrl(remoteUrl) ?? "git";
 }
 
 type PrStatusValue = NonNullable<CheckoutPrStatusPayload["status"]> | null;
@@ -306,12 +314,16 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
   const {
     status: prStatus,
     githubFeaturesEnabled,
-    forge,
+    resolvedForge,
+    refetch: refetchPrStatus,
   } = useCheckoutPrStatusQuery({
     serverId,
     cwd,
-    enabled: isGit,
+    // 源代码管理入口只消费缓存或守护进程推送的 PR 状态。启动应用时不能让
+    // 远端状态请求抢在本地 Git 状态之前执行，显式 PR 操作仍会访问远端。
+    enabled: false,
   });
+  const forge = resolveActionForge(resolvedForge, gitStatus?.remoteUrl);
   const prIcon = useMemo(() => renderForgePrIcon(forge), [forge]);
   const baseRefLabel = useMemo(
     () => formatBaseRefLabel(baseRef, t("workspace.git.diff.base")),
@@ -645,12 +657,14 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
   } = derived;
 
   const handlePrAction = useCallback(() => {
-    if (prStatus?.url) {
-      openURLInNewTab(prStatus.url);
-      return;
-    }
-    handleCreatePr();
-  }, [prStatus?.url, handleCreatePr]);
+    void openOrCreatePullRequest({
+      refetch: refetchPrStatus,
+      open: openURLInNewTab,
+      create: handleCreatePr,
+    }).catch((error) => {
+      toastActionError(error, t("workspace.git.actions.toasts.failedCreatePr"));
+    });
+  }, [handleCreatePr, refetchPrStatus, t, toastActionError]);
 
   // Build actions
   const gitActionsInput = useMemo<BuildGitActionsInput>(() => {

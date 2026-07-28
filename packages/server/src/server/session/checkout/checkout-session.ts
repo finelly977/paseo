@@ -234,7 +234,10 @@ export class CheckoutSession {
     const resolvedCwd = expandTilde(cwd);
 
     try {
-      const snapshot = await this.workspaceGitService.getSnapshot(resolvedCwd);
+      const snapshot = await this.workspaceGitService.getSnapshot(resolvedCwd, {
+        includeForge: false,
+        reason: "checkout-status",
+      });
       this.host.emit({
         type: "checkout_status_response",
         payload: buildCheckoutStatusPayloadFromSnapshot({
@@ -460,10 +463,9 @@ export class CheckoutSession {
     const resolvedCwd = expandTilde(cwd);
 
     try {
-      (await this.resolveForgeService(resolvedCwd))?.service.invalidate({ cwd: resolvedCwd });
       await this.workspaceGitService.getSnapshot(resolvedCwd, {
         force: true,
-        includeForge: true,
+        includeForge: false,
         reason: "manual-refresh",
       });
       this.checkoutDiffManager.scheduleRefreshForCwd(resolvedCwd);
@@ -764,7 +766,10 @@ export class CheckoutSession {
     const { cwd, requestId } = msg;
 
     try {
-      const snapshot = await this.workspaceGitService.getSnapshot(cwd);
+      const snapshot = await this.workspaceGitService.getSnapshot(cwd, {
+        includeForge: false,
+        reason: "checkout-merge-validation",
+      });
       if (!snapshot.git.isGit) {
         throw new Error(`Not a git repository: ${cwd}`);
       }
@@ -1109,7 +1114,11 @@ export class CheckoutSession {
     const { cwd, requestId } = msg;
 
     try {
-      const snapshot = await this.workspaceGitService.getSnapshot(cwd);
+      const snapshot = await this.workspaceGitService.getSnapshot(cwd, {
+        force: true,
+        includeForge: true,
+        reason: "checkout-pr-status",
+      });
       this.host.emit({
         type: "checkout_pr_status_response",
         payload: buildCheckoutPrStatusPayloadFromSnapshot({

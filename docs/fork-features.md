@@ -265,7 +265,8 @@
 - 提交说明输入框始终可编辑，只有工作区没有未提交变更、正在提交或说明为空时才禁用提交按钮；说明会原样发送给守护进程，提交成功后清空输入，失败时保留输入并显示错误。
 - 暂存区文件数量由守护进程直接读取 Git 索引，不能用总差异数量推算；只有存在暂存文件时才显示暂存区标题和真实数量。
 - 图表标题右侧提供 Fetch、Refresh、Pull、Push、Sync 纯图标操作，悬停显示英文名称；Fetch 会真正执行远端抓取并刷新分支状态，不会用本地 Refresh 冒充。合并、拉取请求和归档等低频操作保留在存储库菜单。图表高度可以从顶部边界上下拖动并持久保存，受窗口高度和合理最小、最大值约束。
-- 提交行悬停时显示提交主题、作者、完整时间、完整提交标识和变更文件摘要；点击仍打开该提交的文件差异。
+- 提交图谱批量读取 Git 实际引用，在对应提交上展示本地分支、远端分支和标签，并用不同颜色的双轨与分叉连接线区分当前分支和基础分支。提交行悬停时显示完整提交说明、作者、完整时间、完整提交标识和引用信息，不再把文件列表作为悬停主体。左键点击提交只展开文件列表，右键菜单提供打开完整 Diff。
+- Git 面板启动和 Refresh 只读取本地仓库状态，不等待 GitHub 或其他远端服务；Pull Request 状态在点击相关操作时按需读取，Pull、Push、Fetch、Pull Request 等明确的远端操作失败时通过可关闭的 Toast 提示，不在提交区域留下持久错误。
 - 提交历史每页加载 40 条，滚动到底部继续加载当前分支和基础分支的更早记录，不再固定为最近 10 条基础分支提交；服务端在分页边界保持分支归属和远端状态分类，旧守护进程仍使用原有单页结果。
 - 变更文件仍可原地展开差异或在独立标签页查看，提交图谱用不同轨道颜色区分当前分支和基础分支，保留 Paseo 原有的工作区差异审阅能力。
 - 面板复用现有跨平台组件和 Git RPC，桌面、网页和移动端保持同一操作语义；各语言资源具有相同结构。
@@ -278,6 +279,8 @@
 - `packages/app/src/git/commits-section/commit-row.tsx`
 - `packages/app/src/git/commits-section/graph-actions.tsx`
 - `packages/app/src/git/commits-section/graph-resize-handle.tsx`
+- `packages/app/src/git/pr-action-routing.ts`
+- `packages/app/src/git/use-actions.tsx`
 - `packages/app/src/git/use-commits-query.ts`
 - `packages/app/src/panels/diff-panel.tsx`
 - `packages/app/src/git/actions-store.ts`
@@ -285,4 +288,6 @@
 - `packages/protocol/src/messages.ts`
 - `packages/client/src/daemon-client.ts`
 - `packages/server/src/utils/checkout-git.ts`
+- `packages/server/src/server/session/checkout/checkout-session.ts`
+- `packages/server/src/server/workspace-git-service.ts`
 - `packages/app/src/i18n/resources/`

@@ -936,7 +936,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       }
       void this.refreshWorkspaceTarget(target, {
         force: false,
-        includeForge: true,
+        // 启动阶段只读取本地 Git 状态，不能因为 GitHub/Forge 不可达而阻塞面板。
+        includeForge: false,
         reason: "initial",
         notify: true,
       });

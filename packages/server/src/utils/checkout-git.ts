@@ -2010,10 +2010,12 @@ const CHECKOUT_BASE_COMMIT_LIMIT = 10;
 // Bytes git emits between fields/records. We split parsed output on these.
 const COMMIT_FIELD_SEPARATOR = "\x00";
 const COMMIT_RECORD_SEPARATOR = "\x1e";
+const COMMIT_REF_SEPARATOR = "\x1d";
 // Record-separated, NUL-field-separated so arbitrary subject text stays parseable.
 // `%x1e`/`%x00` are git placeholders (literal text in the arg, real bytes in the
 // output) — passing actual NUL bytes as a process arg is rejected by Node.
-const COMMIT_LOG_FORMAT = "%x1e%H%x00%h%x00%an%x00%aI%x00%s";
+const COMMIT_LOG_FORMAT =
+  "%x1e%H%x00%h%x00%an%x00%aI%x00%s%x00%(decorate:prefix=,suffix=,separator=%x1d,pointer= -> ,tag=tag: )%x00%B%x00";
 
 type CheckoutCommitFileStatus = NonNullable<CheckoutCommitFile["status"]>;
 
@@ -2023,6 +2025,8 @@ interface ParsedCheckoutCommit {
   authorName: string;
   authorDate: string;
   subject: string;
+  refs: string[];
+  message: string;
   files: CheckoutCommitFile[];
 }
 
@@ -2108,11 +2112,11 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
   const records = stdout.split(COMMIT_RECORD_SEPARATOR).filter((record) => record.length > 0);
   const commits: ParsedCheckoutCommit[] = [];
   for (const record of records) {
-    const lines = record.split("\n");
-    const fields = (lines[0] ?? "").split(COMMIT_FIELD_SEPARATOR);
-    if (fields.length < 5) {
+    const fields = record.split(COMMIT_FIELD_SEPARATOR);
+    if (fields.length < 7) {
       continue;
     }
+    const rawOutput = fields.slice(7).join(COMMIT_FIELD_SEPARATOR);
     const sha = (fields[0] ?? "").trim();
     if (!sha) {
       continue;
@@ -2120,8 +2124,7 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
 
     const stats = new Map<string, { additions: number; deletions: number }>();
     const statuses = new Map<string, CheckoutCommitFileStatus>();
-    for (let index = 1; index < lines.length; index += 1) {
-      const line = lines[index] ?? "";
+    for (const line of rawOutput.split("\n")) {
       if (!line) {
         continue;
       }
@@ -2143,12 +2146,18 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
       });
     }
 
+    const refs = (fields[5] ?? "")
+      .split(COMMIT_REF_SEPARATOR)
+      .map((ref) => ref.trim().replace(/^HEAD -> /, ""))
+      .filter((ref) => ref.length > 0 && !ref.endsWith("/HEAD"));
     commits.push({
       sha,
       shortSha: (fields[1] ?? "").trim(),
       authorName: fields[2] ?? "",
       authorDate: (fields[3] ?? "").trim(),
       subject: fields[4] ?? "",
+      refs: [...new Set(refs)],
+      message: (fields[6] ?? fields[4] ?? "").trimEnd(),
       files,
     });
   }
@@ -2225,6 +2234,8 @@ function buildCheckoutCommits(
     sha: record.sha,
     shortSha: record.shortSha,
     subject: record.subject,
+    message: record.message,
+    refs: record.refs,
     authorName: record.authorName,
     authorDate: record.authorDate,
     isOnRemote: !unpushedShas.has(record.sha),

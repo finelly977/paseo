@@ -21,7 +21,7 @@ import {
   type ClassifiedCheckoutCommit,
 } from "@/git/use-commits-query";
 import { useChangesPreferences } from "@/hooks/use-changes-preferences";
-import { CommitRow } from "./commit-row";
+import { CommitRow, type CommitRef } from "./commit-row";
 import { GraphActions } from "./graph-actions";
 import { GraphResizeHandle } from "./graph-resize-handle";
 
@@ -47,6 +47,7 @@ interface CommitsSectionProps {
   refreshSupported: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
+  currentBranchName: string | null;
   onCommitPress: (sha: string) => void;
 }
 
@@ -75,29 +76,112 @@ function CommitsSectionSkeleton() {
   );
 }
 
+function normalizeBranchLabel(label: string): string {
+  return label.replace(/^refs\/(heads|remotes)\//, "").replace(/^origin\//, "");
+}
+
+function resolveCommitRefs({
+  commit,
+  index,
+  firstWorkspaceIndex,
+  firstBaseIndex,
+  currentBranchName,
+  baseRef,
+}: {
+  commit: ClassifiedCheckoutCommit;
+  index: number;
+  firstWorkspaceIndex: number;
+  firstBaseIndex: number;
+  currentBranchName: string | null;
+  baseRef: string | null;
+}): CommitRef[] {
+  const refs = (commit.refs ?? []).map((label): CommitRef => {
+    if (label.startsWith("tag: ")) {
+      return { label: label.slice(5), kind: "tag" };
+    }
+    if (label.startsWith("origin/")) {
+      return { label, kind: "remote" };
+    }
+    if (
+      currentBranchName &&
+      normalizeBranchLabel(label) === normalizeBranchLabel(currentBranchName)
+    ) {
+      return { label, kind: "current" };
+    }
+    if (baseRef && normalizeBranchLabel(label) === normalizeBranchLabel(baseRef)) {
+      return { label, kind: "base" };
+    }
+    return { label, kind: "current" };
+  });
+  if (
+    refs.length === 0 &&
+    currentBranchName &&
+    (index === firstWorkspaceIndex || (firstWorkspaceIndex === -1 && index === 0))
+  ) {
+    refs.push({ label: currentBranchName, kind: "current" });
+  }
+  if (refs.length === 0 && baseRef && index === firstBaseIndex) {
+    refs.push({ label: baseRef, kind: "base" });
+  }
+  return refs;
+}
+
 function CommitsSectionContent({
   query,
   now,
+  currentBranchName,
   onCommitPress,
 }: {
   query: Exclude<CheckoutCommitsQueryResult, { status: "unsupported" }>;
   now: Date;
+  currentBranchName: string | null;
   onCommitPress: (sha: string) => void;
 }) {
   const { t } = useTranslation();
+  const [expandedSha, setExpandedSha] = useState<string | null>(null);
   const loadedCommitCount = query.status === "loaded" ? query.data.commits.length : 0;
   const isFetchingNextPage = query.status === "loaded" && query.isFetchingNextPage;
+  const firstWorkspaceIndex =
+    query.status === "loaded" ? query.data.commits.findIndex((commit) => !commit.isOnBase) : -1;
+  const firstBaseIndex =
+    query.status === "loaded" ? query.data.commits.findIndex((commit) => commit.isOnBase) : -1;
+  const baseRef = query.status === "loaded" ? query.data.baseRef : null;
+  const handleToggleExpanded = useCallback((sha: string) => {
+    setExpandedSha((current) => (current === sha ? null : sha));
+  }, []);
   const renderCommit = useCallback(
     ({ item, index }: { item: ClassifiedCheckoutCommit; index: number }) => (
       <CommitRow
         commit={item}
         isFirst={index === 0}
         isLast={index === loadedCommitCount - 1}
+        isOnBaseLane={item.isOnBase && firstWorkspaceIndex !== -1}
+        isBranchPoint={item.isOnBase && index === firstBaseIndex && firstWorkspaceIndex !== -1}
         now={now}
-        onCommitPress={onCommitPress}
+        isExpanded={expandedSha === item.sha}
+        refs={resolveCommitRefs({
+          commit: item,
+          index,
+          firstWorkspaceIndex,
+          firstBaseIndex,
+          currentBranchName,
+          baseRef,
+        })}
+        onToggleExpanded={handleToggleExpanded}
+        onOpenCommitDiff={onCommitPress}
       />
     ),
-    [loadedCommitCount, now, onCommitPress],
+    [
+      currentBranchName,
+      baseRef,
+      expandedSha,
+      firstBaseIndex,
+      firstWorkspaceIndex,
+      handleToggleExpanded,
+      loadedCommitCount,
+      now,
+      onCommitPress,
+    ],
   );
   const renderFooter = useCallback(
     () =>
@@ -155,6 +239,7 @@ export function CommitsSection({
   refreshSupported,
   isRefreshing,
   onRefresh,
+  currentBranchName,
   onCommitPress,
 }: CommitsSectionProps) {
   const { t } = useTranslation();
@@ -273,7 +358,12 @@ export function CommitsSection({
         </View>
         {collapsed ? null : (
           <View style={styles.body}>
-            <CommitsSectionContent query={query} now={displayNow} onCommitPress={onCommitPress} />
+            <CommitsSectionContent
+              query={query}
+              now={displayNow}
+              currentBranchName={currentBranchName}
+              onCommitPress={onCommitPress}
+            />
           </View>
         )}
       </Animated.View>

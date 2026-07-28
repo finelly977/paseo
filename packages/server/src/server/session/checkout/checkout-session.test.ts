@@ -202,8 +202,17 @@ function createGitSnapshot(
 describe("CheckoutSession", () => {
   describe("status", () => {
     it("emits a checkout status response built from the git snapshot", async () => {
+      const snapshotCalls: Array<{
+        cwd: string;
+        options: Parameters<WorkspaceGitService["getSnapshot"]>[1];
+      }> = [];
       const { checkout, emitted } = makeCheckoutSession({
-        git: { getSnapshot: async () => createGitSnapshot("/repo", "main") },
+        git: {
+          getSnapshot: async (cwd, options) => {
+            snapshotCalls.push({ cwd, options });
+            return createGitSnapshot("/repo", "main");
+          },
+        },
       });
 
       await checkout.handleStatusRequest({
@@ -221,6 +230,12 @@ describe("CheckoutSession", () => {
             isGit: true,
             currentBranch: "main",
           }),
+        },
+      ]);
+      expect(snapshotCalls).toEqual([
+        {
+          cwd: "/repo",
+          options: { includeForge: false, reason: "checkout-status" },
         },
       ]);
     });
@@ -376,7 +391,7 @@ describe("CheckoutSession", () => {
   });
 
   describe("refresh", () => {
-    it("forces a github-inclusive snapshot, nudges diffs, and confirms success", async () => {
+    it("只强制刷新本地 Git 状态、更新差异并返回成功", async () => {
       const snapshotCalls: Array<{ cwd: string; options: unknown }> = [];
       const { subscriber, refreshedCwds } = createFakeDiffSubscriber({
         cwd: "",
@@ -400,7 +415,7 @@ describe("CheckoutSession", () => {
       });
 
       expect(snapshotCalls).toEqual([
-        { cwd: "/repo", options: { force: true, includeForge: true, reason: "manual-refresh" } },
+        { cwd: "/repo", options: { force: true, includeForge: false, reason: "manual-refresh" } },
       ]);
       expect(refreshedCwds).toEqual(["/repo"]);
       expect(emitted).toEqual([
@@ -1373,8 +1388,17 @@ describe("CheckoutSession", () => {
 
   describe("pr status", () => {
     it("builds a pr status response from the git snapshot", async () => {
+      const snapshotCalls: Array<{
+        cwd: string;
+        options: Parameters<WorkspaceGitService["getSnapshot"]>[1];
+      }> = [];
       const { checkout, emitted } = makeCheckoutSession({
-        git: { getSnapshot: async (cwd) => createGitSnapshot(cwd, "main") },
+        git: {
+          getSnapshot: async (cwd, options) => {
+            snapshotCalls.push({ cwd, options });
+            return createGitSnapshot(cwd, "main");
+          },
+        },
       });
 
       await checkout.handleCheckoutPrStatusRequest({
@@ -1387,6 +1411,16 @@ describe("CheckoutSession", () => {
         {
           type: "checkout_pr_status_response",
           payload: expect.objectContaining({ cwd: "/repo", requestId: "ps1" }),
+        },
+      ]);
+      expect(snapshotCalls).toEqual([
+        {
+          cwd: "/repo",
+          options: {
+            force: true,
+            includeForge: true,
+            reason: "checkout-pr-status",
+          },
         },
       ]);
     });

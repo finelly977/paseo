@@ -47,6 +47,8 @@ describe("checkout.commits.list schemas", () => {
           sha: "1111111111111111111111111111111111111111",
           shortSha: "1111111",
           subject: "Add feature",
+          message: "Add feature\n\nExplain the complete change.",
+          refs: ["feature", "origin/feature"],
           authorName: "Ada",
           authorDate: "2026-06-13T10:00:00.000Z",
           isOnRemote: true,
@@ -79,6 +81,8 @@ describe("checkout.commits.list schemas", () => {
 
     expect(parsed.payload).toEqual(payload);
     expect(parsed.payload.commits[0]?.isOnRemote).toBe(true);
+    expect(parsed.payload.commits[0]?.message).toContain("complete change");
+    expect(parsed.payload.commits[0]?.refs).toEqual(["feature", "origin/feature"]);
     expect(parsed.payload.commits[0]?.isOnBase).toBe(false);
     expect(parsed.payload.commits[1]?.isOnRemote).toBe(false);
     expect(parsed.payload.commits[1]?.isOnBase).toBe(true);

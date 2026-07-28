@@ -70,6 +70,8 @@ describe("listCheckoutCommits", () => {
     expect(commits[0]?.subject).toBe("Add bar");
     expect(commits[1]?.subject).toBe("Add foo");
     expect(commits[2]?.subject).toBe("initial");
+    expect(commits[0]?.refs).toContain("feature");
+    expect(commits[1]?.refs).toContain("origin/feature");
 
     expect(commits[0]?.isOnRemote).toBe(false);
     expect(commits[1]?.isOnRemote).toBe(true);
@@ -89,6 +91,41 @@ describe("listCheckoutCommits", () => {
     expect(commits[0]?.sha).toHaveLength(40);
     expect((commits[0]?.shortSha.length ?? 0) > 0).toBe(true);
     expect(Number.isNaN(new Date(commits[0]?.authorDate ?? "").getTime())).toBe(false);
+  });
+
+  it("returns the complete multiline commit message", async () => {
+    const { repoDir } = initRepoOnMain();
+    writeFileSync(join(repoDir, "details.txt"), "details\n");
+    git(["add", "details.txt"], repoDir);
+    git(
+      [
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-m",
+        "Add details",
+        "-m",
+        "Explain why the change is needed.\n\nKeep the complete message visible.",
+      ],
+      repoDir,
+    );
+
+    const { commits } = await listCheckoutCommits({ cwd: repoDir });
+
+    expect(commits[0]?.subject).toBe("Add details");
+    expect(commits[0]?.message).toBe(
+      "Add details\n\nExplain why the change is needed.\n\nKeep the complete message visible.",
+    );
+  });
+
+  it("keeps branch names containing commas as one ref", async () => {
+    const { repoDir } = initRepoOnMain();
+    git(["checkout", "-b", "feature,comma"], repoDir);
+    commitFile(repoDir, "comma.txt", "comma\n", "Add comma branch");
+
+    const { commits } = await listCheckoutCommits({ cwd: repoDir });
+
+    expect(commits[0]?.refs).toContain("feature,comma");
   });
 
   it("shows recent history on the base branch", async () => {
