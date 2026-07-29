@@ -1066,7 +1066,12 @@ export class AgentManager {
     const client = await this.requireAvailableClient({
       provider: storedConfig.provider,
     });
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, options?.env);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      storedConfig.cwd,
+      options?.env,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const createOptions = this.buildCreateSessionOptions(options);
     const session = await client.createSession(providerLaunchConfig, launchContext, createOptions);
@@ -1144,7 +1149,7 @@ export class AgentManager {
         `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
       );
     }
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client);
+    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, storedConfig.cwd);
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const session = await client.resumeSession(
       handle,
@@ -1194,7 +1199,7 @@ export class AgentManager {
       },
       resolvedAgentId,
     );
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client);
+    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, storedConfig.cwd);
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const imported = await client.importSession(
       {
@@ -1279,7 +1284,7 @@ export class AgentManager {
       provider,
     } as AgentSessionConfig;
     const { storedConfig, launchConfig } = await this.prepareSessionConfig(refreshConfig, agentId);
-    const launchContext = await this.buildLaunchContext(agentId, client);
+    const launchContext = await this.buildLaunchContext(agentId, client, storedConfig.cwd);
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
 
     const session = handle
@@ -4328,6 +4333,7 @@ export class AgentManager {
   private async buildLaunchContext(
     agentId: string,
     client: AgentClient,
+    cwd: string,
     env?: Record<string, string>,
   ): Promise<AgentLaunchContext> {
     const context: AgentLaunchContext = {
@@ -4335,6 +4341,7 @@ export class AgentManager {
       env: {
         ...env,
         PASEO_AGENT_ID: agentId,
+        PASEO_AGENT_CWD: cwd,
       },
     };
     if (
