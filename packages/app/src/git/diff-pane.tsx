@@ -130,6 +130,7 @@ import {
 } from "@/review";
 import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
 import type { GitActions } from "@/git/policy";
+import { DiffTooLargeState } from "@/git/diff-too-large-state";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -1766,6 +1767,7 @@ interface DiffBodyContentProps {
   notGit: boolean;
   isDiffLoading: boolean;
   diffErrorMessage: string | null;
+  diffTooLarge: boolean;
   hasChanges: boolean;
   emptyMessage: string | null;
   children: ReactElement;
@@ -1779,6 +1781,7 @@ function DiffBodyContent({
   notGit,
   isDiffLoading,
   diffErrorMessage,
+  diffTooLarge,
   hasChanges,
   emptyMessage,
   children,
@@ -1813,6 +1816,9 @@ function DiffBodyContent({
         <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
       </View>
     );
+  }
+  if (diffTooLarge) {
+    return <DiffTooLargeState />;
   }
   if (diffErrorMessage) {
     return (
@@ -2800,6 +2806,7 @@ export function GitDiffPane({
     selectBase: handleSelectBase,
     files,
     diffPayloadError,
+    diffTooLarge,
     isDiffLoading,
     reviewActions,
     reviewAttachment,
@@ -2966,6 +2973,7 @@ export function GitDiffPane({
       notGit={notGit}
       isDiffLoading={isDiffLoading}
       diffErrorMessage={diffErrorMessage}
+      diffTooLarge={diffTooLarge}
       hasChanges={hasChanges}
       emptyMessage={emptyMessage}
       checkingRepositoryLabel={t("workspace.git.diff.checkingRepository")}

@@ -3516,6 +3516,7 @@ export class DaemonClient {
         cwd: payload.cwd,
         files: payload.files,
         error: payload.error,
+        diffTooLarge: payload.diffTooLarge,
         requestId: payload.requestId,
       };
     } finally {
