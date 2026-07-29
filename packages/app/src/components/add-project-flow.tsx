@@ -352,7 +352,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
   const recommendedPaths = useRecommendedProjectPaths(hostId);
   const openProject = useOpenProject(hostId);
   const cloneGithubProject = useCloneGithubProject(hostId);
-  const addEmptyProject = useSessionStore((store) => store.addEmptyProject);
+  const upsertProject = useSessionStore((store) => store.upsertProject);
   const setHasHydratedWorkspaces = useSessionStore((store) => store.setHasHydratedWorkspaces);
   const inputRef = useRef<TextInput>(null);
   const submissionInFlightRef = useRef(false);
@@ -722,7 +722,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
       registerProjectDescriptor({
         serverId: page.hostId,
         project: payload.project,
-        addEmptyProject,
+        upsertProject,
         setHasHydratedWorkspaces,
       });
       openNewWorkspaceForProject(page.hostId, payload.project);
@@ -736,7 +736,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
     } finally {
       submissionInFlightRef.current = false;
     }
-  }, [addEmptyProject, client, openNewWorkspaceForProject, page, setHasHydratedWorkspaces]);
+  }, [client, openNewWorkspaceForProject, page, setHasHydratedWorkspaces, upsertProject]);
 
   const submitActive = useCallback(() => {
     if (page.kind === "new-directory-name") {
