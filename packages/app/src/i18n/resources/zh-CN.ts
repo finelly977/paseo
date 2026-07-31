@@ -1675,6 +1675,16 @@ export const zhCN: TranslationResources = {
         description: "内置终端缓冲区保留的行数",
         accessibilityLabel: "终端回滚行数",
       },
+      conversationHistoryLoadCount: {
+        label: "打开会话时加载的对话数",
+        description: "每次打开老会话时加载的最近对话轮数",
+        accessibilityLabel: "单个会话加载的对话数",
+      },
+      totalConversationHistoryLimit: {
+        label: "对话历史内存上限",
+        description: "所有已打开会话在内存中最多保留的对话轮数",
+        accessibilityLabel: "对话历史内存总上限",
+      },
       autoExpandReasoning: {
         label: "始终展开推理过程",
         description: "默认情况下完全展开 AI 的思考和推理过程",

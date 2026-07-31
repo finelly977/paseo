@@ -255,7 +255,9 @@ export class ProviderCatalogSession {
   ): Promise<ProviderSnapshotEntry | undefined> {
     const manager = this.providerSnapshotManager;
     const findEntry = () =>
-      manager.getSnapshot(cwd).find((candidate) => candidate.provider === provider);
+      manager
+        .getSnapshot(cwd, { warm: false })
+        .find((candidate) => candidate.provider === provider);
 
     let entry = findEntry();
     if (entry && !entry.enabled) {
@@ -358,7 +360,7 @@ export class ProviderCatalogSession {
   ): Promise<void> {
     // COMPAT(providersSnapshot): keep legacy provider-list RPCs alongside snapshot flow.
     const entries = this.providerSnapshotManager
-      .getSnapshot(msg.cwd ? expandTilde(msg.cwd) : undefined)
+      .getSnapshot(msg.cwd ? expandTilde(msg.cwd) : undefined, { warm: msg.warm })
       .filter((entry) => this.host.isProviderVisibleToClient(entry.provider));
 
     this.host.emit({

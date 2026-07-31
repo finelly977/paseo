@@ -1742,6 +1742,16 @@ export const es: TranslationResources = {
         description: "Líneas mantenidas en el búfer de terminal incorporado",
         accessibilityLabel: "Líneas del historial de terminal",
       },
+      conversationHistoryLoadCount: {
+        label: "Conversaciones cargadas al abrir",
+        description: "Turnos recientes cargados al abrir una sesión existente",
+        accessibilityLabel: "Conversaciones cargadas por sesión",
+      },
+      totalConversationHistoryLimit: {
+        label: "Límite de memoria del historial",
+        description: "Máximo de turnos conservados en memoria entre las sesiones abiertas",
+        accessibilityLabel: "Límite total de memoria del historial",
+      },
       autoExpandReasoning: {
         label: "Siempre expandir razonamiento",
         description:

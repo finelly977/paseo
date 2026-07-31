@@ -95,6 +95,7 @@ import {
 import {
   projectTimelineRows,
   selectProjectedTimelinePage,
+  selectProjectedTimelineTailByConversationLimit,
   type TimelineProjectionEntry,
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
@@ -764,6 +765,7 @@ export class Session {
     this.checkoutSession = new CheckoutSession({
       host: {
         emit: (msg) => this.emit(msg),
+        ensureWorkspaceGitObserver: (cwd) => this.ensureWorkspaceGitObserverForCwd(cwd),
         emitWorkspaceUpdateForCwd: (cwd) => this.emitWorkspaceUpdateForCwd(cwd),
         handleWorkspaceGitBranchSnapshot: (cwd, branchName) =>
           this.workspaceGitObserver.handleBranchSnapshot(cwd, branchName),
@@ -1145,6 +1147,19 @@ export class Session {
   }
 
   async syncWorkspaceGitObserverForWorkspace(workspace: PersistedWorkspaceRecord): Promise<void> {
+    await this.workspaceGitObserver.syncObserverForWorkspace(workspace);
+  }
+
+  private async ensureWorkspaceGitObserverForCwd(cwd: string): Promise<void> {
+    const workspaces = await this.workspaceRegistry.list();
+    const workspaceId = resolveWorkspaceIdForPath(cwd, workspaces);
+    if (!workspaceId) {
+      return;
+    }
+    const workspace = workspaces.find((candidate) => candidate.workspaceId === workspaceId);
+    if (!workspace || workspace.archivedAt) {
+      return;
+    }
     await this.workspaceGitObserver.syncObserverForWorkspace(workspace);
   }
 
@@ -5003,7 +5018,6 @@ export class Session {
       }
 
       const payload = await this.listFetchWorkspacesEntries(request);
-      this.workspaceGitObserver.syncObservers(payload.entries);
       this.sessionLogger.debug(
         {
           requestId: request.requestId,
@@ -6016,6 +6030,7 @@ export class Session {
     direction: AgentTimelineFetchDirection;
     cursor?: AgentTimelineCursor;
     pageLimit: number;
+    conversationLimit?: number;
   }): AgentTimelineProjectionSelection {
     const timeline = this.shouldUseFullTimelineForProjectedPage({
       timeline: input.controlTimeline,
@@ -6023,13 +6038,21 @@ export class Session {
     })
       ? this.agentManager.fetchTimeline(input.agentId, { direction: "tail", limit: 0 })
       : input.controlTimeline;
-    const page = selectProjectedTimelinePage({
-      rows: timeline.rows,
-      bounds: timeline.window,
-      direction: input.controlTimeline.reset ? "tail" : input.direction,
-      ...(input.cursor ? { cursorSeq: input.cursor.seq } : {}),
-      limit: input.pageLimit,
-    });
+    const page =
+      input.conversationLimit !== undefined &&
+      (input.controlTimeline.reset || input.direction === "tail")
+        ? selectProjectedTimelineTailByConversationLimit({
+            rows: timeline.rows,
+            bounds: timeline.window,
+            conversationLimit: input.conversationLimit,
+          })
+        : selectProjectedTimelinePage({
+            rows: timeline.rows,
+            bounds: timeline.window,
+            direction: input.controlTimeline.reset ? "tail" : input.direction,
+            ...(input.cursor ? { cursorSeq: input.cursor.seq } : {}),
+            limit: input.pageLimit,
+          });
 
     return {
       timeline,
@@ -6048,6 +6071,7 @@ export class Session {
     direction: AgentTimelineFetchDirection;
     cursor?: AgentTimelineCursor;
     pageLimit: number;
+    conversationLimit?: number;
   }): AgentTimelineProjectionSelection {
     if (input.projection === "canonical") {
       return this.selectCanonicalTimelineProjection({ timeline: input.controlTimeline });
@@ -6063,6 +6087,7 @@ export class Session {
     const projection: TimelineProjectionMode = msg.projection ?? "projected";
     const requestedLimit = msg.limit;
     const pageLimit = requestedLimit ?? (direction === "after" ? 0 : 200);
+    const conversationLimit = direction === "tail" ? msg.conversationLimit : undefined;
     const cursor: AgentTimelineCursor | undefined = msg.cursor
       ? {
           epoch: msg.cursor.epoch,
@@ -6081,7 +6106,7 @@ export class Session {
       const controlTimeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction,
         cursor,
-        limit: pageLimit,
+        limit: conversationLimit === undefined ? pageLimit : 0,
       });
       const selectedTimeline = this.selectTimelineProjection({
         agentId: msg.agentId,
@@ -6090,6 +6115,7 @@ export class Session {
         direction,
         ...(cursor ? { cursor } : {}),
         pageLimit,
+        ...(conversationLimit !== undefined ? { conversationLimit } : {}),
       });
       const startCursor =
         selectedTimeline.startSeq !== null

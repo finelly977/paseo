@@ -130,7 +130,7 @@ describe("refreshAndApplyProvidersSnapshot", () => {
     });
 
     expect(client.refreshCalls).toEqual([{ providers: ["codex"] }]);
-    expect(client.getCalls).toEqual([{}]);
+    expect(client.getCalls).toEqual([{ warm: false }]);
     expect(queryClient.getQueryData(providersSnapshotQueryKey(serverId))).toEqual(
       providersSnapshot([codexEntry("ready", [readyCodexModel])]),
     );
@@ -150,7 +150,7 @@ describe("refreshAndApplyProvidersSnapshot", () => {
     });
 
     expect(client.refreshCalls).toEqual([{ cwd: "/repo-a", providers: ["codex"] }]);
-    expect(client.getCalls).toEqual([{ cwd: "/repo-a" }]);
+    expect(client.getCalls).toEqual([{ cwd: "/repo-a", warm: false }]);
     expect(queryClient.getQueryData(providersSnapshotQueryKey(serverId, "/repo-a"))).toEqual(
       providersSnapshot([codexEntry("ready", [readyCodexModel])]),
     );

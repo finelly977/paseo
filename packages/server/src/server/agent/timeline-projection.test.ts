@@ -4,6 +4,7 @@ import type { AgentTimelineRow } from "./agent-manager.js";
 import {
   projectTimelineRows,
   selectProjectedTimelinePage,
+  selectProjectedTimelineTailByConversationLimit,
   selectTimelineWindowByProjectedLimit,
 } from "./timeline-projection.js";
 
@@ -665,5 +666,78 @@ describe("selectProjectedTimelinePage", () => {
 
     expect(page.entries.some((entry) => entry.item.type === "tool_call")).toBe(true);
     expect(page.endSeq).toBe(501);
+  });
+});
+
+describe("selectProjectedTimelineTailByConversationLimit", () => {
+  test("按用户消息数量返回最近的完整对话而不是固定时间线条数", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        item: { type: "user_message", text: "第一轮" },
+      },
+      ...Array.from({ length: 80 }, (_, index) => ({
+        seq: index + 2,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        item: { type: "assistant_message" as const, text: `片段 ${index}` },
+      })),
+      {
+        seq: 82,
+        timestamp: "2026-07-30T00:01:00.000Z",
+        item: { type: "user_message", text: "第二轮" },
+      },
+      {
+        seq: 83,
+        timestamp: "2026-07-30T00:01:01.000Z",
+        item: { type: "assistant_message", text: "第二轮答复" },
+      },
+      {
+        seq: 84,
+        timestamp: "2026-07-30T00:02:00.000Z",
+        item: { type: "user_message", text: "第三轮" },
+      },
+      {
+        seq: 85,
+        timestamp: "2026-07-30T00:02:01.000Z",
+        item: { type: "assistant_message", text: "第三轮答复" },
+      },
+    ];
+
+    const page = selectProjectedTimelineTailByConversationLimit({
+      rows,
+      conversationLimit: 2,
+    });
+
+    expect(page.entries.map((entry) => entry.item.type)).toEqual([
+      "user_message",
+      "assistant_message",
+      "user_message",
+      "assistant_message",
+    ]);
+    expect(page.startSeq).toBe(82);
+    expect(page.endSeq).toBe(85);
+    expect(page.hasOlder).toBe(true);
+    expect(page.hasNewer).toBe(false);
+  });
+
+  test("没有用户消息时保留自主运行产生的全部投影内容", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 4,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        item: { type: "assistant_message", text: "后台结果" },
+      },
+    ];
+
+    const page = selectProjectedTimelineTailByConversationLimit({
+      rows,
+      conversationLimit: 50,
+    });
+
+    expect(page.entries).toHaveLength(1);
+    expect(page.startSeq).toBe(4);
+    expect(page.endSeq).toBe(4);
+    expect(page.hasOlder).toBe(false);
   });
 });

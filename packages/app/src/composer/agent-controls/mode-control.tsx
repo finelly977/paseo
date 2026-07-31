@@ -26,9 +26,7 @@ import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/com
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useSessionStore } from "@/stores/session-store";
-import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { mergeProviderPreferences, useFormPreferences } from "@/hooks/use-form-preferences";
-import { resolveProviderDefinition } from "@/utils/provider-definitions";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
@@ -41,7 +39,12 @@ import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
 import { AgentControlTrigger } from "@/composer/agent-controls/control";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
-import { getModeVisuals, type AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
+import {
+  getModeVisuals,
+  type AgentModeColorTier,
+  type AgentProviderDefinition,
+  type AgentProviderModeDefinition,
+} from "@getpaseo/protocol/provider-manifest";
 
 interface ModeIconProps {
   size?: number;
@@ -301,13 +304,24 @@ export function useLiveAgentModeControl(
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const { updatePreferences } = useFormPreferences();
   const toast = useToast();
-  const { entries: snapshotEntries } = useProvidersSnapshot(serverId, { cwd: slice?.cwd });
-
   const providerDefinitions = useMemo<AgentProviderDefinition[]>(() => {
     if (!slice?.provider) return [];
-    const definition = resolveProviderDefinition(slice.provider, snapshotEntries);
-    return definition ? [definition] : [];
-  }, [slice?.provider, snapshotEntries]);
+    return [
+      {
+        id: slice.provider,
+        label: slice.provider,
+        description: "",
+        defaultModeId: null,
+        modes: availableModes.map(
+          (mode): AgentProviderModeDefinition => ({
+            ...mode,
+            icon: mode.icon ?? "ShieldCheck",
+            colorTier: (mode.colorTier ?? "moderate") as AgentModeColorTier,
+          }),
+        ),
+      },
+    ];
+  }, [availableModes, slice?.provider]);
 
   const handleSelectMode = useCallback(
     (modeId: string) => {

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 import type { Logger } from "pino";
+import pLimit from "p-limit";
 
 import { expandTilde } from "../../utils/path.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
@@ -37,6 +38,7 @@ import type { MutableDaemonConfig } from "../daemon-config-store.js";
 
 const DEFAULT_REFRESH_TIMEOUT_MS = 60_000;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 120_000;
+const DEFAULT_PROVIDER_REFRESH_CONCURRENCY = 2;
 const REFRESH_TIMEOUT_ENV_VAR = "PASEO_PROVIDER_REFRESH_TIMEOUT_MS";
 export const GLOBAL_PROVIDER_SNAPSHOT_KEY = "paseo:global";
 
@@ -111,6 +113,10 @@ interface ProviderSnapshotReadOptions {
   wait?: boolean;
 }
 
+interface ProviderSnapshotGetOptions {
+  warm?: boolean;
+}
+
 interface ApplyMutableProviderConfigOptions {
   removeProviders?: readonly string[];
 }
@@ -182,6 +188,7 @@ export class ProviderSnapshotManager {
   private readonly managedProcesses?: ManagedProcessRegistry;
   private readonly isDev: boolean;
   private readonly extraClients: Partial<Record<AgentProvider, AgentClient>>;
+  private readonly providerRefreshLimit = pLimit(DEFAULT_PROVIDER_REFRESH_CONCURRENCY);
   private runtimeSettings: AgentProviderRuntimeSettingsMap | undefined;
   private providerOverrides: Record<string, ProviderOverride> | undefined;
   private baseProviderOverrides: Record<string, ProviderOverride> | undefined;
@@ -206,9 +213,9 @@ export class ProviderSnapshotManager {
     this.providerClients = { ...this.extraClients } as Record<AgentProvider, AgentClient>;
   }
 
-  getSnapshot(cwd?: string): ProviderSnapshotEntry[] {
+  getSnapshot(cwd?: string, options: ProviderSnapshotGetOptions = {}): ProviderSnapshotEntry[] {
     const target = resolveProviderSnapshotTarget(cwd);
-    return this.getSnapshotForTarget(target);
+    return this.getSnapshotForTarget(target, options);
   }
 
   async refreshSnapshotForCwd(options: ProviderSnapshotRefreshOptions): Promise<void> {
@@ -482,10 +489,15 @@ export class ProviderSnapshotManager {
     };
   }
 
-  private getSnapshotForTarget(target: ProviderSnapshotTarget): ProviderSnapshotEntry[] {
-    const providersToWarm = this.resolveProvidersToWarm(target.snapshotCwd);
-    if (providersToWarm.length > 0) {
-      void this.warmUp(target, providersToWarm);
+  private getSnapshotForTarget(
+    target: ProviderSnapshotTarget,
+    options: ProviderSnapshotGetOptions = {},
+  ): ProviderSnapshotEntry[] {
+    if (options.warm ?? true) {
+      const providersToWarm = this.resolveProvidersToWarm(target.snapshotCwd);
+      if (providersToWarm.length > 0) {
+        void this.warmUp(target, providersToWarm);
+      }
     }
     return entriesToArray(this.getOrCreateSnapshot(target.snapshotCwd));
   }
@@ -724,26 +736,30 @@ export class ProviderSnapshotManager {
       promise: Promise.resolve(),
     };
     this.setProviderLoad(options.snapshotCwd, options.provider, load);
-    load.promise = Promise.resolve()
-      .then(() =>
-        this.refreshProvider({
-          snapshotCwd: options.snapshotCwd,
-          catalogScope: options.catalogScope,
-          provider: options.provider,
-          definition,
-          load,
-          force: options.force,
-        }),
-      )
-      .finally(() => {
-        const providerLoads = this.providerLoads.get(options.snapshotCwd);
-        if (providerLoads?.get(options.provider) === load) {
-          providerLoads.delete(options.provider);
-        }
-        if (providerLoads?.size === 0) {
-          this.providerLoads.delete(options.snapshotCwd);
-        }
+    load.promise = this.providerRefreshLimit(async () => {
+      if (
+        this.destroyed ||
+        !this.isCurrentProviderLoad(options.snapshotCwd, options.provider, load)
+      ) {
+        return;
+      }
+      await this.refreshProvider({
+        snapshotCwd: options.snapshotCwd,
+        catalogScope: options.catalogScope,
+        provider: options.provider,
+        definition,
+        load,
+        force: options.force,
       });
+    }).finally(() => {
+      const providerLoads = this.providerLoads.get(options.snapshotCwd);
+      if (providerLoads?.get(options.provider) === load) {
+        providerLoads.delete(options.provider);
+      }
+      if (providerLoads?.size === 0) {
+        this.providerLoads.delete(options.snapshotCwd);
+      }
+    });
     return load.promise;
   }
 

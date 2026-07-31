@@ -1051,6 +1051,7 @@ test("honors explicit fetchAgentTimeline timeout below the session RPC default",
     requestId: "req-timeline-1",
     direction: "tail",
     limit: 0,
+    conversationLimit: 50,
     projection: "projected",
     timeout: 2_000,
   });
@@ -1072,6 +1073,7 @@ test("honors explicit fetchAgentTimeline timeout below the session RPC default",
     agentId: "agent-1",
     direction: "tail",
     limit: 0,
+    conversationLimit: 50,
     projection: "projected",
   });
 

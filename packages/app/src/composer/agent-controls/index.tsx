@@ -1432,11 +1432,9 @@ export const AgentControls = memo(function AgentControls({
 
   const {
     entries: snapshotEntries,
-    isLoading: snapshotIsLoading,
     isRefreshing: snapshotIsRefreshing,
     refresh: refreshSnapshot,
-    refetchIfStale: refetchSnapshotIfStale,
-  } = useProvidersSnapshot(serverId, { cwd: agent?.cwd });
+  } = useProvidersSnapshot(serverId, { cwd: agent?.cwd, enabled: false });
 
   const snapshotSelectedEntry = useMemo(
     () => resolveSnapshotSelectedEntry(snapshotEntries, agent?.provider),
@@ -1607,14 +1605,23 @@ export const AgentControls = memo(function AgentControls({
   );
 
   const handleModelSelectorOpen = useCallback(() => {
-    refetchSnapshotIfStale(agentProvider);
-  }, [agentProvider, refetchSnapshotIfStale]);
+    if (!agentProvider || (snapshotSelectedEntry && snapshotSelectedEntry.status !== "loading")) {
+      return;
+    }
+    void refreshSnapshot([agentProvider]).catch((error) => {
+      console.warn("[智能体控制栏] 刷新提供方模型失败", error);
+      toast.error(toErrorMessage(error));
+    });
+  }, [agentProvider, refreshSnapshot, snapshotSelectedEntry, toast]);
 
   const handleRetryModelProvider = useCallback(
     (provider: AgentProvider) => {
-      void refreshSnapshot([provider]);
+      void refreshSnapshot([provider]).catch((error) => {
+        console.warn("[智能体控制栏] 重试刷新提供方模型失败", error);
+        toast.error(toErrorMessage(error));
+      });
     },
-    [refreshSnapshot],
+    [refreshSnapshot, toast],
   );
 
   if (!agent) {
@@ -1635,7 +1642,7 @@ export const AgentControls = memo(function AgentControls({
       onSelectThinkingOption={handleSelectThinkingOption}
       features={agent.features}
       onSetFeature={handleSetFeature}
-      isModelLoading={snapshotIsLoading || selectedProviderIsLoading}
+      isModelLoading={snapshotIsRefreshing || selectedProviderIsLoading}
       onModelSelectorOpen={handleModelSelectorOpen}
       onRetryModelProvider={handleRetryModelProvider}
       isRetryingModelProvider={snapshotIsRefreshing}

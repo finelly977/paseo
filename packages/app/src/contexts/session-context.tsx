@@ -10,7 +10,6 @@ import {
   createSetAgentInitializing,
   refreshAgentInitializationTimeout,
 } from "@/hooks/use-agent-initialization";
-import { prefetchProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { generateMessageId, type StreamItem } from "@/types/stream";
 import {
   createSessionAgentStreamReducerQueue,
@@ -61,6 +60,7 @@ import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
+import { useSettings } from "@/hooks/use-settings";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -507,6 +507,18 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const setPendingPermissions = useSessionStore((state) => state.setPendingPermissions);
   const updateSessionServerInfo = useSessionStore((state) => state.updateSessionServerInfo);
   const setViewedTimelineSync = useSessionStore((state) => state.setViewedTimelineSync);
+  const setConversationHistoryPolicy = useSessionStore(
+    (state) => state.setConversationHistoryPolicy,
+  );
+  const enforceConversationHistoryMemory = useSessionStore(
+    (state) => state.enforceConversationHistoryMemory,
+  );
+  const conversationHistoryLoadCount = useSettings(
+    (settings) => settings.conversationHistoryLoadCount,
+  );
+  const totalConversationHistoryLimit = useSettings(
+    (settings) => settings.totalConversationHistoryLimit,
+  );
   const upsertWorkspaceSetupProgress = useWorkspaceSetupStore((state) => state.upsertProgress);
 
   // Track focused agent for heartbeat
@@ -524,6 +536,13 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const audioOutputBuffersRef = useRef<Map<string, BufferedAudioChunk[]>>(new Map());
   const activeAudioGroupsRef = useRef<Set<string>>(new Set());
   const isAppVisible = useAppVisible();
+
+  useEffect(() => {
+    setConversationHistoryPolicy({
+      perConversationLoadCount: conversationHistoryLoadCount,
+      totalConversationLimit: totalConversationHistoryLimit,
+    });
+  }, [conversationHistoryLoadCount, setConversationHistoryPolicy, totalConversationHistoryLimit]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -641,19 +660,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       ...(serverInfo.features ? { features: serverInfo.features } : {}),
     });
   }, [client, serverId, updateSessionServerInfo]);
-
-  useEffect(() => {
-    if (!isConnected) {
-      return;
-    }
-
-    const serverInfo = client.getLastServerInfoMessage();
-    if (!serverInfo?.features?.providersSnapshot) {
-      return;
-    }
-
-    prefetchProvidersSnapshot(serverId, client);
-  }, [client, isConnected, serverId]);
 
   useEffect(() => {
     const unregister = voiceRuntime?.registerSession({
@@ -797,9 +803,11 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         setAgentAuthoritativeHistoryApplied,
         markAgentHistorySynchronized,
       });
+      enforceConversationHistoryMemory();
     },
     [
       clearAgentStreamHead,
+      enforceConversationHistoryMemory,
       markAgentHistorySynchronized,
       recoverTimelineGap,
       serverId,
@@ -827,6 +835,13 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         useSessionStore
           .getState()
           .sessions[serverId]?.agentAuthoritativeHistoryApplied.get(agentId) === true,
+      getInitialConversationLimit: () => {
+        const state = useSessionStore.getState();
+        const session = state.sessions[serverId];
+        return session?.serverInfo?.features?.conversationHistoryLimit === true
+          ? state.conversationHistoryPolicy.perConversationLoadCount
+          : undefined;
+      },
       fetchPage: async (agentId, request) => {
         const session = useSessionStore.getState().sessions[serverId];
         const initKey = getInitKey(serverId, agentId);

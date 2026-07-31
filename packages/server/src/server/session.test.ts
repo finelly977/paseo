@@ -1691,10 +1691,11 @@ describe("session provider refresh cwd routing", () => {
     await session.handleMessage({
       type: "get_providers_snapshot_request",
       cwd: workspaceCwd,
+      warm: false,
       requestId: "snapshot-workspace",
     });
 
-    expect(getSnapshot).toHaveBeenCalledWith(workspaceCwd);
+    expect(getSnapshot).toHaveBeenCalledWith(workspaceCwd, { warm: false });
   });
 
   test("preserves legacy model and mode list requests without cwd as global", async () => {

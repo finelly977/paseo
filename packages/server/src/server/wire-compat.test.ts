@@ -327,6 +327,7 @@ function createSessionForWireCompatTest(options?: {
 async function emitTimelineResponse(
   clientCapabilities?: Record<string, unknown> | null,
   rows?: AgentTimelineRow[],
+  conversationLimit?: number,
 ): Promise<Extract<SessionOutboundMessage, { type: "fetch_agent_timeline_response" }>> {
   const messages: SessionOutboundMessage[] = [];
   const session = createSessionForWireCompatTest({ clientCapabilities, messages, rows });
@@ -337,6 +338,7 @@ async function emitTimelineResponse(
     requestId: "req-timeline",
     agentId: "agent-1",
     projection: "projected",
+    ...(conversationLimit !== undefined ? { conversationLimit } : {}),
   });
 
   const response = messages[0];
@@ -513,6 +515,39 @@ describe("wire compatibility", () => {
     expect(capableResponse.payload.conversationIndex).toHaveLength(55);
     expect(capableResponse.payload.conversationIndex?.[0]?.messageId).toBe("user-1");
     expect(() => LegacyFetchAgentTimelineResponseMessageSchema.parse(capableResponse)).toThrow();
+  });
+
+  test("按用户消息边界返回配置数量的最近完整对话", async () => {
+    const rows = Array.from({ length: 4 }, (_, index) => [
+      {
+        seq: index * 3 + 1,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        item: { type: "user_message" as const, text: `问题 ${index + 1}` },
+      },
+      {
+        seq: index * 3 + 2,
+        timestamp: "2026-07-30T00:00:01.000Z",
+        item: { type: "assistant_message" as const, text: "回答前半段" },
+      },
+      {
+        seq: index * 3 + 3,
+        timestamp: "2026-07-30T00:00:02.000Z",
+        item: { type: "assistant_message" as const, text: "回答后半段" },
+      },
+    ]).flat();
+
+    const response = await emitTimelineResponse(null, rows, 2);
+
+    expect(
+      response.payload.entries
+        .filter((entry) => entry.item.type === "user_message")
+        .map((entry) => (entry.item.type === "user_message" ? entry.item.text : "")),
+    ).toEqual(["问题 3", "问题 4"]);
+    expect(response.payload.entries.at(-1)?.item).toEqual({
+      type: "assistant_message",
+      text: "回答前半段回答后半段",
+    });
+    expect(response.payload.hasOlder).toBe(true);
   });
 
   test("sub_agent tool-call payload still parses against the v0.1.65-beta.3 schema", () => {

@@ -127,6 +127,24 @@ describe("ProviderSnapshotManager public surface", () => {
     }
   });
 
+  test("read-only snapshot access does not start provider probes", async () => {
+    const isAvailable = vi.fn(async () => true);
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: { codex: createExtraClient("codex", { isAvailable }) },
+    });
+
+    try {
+      const snapshot = manager.getSnapshot("/tmp/project", { warm: false });
+      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 0));
+
+      expect(snapshot.find((entry) => entry.provider === "codex")?.status).toBe("loading");
+      expect(isAvailable).not.toHaveBeenCalled();
+    } finally {
+      manager.destroy();
+    }
+  });
+
   test("providerOverrides with enabled:false marks the provider as unavailable without probing", async () => {
     const isAvailable = vi.fn(async () => true);
     const fetchCatalog = vi.fn(async () => ({
@@ -295,6 +313,55 @@ describe("ProviderSnapshotManager public surface", () => {
       expect(fetchCodexCatalog).toHaveBeenCalledTimes(2);
       expect(isAvailableClaude).toHaveBeenCalledTimes(1);
       expect(fetchClaudeCatalog).toHaveBeenCalledTimes(1);
+    } finally {
+      manager.destroy();
+    }
+  });
+
+  test("limits provider probes across simultaneous snapshot scopes", async () => {
+    const providers: AgentProvider[] = ["claude", "codex", "copilot", "opencode"];
+    let activeProbes = 0;
+    let peakActiveProbes = 0;
+    let probeCount = 0;
+    let releaseProbes!: () => void;
+    const probeGate = new Promise<void>((resolveProbeGate) => {
+      releaseProbes = resolveProbeGate;
+    });
+    const createBlockingClient = (provider: AgentProvider) =>
+      createExtraClient(provider, {
+        async isAvailable() {
+          probeCount += 1;
+          activeProbes += 1;
+          peakActiveProbes = Math.max(peakActiveProbes, activeProbes);
+          await probeGate;
+          activeProbes -= 1;
+          return true;
+        },
+        async fetchCatalog() {
+          return { models: [] as AgentModelDefinition[], modes: [] as AgentMode[] };
+        },
+      });
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      extraClients: Object.fromEntries(
+        providers.map((provider) => [provider, createBlockingClient(provider)]),
+      ),
+    });
+
+    try {
+      const warmups = Promise.all([
+        manager.warmUpSnapshotForCwd({ cwd: "/tmp/project-a", providers }),
+        manager.warmUpSnapshotForCwd({ cwd: "/tmp/project-b", providers }),
+      ]);
+
+      await vi.waitFor(() => expect(activeProbes).toBe(2));
+      expect(peakActiveProbes).toBe(2);
+
+      releaseProbes();
+      await warmups;
+
+      expect(probeCount).toBe(8);
+      expect(peakActiveProbes).toBe(2);
     } finally {
       manager.destroy();
     }

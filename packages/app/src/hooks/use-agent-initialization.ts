@@ -40,6 +40,7 @@ export interface EnsureAgentIsInitializedInput {
   client: Pick<DaemonClient, "fetchAgentTimeline"> | null;
   runtime: Pick<HostRuntimeStore, "fetchAgentTimeline">;
   setAgentInitializing: SetAgentInitializing;
+  conversationLimit?: number;
   hostDisconnectedMessage?: string;
 }
 
@@ -54,7 +55,13 @@ export function ensureAgentIsInitialized(input: EnsureAgentIsInitializedInput): 
   const session = useSessionStore.getState().sessions[serverId];
   const cursor = session?.agentTimelineCursor.get(agentId);
   const hasAuthoritativeHistory = session?.agentAuthoritativeHistoryApplied.get(agentId) === true;
-  const timelineRequest = planInitialAgentTimelineSync({ cursor, hasAuthoritativeHistory });
+  const timelineRequest = planInitialAgentTimelineSync({
+    cursor,
+    hasAuthoritativeHistory,
+    ...(input.conversationLimit !== undefined
+      ? { conversationLimit: input.conversationLimit }
+      : {}),
+  });
 
   const deferred = createInitDeferred(key, timelineRequest.direction);
   refreshAgentInitializationTimeout({ key, agentId, setAgentInitializing });
@@ -84,6 +91,7 @@ export interface RefreshAgentInput {
   client: Pick<DaemonClient, "refreshAgent"> | null;
   runtime: Pick<HostRuntimeStore, "fetchAgentTimeline">;
   setAgentInitializing: SetAgentInitializing;
+  conversationLimit?: number;
   hostDisconnectedMessage?: string;
 }
 
@@ -96,7 +104,11 @@ export async function refreshAgent(input: RefreshAgentInput): Promise<void> {
 
   try {
     await client.refreshAgent(agentId);
-    await runtime.fetchAgentTimeline(serverId, agentId, planTimelineTailFetch());
+    await runtime.fetchAgentTimeline(
+      serverId,
+      agentId,
+      planTimelineTailFetch(input.conversationLimit),
+    );
   } catch (error) {
     setAgentInitializing(agentId, false);
     throw error;
@@ -128,6 +140,15 @@ export function useAgentInitialization({
 }) {
   const { t } = useTranslation();
   const setInitializingAgents = useSessionStore((state) => state.setInitializingAgents);
+  const conversationHistoryLoadCount = useSessionStore(
+    (state) => state.conversationHistoryPolicy.perConversationLoadCount,
+  );
+  const supportsConversationHistoryLimit = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.conversationHistoryLimit === true,
+  );
+  const conversationLimit = supportsConversationHistoryLimit
+    ? conversationHistoryLoadCount
+    : undefined;
   const setAgentInitializing = useMemo(
     () => createSetAgentInitializing(serverId, setInitializingAgents),
     [serverId, setInitializingAgents],
@@ -141,9 +162,10 @@ export function useAgentInitialization({
         client,
         runtime: getHostRuntimeStore(),
         setAgentInitializing,
+        ...(conversationLimit !== undefined ? { conversationLimit } : {}),
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
       }),
-    [client, serverId, setAgentInitializing, t],
+    [client, conversationLimit, serverId, setAgentInitializing, t],
   );
 
   const refreshAgentCallback = useCallback(
@@ -154,9 +176,10 @@ export function useAgentInitialization({
         client,
         runtime: getHostRuntimeStore(),
         setAgentInitializing,
+        ...(conversationLimit !== undefined ? { conversationLimit } : {}),
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
       }),
-    [client, serverId, setAgentInitializing, t],
+    [client, conversationLimit, serverId, setAgentInitializing, t],
   );
 
   return {

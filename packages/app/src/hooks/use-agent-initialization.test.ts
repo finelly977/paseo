@@ -67,6 +67,7 @@ describe("ensureAgentIsInitialized", () => {
       client: client as never,
       runtime,
       setAgentInitializing: bindSetAgentInitializing(),
+      conversationLimit: 50,
     });
 
     expect(runtime.requests).toEqual([
@@ -95,6 +96,7 @@ describe("ensureAgentIsInitialized", () => {
       client: client as never,
       runtime,
       setAgentInitializing: bindSetAgentInitializing(),
+      conversationLimit: 50,
     });
 
     expect(runtime.requests).toEqual([
@@ -104,6 +106,7 @@ describe("ensureAgentIsInitialized", () => {
         request: {
           direction: "tail",
           limit: TIMELINE_FETCH_PAGE_SIZE,
+          conversationLimit: 50,
           projection: "projected",
         },
       },
@@ -185,6 +188,7 @@ describe("refreshAgent", () => {
       client: client as never,
       runtime,
       setAgentInitializing: bindSetAgentInitializing(),
+      conversationLimit: 50,
     });
 
     expect(client.refreshedAgentIds).toEqual([agentId]);
@@ -195,6 +199,7 @@ describe("refreshAgent", () => {
         request: {
           direction: "tail",
           limit: TIMELINE_FETCH_PAGE_SIZE,
+          conversationLimit: 50,
           projection: "projected",
         },
       },

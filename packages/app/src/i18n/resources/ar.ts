@@ -1695,6 +1695,16 @@ export const ar: TranslationResources = {
         description: "يتم الاحتفاظ بالخطوط في المخزن المؤقت الطرفي المدمج",
         accessibilityLabel: "خطوط التمرير Terminal",
       },
+      conversationHistoryLoadCount: {
+        label: "المحادثات المحمّلة عند الفتح",
+        description: "عدد جولات المحادثة الأخيرة المحمّلة عند فتح جلسة موجودة",
+        accessibilityLabel: "المحادثات المحمّلة لكل جلسة",
+      },
+      totalConversationHistoryLimit: {
+        label: "حد ذاكرة سجل المحادثة",
+        description: "الحد الأقصى لجولات المحادثة المحفوظة في ذاكرة الجلسات المفتوحة",
+        accessibilityLabel: "الحد الإجمالي لذاكرة سجل المحادثة",
+      },
       autoExpandReasoning: {
         label: "عرض التفكير دائماً",
         description: "إظهار تفكير الوكيل وخطوات الاستدلال بشكل كامل بشكل افتراضي",

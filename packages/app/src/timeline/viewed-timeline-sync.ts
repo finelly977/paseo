@@ -16,6 +16,7 @@ interface ViewedTimelineSyncPorts {
   setSubscription(agentIds: string[]): Promise<void>;
   readCursor(agentId: string): AgentTimelineCursorState | undefined;
   hasAuthoritativeHistory(agentId: string): boolean;
+  getInitialConversationLimit?(): number | undefined;
   fetchPage(
     agentId: string,
     request: ProjectedTimelineForwardFetchPlan,
@@ -214,8 +215,15 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     const nextRequest =
       request ??
       (ports.hasAuthoritativeHistory(agentId)
-        ? planResumeTimelineSync({ cursor })
-        : planInitialAgentTimelineSync({ cursor, hasAuthoritativeHistory: false }));
+        ? planResumeTimelineSync({
+            cursor,
+            conversationLimit: ports.getInitialConversationLimit?.(),
+          })
+        : planInitialAgentTimelineSync({
+            cursor,
+            hasAuthoritativeHistory: false,
+            conversationLimit: ports.getInitialConversationLimit?.(),
+          }));
     void fetchUntilCurrent(agentId, generation, nextRequest);
   };
 

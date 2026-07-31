@@ -1705,6 +1705,16 @@ export const en = {
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
       },
+      conversationHistoryLoadCount: {
+        label: "Conversations loaded on open",
+        description: "Recent conversation turns loaded when opening an existing session",
+        accessibilityLabel: "Conversations loaded per session",
+      },
+      totalConversationHistoryLimit: {
+        label: "Conversation history memory limit",
+        description: "Maximum conversation turns kept in memory across opened sessions",
+        accessibilityLabel: "Total conversation history memory limit",
+      },
       autoExpandReasoning: {
         label: "Always expand reasoning",
         description: "Show agent thinking and chain-of-thought blocks fully expanded by default",

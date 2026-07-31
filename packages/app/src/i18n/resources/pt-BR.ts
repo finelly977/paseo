@@ -1725,6 +1725,16 @@ export const ptBR: TranslationResources = {
         description: "Linhas mantidas no buffer do terminal integrado",
         accessibilityLabel: "Linhas do scrollback do terminal",
       },
+      conversationHistoryLoadCount: {
+        label: "Conversas carregadas ao abrir",
+        description: "Turnos recentes carregados ao abrir uma sessão existente",
+        accessibilityLabel: "Conversas carregadas por sessão",
+      },
+      totalConversationHistoryLimit: {
+        label: "Limite de memória do histórico",
+        description: "Máximo de turnos mantidos na memória entre as sessões abertas",
+        accessibilityLabel: "Limite total de memória do histórico",
+      },
       autoExpandReasoning: {
         label: "Sempre expandir raciocínio",
         description:

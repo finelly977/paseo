@@ -6716,7 +6716,7 @@ test("fetch_workspaces_response reads runtime fields from passive workspace git 
   ]);
 });
 
-test("fetch_workspaces_response emits before cold registration-triggered git work starts", async () => {
+test("fetch_workspaces_response does not start Git observers for unopened workspaces", async () => {
   const events: string[] = [];
   const emitted: SessionOutboundMessage[] = [];
   const workspaceGitService = createNoopWorkspaceGitService();
@@ -6775,6 +6775,8 @@ test("fetch_workspaces_response emits before cold registration-triggered git wor
 
   expect(emitted.find((message) => message.type === "fetch_workspaces_response")).toBeDefined();
   expect(events[0]).toBe("response");
+  expect(workspaceGitService.registerWorkspace).not.toHaveBeenCalled();
+  expect(getSnapshot).not.toHaveBeenCalled();
 });
 
 test("workspace_update includes updated runtime fields", async () => {

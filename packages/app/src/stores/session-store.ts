@@ -9,6 +9,13 @@ import {
   type StreamItem,
   type UserMessageItem,
 } from "@/types/stream";
+import {
+  allocateConversationHistoryBudget,
+  countConversationTurns,
+  DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  trimConversationHistory,
+} from "@/timeline/conversation-history-policy";
 import type { PendingPermission } from "@/types/shared";
 import type { ComposerAttachment } from "@/attachments/types";
 import type { AgentLifecycleStatus } from "@getpaseo/protocol/agent-lifecycle";
@@ -415,6 +422,12 @@ interface SessionStoreState {
 
   // Agent activity timestamps (top-level, keyed by agentId to prevent cascade rerenders)
   agentLastActivity: Map<string, Date>;
+  conversationHistoryPolicy: {
+    perConversationLoadCount: number;
+    totalConversationLimit: number;
+  };
+  activeConversationHistoryKey: string | null;
+  conversationHistoryOpenedAt: Map<string, number>;
 }
 
 // Action types
@@ -437,6 +450,11 @@ interface SessionStoreActions {
 
   // Focus
   setFocusedAgentId: (serverId: string, agentId: string | null) => void;
+  setConversationHistoryPolicy: (policy: {
+    perConversationLoadCount: number;
+    totalConversationLimit: number;
+  }) => void;
+  enforceConversationHistoryMemory: () => void;
   setFocusedTerminalId: (serverId: string, terminalId: string | null) => void;
 
   // Messages
@@ -577,6 +595,148 @@ interface SessionStoreActions {
 type SessionStore = SessionStoreState & SessionStoreActions;
 
 const agentLastActivityCoalescer = createAgentLastActivityCoalescer();
+const CONVERSATION_HISTORY_KEY_SEPARATOR = "\u0000";
+
+function conversationHistoryKey(serverId: string, agentId: string): string {
+  return `${serverId}${CONVERSATION_HISTORY_KEY_SEPARATOR}${agentId}`;
+}
+
+interface ConversationHistoryStoreEntry {
+  key: string;
+  serverId: string;
+  agentId: string;
+  items: StreamItem[];
+  openedAt: number;
+  current: boolean;
+}
+
+function collectConversationHistoryEntries(
+  state: SessionStoreState,
+): ConversationHistoryStoreEntry[] {
+  const entries: ConversationHistoryStoreEntry[] = [];
+  for (const [serverId, session] of Object.entries(state.sessions)) {
+    const agentIds = new Set([
+      ...session.agentStreamTail.keys(),
+      ...session.agentStreamHead.keys(),
+    ]);
+    for (const agentId of agentIds) {
+      const key = conversationHistoryKey(serverId, agentId);
+      entries.push({
+        key,
+        serverId,
+        agentId,
+        items: [
+          ...(session.agentStreamTail.get(agentId) ?? []),
+          ...(session.agentStreamHead.get(agentId) ?? []),
+        ],
+        openedAt: state.conversationHistoryOpenedAt.get(key) ?? 0,
+        current: state.activeConversationHistoryKey === key,
+      });
+    }
+  }
+  return entries;
+}
+
+function trimSessionConversationHistory(input: {
+  session: SessionState;
+  entry: ConversationHistoryStoreEntry;
+  retainedTurns: number;
+}): SessionState | null {
+  const { session, entry } = input;
+  const tail = session.agentStreamTail.get(entry.agentId) ?? [];
+  const head = session.agentStreamHead.get(entry.agentId) ?? [];
+  const retainedTailTurns = Math.max(0, input.retainedTurns - countConversationTurns(head));
+  if (countConversationTurns(tail) <= retainedTailTurns) {
+    return null;
+  }
+
+  const nextTailItems = trimConversationHistory(tail, retainedTailTurns);
+  const nextTail = new Map(session.agentStreamTail);
+  if (nextTailItems.length === 0) {
+    nextTail.delete(entry.agentId);
+  } else {
+    nextTail.set(entry.agentId, nextTailItems);
+  }
+  const nextHasOlder = new Map(session.agentTimelineHasOlder);
+  nextHasOlder.set(entry.agentId, true);
+  let nextCursor = session.agentTimelineCursor;
+  let nextAuthoritative = session.agentAuthoritativeHistoryApplied;
+  let nextHistoryGeneration = session.agentHistorySyncGeneration;
+
+  if (!entry.current) {
+    nextCursor = new Map(session.agentTimelineCursor);
+    nextCursor.delete(entry.agentId);
+    nextAuthoritative = new Map(session.agentAuthoritativeHistoryApplied);
+    nextAuthoritative.delete(entry.agentId);
+    nextHistoryGeneration = new Map(session.agentHistorySyncGeneration);
+    nextHistoryGeneration.delete(entry.agentId);
+  } else {
+    const firstItem = nextTailItems[0];
+    const firstCursor =
+      firstItem?.kind === "user_message" || firstItem?.kind === "assistant_message"
+        ? firstItem.timelineCursor
+        : undefined;
+    const currentCursor = session.agentTimelineCursor.get(entry.agentId);
+    if (firstCursor && currentCursor && firstCursor.epoch === currentCursor.epoch) {
+      nextCursor = new Map(session.agentTimelineCursor);
+      nextCursor.set(entry.agentId, {
+        ...currentCursor,
+        startSeq: firstCursor.seq,
+      });
+    }
+  }
+
+  return {
+    ...session,
+    agentStreamTail: nextTail,
+    agentTimelineHasOlder: nextHasOlder,
+    agentTimelineCursor: nextCursor,
+    agentAuthoritativeHistoryApplied: nextAuthoritative,
+    agentHistorySyncGeneration: nextHistoryGeneration,
+  };
+}
+
+function enforceConversationHistoryMemory<T extends SessionStoreState>(state: T): T {
+  const entries = collectConversationHistoryEntries(state);
+
+  const allocations = allocateConversationHistoryBudget({
+    entries,
+    totalLimit: state.conversationHistoryPolicy.totalConversationLimit,
+  });
+  let nextSessions = state.sessions;
+  for (const entry of entries) {
+    const session = nextSessions[entry.serverId];
+    if (!session) {
+      throw new Error(`找不到会话所属主机：${entry.serverId}`);
+    }
+    const nextSession = trimSessionConversationHistory({
+      session,
+      entry,
+      retainedTurns: allocations.get(entry.key) ?? 0,
+    });
+    if (!nextSession) {
+      continue;
+    }
+    if (nextSessions === state.sessions) {
+      nextSessions = { ...state.sessions };
+    }
+    nextSessions[entry.serverId] = nextSession;
+  }
+
+  return nextSessions === state.sessions ? state : { ...state, sessions: nextSessions };
+}
+
+function resolveActiveConversationHistoryKey(input: {
+  serverId: string;
+  agentId: string | null;
+  activeKey: string | null;
+}): string | null {
+  if (input.agentId) {
+    return conversationHistoryKey(input.serverId, input.agentId);
+  }
+  const serverKeyPrefix = `${input.serverId}${CONVERSATION_HISTORY_KEY_SEPARATOR}`;
+  return input.activeKey?.startsWith(serverKeyPrefix) ? null : input.activeKey;
+}
 
 // Helper to create initial session state
 function createInitialSessionState(
@@ -691,6 +851,12 @@ export const useSessionStore = create<SessionStore>()(
     return {
       sessions: {},
       agentLastActivity: new Map(),
+      conversationHistoryPolicy: {
+        perConversationLoadCount: DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+        totalConversationLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+      },
+      activeConversationHistoryKey: null,
+      conversationHistoryOpenedAt: new Map(),
 
       // Session management
       initializeSession: (serverId, client, clientGeneration) => {
@@ -698,13 +864,13 @@ export const useSessionStore = create<SessionStore>()(
           if (prev.sessions[serverId]) {
             return prev;
           }
-          return {
+          return enforceConversationHistoryMemory({
             ...prev,
             sessions: {
               ...prev.sessions,
               [serverId]: createInitialSessionState(serverId, client, clientGeneration),
             },
-          };
+          });
         });
       },
 
@@ -731,7 +897,7 @@ export const useSessionStore = create<SessionStore>()(
           for (const agent of replica.agents.values()) {
             agentLastActivity.set(agent.id, agent.lastActivityAt);
           }
-          return {
+          return enforceConversationHistoryMemory({
             ...prev,
             sessions: {
               ...prev.sessions,
@@ -749,7 +915,7 @@ export const useSessionStore = create<SessionStore>()(
               },
             },
             agentLastActivity,
-          };
+          });
         });
       },
 
@@ -762,6 +928,13 @@ export const useSessionStore = create<SessionStore>()(
           }
           const nextSessions = { ...prev.sessions };
           delete nextSessions[serverId];
+          const keyPrefix = `${serverId}${CONVERSATION_HISTORY_KEY_SEPARATOR}`;
+          const nextOpenedAt = new Map(prev.conversationHistoryOpenedAt);
+          for (const key of nextOpenedAt.keys()) {
+            if (key.startsWith(keyPrefix)) {
+              nextOpenedAt.delete(key);
+            }
+          }
           let nextActivity = prev.agentLastActivity;
           if (session.agents.size > 0 || session.agentDetails.size > 0) {
             const candidate = new Map(prev.agentLastActivity);
@@ -783,6 +956,10 @@ export const useSessionStore = create<SessionStore>()(
             ...prev,
             sessions: nextSessions,
             agentLastActivity: nextActivity,
+            conversationHistoryOpenedAt: nextOpenedAt,
+            activeConversationHistoryKey: prev.activeConversationHistoryKey?.startsWith(keyPrefix)
+              ? null
+              : prev.activeConversationHistoryKey,
           };
         });
       },
@@ -903,11 +1080,29 @@ export const useSessionStore = create<SessionStore>()(
       setFocusedAgentId: (serverId, agentId) => {
         set((prev) => {
           const session = prev.sessions[serverId];
-          if (!session || session.focusedAgentId === agentId) {
+          if (!session) {
             return prev;
           }
-          return {
+          const currentKey = resolveActiveConversationHistoryKey({
+            serverId,
+            agentId,
+            activeKey: prev.activeConversationHistoryKey,
+          });
+          if (
+            session.focusedAgentId === agentId &&
+            prev.activeConversationHistoryKey === currentKey
+          ) {
+            return prev;
+          }
+          const nextOpenedAt = new Map(prev.conversationHistoryOpenedAt);
+          if (agentId && currentKey) {
+            const latestOpenedAt = Math.max(0, ...nextOpenedAt.values());
+            nextOpenedAt.set(currentKey, Math.max(Date.now(), latestOpenedAt + 1));
+          }
+          return enforceConversationHistoryMemory({
             ...prev,
+            activeConversationHistoryKey: currentKey,
+            conversationHistoryOpenedAt: nextOpenedAt,
             sessions: {
               ...prev.sessions,
               [serverId]: {
@@ -915,8 +1110,28 @@ export const useSessionStore = create<SessionStore>()(
                 focusedAgentId: agentId,
               },
             },
-          };
+          });
         });
+      },
+
+      setConversationHistoryPolicy: (policy) => {
+        set((prev) => {
+          if (
+            prev.conversationHistoryPolicy.perConversationLoadCount ===
+              policy.perConversationLoadCount &&
+            prev.conversationHistoryPolicy.totalConversationLimit === policy.totalConversationLimit
+          ) {
+            return prev;
+          }
+          return enforceConversationHistoryMemory({
+            ...prev,
+            conversationHistoryPolicy: policy,
+          });
+        });
+      },
+
+      enforceConversationHistoryMemory: () => {
+        set((prev) => enforceConversationHistoryMemory(prev));
       },
 
       setFocusedTerminalId: (serverId, terminalId) => {
@@ -1104,7 +1319,7 @@ export const useSessionStore = create<SessionStore>()(
             : session.agentStreamHead;
           didHandoff = true;
 
-          return {
+          return enforceConversationHistoryMemory({
             ...prev,
             sessions: {
               ...prev.sessions,
@@ -1114,7 +1329,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamHead: nextHead,
               },
             },
-          };
+          });
         });
         return didHandoff;
       },

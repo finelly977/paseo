@@ -1504,6 +1504,7 @@ export function createSessionAgentStreamReducerQueue(
           return next;
         });
       }
+      useSessionStore.getState().enforceConversationHistoryMemory();
     },
     handleSideEffects: (agentId, sideEffects) => {
       for (const effect of sideEffects) {

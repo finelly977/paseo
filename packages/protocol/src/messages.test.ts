@@ -133,6 +133,22 @@ describe("workspace descriptor message compatibility", () => {
   });
 });
 
+describe("按对话轮数加载时间线", () => {
+  test("解析按用户消息边界加载最近对话的请求", () => {
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "fetch_agent_timeline_request",
+        agentId: "agent-1",
+        requestId: "request-1",
+        direction: "tail",
+        limit: 40,
+        conversationLimit: 50,
+        projection: "projected",
+      }),
+    ).toMatchObject({ conversationLimit: 50 });
+  });
+});
+
 describe("provider usage list message contract", () => {
   test("accepts the usage list request as a namespaced correlated RPC", () => {
     const parsed = SessionInboundMessageSchema.parse({

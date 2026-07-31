@@ -1451,6 +1451,8 @@ export class VoiceAssistantWebSocketServer {
         stableProjectIdentity: true,
         // COMPAT(agentRemoval): v0.2.0-beta.4 新增，2027-01-25 后移除能力门控。
         agentRemoval: true,
+        // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
+        conversationHistoryLimit: true,
       },
     };
   }

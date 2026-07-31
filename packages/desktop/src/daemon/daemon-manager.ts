@@ -50,6 +50,7 @@ const DAEMON_LOG_FILENAME = "daemon.log";
 const STARTUP_POLL_INTERVAL_MS = 200;
 const STARTUP_POLL_MAX_ATTEMPTS = 150;
 const DETACHED_STARTUP_GRACE_MS = 1200;
+const LOCAL_DAEMON_OVERRIDE_ENV_VAR = "EXPO_PUBLIC_LOCAL_DAEMON";
 
 type DesktopDaemonState = "starting" | "running" | "stopped" | "errored";
 const DESKTOP_DAEMON_STOP_REASON_VALUES = [
@@ -364,7 +365,9 @@ async function pollForRunningDaemon(): Promise<DesktopDaemonStatus> {
   return poll(0);
 }
 
-async function startDaemon(): Promise<DesktopDaemonStatus> {
+let daemonStartPromise: Promise<DesktopDaemonStatus> | null = null;
+
+async function performDaemonStart(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
 
   const current = await resolveDesktopDaemonStatus();
@@ -474,6 +477,35 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
   }
 
   return pollForRunningDaemon();
+}
+
+function startDaemon(): Promise<DesktopDaemonStatus> {
+  if (daemonStartPromise) {
+    return daemonStartPromise;
+  }
+
+  const startPromise = performDaemonStart().finally(() => {
+    if (daemonStartPromise === startPromise) {
+      daemonStartPromise = null;
+    }
+  });
+  daemonStartPromise = startPromise;
+  return startPromise;
+}
+
+export async function prestartDesktopDaemon(): Promise<void> {
+  if (process.env[LOCAL_DAEMON_OVERRIDE_ENV_VAR]?.trim()) {
+    logDesktopDaemonLifecycle("跳过桌面守护进程预启动：已配置自定义本地守护进程");
+    return;
+  }
+
+  const settings = await getDesktopSettingsStore().get();
+  if (!settings.daemon.manageBuiltInDaemon) {
+    logDesktopDaemonLifecycle("跳过桌面守护进程预启动：内置守护进程管理已禁用");
+    return;
+  }
+
+  await startDaemon();
 }
 
 export async function stopDesktopDaemon(

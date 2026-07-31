@@ -12,11 +12,13 @@ describe("timeline sync planning", () => {
     const plan = planInitialAgentTimelineSync({
       cursor: undefined,
       hasAuthoritativeHistory: false,
+      conversationLimit: 50,
     });
 
     expect(plan).toEqual({
       direction: "tail",
       limit: TIMELINE_FETCH_PAGE_SIZE,
+      conversationLimit: 50,
       projection: "projected",
     });
   });

@@ -549,6 +549,58 @@ export function selectProjectedTimelinePage(input: {
   };
 }
 
+export function selectProjectedTimelineTailByConversationLimit(input: {
+  rows: readonly AgentTimelineRow[];
+  bounds?: { minSeq: number; maxSeq: number };
+  conversationLimit: number;
+}): ProjectedTimelinePageSelection {
+  const bounds = input.bounds ?? getTimelineBounds(input.rows);
+  const entries = projectTimelineRows({ rows: input.rows, mode: "projected" });
+  if (!bounds || entries.length === 0) {
+    return {
+      entries: [],
+      startSeq: null,
+      endSeq: null,
+      hasOlder: false,
+      hasNewer: false,
+    };
+  }
+
+  const conversationLimit = Math.max(1, Math.floor(input.conversationLimit));
+  const userMessageIndexes: number[] = [];
+  for (const [index, entry] of entries.entries()) {
+    if (entry.item.type === "user_message") {
+      userMessageIndexes.push(index);
+    }
+  }
+
+  if (userMessageIndexes.length === 0) {
+    return {
+      entries,
+      startSeq: entries[0]?.seqStart ?? null,
+      endSeq: entries.at(-1)?.seqEnd ?? null,
+      hasOlder: false,
+      hasNewer: false,
+    };
+  }
+
+  const firstConversationIndex =
+    userMessageIndexes[Math.max(0, userMessageIndexes.length - conversationLimit)];
+  if (firstConversationIndex === undefined) {
+    throw new Error("无法确定对话历史的起始位置");
+  }
+  const selected = entries.slice(firstConversationIndex);
+  const startSeq = selected[0]?.seqStart ?? null;
+  const endSeq = selected.at(-1)?.seqEnd ?? null;
+  return {
+    entries: selected,
+    startSeq,
+    endSeq,
+    hasOlder: startSeq !== null && startSeq > bounds.minSeq,
+    hasNewer: false,
+  };
+}
+
 /**
  * Apply a projected-count limit to a flat AgentTimelineItem[] without seq metadata.
  * Used by callers that only have items in hand (e.g. MCP tools reading

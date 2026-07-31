@@ -128,6 +128,19 @@ describe("ProviderCatalogSession", () => {
     expect(pull?.payload.entries[0]?.modes?.[0]?.icon).toBe("Sparkles");
   });
 
+  it("forwards the read-only snapshot flag without starting provider warmup", async () => {
+    const getSnapshot = vi.fn(() => makeEntries());
+    const { subsystem } = makeSubsystem({ snapshot: { getSnapshot } });
+
+    await subsystem.handleGetProvidersSnapshotRequest({
+      type: "get_providers_snapshot_request",
+      warm: false,
+      requestId: "g3",
+    });
+
+    expect(getSnapshot).toHaveBeenCalledWith(undefined, { warm: false });
+  });
+
   it("reports a disabled provider on list_provider_models without warming the snapshot", async () => {
     // warmUpSnapshotForCwd is intentionally unstubbed: createStub throws if it is called,
     // so the disabled short-circuit is proven by the absence of a throw.
@@ -158,7 +171,7 @@ describe("ProviderCatalogSession", () => {
       requestId: "m-global",
     });
 
-    expect(getSnapshot).toHaveBeenCalledWith(undefined);
+    expect(getSnapshot).toHaveBeenCalledWith(undefined, { warm: false });
     expect(warmUpSnapshotForCwd).toHaveBeenCalledWith({
       cwd: undefined,
       providers: ["codex"],

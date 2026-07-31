@@ -48,7 +48,12 @@ import { AppearanceSection } from "@/screens/settings/appearance/appearance-sect
 import {
   useAppSettings,
   useSettings,
+  parseBoundedInteger,
   parseTerminalScrollbackLines,
+  MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+  MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+  MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
   type AppSettings,
   type SendBehavior,
   type ServiceUrlBehavior,
@@ -251,6 +256,59 @@ interface GeneralSectionProps {
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
+  handleConversationHistoryLoadCountChange: (count: number) => void;
+  handleTotalConversationHistoryLimitChange: (count: number) => void;
+}
+
+interface IntegerSettingRowProps {
+  title: string;
+  description: string;
+  accessibilityLabel: string;
+  value: number;
+  parse: (value: unknown) => number | null;
+  onChange: (value: number) => void;
+}
+
+function IntegerSettingRow({
+  title,
+  description,
+  accessibilityLabel,
+  value,
+  parse,
+  onChange,
+}: IntegerSettingRowProps) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const handleChangeText = useCallback((text: string) => {
+    setDraft(text.replace(/[^\d]/g, ""));
+  }, []);
+  const commit = useCallback(() => {
+    const next = parse(draft) ?? value;
+    setDraft(String(next));
+    if (next !== value) {
+      onChange(next);
+    }
+  }, [draft, onChange, parse, value]);
+
+  return (
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{title}</Text>
+        <Text style={settingsStyles.rowHint}>{description}</Text>
+      </View>
+      <TextInput
+        value={draft}
+        onChangeText={handleChangeText}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        keyboardType="number-pad"
+        inputMode="numeric"
+        selectTextOnFocus
+        style={styles.terminalScrollbackInput}
+        accessibilityLabel={accessibilityLabel}
+      />
+    </View>
+  );
 }
 
 interface ServiceUrlBehaviorMenuItemProps {
@@ -307,6 +365,8 @@ function GeneralSection({
   handleServiceUrlBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
+  handleConversationHistoryLoadCountChange,
+  handleTotalConversationHistoryLimitChange,
 }: GeneralSectionProps) {
   const { t, i18n } = useTranslation();
   const activeLocale = getActiveLocale(i18n.language);
@@ -325,30 +385,22 @@ function GeneralSection({
         t(selectedLanguageOption.labelKey),
       )
     : settings.language;
-  const [terminalScrollbackValue, setTerminalScrollbackValue] = useState(
-    String(settings.terminalScrollbackLines),
+  const parseConversationHistoryLoadCount = useCallback(
+    (value: unknown) =>
+      parseBoundedInteger(value, {
+        min: MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+        max: MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+      }),
+    [],
   );
-
-  const handleTerminalScrollbackChangeText = useCallback((value: string) => {
-    setTerminalScrollbackValue(value.replace(/[^\d]/g, ""));
-  }, []);
-
-  const commitTerminalScrollback = useCallback(() => {
-    const parsed = parseTerminalScrollbackLines(terminalScrollbackValue);
-    const nextValue = parsed ?? settings.terminalScrollbackLines;
-    setTerminalScrollbackValue(String(nextValue));
-    if (nextValue !== settings.terminalScrollbackLines) {
-      handleTerminalScrollbackLinesChange(nextValue);
-    }
-  }, [
-    handleTerminalScrollbackLinesChange,
-    settings.terminalScrollbackLines,
-    terminalScrollbackValue,
-  ]);
-
-  useEffect(() => {
-    setTerminalScrollbackValue(String(settings.terminalScrollbackLines));
-  }, [settings.terminalScrollbackLines]);
+  const parseTotalConversationHistoryLimit = useCallback(
+    (value: unknown) =>
+      parseBoundedInteger(value, {
+        min: MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
+        max: MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+      }),
+    [],
+  );
 
   return (
     <SettingsSection title={t("settings.general.title")}>
@@ -419,27 +471,32 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
-        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-          <View style={settingsStyles.rowContent}>
-            <Text style={settingsStyles.rowTitle}>
-              {t("settings.general.terminalScrollback.label")}
-            </Text>
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.general.terminalScrollback.description")}
-            </Text>
-          </View>
-          <TextInput
-            value={terminalScrollbackValue}
-            onChangeText={handleTerminalScrollbackChangeText}
-            onBlur={commitTerminalScrollback}
-            onSubmitEditing={commitTerminalScrollback}
-            keyboardType="number-pad"
-            inputMode="numeric"
-            selectTextOnFocus
-            style={styles.terminalScrollbackInput}
-            accessibilityLabel={t("settings.general.terminalScrollback.accessibilityLabel")}
-          />
-        </View>
+        <IntegerSettingRow
+          title={t("settings.general.terminalScrollback.label")}
+          description={t("settings.general.terminalScrollback.description")}
+          accessibilityLabel={t("settings.general.terminalScrollback.accessibilityLabel")}
+          value={settings.terminalScrollbackLines}
+          parse={parseTerminalScrollbackLines}
+          onChange={handleTerminalScrollbackLinesChange}
+        />
+        <IntegerSettingRow
+          title={t("settings.general.conversationHistoryLoadCount.label")}
+          description={t("settings.general.conversationHistoryLoadCount.description")}
+          accessibilityLabel={t("settings.general.conversationHistoryLoadCount.accessibilityLabel")}
+          value={settings.conversationHistoryLoadCount}
+          parse={parseConversationHistoryLoadCount}
+          onChange={handleConversationHistoryLoadCountChange}
+        />
+        <IntegerSettingRow
+          title={t("settings.general.totalConversationHistoryLimit.label")}
+          description={t("settings.general.totalConversationHistoryLimit.description")}
+          accessibilityLabel={t(
+            "settings.general.totalConversationHistoryLimit.accessibilityLabel",
+          )}
+          value={settings.totalConversationHistoryLimit}
+          parse={parseTotalConversationHistoryLimit}
+          onChange={handleTotalConversationHistoryLimitChange}
+        />
       </View>
     </SettingsSection>
   );
@@ -1194,6 +1251,20 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleConversationHistoryLoadCountChange = useCallback(
+    (conversationHistoryLoadCount: number) => {
+      void updateSettings({ conversationHistoryLoadCount });
+    },
+    [updateSettings],
+  );
+
+  const handleTotalConversationHistoryLimitChange = useCallback(
+    (totalConversationHistoryLimit: number) => {
+      void updateSettings({ totalConversationHistoryLimit });
+    },
+    [updateSettings],
+  );
+
   const handlePlaybackTest = useCallback(async () => {
     if (!voiceAudioEngine || isPlaybackTestRunning) {
       return;
@@ -1400,6 +1471,10 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                 handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                 handleLanguageChange={handleLanguageChange}
                 handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
+                handleConversationHistoryLoadCountChange={handleConversationHistoryLoadCountChange}
+                handleTotalConversationHistoryLimitChange={
+                  handleTotalConversationHistoryLimitChange
+                }
               />
               {isDesktopApp ? <BrowserDataSection /> : null}
             </>

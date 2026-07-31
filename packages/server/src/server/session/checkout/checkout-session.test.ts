@@ -78,6 +78,7 @@ function createFakeDiffSubscriber(initial: CheckoutDiffSnapshotPayload) {
 }
 
 interface RecordedHostCalls {
+  ensureWorkspaceGitObserver: string[];
   emitWorkspaceUpdateForCwd: string[];
   handleWorkspaceGitBranchSnapshot: Array<{ cwd: string; branchName: string | null }>;
   renameCurrentBranch: Array<{ cwd: string; branch: string }>;
@@ -109,6 +110,7 @@ function makeCheckoutSession(options?: {
 }) {
   const emitted: SessionOutboundMessage[] = [];
   const hostCalls: RecordedHostCalls = {
+    ensureWorkspaceGitObserver: [],
     emitWorkspaceUpdateForCwd: [],
     handleWorkspaceGitBranchSnapshot: [],
     renameCurrentBranch: [],
@@ -123,6 +125,9 @@ function makeCheckoutSession(options?: {
   };
   const host: CheckoutSessionHost = {
     emit: (msg) => emitted.push(msg),
+    ensureWorkspaceGitObserver: async (cwd) => {
+      hostCalls.ensureWorkspaceGitObserver.push(cwd);
+    },
     emitWorkspaceUpdateForCwd: async (cwd) => {
       hostCalls.emitWorkspaceUpdateForCwd.push(cwd);
     },
@@ -206,7 +211,7 @@ describe("CheckoutSession", () => {
         cwd: string;
         options: Parameters<WorkspaceGitService["getSnapshot"]>[1];
       }> = [];
-      const { checkout, emitted } = makeCheckoutSession({
+      const { checkout, emitted, hostCalls } = makeCheckoutSession({
         git: {
           getSnapshot: async (cwd, options) => {
             snapshotCalls.push({ cwd, options });
@@ -238,6 +243,7 @@ describe("CheckoutSession", () => {
           options: { includeForge: false, reason: "checkout-status" },
         },
       ]);
+      expect(hostCalls.ensureWorkspaceGitObserver).toEqual(["/repo"]);
     });
 
     it("emits an error status response when the git snapshot read fails", async () => {

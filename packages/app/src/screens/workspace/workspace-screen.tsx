@@ -101,7 +101,6 @@ import {
   useHostRuntimeSnapshot,
   useHosts,
 } from "@/runtime/host-runtime";
-import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { shouldShowWorkspaceSetup, useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
 import { useWorkspaceTerminalSessionRetention } from "@/terminal/hooks/use-workspace-terminal-session-retention";
@@ -1769,12 +1768,6 @@ function WorkspaceScreenContent({
   const closeImportSheet = useCallback(() => {
     setIsImportSheetVisible(false);
   }, []);
-
-  // Warm the workspace-scoped provider snapshot so the model picker is ready when opened.
-  useProvidersSnapshot(normalizedServerId, {
-    cwd: workspaceDirectory,
-    enabled: isRouteFocused,
-  });
 
   const persistenceKey = useMemo(
     () =>

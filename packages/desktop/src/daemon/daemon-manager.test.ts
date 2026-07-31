@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { getBundledCliShimPath } from "../integrations/cli-install";
-import { createDaemonCommandHandlers } from "./daemon-manager";
+import { createDaemonCommandHandlers, prestartDesktopDaemon } from "./daemon-manager";
 
 const mocks = vi.hoisted(() => ({
   paseoHome: "/tmp/paseo-desktop-daemon-manager-test-home",
@@ -140,6 +140,27 @@ describe("daemon-manager commands", () => {
     await expect(handlers.restart_desktop_daemon()).rejects.toThrow(
       "Built-in daemon management is disabled.",
     );
+
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
+    expect(mocks.spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("skips launch prestart while built-in daemon management is disabled", async () => {
+    mocks.settings = desktopSettingsWithManagement(false);
+
+    await expect(prestartDesktopDaemon()).resolves.toBeUndefined();
+
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
+    expect(mocks.spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("skips launch prestart when a custom local daemon is configured", async () => {
+    vi.stubEnv("EXPO_PUBLIC_LOCAL_DAEMON", "127.0.0.1:7788");
+    try {
+      await expect(prestartDesktopDaemon()).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
 
     expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
     expect(mocks.spawnProcess).not.toHaveBeenCalled();
@@ -458,6 +479,41 @@ describe("daemon-manager commands", () => {
         }),
       }),
     );
+  });
+
+  it("shares one in-flight start between launch prestart and renderer startup", async () => {
+    mocks.runExternalCliJsonCommand
+      .mockResolvedValueOnce({
+        localDaemon: "stopped",
+        connectedDaemon: "unreachable",
+        serverId: "",
+      })
+      .mockResolvedValueOnce({
+        localDaemon: "running",
+        connectedDaemon: "reachable",
+        serverId: "server-1",
+        pid: 4242,
+        listen: "127.0.0.1:6767",
+        hostname: "dev-host",
+        daemonVersion: "1.2.3",
+        desktopManaged: true,
+      });
+    mocks.spawnProcess.mockReturnValue(createMockChildProcess());
+    const handlers = createDaemonCommandHandlers();
+
+    const [prestartResult, rendererResult] = await Promise.all([
+      prestartDesktopDaemon(),
+      handlers.start_desktop_daemon(),
+    ]);
+
+    expect(prestartResult).toBeUndefined();
+    expect(rendererResult).toMatchObject({
+      status: "running",
+      serverId: "server-1",
+      listen: "127.0.0.1:6767",
+    });
+    expect(mocks.spawnProcess).toHaveBeenCalledTimes(1);
+    expect(mocks.runExternalCliJsonCommand).toHaveBeenCalledTimes(2);
   });
 
   it("passes stale lock reclaim only after a live desktop daemon is confirmed unresponsive", async () => {

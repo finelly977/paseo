@@ -1728,6 +1728,16 @@ export const ru: TranslationResources = {
         description: "Строки, хранящиеся во встроенном буфере терминала.",
         accessibilityLabel: "Линии прокрутки Terminal",
       },
+      conversationHistoryLoadCount: {
+        label: "Диалогов при открытии",
+        description: "Число последних диалогов, загружаемых при открытии сессии",
+        accessibilityLabel: "Диалогов для одной сессии",
+      },
+      totalConversationHistoryLimit: {
+        label: "Лимит памяти истории",
+        description: "Максимум диалогов в памяти для всех открытых сессий",
+        accessibilityLabel: "Общий лимит памяти истории",
+      },
       autoExpandReasoning: {
         label: "Всегда разворачивать размышления",
         description:

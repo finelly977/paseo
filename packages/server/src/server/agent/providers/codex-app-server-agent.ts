@@ -80,6 +80,12 @@ import {
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
 import {
+  CODEX_MODEL_CAPACITY_MESSAGE,
+  isCodexModelCapacityMessage,
+  planCodexCapacityRetry,
+  type CodexCapacityRetryRequest,
+} from "./codex/capacity-retry.js";
+import {
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
   type ProviderImageOutput,
@@ -3318,6 +3324,13 @@ export class CodexAppServerAgentSession implements AgentSession {
   private nextTurnOrdinal = 0;
   private activeForegroundTurnId: string | null = null;
   private activeClientMessageId: string | null = null;
+  private activeCodexUserMessageId: string | null = null;
+  private activeTurnRequest: CodexCapacityRetryRequest<CodexPromptInput> | null = null;
+  private capacityRetryInFlight = false;
+  private suppressNextRetriedUserMessage = false;
+  private currentTurnAssistantMessages = new Map<string, string>();
+  private capacityCandidateAssistantIds = new Set<string>();
+  private currentTurnHasSubstantiveTimelineOutput = false;
   private cachedRuntimeInfo: AgentRuntimeInfo | null = null;
   private serviceTier: "fast" | null = null;
   private planModeEnabled = false;
@@ -4070,31 +4083,48 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.ensureThread();
     }
 
-    const turnStart = await this.buildTurnStartParams(effectivePrompt, options);
-
     const turnId = this.createTurnId();
     this.activeForegroundTurnId = turnId;
     this.activeClientMessageId = options?.clientMessageId ?? null;
+    this.activeCodexUserMessageId = null;
+    const activeTurnRequest: CodexCapacityRetryRequest<CodexPromptInput> = {
+      prompt: effectivePrompt,
+      ...(options ? { options } : {}),
+    };
+    this.activeTurnRequest = activeTurnRequest;
     this.currentTurnId = null;
 
     try {
-      this.logTurnStartSummary({
-        turnId,
-        thinkingOptionId: turnStart.thinkingOptionId,
-        approvalPolicy: turnStart.approvalPolicy,
-        sandboxPolicyType: turnStart.sandboxPolicyType,
-        hasOutputSchema: turnStart.hasOutputSchema,
-        hasDeveloperInstructions: turnStart.hasDeveloperInstructions,
-        hasCodexConfig: turnStart.hasCodexConfig,
-      });
-      await this.client.request("turn/start", turnStart.params, TURN_START_TIMEOUT_MS);
+      await this.requestCodexTurn(activeTurnRequest, turnId);
     } catch (error) {
       this.activeForegroundTurnId = null;
       this.activeClientMessageId = null;
+      this.activeCodexUserMessageId = null;
+      this.activeTurnRequest = null;
       throw error;
     }
 
     return { turnId };
+  }
+
+  private async requestCodexTurn(
+    request: CodexCapacityRetryRequest<CodexPromptInput>,
+    logicalTurnId: string,
+  ): Promise<void> {
+    if (!this.client) {
+      throw new Error("Codex client is not initialized");
+    }
+    const turnStart = await this.buildTurnStartParams(request.prompt, request.options);
+    this.logTurnStartSummary({
+      turnId: logicalTurnId,
+      thinkingOptionId: turnStart.thinkingOptionId,
+      approvalPolicy: turnStart.approvalPolicy,
+      sandboxPolicyType: turnStart.sandboxPolicyType,
+      hasOutputSchema: turnStart.hasOutputSchema,
+      hasDeveloperInstructions: turnStart.hasDeveloperInstructions,
+      hasCodexConfig: turnStart.hasCodexConfig,
+    });
+    await this.client.request("turn/start", turnStart.params, TURN_START_TIMEOUT_MS);
   }
 
   private rememberCodexUserMessageTurn(messageId: string | null | undefined): boolean {
@@ -4499,6 +4529,11 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.subscribers.clear();
     this.activeForegroundTurnId = null;
     this.activeClientMessageId = null;
+    this.activeCodexUserMessageId = null;
+    this.activeTurnRequest = null;
+    this.capacityRetryInFlight = false;
+    this.suppressNextRetriedUserMessage = false;
+    this.resetTurnTrackingState();
     if (this.client) {
       await this.client.dispose();
     }
@@ -4815,7 +4850,32 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.persistedProviderSubagentEvents.push(event);
       return;
     }
+    if (
+      this.activeForegroundTurnId &&
+      event.type === "timeline" &&
+      this.isSubstantiveCurrentTurnTimelineItem(event.item)
+    ) {
+      this.currentTurnHasSubstantiveTimelineOutput = true;
+    }
     this.notifySubscribers(event);
+  }
+
+  private isSubstantiveCurrentTurnTimelineItem(item: AgentTimelineItem): boolean {
+    switch (item.type) {
+      case "user_message":
+        return false;
+      case "assistant_message":
+        return item.text.trim().length > 0 && !isCodexModelCapacityMessage(item.text);
+      case "reasoning":
+        return item.text.trim().length > 0;
+      case "todo":
+        return item.items.length > 0;
+      case "error":
+        return item.message.trim().length > 0;
+      case "tool_call":
+      case "compaction":
+        return true;
+    }
   }
 
   private notifySubscribers(event: AgentStreamEvent): void {
@@ -5428,42 +5488,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     routedSubAgentCallId: string | null = null,
   ): void {
     if (parsed.kind === "agent_message_delta") {
-      const prev = this.pendingAgentMessages.get(parsed.itemId) ?? "";
-      const text = prev + parsed.delta;
-      this.pendingAgentMessages.set(parsed.itemId, text);
-      const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
-      if (subAgentCallId) {
-        if (parsed.threadId) {
-          this.emitProviderSubagentTimeline(parsed.threadId, {
-            type: "assistant_message",
-            messageId: parsed.itemId,
-            text: parsed.delta,
-          });
-        }
-        this.upsertSubAgentChildItem(subAgentCallId, parsed.itemId, {
-          type: "assistant_message",
-          messageId: parsed.itemId,
-          text,
-        });
-        this.emitSubAgentActivityUpdate(subAgentCallId, "running");
-        return;
-      }
-      const isFirstDeltaForItem = prev.length === 0;
-      this.emitEvent({
-        type: "timeline",
-        provider: CODEX_PROVIDER,
-        item: {
-          type: "assistant_message",
-          messageId: parsed.itemId,
-          text:
-            isFirstDeltaForItem && this.pendingAssistantMessageBoundary
-              ? `${ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN}${parsed.delta}`
-              : parsed.delta,
-        },
-      });
-      if (isFirstDeltaForItem) {
-        this.pendingAssistantMessageBoundary = false;
-      }
+      this.handleAgentMessageDelta(parsed);
       return;
     }
     if (parsed.kind === "reasoning_delta") {
@@ -5486,6 +5511,64 @@ export class CodexAppServerAgentSession implements AgentSession {
       : this.pendingFileChangeOutputDeltas;
     if (outputDeltas) {
       this.appendOutputDeltaChunk(outputDeltas, parsed.itemId, parsed.delta);
+    }
+  }
+
+  private handleAgentMessageDelta(
+    parsed: Extract<CodexDeltaNotification, { kind: "agent_message_delta" }>,
+  ): void {
+    const previousText = this.pendingAgentMessages.get(parsed.itemId) ?? "";
+    const text = previousText + parsed.delta;
+    this.pendingAgentMessages.set(parsed.itemId, text);
+    const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
+    if (subAgentCallId) {
+      if (parsed.threadId) {
+        this.emitProviderSubagentTimeline(parsed.threadId, {
+          type: "assistant_message",
+          messageId: parsed.itemId,
+          text: parsed.delta,
+        });
+      }
+      this.upsertSubAgentChildItem(subAgentCallId, parsed.itemId, {
+        type: "assistant_message",
+        messageId: parsed.itemId,
+        text,
+      });
+      this.emitSubAgentActivityUpdate(subAgentCallId, "running");
+      return;
+    }
+
+    this.currentTurnAssistantMessages.set(parsed.itemId, text);
+    const isFirstDeltaForItem = previousText.length === 0;
+    let isFirstVisibleDeltaForItem = isFirstDeltaForItem;
+    if (isFirstDeltaForItem) {
+      this.capacityCandidateAssistantIds.add(parsed.itemId);
+    }
+    if (this.capacityCandidateAssistantIds.has(parsed.itemId)) {
+      if (CODEX_MODEL_CAPACITY_MESSAGE.startsWith(text.trimEnd())) {
+        return;
+      }
+      this.capacityCandidateAssistantIds.delete(parsed.itemId);
+      isFirstVisibleDeltaForItem = true;
+    }
+
+    let visibleText = parsed.delta;
+    if (isFirstVisibleDeltaForItem) {
+      visibleText = this.pendingAssistantMessageBoundary
+        ? `${ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN}${text}`
+        : text;
+    }
+    this.emitEvent({
+      type: "timeline",
+      provider: CODEX_PROVIDER,
+      item: {
+        type: "assistant_message",
+        messageId: parsed.itemId,
+        text: visibleText,
+      },
+    });
+    if (isFirstVisibleDeltaForItem) {
+      this.pendingAssistantMessageBoundary = false;
     }
   }
 
@@ -5527,6 +5610,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.emitSubAgentActivityUpdate(subAgentCallId, status);
       return;
     }
+    if (parsed.status === "failed" && this.tryRetryCapacityLimitedTurn(parsed)) {
+      return;
+    }
     if (parsed.status === "failed") {
       this.emitEvent({
         type: "turn_failed",
@@ -5547,8 +5633,102 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     this.activeForegroundTurnId = null;
     this.activeClientMessageId = null;
+    this.activeCodexUserMessageId = null;
+    this.activeTurnRequest = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.resetTurnTrackingState();
+  }
+
+  private tryRetryCapacityLimitedTurn(
+    parsed: Extract<ParsedCodexNotification, { kind: "turn_completed" }>,
+  ): boolean {
+    const capacityFailure =
+      isCodexModelCapacityMessage(parsed.errorMessage) ||
+      [...this.currentTurnAssistantMessages.values()].some(isCodexModelCapacityMessage);
+    if (!capacityFailure) {
+      return false;
+    }
+    if (this.capacityRetryInFlight) {
+      return true;
+    }
+    if (!this.activeTurnRequest || !this.activeForegroundTurnId) {
+      return false;
+    }
+
+    const retryPlan: {
+      request: CodexCapacityRetryRequest<CodexPromptInput>;
+      rollback: boolean;
+    } = planCodexCapacityRetry({
+      request: this.activeTurnRequest,
+      assistantMessages: this.currentTurnAssistantMessages.values(),
+      hasSubstantiveTimelineOutput: this.currentTurnHasSubstantiveTimelineOutput,
+    });
+    const logicalTurnId = this.activeForegroundTurnId;
+    const rollbackMessageId = this.activeCodexUserMessageId;
+    this.capacityRetryInFlight = true;
+    void this.retryCapacityLimitedTurn({
+      retryPlan,
+      logicalTurnId,
+      rollbackMessageId,
+    });
+    return true;
+  }
+
+  private async retryCapacityLimitedTurn(input: {
+    retryPlan: {
+      request: CodexCapacityRetryRequest<CodexPromptInput>;
+      rollback: boolean;
+    };
+    logicalTurnId: string;
+    rollbackMessageId: string | null;
+  }): Promise<void> {
+    try {
+      if (input.retryPlan.rollback) {
+        if (!input.rollbackMessageId) {
+          throw new Error("Codex 容量错误恢复时找不到需要重发的用户消息");
+        }
+        await this.revertConversation({ messageId: input.rollbackMessageId });
+        this.persistedHistory = [];
+        this.historyPending = false;
+        this.suppressNextRetriedUserMessage = true;
+      }
+
+      this.activeTurnRequest = input.retryPlan.request;
+      this.activeClientMessageId = null;
+      this.activeCodexUserMessageId = null;
+      this.currentTurnId = null;
+      this.resetTurnTrackingState();
+      this.logger.warn(
+        {
+          agentId: this.agentId,
+          threadId: this.currentThreadId,
+          logicalTurnId: input.logicalTurnId,
+          rollback: input.retryPlan.rollback,
+        },
+        "Codex 模型容量已满，正在自动恢复当前逻辑回合",
+      );
+      await this.requestCodexTurn(input.retryPlan.request, input.logicalTurnId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        { err: error, agentId: this.agentId, threadId: this.currentThreadId },
+        "Codex 模型容量错误自动恢复失败",
+      );
+      this.emitEvent({
+        type: "turn_failed",
+        provider: CODEX_PROVIDER,
+        error: `Codex 模型容量错误自动恢复失败：${message}`,
+      });
+      this.activeForegroundTurnId = null;
+      this.activeClientMessageId = null;
+      this.activeCodexUserMessageId = null;
+      this.activeTurnRequest = null;
+      this.suppressNextRetriedUserMessage = false;
+      this.pendingSubAgentNotificationsByThreadId.clear();
+      this.resetTurnTrackingState();
+    } finally {
+      this.capacityRetryInFlight = false;
+    }
   }
 
   private resetTurnTrackingState(): void {
@@ -5559,6 +5739,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.emittedExecCommandStartedCallIds.clear();
     this.emittedExecCommandCompletedCallIds.clear();
     this.pendingAgentMessages.clear();
+    this.currentTurnAssistantMessages.clear();
+    this.capacityCandidateAssistantIds.clear();
+    this.currentTurnHasSubstantiveTimelineOutput = false;
     this.pendingReasoning.clear();
     this.pendingCommandOutputDeltas.clear();
     this.pendingFileChangeOutputDeltas.clear();
@@ -5870,15 +6053,13 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.replayPendingSubAgentNotifications(registeredChildThreadIds);
       return;
     }
-    if (this.consumeStreamedTextCompletion(timelineItem, itemId)) {
-      if (timelineItem.type === "assistant_message") {
-        this.pendingAssistantMessageBoundary = true;
-      }
-      if (itemId) {
-        this.emittedItemCompletedIds.add(itemId);
-        this.emittedItemStartedIds.delete(itemId);
-      }
-      this.replayPendingSubAgentNotifications(registeredChildThreadIds);
+    if (
+      this.handleCompletedRootAssistantMessage({
+        timelineItem,
+        itemId,
+        registeredChildThreadIds,
+      })
+    ) {
       return;
     }
     this.applyBufferedDeltaTextToTimelineItem(timelineItem, itemId);
@@ -5910,6 +6091,36 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.replayPendingSubAgentNotifications(registeredChildThreadIds);
   }
 
+  private handleCompletedRootAssistantMessage(input: {
+    timelineItem: AgentTimelineItem;
+    itemId: string | undefined;
+    registeredChildThreadIds: readonly string[];
+  }): boolean {
+    if (input.timelineItem.type !== "assistant_message") {
+      return false;
+    }
+    const { timelineItem, itemId, registeredChildThreadIds } = input;
+    this.currentTurnAssistantMessages.set(
+      itemId ?? timelineItem.messageId ?? "completed",
+      timelineItem.text,
+    );
+    const isCapacityMessage = isCodexModelCapacityMessage(timelineItem.text);
+    if (isCapacityMessage) {
+      this.consumeStreamedTextCompletion(timelineItem, itemId);
+    } else if (!this.consumeStreamedTextCompletion(timelineItem, itemId)) {
+      return false;
+    } else {
+      this.pendingAssistantMessageBoundary = true;
+    }
+
+    if (itemId) {
+      this.emittedItemCompletedIds.add(itemId);
+      this.emittedItemStartedIds.delete(itemId);
+    }
+    this.replayPendingSubAgentNotifications(registeredChildThreadIds);
+    return true;
+  }
+
   private consumeStreamedTextCompletion(
     timelineItem: AgentTimelineItem,
     itemId: string | null | undefined,
@@ -5920,6 +6131,26 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (timelineItem.type === "assistant_message" && this.pendingAgentMessages.has(itemId)) {
       const streamedText = this.pendingAgentMessages.get(itemId) ?? "";
       this.pendingAgentMessages.delete(itemId);
+      const wasCapacityCandidate = this.capacityCandidateAssistantIds.delete(itemId);
+      if (isCodexModelCapacityMessage(timelineItem.text || streamedText)) {
+        return true;
+      }
+      if (wasCapacityCandidate) {
+        const text = timelineItem.text || streamedText;
+        this.emitEvent({
+          type: "timeline",
+          provider: CODEX_PROVIDER,
+          item: {
+            type: "assistant_message",
+            messageId: timelineItem.messageId ?? itemId,
+            text: this.pendingAssistantMessageBoundary
+              ? `${ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN}${text}`
+              : text,
+          },
+        });
+        this.pendingAssistantMessageBoundary = false;
+        return true;
+      }
       this.emitMissingFinalTextSuffix(timelineItem, streamedText);
       return true;
     }
@@ -6087,10 +6318,15 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (!this.rememberCodexUserMessageTurn(timelineItem.messageId)) {
       return;
     }
+    this.activeCodexUserMessageId = timelineItem.messageId ?? itemId ?? null;
     const item = this.activeClientMessageId
       ? { ...timelineItem, clientMessageId: this.activeClientMessageId }
       : timelineItem;
     this.activeClientMessageId = null;
+    if (this.suppressNextRetriedUserMessage) {
+      this.suppressNextRetriedUserMessage = false;
+      return;
+    }
     this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item });
   }
 

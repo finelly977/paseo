@@ -16,6 +16,10 @@ import {
   type SettingsDeps,
 } from "./storage";
 import { createFakeDesktopBridge, createInMemoryKeyValueStorage } from "./fakes";
+import {
+  DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+} from "@/timeline/conversation-history-policy";
 
 const LEGACY_SETTINGS_KEY = "@paseo:settings";
 
@@ -93,6 +97,34 @@ describe("loadAppSettingsFromStorage", () => {
     const result = await loadAppSettingsFromStorage(deps);
 
     expect(result.workspaceTitleSource).toBe("branch");
+  });
+
+  it("loads and clamps conversation history limits", async () => {
+    const configured = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          conversationHistoryLoadCount: 75,
+          totalConversationHistoryLimit: 900,
+        }),
+      }),
+    });
+    await expect(loadAppSettingsFromStorage(configured)).resolves.toMatchObject({
+      conversationHistoryLoadCount: 75,
+      totalConversationHistoryLimit: 900,
+    });
+
+    const invalid = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          conversationHistoryLoadCount: 0,
+          totalConversationHistoryLimit: "无效",
+        }),
+      }),
+    });
+    await expect(loadAppSettingsFromStorage(invalid)).resolves.toMatchObject({
+      conversationHistoryLoadCount: 1,
+      totalConversationHistoryLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+    });
   });
 
   it("drops an unknown workspace title source back to title", async () => {
@@ -331,6 +363,8 @@ describe("appearance settings", () => {
     expect(result.syntaxTheme).toBe("one");
     expect(result.toolCallDetailLevel).toBe("detailed");
     expect(result.messageParagraphSpacing).toBe(DEFAULT_MESSAGE_PARAGRAPH_SPACING);
+    expect(result.conversationHistoryLoadCount).toBe(DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT);
+    expect(result.totalConversationHistoryLimit).toBe(DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT);
   });
 
   it("migrates the enabled compact tool call preference to overview", async () => {

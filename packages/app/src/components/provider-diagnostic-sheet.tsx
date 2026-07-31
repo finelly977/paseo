@@ -582,7 +582,13 @@ export function ProviderDiagnosticSheet({
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const isCompact = useIsCompactFormFactor();
-  const { entries: snapshotEntries, refresh, isRefreshing } = useProvidersSnapshot(serverId);
+  const {
+    entries: snapshotEntries,
+    refresh,
+    isRefreshing,
+  } = useProvidersSnapshot(serverId, {
+    enabled: visible,
+  });
   const { config, patchConfig } = useDaemonConfig(serverId);
   const [query, setQuery] = useState("");
   const [addSheetOpen, setAddSheetOpen] = useState(false);

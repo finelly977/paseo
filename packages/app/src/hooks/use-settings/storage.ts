@@ -3,6 +3,14 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { DesktopSettings } from "@/desktop/settings/desktop-settings";
 import { parseAppLanguage, type AppLanguage } from "@/i18n/locales";
 import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
+import {
+  DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+  MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+  MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
+} from "@/timeline/conversation-history-policy";
 
 export const APP_SETTINGS_KEY = "@paseo:app-settings";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
@@ -48,6 +56,8 @@ export interface AppSettings {
   toolCallDetailLevel: ToolCallDetailLevel;
   vimKeybindings: boolean;
   messageParagraphSpacing: number; // 每个消息段落下方的像素间距，默认 8
+  conversationHistoryLoadCount: number;
+  totalConversationHistoryLimit: number;
 }
 
 export interface Settings extends AppSettings {
@@ -73,6 +83,8 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   toolCallDetailLevel: "detailed",
   vimKeybindings: false,
   messageParagraphSpacing: DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  conversationHistoryLoadCount: DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  totalConversationHistoryLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
 };
 
 export const DEFAULT_APP_SETTINGS: Settings = {
@@ -193,11 +205,16 @@ function parseToolCallDetailLevel(stored: StoredAppSettings): ToolCallDetailLeve
   return null;
 }
 
-type NumericAppearanceSetting = "uiFontSize" | "codeFontSize" | "messageParagraphSpacing";
+type NumericAppSetting =
+  | "uiFontSize"
+  | "codeFontSize"
+  | "messageParagraphSpacing"
+  | "conversationHistoryLoadCount"
+  | "totalConversationHistoryLimit";
 
-function copyClampedAppearanceSetting(
+function copyClampedNumericSetting(
   result: Partial<AppSettings>,
-  key: NumericAppearanceSetting,
+  key: NumericAppSetting,
   value: unknown,
   bounds: { min: number; max: number },
 ): void {
@@ -237,18 +254,36 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   if (monoFontFamily !== null) {
     result.monoFontFamily = monoFontFamily;
   }
-  copyClampedAppearanceSetting(result, "uiFontSize", stored.uiFontSize, {
+  copyClampedNumericSetting(result, "uiFontSize", stored.uiFontSize, {
     min: MIN_UI_FONT_SIZE,
     max: MAX_UI_FONT_SIZE,
   });
-  copyClampedAppearanceSetting(result, "codeFontSize", stored.codeFontSize, {
+  copyClampedNumericSetting(result, "codeFontSize", stored.codeFontSize, {
     min: MIN_CODE_FONT_SIZE,
     max: MAX_CODE_FONT_SIZE,
   });
-  copyClampedAppearanceSetting(result, "messageParagraphSpacing", stored.messageParagraphSpacing, {
+  copyClampedNumericSetting(result, "messageParagraphSpacing", stored.messageParagraphSpacing, {
     min: MIN_MESSAGE_PARAGRAPH_SPACING,
     max: MAX_MESSAGE_PARAGRAPH_SPACING,
   });
+  copyClampedNumericSetting(
+    result,
+    "conversationHistoryLoadCount",
+    stored.conversationHistoryLoadCount,
+    {
+      min: MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+      max: MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+    },
+  );
+  copyClampedNumericSetting(
+    result,
+    "totalConversationHistoryLimit",
+    stored.totalConversationHistoryLimit,
+    {
+      min: MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
+      max: MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+    },
+  );
   if (typeof stored.syntaxTheme === "string" && isSyntaxThemeId(stored.syntaxTheme)) {
     result.syntaxTheme = stored.syntaxTheme;
   }
@@ -296,6 +331,13 @@ export function parseTerminalScrollbackLines(value: unknown): number | null {
 }
 
 export function parseClampedFontSize(
+  value: unknown,
+  bounds: { min: number; max: number },
+): number | null {
+  return parseBoundedInteger(value, bounds);
+}
+
+export function parseBoundedInteger(
   value: unknown,
   bounds: { min: number; max: number },
 ): number | null {

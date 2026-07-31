@@ -14,6 +14,7 @@ export interface AgentTimelineCursorRange {
 export interface ProjectedTimelineTailFetchPlan {
   direction: "tail";
   limit: number;
+  conversationLimit?: number;
   projection: "projected";
 }
 
@@ -43,22 +44,24 @@ export type ProjectedTimelineForwardFetchPlan =
 export function planInitialAgentTimelineSync(input: {
   cursor: AgentTimelineCursorRange | undefined;
   hasAuthoritativeHistory: boolean;
+  conversationLimit?: number;
 }): ProjectedTimelineForwardFetchPlan {
   if (input.hasAuthoritativeHistory && input.cursor) {
     return planTimelineCatchUpAfter({ epoch: input.cursor.epoch, seq: input.cursor.endSeq });
   }
 
-  return planTimelineTailFetch();
+  return planTimelineTailFetch(input.conversationLimit);
 }
 
 export function planResumeTimelineSync(input: {
   cursor: AgentTimelineCursorRange | undefined;
+  conversationLimit?: number;
 }): ProjectedTimelineForwardFetchPlan {
   if (input.cursor) {
     return planTimelineCatchUpAfter({ epoch: input.cursor.epoch, seq: input.cursor.endSeq });
   }
 
-  return planTimelineTailFetch();
+  return planTimelineTailFetch(input.conversationLimit);
 }
 
 export function planTimelineCatchUpAfter(cursor: TimelineSyncCursor) {
@@ -70,10 +73,11 @@ export function planTimelineCatchUpAfter(cursor: TimelineSyncCursor) {
   } as const;
 }
 
-export function planTimelineTailFetch() {
+export function planTimelineTailFetch(conversationLimit?: number) {
   return {
     direction: "tail",
     limit: TIMELINE_FETCH_PAGE_SIZE,
+    ...(conversationLimit !== undefined ? { conversationLimit } : {}),
     projection: "projected",
   } as const;
 }

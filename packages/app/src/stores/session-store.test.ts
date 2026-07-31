@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
+import type { StreamItem } from "@/types/stream";
+import {
+  DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+} from "@/timeline/conversation-history-policy";
 
 import {
   normalizeWorkspaceDescriptor,
@@ -33,6 +38,103 @@ function createWorkspace(
 
 afterEach(() => {
   useSessionStore.getState().clearSession("test-server");
+  useSessionStore.getState().setConversationHistoryPolicy({
+    perConversationLoadCount: DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+    totalConversationLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  });
+});
+
+function conversationItems(prefix: string, count: number): StreamItem[] {
+  return Array.from({ length: count }, (_, index) => [
+    {
+      kind: "user_message" as const,
+      id: `${prefix}-用户-${index}`,
+      text: `${prefix} ${index}`,
+      timestamp: new Date(1_000 + index * 2),
+      timelineCursor: { epoch: "epoch", seq: index * 2 + 1 },
+    },
+    {
+      kind: "assistant_message" as const,
+      id: `${prefix}-助手-${index}`,
+      text: "完成",
+      timestamp: new Date(1_001 + index * 2),
+      timelineCursor: { epoch: "epoch", seq: index * 2 + 2 },
+    },
+  ]).flat();
+}
+
+describe("对话历史内存预算", () => {
+  it("优先保留当前会话并让被裁剪的旧会话下次重新加载", () => {
+    initializeTestSession();
+    const store = useSessionStore.getState();
+    store.setConversationHistoryPolicy({
+      perConversationLoadCount: 2,
+      totalConversationLimit: 3,
+    });
+    store.setFocusedAgentId("test-server", "旧会话");
+    store.setAgentStreamTail("test-server", new Map([["旧会话", conversationItems("旧", 2)]]));
+    store.setAgentTimelineCursor(
+      "test-server",
+      new Map([["旧会话", { epoch: "epoch", startSeq: 1, endSeq: 4 }]]),
+    );
+    store.setAgentAuthoritativeHistoryApplied("test-server", "旧会话", true);
+
+    store.setFocusedAgentId("test-server", "当前会话");
+    store.setAgentStreamTail("test-server", (previous) =>
+      new Map(previous).set("当前会话", conversationItems("当前", 2)),
+    );
+    store.enforceConversationHistoryMemory();
+
+    const session = useSessionStore.getState().sessions["test-server"];
+    expect(
+      session?.agentStreamTail.get("当前会话")?.filter((item) => item.kind === "user_message"),
+    ).toHaveLength(2);
+    expect(
+      session?.agentStreamTail.get("旧会话")?.filter((item) => item.kind === "user_message"),
+    ).toHaveLength(1);
+    expect(session?.agentAuthoritativeHistoryApplied.has("旧会话")).toBe(false);
+    expect(session?.agentTimelineCursor.has("旧会话")).toBe(false);
+    expect(session?.agentConversationIndex.has("旧会话")).toBe(false);
+  });
+
+  it("在正文和服务端游标都提交后同步更新裁剪起点", () => {
+    initializeTestSession();
+    const store = useSessionStore.getState();
+    store.setConversationHistoryPolicy({
+      perConversationLoadCount: 2,
+      totalConversationLimit: 1,
+    });
+    store.setFocusedAgentId("test-server", "当前会话");
+    store.setAgentStreamTail("test-server", new Map([["当前会话", conversationItems("当前", 2)]]));
+    store.setAgentTimelineCursor(
+      "test-server",
+      new Map([["当前会话", { epoch: "epoch", startSeq: 1, endSeq: 4 }]]),
+    );
+    store.enforceConversationHistoryMemory();
+
+    const session = useSessionStore.getState().sessions["test-server"];
+    expect(session?.agentStreamTail.get("当前会话")?.[0]?.id).toBe("当前-用户-1");
+    expect(session?.agentTimelineCursor.get("当前会话")).toEqual({
+      epoch: "epoch",
+      startSeq: 3,
+      endSeq: 4,
+    });
+  });
+
+  it("清空后台主机焦点时不改变当前会话的最近打开顺序", () => {
+    initializeTestSession();
+    useSessionStore.getState().initializeSession("后台主机", null as unknown as DaemonClient);
+    const store = useSessionStore.getState();
+
+    store.setFocusedAgentId("后台主机", "后台会话");
+    store.setFocusedAgentId("test-server", "当前会话");
+    const openedAtBefore = new Map(useSessionStore.getState().conversationHistoryOpenedAt);
+
+    store.setFocusedAgentId("后台主机", null);
+
+    expect(useSessionStore.getState().conversationHistoryOpenedAt).toEqual(openedAtBefore);
+    useSessionStore.getState().clearSession("后台主机");
+  });
 });
 
 function initializeTestSession(): void {

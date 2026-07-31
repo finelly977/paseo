@@ -1743,6 +1743,16 @@ export const fr: TranslationResources = {
         description: "Lignes conservées dans le tampon du terminal intégré",
         accessibilityLabel: "Lignes de défilementTerminal",
       },
+      conversationHistoryLoadCount: {
+        label: "Conversations chargées à l’ouverture",
+        description: "Tours récents chargés à l’ouverture d’une session existante",
+        accessibilityLabel: "Conversations chargées par session",
+      },
+      totalConversationHistoryLimit: {
+        label: "Limite mémoire de l’historique",
+        description: "Nombre maximal de tours gardés en mémoire pour les sessions ouvertes",
+        accessibilityLabel: "Limite mémoire totale de l’historique",
+      },
       autoExpandReasoning: {
         label: "Toujours afficher le raisonnement",
         description: "Afficher le raisonnement de l'agent entièrement développé par défaut",

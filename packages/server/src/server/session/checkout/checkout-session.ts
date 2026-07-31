@@ -67,6 +67,7 @@ import type { GitMetadataGenerator } from "./git-metadata-generator.js";
  */
 export interface CheckoutSessionHost {
   emit(msg: SessionOutboundMessage): void;
+  ensureWorkspaceGitObserver(cwd: string): Promise<void>;
   emitWorkspaceUpdateForCwd(cwd: string): Promise<void>;
   handleWorkspaceGitBranchSnapshot(cwd: string, branchName: string | null): void;
   renameCurrentBranch(
@@ -238,6 +239,7 @@ export class CheckoutSession {
         includeForge: false,
         reason: "checkout-status",
       });
+      await this.host.ensureWorkspaceGitObserver(resolvedCwd);
       this.host.emit({
         type: "checkout_status_response",
         payload: buildCheckoutStatusPayloadFromSnapshot({

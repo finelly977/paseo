@@ -30,6 +30,7 @@ import {
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
+  parseBoundedInteger,
   parseClampedFontSize,
   parseTerminalScrollbackLines,
   sanitizeFontFamily,
@@ -44,6 +45,14 @@ import {
   type SettingsDeps,
   type WorkspaceTitleSource,
 } from "./storage";
+export {
+  DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
+  DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+  MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+  MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
+} from "@/timeline/conversation-history-policy";
 
 export {
   APP_SETTINGS_KEY,
@@ -62,6 +71,7 @@ export {
   MIN_MESSAGE_PARAGRAPH_SPACING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
   parseClampedFontSize,
+  parseBoundedInteger,
   parseTerminalScrollbackLines,
   sanitizeFontFamily,
 };
@@ -104,7 +114,12 @@ export interface UseSettingsReturn {
 }
 
 type SettingsSelector<TSelected> = (settings: Settings) => TSelected;
-type NumericAppSetting = "uiFontSize" | "codeFontSize" | "messageParagraphSpacing";
+type NumericAppSetting =
+  | "uiFontSize"
+  | "codeFontSize"
+  | "messageParagraphSpacing"
+  | "conversationHistoryLoadCount"
+  | "totalConversationHistoryLimit";
 
 function copyDefinedNumericAppSetting(
   target: Partial<AppSettings>,
@@ -194,6 +209,8 @@ export function useSettings<TSelected>(
       copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "conversationHistoryLoadCount");
+      copyDefinedNumericAppSetting(appUpdates, updates, "totalConversationHistoryLimit");
       if (updates.syntaxTheme !== undefined) {
         appUpdates.syntaxTheme = updates.syntaxTheme;
       }

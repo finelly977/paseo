@@ -562,6 +562,7 @@ export interface FetchAgentTimelineOptions {
   direction?: FetchAgentTimelineDirection;
   cursor?: FetchAgentTimelineCursor;
   limit?: number;
+  conversationLimit?: number;
   projection?: FetchAgentTimelineProjection;
   requestId?: string;
   timeout?: number;
@@ -2682,6 +2683,9 @@ export class DaemonClient {
       ...(options.direction ? { direction: options.direction } : {}),
       ...(options.cursor ? { cursor: options.cursor } : {}),
       ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
+      ...(typeof options.conversationLimit === "number"
+        ? { conversationLimit: options.conversationLimit }
+        : {}),
       ...(options.projection ? { projection: options.projection } : {}),
     });
 
@@ -4347,6 +4351,7 @@ export class DaemonClient {
 
   async getProvidersSnapshot(options?: {
     cwd?: string;
+    warm?: boolean;
     requestId?: string;
   }): Promise<GetProvidersSnapshotPayload> {
     const payload = await this.sendCorrelatedSessionRequest({
@@ -4354,6 +4359,7 @@ export class DaemonClient {
       message: {
         type: "get_providers_snapshot_request",
         cwd: options?.cwd,
+        warm: options?.warm,
       },
       responseType: "get_providers_snapshot_response",
     });

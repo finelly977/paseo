@@ -1710,6 +1710,16 @@ export const ja: TranslationResources = {
         description: "組み込みターミナルバッファに保持する行数",
         accessibilityLabel: "ターミナルスクロールバック行数",
       },
+      conversationHistoryLoadCount: {
+        label: "開くときに読み込む会話数",
+        description: "既存セッションを開くときに読み込む最近の会話ターン数",
+        accessibilityLabel: "セッションごとに読み込む会話数",
+      },
+      totalConversationHistoryLimit: {
+        label: "会話履歴のメモリ上限",
+        description: "開いたセッション全体でメモリに保持する会話ターンの最大数",
+        accessibilityLabel: "会話履歴の合計メモリ上限",
+      },
       autoExpandReasoning: {
         label: "常に思考プロセスを展開",
         description: "デフォルトでAIのエージェント思考・推論ブロックを完全に展開して表示します",

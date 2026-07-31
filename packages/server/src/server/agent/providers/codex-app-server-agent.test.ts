@@ -39,6 +39,7 @@ import {
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../test-utils/class-mocks.js";
 import { buildProviderRegistry } from "../provider-registry.js";
+import { CODEX_MODEL_CAPACITY_MESSAGE } from "./codex/capacity-retry.js";
 
 interface CollaborationModeRecord {
   name: string;
@@ -168,6 +169,26 @@ function emitCodexUserMessage(
       },
     })}\n`,
   );
+}
+
+function emitCodexCapacityFailure(appServer: FakeCodexAppServer): void {
+  appServer.child.stdout.write(
+    `${JSON.stringify({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          status: "failed",
+          error: { message: CODEX_MODEL_CAPACITY_MESSAGE },
+        },
+      },
+    })}\n`,
+  );
+}
+
+function countVisibleUserMessages(events: readonly AgentStreamEvent[]): number {
+  return events.filter((event) => event.type === "timeline" && event.item.type === "user_message")
+    .length;
 }
 
 type CapturedFakeCodexRecord = Record<string, unknown>;
@@ -1218,6 +1239,122 @@ describe("Codex app-server provider", () => {
       },
     });
     appServer.completeTurn();
+    await session.close();
+  });
+
+  test("容量错误前已有有效答复时自动发送继续且不结束当前逻辑回合", async () => {
+    const turnStarts: Record<string, unknown>[] = [];
+    const appServer = createFakeCodexAppServer({
+      "turn/start": (params) => {
+        turnStarts.push(params as Record<string, unknown>);
+        return {};
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    await session.startTurn("完成任务");
+    emitCodexUserMessage(appServer, { id: "original-user", text: "完成任务" });
+    appServer.says({ threadId: "thread-1", itemId: "partial-answer", text: "已经完成第一步" });
+    emitCodexCapacityFailure(appServer);
+
+    await vi.waitFor(() => expect(turnStarts).toHaveLength(2));
+    expect(turnStarts[1]).toMatchObject({ input: [{ type: "text", text: "继续" }] });
+    expect(appServer.recordedRollbacks).toEqual([]);
+    expect(events.some((event) => event.type === "turn_failed")).toBe(false);
+
+    appServer.completeTurn();
+    unsubscribe();
+    await session.close();
+  });
+
+  test("容量错误前已经执行工具时发送继续而不回退重放副作用", async () => {
+    const turnStarts: Record<string, unknown>[] = [];
+    const appServer = createFakeCodexAppServer({
+      "turn/start": (params) => {
+        turnStarts.push(params as Record<string, unknown>);
+        return {};
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    await session.startTurn("检查项目");
+    emitCodexUserMessage(appServer, { id: "tool-progress-user", text: "检查项目" });
+    const toolCall = waitForTimelineToolCall(session, "capacity-command");
+    appServer.completesCommand({
+      threadId: "thread-1",
+      callId: "capacity-command",
+      command: "git status",
+      output: "工作区有修改",
+    });
+    await toolCall;
+    emitCodexCapacityFailure(appServer);
+
+    await vi.waitFor(() => expect(turnStarts).toHaveLength(2));
+    expect(turnStarts[1]).toMatchObject({ input: [{ type: "text", text: "继续" }] });
+    expect(appServer.recordedRollbacks).toEqual([]);
+
+    appServer.completeTurn();
+    await session.close();
+  });
+
+  test("只有容量提示时回退原回合并重发用户消息且不重复显示", async () => {
+    const turnStarts: Record<string, unknown>[] = [];
+    const appServer = createFakeCodexAppServer({
+      "turn/start": (params) => {
+        turnStarts.push(params as Record<string, unknown>);
+        return {};
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    await session.startTurn("重新尝试任务");
+    emitCodexUserMessage(appServer, { id: "capacity-user", text: "重新尝试任务" });
+    appServer.says({
+      threadId: "thread-1",
+      itemId: "capacity-answer",
+      text: CODEX_MODEL_CAPACITY_MESSAGE,
+      chunks: ["Selected model is at capacity. ", "Please try a different model."],
+    });
+    emitCodexCapacityFailure(appServer);
+
+    await vi.waitFor(() => expect(turnStarts).toHaveLength(2));
+    expect(appServer.recordedRollbacks).toEqual([{ threadId: "thread-1", numTurns: 1 }]);
+    expect(turnStarts[1]).toMatchObject({
+      input: [{ type: "text", text: "重新尝试任务" }],
+    });
+    emitCodexUserMessage(appServer, { id: "capacity-user-retry", text: "重新尝试任务" });
+    await vi.waitFor(() => expect(countVisibleUserMessages(events)).toBe(1));
+    expect(
+      events.some(
+        (event) =>
+          event.type === "timeline" &&
+          event.item.type === "assistant_message" &&
+          event.item.text.includes(CODEX_MODEL_CAPACITY_MESSAGE),
+      ),
+    ).toBe(false);
+    expect(events.some((event) => event.type === "turn_failed")).toBe(false);
+
+    appServer.completeTurn();
+    unsubscribe();
     await session.close();
   });
 

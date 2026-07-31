@@ -21,11 +21,13 @@ export function providersSnapshotQueryKey(serverId: string | null, cwd?: string 
 export function providersSnapshotRequestOptions(input: {
   cwd?: string | null;
   providers?: AgentProvider[];
+  warm?: boolean;
 }) {
   const normalizedCwd = normalizeProvidersSnapshotCwd(input.cwd);
   return {
     ...(normalizedCwd ? { cwd: normalizedCwd } : {}),
     ...(input.providers ? { providers: input.providers } : {}),
+    ...(input.warm === false ? { warm: false } : {}),
   };
 }
 

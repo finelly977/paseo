@@ -1303,6 +1303,7 @@ export const ListAvailableProvidersRequestMessageSchema = z.object({
 export const GetProvidersSnapshotRequestMessageSchema = z.object({
   type: z.literal("get_providers_snapshot_request"),
   cwd: z.string().optional(),
+  warm: z.boolean().optional(),
   requestId: z.string(),
 });
 
@@ -1385,6 +1386,9 @@ export const FetchAgentTimelineRequestMessageSchema = z.object({
   cursor: AgentTimelineCursorSchema.optional(),
   // 0 means "all matching rows for this query window".
   limit: z.number().int().nonnegative().optional(),
+  // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
+  // 仅用于 tail 请求，按用户消息边界返回最近的完整对话轮次。
+  conversationLimit: z.number().int().positive().optional(),
   // Default should be projected for app timeline loading.
   projection: z.enum(["projected", "canonical"]).optional(),
 });
@@ -2837,6 +2841,8 @@ export const ServerInfoStatusPayloadSchema = z
         stableProjectIdentity: z.boolean().optional(),
         // COMPAT(agentRemoval): v0.2.0-beta.4 新增，2027-01-25 后移除能力门控。
         agentRemoval: z.boolean().optional(),
+        // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
+        conversationHistoryLimit: z.boolean().optional(),
       })
       .optional(),
   })

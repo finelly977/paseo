@@ -95,7 +95,8 @@
 - 指针经过索引时，邻近刻度按距离形成平滑跟随的波峰并突出最近一项；悬停或聚焦刻度时显示用户消息标题和助手回复摘要，系统要求减少动态效果时停用过渡动画。
 - 历史较少时刻度使用固定 8 像素间距紧凑居中，不随会话长度均摊到整条轨道；完整索引超过可用高度时自动压缩刻度间距，但不抽样或丢弃任何一轮。当前所在刻度通过颜色和波峰长度区分，不靠加高刻度。
 - 点击刻度跳转后立即收起悬停浮层并释放焦点，指针停在索引上也不会保持展开状态。
-- 点击尚未加载的较早对话时按 40 条一页加载到目标位置后跳转，已加载消息直接定位。
+- 设置页可以配置每次打开老会话加载的最近对话轮数，默认 50 轮；服务端按用户消息边界返回完整轮次，不再把工具调用等时间线记录误算成对话数。继续向上翻页或点击尚未加载的索引时仍按 40 条投影时间线一页补载到目标位置。
+- 设置页可以配置所有已打开会话正文在客户端内存中的对话轮数总上限，默认 500 轮；达到上限后优先保留当前会话，再按最近打开时间从新到旧分配预算，被裁剪的旧会话下次打开时重新按单会话配置加载。轻量完整索引不参与正文内存裁剪，仍显示所有轮次。
 - 长距离跳转会持续校正虚拟列表估算误差，直到目标消息真正位于视口中央，一次点击即可跨越较大的历史跨度。
 - 上滑加载旧历史时，加载指示器不占用消息布局；虚拟行在提交阶段同步测量，已收起的中间过程从首帧就按隐藏内容或收起入口的实际高度估算，不再先按完整内容绘制后逐行缩短。分页从一轮对话中间开始时暂不收起该轮，直到用户消息边界加载完成，避免同一轮随着多次分页反复改变高度；重新测量只补偿视口上方的高度变化。
 
@@ -106,7 +107,11 @@
 - `packages/app/src/agent-stream/strategy-web.tsx`
 - `packages/app/src/agent-stream/view.tsx`
 - `packages/app/src/agent-stream/web-virtualization.ts`
+- `packages/app/src/timeline/conversation-history-policy.ts`
+- `packages/app/src/hooks/use-settings/storage.ts`
+- `packages/app/src/stores/session-store.ts`
 - `packages/server/src/server/agent/agent-conversation-index.ts`
+- `packages/server/src/server/agent/timeline-projection.ts`
 - `packages/protocol/src/client-capabilities.ts`
 - `packages/protocol/src/messages.ts`
 
@@ -163,6 +168,7 @@
 - Codex 助手消息末尾供 Codex App 使用的 Git 界面指令不会作为普通正文显示；Markdown 代码块内用于说明的相同文本仍会保留。
 - Codex 查看图片产生的纯图片工具结果默认折叠为紧凑入口，用户可以按需展开或再次收起；用户消息附件以及包含正文的普通助手图片不受影响。
 - Codex 手动压缩上下文时会可靠地把“压缩中”更新为“已完成”；此前没有配对项目的旧完成通知不会误吞下一次压缩的完成事件，压缩完成后不再持续显示加载动画。
+- Codex 因所选模型容量已满而结束回合时不会立即按失败结束：已经产生有效答复时自动追加“继续”，只有容量提示而没有有效答复时原地回退最新原生回合并重发原用户消息。自动恢复期间不显示容量提示、不重复显示重发的用户消息，也不会触发失败通知；只有自动恢复自身失败后才按真实错误结束。
 - 重新进入 Codex 老会话时，用户消息中的图片包装路径不会再显示成正文；图片会作为结构化历史附件按需恢复，并可在回退后重新发送。
 - Codex 权限选择器支持“自定义 (config.toml)”模式，实际读取并应用用户配置中的审批策略、审批人、沙盒类型、额外可写目录和工作区网络权限；配置结构非法时明确报错，不会静默退回默认权限。
 - 侧边栏中只有一个根智能体的工作区提供“重新加载”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话。
@@ -173,6 +179,7 @@
 主要涉及：
 
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/server/src/server/agent/providers/codex/capacity-retry.ts`
 - `packages/protocol/src/provider-manifest.ts`
 - `packages/app/src/agent-stream/provider-image-message.tsx`
 - `packages/app/src/agent-stream/provider-image-message-model.ts`
@@ -291,3 +298,23 @@
 - `packages/server/src/server/session/checkout/checkout-session.ts`
 - `packages/server/src/server/workspace-git-service.ts`
 - `packages/app/src/i18n/resources/`
+
+### 17. 启动阶段按需初始化与并发控制
+
+- 应用连接守护进程和进入工作区时不再立即启动所有智能体 CLI 做可用性与模型探测；隐藏的新建智能体表单和已挂载会话控制栏同样不会在后台触发探测，避免与首屏会话、时间线和 Git 状态加载争抢进程、磁盘和事件循环资源。
+- 新建智能体、会话导入、提供方设置等确实依赖完整提供方信息的界面仍在打开时加载；老会话的模型选择器改为在用户展开时只刷新当前智能体对应的提供方，不为未使用的提供方启动进程。
+- 守护进程对所有工作区和全局设置范围共享同一个提供方探测并发限制，最多同时执行两个探测；不同范围同时请求也不会突破限制，各提供方完成后仍立即发布自己的最新状态。
+- Electron 主进程完成单实例判断和 IPC 注册后，会在创建首个窗口的同时预启动内置守护进程；渲染进程随后发起的启动请求会复用同一个进行中任务，不重复拉起进程。禁用内置管理或配置自定义本地守护进程时不会预启动，预启动失败只记录错误而不阻止窗口显示。
+- 工作区目录首次加载只返回守护进程已有的 Git 缓存，不再为列表中最多 200 个未打开工作区同时注册 Git 观察器；进入具体工作区并读取其本地 Git 状态后才注册该目录的实时观察，当前工作区的分支、差异和状态推送保持不变。
+
+主要涉及：
+
+- `packages/app/src/contexts/session-context.tsx`
+- `packages/app/src/hooks/use-agent-form-state.ts`
+- `packages/app/src/composer/agent-controls/`
+- `packages/app/src/screens/workspace/workspace-screen.tsx`
+- `packages/server/src/server/agent/provider-snapshot-manager.ts`
+- `packages/server/src/server/session/checkout/checkout-session.ts`
+- `packages/server/src/server/session.ts`
+- `packages/desktop/src/daemon/daemon-manager.ts`
+- `packages/desktop/src/main.ts`
