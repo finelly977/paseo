@@ -306,6 +306,7 @@
 - 守护进程对所有工作区和全局设置范围共享同一个提供方探测并发限制，最多同时执行两个探测；不同范围同时请求也不会突破限制，各提供方完成后仍立即发布自己的最新状态。
 - Electron 主进程完成单实例判断和 IPC 注册后，会在创建首个窗口的同时预启动内置守护进程；渲染进程随后发起的启动请求会复用同一个进行中任务，不重复拉起进程。禁用内置管理或配置自定义本地守护进程时不会预启动，预启动失败只记录错误而不阻止窗口显示。
 - 工作区目录首次加载只返回守护进程已有的 Git 缓存，不再为列表中最多 200 个未打开工作区同时注册 Git 观察器；进入具体工作区并读取其本地 Git 状态后才注册该目录的实时观察，当前工作区的分支、差异和状态推送保持不变。
+- 桌面端支持在设置中选择退出应用时停止桌面托管的守护进程，但二开默认仍保持守护进程运行，已有用户的选择不会被上游默认迁移重置。
 
 主要涉及：
 
@@ -318,3 +319,5 @@
 - `packages/server/src/server/session.ts`
 - `packages/desktop/src/daemon/daemon-manager.ts`
 - `packages/desktop/src/main.ts`
+- `packages/app/src/desktop/settings/desktop-settings.ts`
+- `packages/desktop/src/settings/desktop-settings.ts`

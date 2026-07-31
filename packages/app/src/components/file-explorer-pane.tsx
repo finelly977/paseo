@@ -24,7 +24,6 @@ import {
   WORKSPACE_FILE_ROW_VERTICAL_PADDING,
 } from "@/components/tree-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import type { Theme } from "@/styles/theme";
 import type {
   AgentFileExplorerState,
   ExplorerDirectory,

@@ -4098,6 +4098,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 
     try {
       await this.requestCodexTurn(activeTurnRequest, turnId);
+      return { turnId };
     } catch (error) {
       this.activeForegroundTurnId = null;
       this.activeClientMessageId = null;

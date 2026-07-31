@@ -162,7 +162,7 @@ describe("desktop-settings", () => {
     expect(persisted).toBe(raw);
   });
 
-  it("resets the pre-existing keep-running default so the daemon stops with the app", async () => {
+  it("preserves an existing keep-running choice", async () => {
     const userDataPath = await createTempUserDataDir();
     directories.add(userDataPath);
     await writeFile(
@@ -180,10 +180,10 @@ describe("desktop-settings", () => {
 
     const settings = await store.get();
 
-    expect(settings.daemon.keepRunningAfterQuit).toBe(false);
+    expect(settings.daemon.keepRunningAfterQuit).toBe(true);
   });
 
-  it("keeps an explicit keep-running choice across restarts", async () => {
+  it("keeps an explicit stop-on-quit choice across restarts", async () => {
     const userDataPath = await createTempUserDataDir();
     directories.add(userDataPath);
     await writeFile(
@@ -192,18 +192,18 @@ describe("desktop-settings", () => {
         version: 1,
         settings: {
           releaseChannel: "stable",
-          daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: true },
+          daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: false },
         },
         migrations: { legacyRendererSettingsImported: true },
       }),
     );
     await createDesktopSettingsStore({ userDataPath }).patch({
-      daemon: { keepRunningAfterQuit: true },
+      daemon: { keepRunningAfterQuit: false },
     });
 
     const settings = await createDesktopSettingsStore({ userDataPath }).get();
 
-    expect(settings.daemon.keepRunningAfterQuit).toBe(true);
+    expect(settings.daemon.keepRunningAfterQuit).toBe(false);
   });
 
   it("migrates desktop-owned values from legacy renderer settings once", async () => {

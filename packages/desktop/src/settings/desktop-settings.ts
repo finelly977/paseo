@@ -22,11 +22,6 @@ interface PersistedDesktopSettingsDocument {
   settings: DesktopSettings;
   migrations: {
     legacyRendererSettingsImported: boolean;
-    // Installs created before the stop-on-quit default persisted the old
-    // `keepRunningAfterQuit: true` default to disk, so the new default alone
-    // would only reach fresh installs. Reset it once; a later explicit toggle
-    // persists this flag and is never overridden again.
-    daemonStopOnQuitDefaultApplied: boolean;
   };
 }
 
@@ -40,7 +35,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   releaseChannel: "stable",
   daemon: {
     manageBuiltInDaemon: true,
-    keepRunningAfterQuit: false,
+    keepRunningAfterQuit: true,
   },
 };
 
@@ -77,7 +72,6 @@ function buildDefaultDocument(): PersistedDesktopSettingsDocument {
     },
     migrations: {
       legacyRendererSettingsImported: false,
-      daemonStopOnQuitDefaultApplied: true,
     },
   };
 }
@@ -186,17 +180,10 @@ function coerceDocument(input: unknown): PersistedDesktopSettingsDocument {
   const migrations = isRecord(input.migrations)
     ? {
         legacyRendererSettingsImported: input.migrations.legacyRendererSettingsImported === true,
-        daemonStopOnQuitDefaultApplied: input.migrations.daemonStopOnQuitDefaultApplied === true,
       }
     : {
         legacyRendererSettingsImported: false,
-        daemonStopOnQuitDefaultApplied: false,
       };
-
-  if (!migrations.daemonStopOnQuitDefaultApplied) {
-    settings.daemon.keepRunningAfterQuit = DEFAULT_DESKTOP_SETTINGS.daemon.keepRunningAfterQuit;
-    migrations.daemonStopOnQuitDefaultApplied = true;
-  }
 
   return {
     version: 1,

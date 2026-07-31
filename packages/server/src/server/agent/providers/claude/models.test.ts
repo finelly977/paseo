@@ -39,10 +39,11 @@ async function createClaudeConfigDirWithRawSettings(settings: string): Promise<s
   return configDir;
 }
 
-function createCatalogClient(claudeCodeVersion = "2.1.219"): ClaudeAgentClient {
+function createCatalogClient(claudeCodeVersion = "2.1.219", configDir?: string): ClaudeAgentClient {
   return new ClaudeAgentClient({
     logger: createTestLogger(),
     resolveVersion: async () => claudeCodeVersion,
+    ...(configDir ? { configDir } : {}),
   });
 }
 
@@ -328,7 +329,10 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
   });
 
   it("omits models that require a newer Claude Code version", async () => {
-    const client = createCatalogClient("2.1.218");
+    const client = createCatalogClient(
+      "2.1.218",
+      path.join(os.tmpdir(), "paseo-claude-models-empty-config"),
+    );
 
     const { models } = await client.fetchCatalog({
       scope: "workspace",
