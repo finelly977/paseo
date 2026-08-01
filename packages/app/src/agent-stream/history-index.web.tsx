@@ -1,4 +1,4 @@
-import {
+import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -39,6 +39,7 @@ const railBandStyle: CSSProperties = {
 const ACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: true } as const;
 const INACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: false } as const;
 const MARKER_HIT_HEIGHT = 12;
+const RAIL_BOTTOM_EPSILON = 2;
 
 function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
   const candidate = root?.parentElement?.querySelector('[data-testid="agent-chat-scroll"]');
@@ -47,8 +48,9 @@ function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
 
 interface ConversationHistoryIndexMarkerProps {
   entry: ConversationHistoryIndexEntry;
-  fraction: number;
   offset: number;
+  contentPixelHeight: number;
+  visiblePixelHeight: number;
   isActive: boolean;
   isPointerHovered: boolean;
   pointerFraction: number | null;
@@ -59,8 +61,9 @@ interface ConversationHistoryIndexMarkerProps {
 
 function ConversationHistoryIndexMarker({
   entry,
-  fraction,
   offset,
+  contentPixelHeight,
+  visiblePixelHeight,
   isActive,
   isPointerHovered,
   pointerFraction,
@@ -85,8 +88,17 @@ function ConversationHistoryIndexMarker({
     [offset],
   );
   const isHighlighted = isPointerHovered || isFocused;
+  // 指针分数映射到可交互内容高度，再取刻度中心坐标，与刻度偏移同一坐标系。
+  const pointerOffsetPx = useMemo(() => {
+    if (pointerFraction === null || contentPixelHeight <= 0) {
+      return null;
+    }
+    return (
+      pointerFraction * Math.max(0, contentPixelHeight - MARKER_HIT_HEIGHT) + MARKER_HIT_HEIGHT / 2
+    );
+  }, [contentPixelHeight, pointerFraction]);
   const waveScale = Math.max(
-    getHistoryIndexWaveScale(fraction, pointerFraction),
+    getHistoryIndexWaveScale(offset + MARKER_HIT_HEIGHT / 2, pointerOffsetPx, visiblePixelHeight),
     isActive ? 1.6 : 1,
   );
   const tickWaveStyle = useMemo<CSSProperties>(
@@ -146,6 +158,8 @@ export function ConversationHistoryIndex({
 }: ConversationHistoryIndexProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const userScrolledAwayRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pointerFraction, setPointerFraction] = useState<number | null>(null);
   const [bandHeight, setBandHeight] = useState(0);
@@ -277,6 +291,11 @@ export function ConversationHistoryIndex({
     (event: ReactUIEvent<HTMLDivElement>) => {
       const nextScrollTop = event.currentTarget.scrollTop;
       setRailScrollTop(nextScrollTop);
+      const maxScroll = Math.max(
+        0,
+        event.currentTarget.scrollHeight - event.currentTarget.clientHeight,
+      );
+      userScrolledAwayRef.current = nextScrollTop < maxScroll - RAIL_BOTTOM_EPSILON;
       const pointerOffset = pointerOffsetRef.current;
       if (pointerOffset === null) {
         return;
@@ -286,6 +305,20 @@ export function ConversationHistoryIndex({
     },
     [railLayout.contentHeight],
   );
+
+  // 内容超出轨道高度时默认展示最新刻度；用户没有主动上滚时，新刻度到来仍保持在底部。
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) {
+      return;
+    }
+    const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
+    if (maxScroll <= 0 || userScrolledAwayRef.current) {
+      return;
+    }
+    rail.scrollTop = maxScroll;
+    setRailScrollTop(maxScroll);
+  }, [entries.length, railLayout]);
 
   const handleMarkerNavigate = useCallback(
     (entry: ConversationHistoryIndexEntry) => {
@@ -396,6 +429,7 @@ export function ConversationHistoryIndex({
     <div ref={rootRef} style={railBandStyle}>
       {visibleEntries.length > 0 ? (
         <div
+          ref={railRef}
           role="navigation"
           aria-label={t("agentStream.historyIndex.label")}
           data-hidden-scrollbar
@@ -410,8 +444,9 @@ export function ConversationHistoryIndex({
               <ConversationHistoryIndexMarker
                 key={entry.id}
                 entry={entry}
-                fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
                 offset={index * railLayout.markerPitch}
+                contentPixelHeight={railLayout.contentHeight}
+                visiblePixelHeight={railLayout.railHeight}
                 isActive={activeId === entry.id}
                 isPointerHovered={hoveredIndex === index}
                 pointerFraction={pointerFraction}

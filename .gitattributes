@@ -1,0 +1,3 @@
+# lefthook.yml is parsed as YAML (LF-only) by oxfmt during the pre-commit hook;
+# keep it LF in the worktree so the hook's format check sees the committed bytes.
+lefthook.yml text eol=lf

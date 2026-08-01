@@ -112,10 +112,27 @@ describe("conversation history index model", () => {
   });
 
   it("creates a smooth local wave around the pointer", () => {
-    expect(getHistoryIndexWaveScale(0.5, null)).toBe(1);
-    expect(getHistoryIndexWaveScale(0.5, 0.5)).toBe(2.75);
-    expect(getHistoryIndexWaveScale(0.43, 0.5)).toBeGreaterThan(1);
-    expect(getHistoryIndexWaveScale(0.3, 0.5)).toBe(1);
-    expect(getHistoryIndexWaveScale(0.43, 0.5)).toBeCloseTo(getHistoryIndexWaveScale(0.57, 0.5));
+    // 指针未悬停：无波浪
+    expect(getHistoryIndexWaveScale(100, null, 480)).toBe(1);
+    // 指针正好在刻度上：最大缩放；半径按可见高度 480px 的 0.14 ≈ 67px
+    expect(getHistoryIndexWaveScale(100, 100, 480)).toBe(2.75);
+    expect(getHistoryIndexWaveScale(100, 140, 480)).toBeGreaterThan(1);
+    // 半径外：无波浪
+    expect(getHistoryIndexWaveScale(100, 200, 480)).toBe(1);
+    // 对称性
+    expect(getHistoryIndexWaveScale(100, 140, 480)).toBeCloseTo(
+      getHistoryIndexWaveScale(100, 60, 480),
+    );
+  });
+
+  it("scales the wave by the visible rail height, not the full content height", () => {
+    // 可见高度 1604px → 半径 ≈ 225px：200px 距离仍在波浪内
+    expect(getHistoryIndexWaveScale(0, 200, 1604)).toBeGreaterThan(1);
+    // 可见高度 480px → 半径 ≈ 67px：200px 距离已在波浪外
+    expect(getHistoryIndexWaveScale(0, 200, 480)).toBe(1);
+    // 同一物理距离下，可见高度越大半径越大，刻度离波峰中心越近、缩放越大
+    expect(getHistoryIndexWaveScale(0, 50, 1604)).toBeGreaterThan(
+      getHistoryIndexWaveScale(0, 50, 480),
+    );
   });
 });

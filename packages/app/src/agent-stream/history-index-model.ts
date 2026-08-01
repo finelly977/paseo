@@ -1,7 +1,10 @@
 import { i18n } from "@/i18n/i18next";
 import type { StreamItem } from "@/types/stream";
 
-const HISTORY_INDEX_WAVE_RADIUS = 0.14;
+/** 波浪半径占可见轨道高度的比例：轨道内容再长也只按可见范围形成局部山峰。 */
+const HISTORY_INDEX_WAVE_RADIUS_RATIO = 0.14;
+/** 波浪半径下限，防止轨道过矮时山峰窄得只剩一根刻度。 */
+const HISTORY_INDEX_WAVE_MIN_RADIUS_PX = 16;
 const HISTORY_INDEX_WAVE_PEAK_SCALE = 2.75;
 
 export function getStreamItemDomId(itemId: string): string {
@@ -144,18 +147,28 @@ export function resolveHistoryIndexRailLayout(input: {
   };
 }
 
+/**
+ * 刻度与指针的距离按内容像素计算，但波浪半径只由可见轨道高度决定。
+ * 轨道可滚动时内容高度远大于可见高度，若半径按全部内容比例计算，
+ * 可见区域会被整体压进同一个波浪里，山峰动画因此不可见。
+ */
 export function getHistoryIndexWaveScale(
-  markerFraction: number,
-  pointerFraction: number | null,
+  markerOffsetPx: number,
+  pointerOffsetPx: number | null,
+  visiblePixelHeight: number,
 ): number {
-  if (pointerFraction === null) {
+  if (pointerOffsetPx === null || visiblePixelHeight <= 0) {
     return 1;
   }
-  const distance = Math.abs(markerFraction - pointerFraction);
-  if (distance >= HISTORY_INDEX_WAVE_RADIUS) {
+  const distancePx = Math.abs(markerOffsetPx - pointerOffsetPx);
+  const radiusPx = Math.max(
+    HISTORY_INDEX_WAVE_MIN_RADIUS_PX,
+    visiblePixelHeight * HISTORY_INDEX_WAVE_RADIUS_RATIO,
+  );
+  if (distancePx >= radiusPx) {
     return 1;
   }
-  const normalizedDistance = distance / HISTORY_INDEX_WAVE_RADIUS;
+  const normalizedDistance = distancePx / radiusPx;
   const influence = (Math.cos(normalizedDistance * Math.PI) + 1) / 2;
   return 1 + (HISTORY_INDEX_WAVE_PEAK_SCALE - 1) * influence;
 }
