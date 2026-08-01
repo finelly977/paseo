@@ -107,6 +107,7 @@ import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
   getStreamItemDomId,
+  mergeConversationHistoryIndexEntries,
   type ConversationHistoryIndexEntry,
 } from "./history-index-model";
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
@@ -737,31 +738,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return buildConversationHistoryIndex(items);
     }, [streamLayout.history, streamLayout.liveHead]);
     const historyIndexEntries = useMemo(() => {
-      if (conversationIndexSummaries.length === 0) {
-        return loadedHistoryIndexEntries;
-      }
-
-      const summaries = buildConversationHistoryIndexFromSummaries(conversationIndexSummaries);
-      const loadedBySeq = new Map(
-        loadedHistoryIndexEntries.flatMap((entry) =>
-          entry.seqStart === undefined ? [] : ([[entry.seqStart, entry]] as const),
-        ),
+      const loadedSummaries = buildConversationHistoryIndexFromSummaries(
+        conversationIndexSummaries,
       );
-      const indexed: ConversationHistoryIndexEntry[] = [];
-      for (const entry of summaries) {
-        const loaded = entry.seqStart === undefined ? undefined : loadedBySeq.get(entry.seqStart);
-        indexed.push(loaded ? { ...entry, id: loaded.id } : entry);
-      }
-      const newestIndexedSeq = indexed.at(-1)?.seqStart ?? -1;
-      const liveEntries = loadedHistoryIndexEntries.filter(
-        (entry) => entry.seqStart === undefined || entry.seqStart > newestIndexedSeq,
-      );
-      const allEntries = [...indexed, ...liveEntries];
-      const reindexed: ConversationHistoryIndexEntry[] = [];
-      for (const [sourceIndex, entry] of allEntries.entries()) {
-        reindexed.push({ ...entry, sourceIndex });
-      }
-      return reindexed;
+      return mergeConversationHistoryIndexEntries({
+        summaries: loadedSummaries,
+        loaded: loadedHistoryIndexEntries,
+      });
     }, [conversationIndexSummaries, loadedHistoryIndexEntries]);
 
     const findLoadedHistoryAnchorId = useCallback(

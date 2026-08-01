@@ -1,13 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
+import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
   getHistoryIndexWaveScale,
   HISTORY_INDEX_MAX_HEIGHT,
   HISTORY_INDEX_MARKER_PITCH,
+  mergeConversationHistoryIndexEntries,
   resolveHistoryIndexRailLayout,
 } from "./history-index-model";
+
+function loadedEntry(id: string, seq?: number): ConversationHistoryIndexEntry {
+  return {
+    id,
+    title: `Turn ${id}`,
+    preview: "",
+    sourceIndex: 0,
+    ...(seq === undefined ? {} : { seqStart: seq }),
+  };
+}
+
+function summaryEntry(id: string, seq: number): ConversationHistoryIndexEntry {
+  return { id, title: `Turn ${id}`, preview: "", sourceIndex: 0, seqStart: seq };
+}
 
 function user(id: string, text: string): StreamItem {
   return {
@@ -134,5 +150,76 @@ describe("conversation history index model", () => {
     expect(getHistoryIndexWaveScale(0, 50, 1604)).toBeGreaterThan(
       getHistoryIndexWaveScale(0, 50, 480),
     );
+  });
+
+  it("merge 本地与索引完全同步时只保留索引条目", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [summaryEntry("a", 1), summaryEntry("b", 2), summaryEntry("c", 3)],
+      loaded: [loadedEntry("a", 1), loadedEntry("b", 2), loadedEntry("c", 3)],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+    expect(merged.map((entry) => entry.sourceIndex)).toEqual([0, 1, 2]);
+  });
+
+  it("merge 索引滞后时把本地更新的消息追加到尾部", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [summaryEntry("a", 1), summaryEntry("b", 2)],
+      loaded: [loadedEntry("a", 1), loadedEntry("b", 2), loadedEntry("c", 3)],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+    expect(merged[2]?.seqStart).toBe(3);
+  });
+
+  it("merge 对话进行中未确认的投影消息（无游标）保留在尾部", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [summaryEntry("a", 1), summaryEntry("b", 2)],
+      loaded: [loadedEntry("a", 1), loadedEntry("b", 2), loadedEntry("proj-c")],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "b", "proj-c"]);
+  });
+
+  it("merge 投影消息已被索引采用时不重复追加", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [summaryEntry("a", 1), summaryEntry("b", 2), summaryEntry("c", 3)],
+      loaded: [loadedEntry("a", 1), loadedEntry("b", 2), loadedEntry("c")],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "b", "c"]);
+    expect(merged).toHaveLength(3);
+  });
+
+  it("merge 切回会话时索引已含最新消息、本地尾部无游标也不重复", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [
+        summaryEntry("a", 1),
+        summaryEntry("b", 2),
+        summaryEntry("c", 3),
+        summaryEntry("d", 4),
+      ],
+      loaded: [loadedEntry("a", 1), loadedEntry("b", 2), loadedEntry("c", 3), loadedEntry("d")],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "b", "c", "d"]);
+    expect(merged).toHaveLength(4);
+  });
+
+  it("merge 旧历史无游标且已被索引采用时跳过，不会出现在尾部", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [
+        summaryEntry("old-a", 1),
+        summaryEntry("b", 2),
+        summaryEntry("c", 3),
+        summaryEntry("d", 4),
+      ],
+      loaded: [loadedEntry("old-a"), loadedEntry("b", 2), loadedEntry("c", 3), loadedEntry("d", 4)],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["old-a", "b", "c", "d"]);
+    expect(merged.at(-1)?.id).toBe("d");
+  });
+
+  it("merge 索引为空时直接返回本地条目", () => {
+    const merged = mergeConversationHistoryIndexEntries({
+      summaries: [],
+      loaded: [loadedEntry("a", 1), loadedEntry("proj-b")],
+    });
+    expect(merged.map((entry) => entry.id)).toEqual(["a", "proj-b"]);
   });
 });

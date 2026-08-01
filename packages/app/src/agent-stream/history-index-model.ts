@@ -110,6 +110,55 @@ export function buildConversationHistoryIndexFromSummaries(
   }));
 }
 
+/**
+ * 把 server 会话索引（可能滞后）与本地已加载消息合并成轨道条目。
+ * server 索引提供完整历史，本地提供比索引更新的消息（含尚未确认的投影消息）。
+ */
+export function mergeConversationHistoryIndexEntries(params: {
+  summaries: readonly ConversationHistoryIndexEntry[];
+  loaded: readonly ConversationHistoryIndexEntry[];
+}): ConversationHistoryIndexEntry[] {
+  if (params.summaries.length === 0) {
+    return [...params.loaded];
+  }
+  const loadedBySeq = new Map(
+    params.loaded.flatMap((entry) =>
+      entry.seqStart === undefined ? [] : ([[entry.seqStart, entry]] as const),
+    ),
+  );
+  const indexed: ConversationHistoryIndexEntry[] = [];
+  for (const entry of params.summaries) {
+    const loaded = entry.seqStart === undefined ? undefined : loadedBySeq.get(entry.seqStart);
+    indexed.push(loaded ? { ...entry, id: loaded.id } : entry);
+  }
+  const newestIndexedSeq = indexed.at(-1)?.seqStart ?? -1;
+  const indexedIds = new Set(indexed.map((entry) => entry.id));
+  // 没有 timeline 游标的本地条目可能是尚未确认的投影消息，也可能是已进入
+  // server 索引的历史消息（旧会话恢复时游标缺失）。只有本地尾部连续无游标段
+  // 才可能比索引新；中间的无游标条目要么已被索引采用，要么等索引刷新后由
+  // summaries 提供，直接跳过避免与 indexed 重复。
+  const liveEntries = params.loaded.filter((entry, index) => {
+    if (entry.seqStart !== undefined) {
+      return entry.seqStart > newestIndexedSeq;
+    }
+    if (indexedIds.has(entry.id)) {
+      return false;
+    }
+    for (let next = index + 1; next < params.loaded.length; next += 1) {
+      const nextSeq = params.loaded[next]?.seqStart;
+      if (nextSeq !== undefined && nextSeq <= newestIndexedSeq) {
+        return false;
+      }
+    }
+    return true;
+  });
+  const reindexed: ConversationHistoryIndexEntry[] = [];
+  for (const [sourceIndex, entry] of [...indexed, ...liveEntries].entries()) {
+    reindexed.push({ ...entry, sourceIndex });
+  }
+  return reindexed;
+}
+
 /** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
 export const HISTORY_INDEX_MARKER_PITCH = 8;
 export const HISTORY_INDEX_MAX_HEIGHT = 480;
