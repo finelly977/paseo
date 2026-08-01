@@ -1896,18 +1896,26 @@ async function isLikelyBinaryFile(absolutePath: string): Promise<boolean> {
 async function inspectUntrackedFile(
   cwd: string,
   relativePath: string,
-): Promise<{ stat: FileStat; truncated: boolean }> {
+): Promise<{ stat: FileStat; truncated: boolean; unreadable: boolean }> {
   const absolutePath = resolve(cwd, relativePath);
-  const metadata = await statFile(absolutePath);
+  let metadata;
+  try {
+    metadata = await statFile(absolutePath);
+  } catch {
+    // 文件不存在或不可访问（权限、损坏的符号链接等）
+    return { stat: null, truncated: false, unreadable: true };
+  }
 
   if (!metadata.isFile()) {
-    return { stat: null, truncated: false };
+    // 目录、符号链接、reparse point 等无法用 `git diff --no-index` 生成 diff
+    return { stat: null, truncated: false, unreadable: true };
   }
 
   if (await isLikelyBinaryFile(absolutePath)) {
     return {
       stat: { additions: 0, deletions: 0, isBinary: true },
       truncated: false,
+      unreadable: false,
     };
   }
 
@@ -1915,12 +1923,14 @@ async function inspectUntrackedFile(
     return {
       stat: { additions: 0, deletions: 0, isBinary: false },
       truncated: true,
+      unreadable: false,
     };
   }
 
   return {
     stat: { additions: 0, deletions: 0, isBinary: false },
     truncated: false,
+    unreadable: false,
   };
 }
 
@@ -1943,32 +1953,44 @@ async function getUntrackedDiffText(
   cwd: string,
   change: CheckoutFileChange,
   ignoreWhitespace = false,
-): Promise<{ text: string; truncated: boolean; stat: FileStat }> {
+): Promise<{ text: string; truncated: boolean; stat: FileStat; unreadable: boolean }> {
+  let inspected: Awaited<ReturnType<typeof inspectUntrackedFile>>;
   try {
-    const inspected = await inspectUntrackedFile(cwd, change.path);
-    if (inspected.stat?.isBinary || inspected.truncated) {
-      return { text: "", truncated: inspected.truncated, stat: inspected.stat };
-    }
+    inspected = await inspectUntrackedFile(cwd, change.path);
   } catch {
-    // Fall through to git diff path if metadata probing fails.
+    inspected = { stat: null, truncated: false, unreadable: true };
+  }
+  if (inspected.unreadable) {
+    // 目录、符号链接、损坏链接等无法生成 diff；不执行 git 以免报错
+    return { text: "", truncated: false, stat: null, unreadable: true };
+  }
+  if (inspected.stat?.isBinary || inspected.truncated) {
+    return { text: "", truncated: inspected.truncated, stat: inspected.stat, unreadable: false };
   }
 
-  const result = await runGitCommand(
-    buildGitDiffArgs({
-      ignoreWhitespace,
-      extra: ["--no-index", "/dev/null", "--", change.path],
-    }),
-    {
-      cwd,
-      envOverlay: READ_ONLY_GIT_ENV,
-      maxOutputBytes: PER_FILE_DIFF_MAX_BYTES,
-      acceptExitCodes: [0, 1],
-    },
-  );
+  let result: Awaited<ReturnType<typeof runGitCommand>>;
+  try {
+    result = await runGitCommand(
+      buildGitDiffArgs({
+        ignoreWhitespace,
+        extra: ["--no-index", "/dev/null", "--", change.path],
+      }),
+      {
+        cwd,
+        envOverlay: READ_ONLY_GIT_ENV,
+        maxOutputBytes: PER_FILE_DIFF_MAX_BYTES,
+        acceptExitCodes: [0, 1],
+      },
+    );
+  } catch {
+    // 无法读取文件内容时（损坏的符号链接等）降级为空 diff，避免 Git 面板报错
+    return { text: "", truncated: false, stat: null, unreadable: true };
+  }
   return {
     text: result.stdout,
     truncated: result.truncated,
     stat: { additions: 0, deletions: 0, isBinary: false },
+    unreadable: false,
   };
 }
 
@@ -2876,7 +2898,26 @@ interface ProcessUntrackedChangeInput {
 
 async function processUntrackedChange(input: ProcessUntrackedChangeInput): Promise<boolean> {
   const { cwd, change, ignoreWhitespace, includeStructured, structured, appendDiff } = input;
-  const { text, truncated, stat } = await getUntrackedDiffText(cwd, change, ignoreWhitespace);
+  const { text, truncated, stat, unreadable } = await getUntrackedDiffText(
+    cwd,
+    change,
+    ignoreWhitespace,
+  );
+
+  if (unreadable) {
+    appendDiff(`# ${change.path}: diff unavailable\n`);
+    if (includeStructured) {
+      if (
+        !appendStructuredFile(
+          structured,
+          buildPlaceholderParsedDiffFile(change, { status: "binary", stat }),
+        )
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   if (!includeStructured) {
     if (stat?.isBinary) {
