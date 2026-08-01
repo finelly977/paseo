@@ -7,6 +7,7 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   DEFAULT_UI_FONT_SIZE,
   loadAppSettingsFromStorage,
   loadSettingsFromStorage,
@@ -363,6 +364,7 @@ describe("appearance settings", () => {
     expect(result.syntaxTheme).toBe("one");
     expect(result.toolCallDetailLevel).toBe("detailed");
     expect(result.messageParagraphSpacing).toBe(DEFAULT_MESSAGE_PARAGRAPH_SPACING);
+    expect(result.sidebarWorkspaceVisibleCount).toBe(DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT);
     expect(result.conversationHistoryLoadCount).toBe(DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT);
     expect(result.totalConversationHistoryLimit).toBe(DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT);
   });
@@ -456,6 +458,22 @@ describe("appearance settings", () => {
     expect((await loadAppSettingsFromStorage(bogus)).messageParagraphSpacing).toBe(
       DEFAULT_MESSAGE_PARAGRAPH_SPACING,
     );
+  });
+
+  it("限制侧栏每个工作区展示的会话数", async () => {
+    const high = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ sidebarWorkspaceVisibleCount: 999 }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(high)).sidebarWorkspaceVisibleCount).toBe(100);
+
+    const low = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ sidebarWorkspaceVisibleCount: 0 }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(low)).sidebarWorkspaceVisibleCount).toBe(1);
   });
 
   it("trims an accepted font family", async () => {

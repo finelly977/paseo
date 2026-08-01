@@ -109,16 +109,18 @@ export function buildConversationHistoryIndexFromSummaries(
 
 /** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
 export const HISTORY_INDEX_MARKER_PITCH = 8;
+export const HISTORY_INDEX_MAX_HEIGHT = 480;
 
 export interface HistoryIndexRailLayout {
   markerCount: number;
   markerPitch: number;
   railHeight: number;
+  contentHeight: number;
   railTop: number;
 }
 
 /**
- * 短会话按固定间距紧密排列；索引超过可用高度时压缩间距，但不丢弃任何一轮对话。
+ * 刻度间距固定，索引过长时由视图在固定最大高度内滚动，不压缩刻度，也不丢弃任何一轮对话。
  */
 export function resolveHistoryIndexRailLayout(input: {
   entryCount: number;
@@ -126,20 +128,17 @@ export function resolveHistoryIndexRailLayout(input: {
   markerHeight: number;
 }): HistoryIndexRailLayout {
   if (input.entryCount <= 0 || input.availableHeight <= 0) {
-    return { markerCount: 0, markerPitch: 0, railHeight: 0, railTop: 0 };
+    return { markerCount: 0, markerPitch: 0, railHeight: 0, contentHeight: 0, railTop: 0 };
   }
   const markerCount = input.entryCount;
-  const availableSpan = Math.max(0, input.availableHeight - input.markerHeight);
-  const markerPitch =
-    markerCount === 1 ? 0 : Math.min(HISTORY_INDEX_MARKER_PITCH, availableSpan / (markerCount - 1));
-  const railHeight = Math.min(
-    input.availableHeight,
-    (markerCount - 1) * markerPitch + input.markerHeight,
-  );
+  const markerPitch = markerCount === 1 ? 0 : HISTORY_INDEX_MARKER_PITCH;
+  const contentHeight = (markerCount - 1) * markerPitch + input.markerHeight;
+  const railHeight = Math.min(input.availableHeight, HISTORY_INDEX_MAX_HEIGHT, contentHeight);
   return {
     markerCount,
     markerPitch,
     railHeight,
+    contentHeight,
     // 居中偏移也取整，避免容器原点的小数像素让所有整数刻度重新落到半像素上。
     railTop: Math.round((input.availableHeight - railHeight) / 2),
   };

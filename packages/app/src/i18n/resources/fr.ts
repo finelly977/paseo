@@ -570,6 +570,14 @@ export const fr: TranslationResources = {
         reloadedAgent: "Agent rechargé",
         failedToReloadAgent: "Échec du rechargement de l'agent",
       },
+      drop: {
+        ariaLabel: "Déposez des dossiers ici pour ajouter des espaces de travail",
+        overlay: "Relâchez pour ajouter l’espace de travail",
+        noLocalHost: "Connectez l’hôte local avant d’ajouter un dossier déposé.",
+        noFolder: "Aucun dossier détecté.",
+        failed: "Impossible d’ajouter le dossier déposé.",
+        added: "{{count}} espace(s) de travail ajouté(s).",
+      },
       confirmations: {
         unsavedTitle: "Modifications non enregistrées",
         unsavedMessage:
@@ -963,6 +971,23 @@ export const fr: TranslationResources = {
     sections: {
       sessions: "Historique",
       schedules: "Planifications",
+    },
+    displayPreferences: {
+      ariaLabel: "Préférences d’affichage",
+      groupBy: "Regrouper par",
+      project: "Projet",
+      status: "État",
+      filter: "Filtre",
+      allHosts: "Tous les hôtes",
+      workspaceTitle: "Titre de l’espace de travail",
+      title: "Titre",
+      branchName: "Nom de branche",
+      sort: {
+        label: "Trier les projets",
+        added: "Ajoutés à Paseo",
+        name: "Nom",
+        custom: "Ordre personnalisé",
+      },
     },
     worktreeSetup: {
       title: "Configurer les scripts d'arbre de travail",
@@ -1746,6 +1771,11 @@ export const fr: TranslationResources = {
         label: "DéfilementTerminal",
         description: "Lignes conservées dans le tampon du terminal intégré",
         accessibilityLabel: "Lignes de défilementTerminal",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "Espaces de travail par projet",
+        description: "Sessions affichées avant de développer un projet",
+        accessibilityLabel: "Sessions affichées par projet",
       },
       conversationHistoryLoadCount: {
         label: "Conversations chargées à l’ouverture",

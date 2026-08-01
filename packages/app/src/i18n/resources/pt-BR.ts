@@ -569,6 +569,14 @@ export const ptBR: TranslationResources = {
         reloadedAgent: "Agente recarregado",
         failedToReloadAgent: "Falha ao recarregar agente",
       },
+      drop: {
+        ariaLabel: "Arraste pastas aqui para adicionar workspaces",
+        overlay: "Solte para adicionar o workspace",
+        noLocalHost: "Conecte o host local antes de adicionar uma pasta solta.",
+        noFolder: "Nenhuma pasta detectada.",
+        failed: "Não foi possível adicionar a pasta solta.",
+        added: "{{count}} workspace(s) adicionado(s).",
+      },
       confirmations: {
         unsavedTitle: "Alterações não salvas",
         unsavedMessage: "Esta aba tem alterações não salvas. Fechá-la descartará o rascunho.",
@@ -955,6 +963,23 @@ export const ptBR: TranslationResources = {
     sections: {
       sessions: "Histórico",
       schedules: "Agendamentos",
+    },
+    displayPreferences: {
+      ariaLabel: "Preferências de exibição",
+      groupBy: "Agrupar por",
+      project: "Projeto",
+      status: "Status",
+      filter: "Filtro",
+      allHosts: "Todos os hosts",
+      workspaceTitle: "Título do workspace",
+      title: "Título",
+      branchName: "Nome da branch",
+      sort: {
+        label: "Ordenar projetos",
+        added: "Adicionados ao Paseo",
+        name: "Nome",
+        custom: "Ordem personalizada",
+      },
     },
     worktreeSetup: {
       title: "Configurar scripts de worktree",
@@ -1728,6 +1753,11 @@ export const ptBR: TranslationResources = {
         label: "Scrollback do terminal",
         description: "Linhas mantidas no buffer do terminal integrado",
         accessibilityLabel: "Linhas do scrollback do terminal",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "Workspaces por projeto",
+        description: "Sessões exibidas antes de expandir um projeto",
+        accessibilityLabel: "Sessões exibidas por projeto",
       },
       conversationHistoryLoadCount: {
         label: "Conversas carregadas ao abrir",

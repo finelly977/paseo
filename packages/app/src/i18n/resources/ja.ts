@@ -570,6 +570,14 @@ export const ja: TranslationResources = {
         reloadedAgent: "エージェントを再読み込みしました",
         failedToReloadAgent: "エージェントの再読み込みに失敗しました",
       },
+      drop: {
+        ariaLabel: "フォルダーをここにドラッグしてワークスペースを追加",
+        overlay: "離してワークスペースを追加",
+        noLocalHost: "ドロップしたフォルダーを追加するにはローカルホストに接続してください。",
+        noFolder: "フォルダーが検出されませんでした。",
+        failed: "ドロップしたフォルダーを追加できませんでした。",
+        added: "{{count}} 個のワークスペースを追加しました。",
+      },
       confirmations: {
         unsavedTitle: "未保存の変更",
         unsavedMessage: "このタブには未保存の変更があります。閉じると下書きが破棄されます。",
@@ -944,6 +952,23 @@ export const ja: TranslationResources = {
     sections: {
       sessions: "履歴",
       schedules: "スケジュール",
+    },
+    displayPreferences: {
+      ariaLabel: "表示設定",
+      groupBy: "グループ化",
+      project: "プロジェクト",
+      status: "状態",
+      filter: "フィルター",
+      allHosts: "すべてのホスト",
+      workspaceTitle: "ワークスペースのタイトル",
+      title: "タイトル",
+      branchName: "ブランチ名",
+      sort: {
+        label: "プロジェクトの並び順",
+        added: "Paseoへの追加順",
+        name: "名前",
+        custom: "カスタム順",
+      },
     },
     worktreeSetup: {
       title: "ワークツリースクリプトを設定",
@@ -1713,6 +1738,11 @@ export const ja: TranslationResources = {
         label: "ターミナルスクロールバック",
         description: "組み込みターミナルバッファに保持する行数",
         accessibilityLabel: "ターミナルスクロールバック行数",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "プロジェクトごとの表示ワークスペース数",
+        description: "プロジェクトを展開する前に表示するセッション数",
+        accessibilityLabel: "プロジェクトごとの表示セッション数",
       },
       conversationHistoryLoadCount: {
         label: "開くときに読み込む会話数",

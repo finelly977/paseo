@@ -564,6 +564,14 @@ export const en = {
         reloadedAgent: "Reloaded agent",
         failedToReloadAgent: "Failed to reload agent",
       },
+      drop: {
+        ariaLabel: "Drag folders here to add workspaces",
+        overlay: "Release to add workspace",
+        noLocalHost: "Connect the local host before adding a dropped folder.",
+        noFolder: "No folder was detected.",
+        failed: "Unable to add the dropped folder.",
+        added: "Added {{count}} workspace(s).",
+      },
       confirmations: {
         close: "Close",
         cancel: "Cancel",
@@ -943,6 +951,23 @@ export const en = {
     sections: {
       sessions: "History",
       schedules: "Schedules",
+    },
+    displayPreferences: {
+      ariaLabel: "Display preferences",
+      groupBy: "Group by",
+      project: "Project",
+      status: "Status",
+      filter: "Filter",
+      allHosts: "All hosts",
+      workspaceTitle: "Workspace title",
+      title: "Title",
+      branchName: "Branch name",
+      sort: {
+        label: "Sort projects",
+        added: "Added to Paseo",
+        name: "Name",
+        custom: "Custom order",
+      },
     },
     worktreeSetup: {
       title: "Set up worktree scripts",
@@ -1708,6 +1733,11 @@ export const en = {
         label: "Terminal scrollback",
         description: "Lines kept in the built-in terminal buffer",
         accessibilityLabel: "Terminal scrollback lines",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "Workspaces shown per project",
+        description: "Number of sessions shown before expanding a project",
+        accessibilityLabel: "Sessions shown per project",
       },
       conversationHistoryLoadCount: {
         label: "Conversations loaded on open",

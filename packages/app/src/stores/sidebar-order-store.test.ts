@@ -15,10 +15,22 @@ describe("migrateSidebarOrderState", () => {
     });
 
     expect(migrated).toEqual({
+      projectAddedOrder: ["project-a"],
       projectOrder: ["project-a"],
       workspaceOrderByProject: {
         "project-a": ["host-a:main", "host-a:feature", "host-b:main"],
       },
     });
+  });
+
+  it("保留独立的加入顺序和手工顺序", () => {
+    const migrated = migrateSidebarOrderState({
+      projectAddedOrder: ["project-a", "project-b"],
+      projectOrder: ["project-b", "project-a"],
+      workspaceOrderByProject: {},
+    });
+
+    expect(migrated.projectAddedOrder).toEqual(["project-a", "project-b"]);
+    expect(migrated.projectOrder).toEqual(["project-b", "project-a"]);
   });
 });

@@ -4,6 +4,7 @@ import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
   getHistoryIndexWaveScale,
+  HISTORY_INDEX_MAX_HEIGHT,
   HISTORY_INDEX_MARKER_PITCH,
   resolveHistoryIndexRailLayout,
 } from "./history-index-model";
@@ -76,25 +77,38 @@ describe("conversation history index model", () => {
       markerCount: 4,
       markerPitch: HISTORY_INDEX_MARKER_PITCH,
       railHeight: 3 * HISTORY_INDEX_MARKER_PITCH + 12,
+      contentHeight: 3 * HISTORY_INDEX_MARKER_PITCH + 12,
       railTop: 182,
     });
   });
 
-  it("压缩刻度间距并保留全部索引", () => {
+  it("保持固定刻度并限制轨道高度", () => {
     const layout = resolveHistoryIndexRailLayout({
       entryCount: 200,
       availableHeight: 100,
       markerHeight: 12,
     });
     expect(layout.markerCount).toBe(200);
-    expect(layout.markerPitch).toBeCloseTo(88 / 199);
+    expect(layout.markerPitch).toBe(HISTORY_INDEX_MARKER_PITCH);
+    expect(layout.contentHeight).toBe(199 * HISTORY_INDEX_MARKER_PITCH + 12);
     expect(layout.railHeight).toBe(100);
+  });
+
+  it("长索引不超过固定最大高度", () => {
+    const layout = resolveHistoryIndexRailLayout({
+      entryCount: 200,
+      availableHeight: 1000,
+      markerHeight: 12,
+    });
+
+    expect(layout.railHeight).toBe(HISTORY_INDEX_MAX_HEIGHT);
+    expect(layout.railTop).toBe((1000 - HISTORY_INDEX_MAX_HEIGHT) / 2);
   });
 
   it("reports an empty rail before the band has been measured", () => {
     expect(
       resolveHistoryIndexRailLayout({ entryCount: 10, availableHeight: 0, markerHeight: 12 }),
-    ).toEqual({ markerCount: 0, markerPitch: 0, railHeight: 0, railTop: 0 });
+    ).toEqual({ markerCount: 0, markerPitch: 0, railHeight: 0, contentHeight: 0, railTop: 0 });
   });
 
   it("creates a smooth local wave around the pointer", () => {

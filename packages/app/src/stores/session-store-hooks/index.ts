@@ -6,6 +6,7 @@ import {
   selectHasHydratedWorkspaces,
   selectHydratedWorkspaceServerIds,
   selectHasWorkspaces,
+  selectProjectAddedOrder,
   selectProjectOrder,
   selectRecommendedProjectPaths,
   selectWorkspace,
@@ -20,6 +21,7 @@ import {
   type WorkspaceStructure,
 } from "./selectors";
 import { useSessionStore, type WorkspaceDescriptor } from "../session-store";
+import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import type { DesktopBadgeWorkspaceStatus } from "@/utils/desktop-badge-state";
 
 // These are the ONLY supported ways to read workspaces from the session store.
@@ -101,20 +103,28 @@ export function useWorkspaceStructure(serverIds: string[]): WorkspaceStructure {
     (state) => selectProjectOrder(state),
     workspaceEqualityFns.deep,
   );
+  const projectAddedOrder = useStoreWithEqualityFn(
+    useSidebarOrderStore,
+    (state) => selectProjectAddedOrder(state),
+    workspaceEqualityFns.deep,
+  );
   const workspaceOrderByScope = useStoreWithEqualityFn(
     useSidebarOrderStore,
     (state) => selectWorkspaceOrderByScope(state),
     workspaceEqualityFns.deep,
   );
+  const projectSortMode = useSidebarViewStore((state) => state.projectSortMode);
 
   return useMemo(
     () =>
       composeWorkspaceStructure({
         projects,
+        projectAddedOrder,
         projectOrder,
         workspaceOrderByScope,
+        projectSortMode,
       }),
-    [projectOrder, projects, workspaceOrderByScope],
+    [projectAddedOrder, projectOrder, projectSortMode, projects, workspaceOrderByScope],
   );
 }
 

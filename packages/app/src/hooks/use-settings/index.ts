@@ -27,6 +27,9 @@ import {
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   MIN_MESSAGE_PARAGRAPH_SPACING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
@@ -70,6 +73,9 @@ export {
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   MIN_MESSAGE_PARAGRAPH_SPACING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   parseClampedFontSize,
   parseBoundedInteger,
   parseTerminalScrollbackLines,
@@ -118,6 +124,7 @@ type NumericAppSetting =
   | "uiFontSize"
   | "codeFontSize"
   | "messageParagraphSpacing"
+  | "sidebarWorkspaceVisibleCount"
   | "conversationHistoryLoadCount"
   | "totalConversationHistoryLimit";
 
@@ -209,6 +216,7 @@ export function useSettings<TSelected>(
       copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarWorkspaceVisibleCount");
       copyDefinedNumericAppSetting(appUpdates, updates, "conversationHistoryLoadCount");
       copyDefinedNumericAppSetting(appUpdates, updates, "totalConversationHistoryLimit");
       if (updates.syntaxTheme !== undefined) {

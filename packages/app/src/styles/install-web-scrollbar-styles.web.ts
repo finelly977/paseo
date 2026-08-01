@@ -23,6 +23,16 @@ export function installWebScrollbarStyles(): () => void {
   scrollbar-gutter: stable;
 }
 
+[data-hidden-scrollbar] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-hidden-scrollbar]::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 *::-webkit-scrollbar {
   width: ${WEB_SCROLLBAR_SIZE_PX}px;
   height: ${WEB_SCROLLBAR_SIZE_PX}px;

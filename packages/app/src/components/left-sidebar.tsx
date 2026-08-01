@@ -907,6 +907,7 @@ function DesktopSidebar({
 
 function WorkspacesSectionHeader() {
   const { theme } = useUnistyles();
+  const { t } = useTranslation();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
   const handleSearchPress = useCallback(() => setCommandCenterOpen(true), [setCommandCenterOpen]);
@@ -952,7 +953,7 @@ function WorkspacesSectionHeader() {
             </View>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>
-            <IconTooltipContent label="Display preferences" />
+            <IconTooltipContent label={t("sidebar.displayPreferences.ariaLabel")} />
           </TooltipContent>
         </Tooltip>
       </View>

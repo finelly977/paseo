@@ -136,10 +136,14 @@ import {
 import { getDesktopHost } from "@/desktop/host";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
+import { useOpenProject } from "@/hooks/use-open-project";
+import { useAppSettings } from "@/hooks/use-settings";
+import { SidebarProjectDropZone } from "@/components/sidebar/sidebar-project-drop-zone";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
 const projectKeyExtractor = (project: SidebarProjectEntry) => project.projectKey;
+const NOOP_DRAG = () => undefined;
 
 const WORKSPACE_STATUS_DOT_WIDTH = 14;
 const DEFAULT_STATUS_DOT_SIZE = 7;
@@ -1731,6 +1735,7 @@ function ProjectBlock({
   supportsMultiplicityByServerId,
   supportsPinningByServerId,
   onToggleWorkspacePin,
+  workspaceVisibleCount,
 }: {
   project: SidebarProjectEntry;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
@@ -1756,13 +1761,14 @@ function ProjectBlock({
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  workspaceVisibleCount: number;
 }) {
   const {
     visibleItems: visibleWorkspaces,
     expanded: workspacesExpanded,
     canToggle: canToggleWorkspaces,
     toggleExpanded: toggleWorkspacesExpanded,
-  } = useLimitedSidebarGroup(project.workspaces);
+  } = useLimitedSidebarGroup(project.workspaces, workspaceVisibleCount);
   const rowModel = useMemo(
     () =>
       buildSidebarProjectRowModel({
@@ -1996,6 +2002,7 @@ function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlo
     previous.showHostLabels === next.showHostLabels &&
     previous.supportsMultiplicityByServerId === next.supportsMultiplicityByServerId &&
     previous.supportsPinningByServerId === next.supportsPinningByServerId &&
+    previous.workspaceVisibleCount === next.workspaceVisibleCount &&
     previous.onToggleWorkspacePin === next.onToggleWorkspacePin &&
     previous.parentGestureRef === next.parentGestureRef &&
     previous.onToggleCollapsed === next.onToggleCollapsed &&
@@ -2058,6 +2065,10 @@ export function SidebarWorkspaceList({
   parentGestureRef,
 }: SidebarWorkspaceListProps) {
   const pathname = usePathname();
+  const { t } = useTranslation();
+  const toast = useToast();
+  const localDaemonServerId = useLocalDaemonServerId();
+  const openProject = useOpenProject(localDaemonServerId);
   const hosts = useHosts();
   const hostLabelByServerId = useMemo(() => {
     const labels = new Map<string, string>();
@@ -2069,8 +2080,38 @@ export function SidebarWorkspaceList({
   const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
   const supportsMultiplicityByServerId = useHostFeatureMap(serverIds, "workspaceMultiplicity");
   const supportsPinningByServerId = useHostFeatureMap(serverIds, "workspacePinning");
+  const workspaceVisibleCount = useAppSettings().settings.sidebarWorkspaceVisibleCount;
   const onToggleWorkspacePin = useSidebarWorkspacePinController();
   const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
+
+  const handleProjectDrop = useCallback(
+    async (paths: readonly string[]) => {
+      if (!localDaemonServerId) {
+        throw new Error(t("sidebar.project.drop.noLocalHost"));
+      }
+      if (paths.length === 0) {
+        throw new Error(t("sidebar.project.drop.noFolder"));
+      }
+
+      for (const path of paths) {
+        const result = await openProject(path);
+        if (!result.ok) {
+          throw new Error(result.error ?? t("sidebar.project.drop.failed"));
+        }
+      }
+
+      toast.show(t("sidebar.project.drop.added", { count: paths.length }), { variant: "success" });
+    },
+    [localDaemonServerId, openProject, t, toast],
+  );
+
+  const handleProjectDropError = useCallback(
+    (error: unknown) => {
+      console.error("[侧栏] 拖入工作区失败", error);
+      toast.error(error instanceof Error ? error.message : t("sidebar.project.drop.failed"));
+    },
+    [t, toast],
+  );
 
   const content =
     groupMode === "status" ? (
@@ -2106,10 +2147,15 @@ export function SidebarWorkspaceList({
         supportsMultiplicityByServerId={supportsMultiplicityByServerId}
         supportsPinningByServerId={supportsPinningByServerId}
         onToggleWorkspacePin={onToggleWorkspacePin}
+        workspaceVisibleCount={workspaceVisibleCount}
       />
     );
 
-  return content;
+  return (
+    <SidebarProjectDropZone onDropPaths={handleProjectDrop} onError={handleProjectDropError}>
+      {content}
+    </SidebarProjectDropZone>
+  );
 }
 
 function SidebarStatusModeWrapper({
@@ -2177,6 +2223,7 @@ function ProjectModeList({
   supportsMultiplicityByServerId,
   supportsPinningByServerId,
   onToggleWorkspacePin,
+  workspaceVisibleCount,
 }: Omit<
   SidebarWorkspaceListProps,
   "statusGroups" | "projectNamesByKey" | "groupMode" | "isRefreshing" | "onRefresh"
@@ -2187,6 +2234,7 @@ function ProjectModeList({
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
+  workspaceVisibleCount: number;
 }) {
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const { t } = useTranslation();
@@ -2201,9 +2249,12 @@ function ProjectModeList({
   );
 
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
+  const getProjectAddedOrder = useSidebarOrderStore((state) => state.getProjectAddedOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
   const getWorkspaceOrder = useSidebarOrderStore((state) => state.getWorkspaceOrder);
   const setWorkspaceOrder = useSidebarOrderStore((state) => state.setWorkspaceOrder);
+  const projectSortMode = useSidebarViewStore((state) => state.projectSortMode);
+  const setProjectSortMode = useSidebarViewStore((state) => state.setProjectSortMode);
 
   const isWorkspaceRoute = useMemo(
     () => Boolean(pathname && parseHostWorkspaceRouteFromPathname(pathname)),
@@ -2294,9 +2345,11 @@ function ProjectModeList({
     (reorderedProjects: SidebarProjectEntry[]) => {
       const reorderedProjectKeys = reorderedProjects.map((project) => project.projectKey);
       const currentProjectOrder = getProjectOrder();
+      const displayedProjectOrder =
+        projectSortMode === "custom" ? currentProjectOrder : getProjectAddedOrder();
       if (
         !hasVisibleOrderChanged({
-          currentOrder: currentProjectOrder,
+          currentOrder: displayedProjectOrder,
           reorderedVisibleKeys: reorderedProjectKeys,
         })
       ) {
@@ -2309,8 +2362,9 @@ function ProjectModeList({
           reorderedVisibleKeys: reorderedProjectKeys,
         }),
       );
+      setProjectSortMode("custom");
     },
-    [getProjectOrder, setProjectOrder],
+    [getProjectAddedOrder, getProjectOrder, projectSortMode, setProjectOrder, setProjectSortMode],
   );
 
   const handleWorkspaceReorder = useCallback(
@@ -2399,6 +2453,7 @@ function ProjectModeList({
           supportsMultiplicityByServerId={supportsMultiplicityByServerId}
           supportsPinningByServerId={supportsPinningByServerId}
           onToggleWorkspacePin={onToggleWorkspacePin}
+          workspaceVisibleCount={workspaceVisibleCount}
         />
       );
     },
@@ -2419,6 +2474,7 @@ function ProjectModeList({
       selectionEnabled,
       shortcutIndexByWorkspaceKey,
       showShortcutBadges,
+      workspaceVisibleCount,
       workspaceEntriesByKey,
       creatingWorkspaceIds,
     ],
@@ -2470,6 +2526,45 @@ function ProjectModeList({
     ],
   );
 
+  let projectListContent: ReactElement;
+  if (projects.length === 0) {
+    projectListContent = (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyTitle} testID="sidebar-project-empty-state">
+          {t("sidebar.project.empty.title")}
+        </Text>
+        <Text style={styles.emptyText}>{t("sidebar.project.empty.description")}</Text>
+        <Button variant="ghost" size="sm" leftIcon={Plus} onPress={onAddProject}>
+          {t("sidebar.actions.addProject")}
+        </Button>
+      </View>
+    );
+  } else if (projectSortMode === "name") {
+    projectListContent = (
+      <View style={styles.projectListContainer} testID="sidebar-project-list">
+        {unpinnedProjects.map((project) =>
+          renderProjectBlock(project, { drag: NOOP_DRAG, isDragging: false }),
+        )}
+      </View>
+    );
+  } else {
+    projectListContent = (
+      <DraggableList
+        testID="sidebar-project-list"
+        data={unpinnedProjects}
+        keyExtractor={projectKeyExtractor}
+        renderItem={renderProject}
+        onDragEnd={handleProjectDragEnd}
+        extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+        scrollEnabled={false}
+        useDragHandle
+        nestable={platformIsNative}
+        simultaneousGestureRef={parentGestureRef}
+        containerStyle={styles.projectListContainer}
+      />
+    );
+  }
+
   const content = (
     <>
       {pinnedChats.length > 0 ? (
@@ -2490,31 +2585,7 @@ function ProjectModeList({
         </View>
       ) : null}
       {unpinnedProjects.length > 0 || hasActiveHostFilter ? listHeaderComponent : null}
-      {projects.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle} testID="sidebar-project-empty-state">
-            {t("sidebar.project.empty.title")}
-          </Text>
-          <Text style={styles.emptyText}>{t("sidebar.project.empty.description")}</Text>
-          <Button variant="ghost" size="sm" leftIcon={Plus} onPress={onAddProject}>
-            {t("sidebar.actions.addProject")}
-          </Button>
-        </View>
-      ) : (
-        <DraggableList
-          testID="sidebar-project-list"
-          data={unpinnedProjects}
-          keyExtractor={projectKeyExtractor}
-          renderItem={renderProject}
-          onDragEnd={handleProjectDragEnd}
-          extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-          scrollEnabled={false}
-          useDragHandle
-          nestable={platformIsNative}
-          simultaneousGestureRef={parentGestureRef}
-          containerStyle={styles.projectListContainer}
-        />
-      )}
+      {projectListContent}
       {listFooterComponent}
     </>
   );

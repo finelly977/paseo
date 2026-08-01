@@ -570,6 +570,14 @@ export const es: TranslationResources = {
         reloadedAgent: "Agente recargado",
         failedToReloadAgent: "No se pudo recargar el agente",
       },
+      drop: {
+        ariaLabel: "Arrastra carpetas aquí para añadir espacios de trabajo",
+        overlay: "Suelta para añadir el espacio de trabajo",
+        noLocalHost: "Conecta el host local antes de añadir una carpeta.",
+        noFolder: "No se detectó ninguna carpeta.",
+        failed: "No se pudo añadir la carpeta soltada.",
+        added: "Se añadieron {{count}} espacios de trabajo.",
+      },
       confirmations: {
         unsavedTitle: "Cambios sin guardar",
         unsavedMessage:
@@ -965,6 +973,23 @@ export const es: TranslationResources = {
     sections: {
       sessions: "Historial",
       schedules: "Horarios",
+    },
+    displayPreferences: {
+      ariaLabel: "Preferencias de visualización",
+      groupBy: "Agrupar por",
+      project: "Proyecto",
+      status: "Estado",
+      filter: "Filtro",
+      allHosts: "Todos los hosts",
+      workspaceTitle: "Título del espacio de trabajo",
+      title: "Título",
+      branchName: "Nombre de la rama",
+      sort: {
+        label: "Ordenar proyectos",
+        added: "Añadidos a Paseo",
+        name: "Nombre",
+        custom: "Orden personalizado",
+      },
     },
     worktreeSetup: {
       title: "Configurar secuencias de comandos del árbol de trabajo",
@@ -1745,6 +1770,11 @@ export const es: TranslationResources = {
         label: "Historial de terminal",
         description: "Líneas mantenidas en el búfer de terminal incorporado",
         accessibilityLabel: "Líneas del historial de terminal",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "Espacios de trabajo por proyecto",
+        description: "Sesiones mostradas antes de expandir un proyecto",
+        accessibilityLabel: "Sesiones mostradas por proyecto",
       },
       conversationHistoryLoadCount: {
         label: "Conversaciones cargadas al abrir",

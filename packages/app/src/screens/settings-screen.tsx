@@ -52,7 +52,9 @@ import {
   parseTerminalScrollbackLines,
   MAX_CONVERSATION_HISTORY_LOAD_COUNT,
   MAX_TOTAL_CONVERSATION_HISTORY_LIMIT,
+  MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MIN_CONVERSATION_HISTORY_LOAD_COUNT,
+  MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MIN_TOTAL_CONVERSATION_HISTORY_LIMIT,
   type AppSettings,
   type SendBehavior,
@@ -256,6 +258,7 @@ interface GeneralSectionProps {
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
+  handleSidebarWorkspaceVisibleCountChange: (count: number) => void;
   handleConversationHistoryLoadCountChange: (count: number) => void;
   handleTotalConversationHistoryLimitChange: (count: number) => void;
 }
@@ -365,6 +368,7 @@ function GeneralSection({
   handleServiceUrlBehaviorChange,
   handleLanguageChange,
   handleTerminalScrollbackLinesChange,
+  handleSidebarWorkspaceVisibleCountChange,
   handleConversationHistoryLoadCountChange,
   handleTotalConversationHistoryLimitChange,
 }: GeneralSectionProps) {
@@ -390,6 +394,14 @@ function GeneralSection({
       parseBoundedInteger(value, {
         min: MIN_CONVERSATION_HISTORY_LOAD_COUNT,
         max: MAX_CONVERSATION_HISTORY_LOAD_COUNT,
+      }),
+    [],
+  );
+  const parseSidebarWorkspaceVisibleCount = useCallback(
+    (value: unknown) =>
+      parseBoundedInteger(value, {
+        min: MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+        max: MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
       }),
     [],
   );
@@ -478,6 +490,14 @@ function GeneralSection({
           value={settings.terminalScrollbackLines}
           parse={parseTerminalScrollbackLines}
           onChange={handleTerminalScrollbackLinesChange}
+        />
+        <IntegerSettingRow
+          title={t("settings.general.sidebarWorkspaceVisibleCount.label")}
+          description={t("settings.general.sidebarWorkspaceVisibleCount.description")}
+          accessibilityLabel={t("settings.general.sidebarWorkspaceVisibleCount.accessibilityLabel")}
+          value={settings.sidebarWorkspaceVisibleCount}
+          parse={parseSidebarWorkspaceVisibleCount}
+          onChange={handleSidebarWorkspaceVisibleCountChange}
         />
         <IntegerSettingRow
           title={t("settings.general.conversationHistoryLoadCount.label")}
@@ -1258,6 +1278,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleSidebarWorkspaceVisibleCountChange = useCallback(
+    (sidebarWorkspaceVisibleCount: number) => {
+      void updateSettings({ sidebarWorkspaceVisibleCount });
+    },
+    [updateSettings],
+  );
+
   const handleTotalConversationHistoryLimitChange = useCallback(
     (totalConversationHistoryLimit: number) => {
       void updateSettings({ totalConversationHistoryLimit });
@@ -1471,6 +1498,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                 handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                 handleLanguageChange={handleLanguageChange}
                 handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
+                handleSidebarWorkspaceVisibleCountChange={handleSidebarWorkspaceVisibleCountChange}
                 handleConversationHistoryLoadCountChange={handleConversationHistoryLoadCountChange}
                 handleTotalConversationHistoryLimitChange={
                   handleTotalConversationHistoryLimitChange

@@ -3,8 +3,11 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 interface SidebarOrderStoreState {
+  projectAddedOrder: string[];
   projectOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
+  getProjectAddedOrder: () => string[];
+  setProjectAddedOrder: (keys: string[]) => void;
   getProjectOrder: () => string[];
   setProjectOrder: (keys: string[]) => void;
   getWorkspaceOrder: (projectKey: string) => string[];
@@ -12,6 +15,7 @@ interface SidebarOrderStoreState {
 }
 
 interface SidebarOrderPersistedState {
+  projectAddedOrder?: string[];
   projectOrder?: string[];
   workspaceOrderByProject?: Record<string, string[]>;
   projectOrderByServerId?: Record<string, string[]>;
@@ -68,13 +72,14 @@ function normalizeLegacyWorkspaceKey(serverId: string, rawWorkspaceKey: string):
 }
 
 export function migrateSidebarOrderState(persistedState: unknown): {
+  projectAddedOrder: string[];
   projectOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
 } {
   const state = persistedState as SidebarOrderPersistedState | undefined;
 
   if (!state) {
-    return { projectOrder: [], workspaceOrderByProject: {} };
+    return { projectAddedOrder: [], projectOrder: [], workspaceOrderByProject: {} };
   }
 
   const projectOrder = normalizeKeys(state.projectOrder ?? []);
@@ -103,14 +108,21 @@ export function migrateSidebarOrderState(persistedState: unknown): {
     workspaceOrderByProject[scope.projectKey] = merged;
   }
 
-  return { projectOrder, workspaceOrderByProject };
+  const projectAddedOrder = normalizeKeys(state.projectAddedOrder ?? projectOrder);
+  return { projectAddedOrder, projectOrder, workspaceOrderByProject };
 }
 
 export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
   persist(
     (set, get) => ({
+      projectAddedOrder: [],
       projectOrder: [],
       workspaceOrderByProject: {},
+      getProjectAddedOrder: () => get().projectAddedOrder,
+      setProjectAddedOrder: (keys) => {
+        const normalized = normalizeKeys(keys);
+        set({ projectAddedOrder: normalized });
+      },
       getProjectOrder: () => get().projectOrder,
       setProjectOrder: (keys) => {
         const normalized = normalizeKeys(keys);
@@ -137,10 +149,11 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
       name: "sidebar-project-workspace-order",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
+        projectAddedOrder: state.projectAddedOrder,
         projectOrder: state.projectOrder,
         workspaceOrderByProject: state.workspaceOrderByProject,
       }),
-      version: 1,
+      version: 2,
       migrate: migrateSidebarOrderState,
     },
   ),

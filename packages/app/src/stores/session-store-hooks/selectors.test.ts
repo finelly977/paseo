@@ -5,6 +5,7 @@ import {
   composeWorkspaceStructure,
   selectHasWorkspaces,
   selectHydratedWorkspaceServerIds,
+  selectProjectAddedOrder,
   selectProjectOrder,
   selectRecommendedProjectPaths,
   selectWorkspace,
@@ -109,6 +110,7 @@ function trackSelector<S, T>(
 
 function emptySidebarOrder(): SidebarOrderSnapshot {
   return {
+    projectAddedOrder: [],
     projectOrder: [],
     workspaceOrderByProject: {},
   };
@@ -325,8 +327,10 @@ describe("workspace structure composition", () => {
   ): ReturnType<typeof composeWorkspaceStructure> {
     return composeWorkspaceStructure({
       projects: selectWorkspaceStructureProjects(useSessionStore.getState(), [serverId]),
+      projectAddedOrder: selectProjectAddedOrder(sidebar),
       projectOrder: selectProjectOrder(sidebar),
       workspaceOrderByScope: selectWorkspaceOrderByScope(sidebar),
+      projectSortMode: "custom",
     });
   }
 
@@ -456,6 +460,33 @@ describe("workspace structure composition", () => {
 
     expect(after.projects.map((project) => project.projectKey)).toEqual(["project-b", "project-a"]);
     expect(after).not.toEqual(before);
+  });
+
+  it("按加入时间、名称和自定义顺序投影工作区", () => {
+    const workspaceA = createWorkspace({
+      id: "workspace-a",
+      projectId: "project-a",
+      projectDisplayName: "Alpha",
+    });
+    const workspaceB = createWorkspace({
+      id: "workspace-b",
+      projectId: "project-b",
+      projectDisplayName: "Zulu",
+    });
+    initializeWorkspaces([workspaceA, workspaceB]);
+    const projects = selectWorkspaceStructureProjects(useSessionStore.getState(), [SERVER_ID]);
+    const compose = (projectSortMode: "added" | "name" | "custom") =>
+      composeWorkspaceStructure({
+        projects,
+        projectAddedOrder: ["project-b", "project-a"],
+        projectOrder: ["project-a", "project-b"],
+        workspaceOrderByScope: {},
+        projectSortMode,
+      }).projects.map((project) => project.projectKey);
+
+    expect(compose("added")).toEqual(["project-b", "project-a"]);
+    expect(compose("name")).toEqual(["project-a", "project-b"]);
+    expect(compose("custom")).toEqual(["project-a", "project-b"]);
   });
 });
 

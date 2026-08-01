@@ -39,6 +39,7 @@ describe("sidebar view store", () => {
   beforeEach(() => {
     useSidebarViewStore.setState({
       groupMode: "project",
+      projectSortMode: "added",
       hostFilters: [],
     });
   });
@@ -89,6 +90,7 @@ describe("sidebar view store", () => {
       }),
     ).toEqual({
       groupMode: "status",
+      projectSortMode: "added",
       hostFilters: [],
     });
   });
@@ -101,6 +103,7 @@ describe("sidebar view store", () => {
       }),
     ).toEqual({
       groupMode: "status",
+      projectSortMode: "added",
       hostFilters: ["host-a"],
     });
   });
@@ -113,7 +116,22 @@ describe("sidebar view store", () => {
       }),
     ).toEqual({
       groupMode: "status",
+      projectSortMode: "added",
       hostFilters: ["host-a", "host-b"],
+    });
+  });
+
+  it("保留工作区排序模式", () => {
+    expect(
+      migrateSidebarViewState({
+        groupMode: "project",
+        projectSortMode: "custom",
+        hostFilters: [],
+      }),
+    ).toEqual({
+      groupMode: "project",
+      projectSortMode: "custom",
+      hostFilters: [],
     });
   });
 

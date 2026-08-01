@@ -482,47 +482,39 @@ export function appendMissingOrderKeys(input: {
   return [...input.currentOrder, ...missingKeys];
 }
 
-export function prependMissingOrderKeys(input: {
-  currentOrder: string[];
-  visibleKeys: string[];
-}): string[] {
-  if (input.visibleKeys.length === 0) {
-    return input.currentOrder;
-  }
-
-  const existingKeys = new Set(input.currentOrder);
-  const missingKeys = input.visibleKeys.filter((key) => !existingKeys.has(key));
-  if (missingKeys.length === 0) {
-    return input.currentOrder;
-  }
-
-  return [...missingKeys, ...input.currentOrder];
-}
-
 export interface SidebarOrderUpdates {
+  projectAddedOrder: string[] | null;
   projectOrder: string[] | null;
   workspaceOrders: Array<{ projectKey: string; order: string[] }>;
 }
 
 export function computeSidebarOrderUpdates(input: {
   projects: SidebarProjectEntry[];
+  persistedProjectAddedOrder: string[];
   persistedProjectOrder: string[];
   getWorkspaceOrder: (projectKey: string) => string[];
 }): SidebarOrderUpdates {
   if (input.projects.length === 0) {
-    return { projectOrder: null, workspaceOrders: [] };
+    return { projectAddedOrder: null, projectOrder: null, workspaceOrders: [] };
   }
 
+  const visibleProjectKeys = input.projects.map((project) => project.projectKey);
+  const nextProjectAddedOrder = appendMissingOrderKeys({
+    currentOrder: input.persistedProjectAddedOrder,
+    visibleKeys: visibleProjectKeys,
+  });
+  const projectAddedOrder =
+    nextProjectAddedOrder === input.persistedProjectAddedOrder ? null : nextProjectAddedOrder;
   const nextProjectOrder = appendMissingOrderKeys({
     currentOrder: input.persistedProjectOrder,
-    visibleKeys: input.projects.map((project) => project.projectKey),
+    visibleKeys: visibleProjectKeys,
   });
   const projectOrder = nextProjectOrder === input.persistedProjectOrder ? null : nextProjectOrder;
 
   const workspaceOrders: Array<{ projectKey: string; order: string[] }> = [];
   for (const project of input.projects) {
     const persistedWorkspaceOrder = input.getWorkspaceOrder(project.projectKey);
-    const nextWorkspaceOrder = prependMissingOrderKeys({
+    const nextWorkspaceOrder = appendMissingOrderKeys({
       currentOrder: persistedWorkspaceOrder,
       visibleKeys: project.workspaces.map((workspace) => workspace.workspaceKey),
     });
@@ -531,7 +523,7 @@ export function computeSidebarOrderUpdates(input: {
     }
   }
 
-  return { projectOrder, workspaceOrders };
+  return { projectAddedOrder, projectOrder, workspaceOrders };
 }
 
 export interface SidebarLoadingState {

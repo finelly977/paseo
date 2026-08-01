@@ -39,6 +39,9 @@ export const MAX_FONT_FAMILY_LENGTH = 200;
 export const DEFAULT_MESSAGE_PARAGRAPH_SPACING = 8; // 对应 SPACING[2]，默认的段落间距
 export const MIN_MESSAGE_PARAGRAPH_SPACING = 0;
 export const MAX_MESSAGE_PARAGRAPH_SPACING = 32;
+export const DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 5;
+export const MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 1;
+export const MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 100;
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -56,6 +59,7 @@ export interface AppSettings {
   toolCallDetailLevel: ToolCallDetailLevel;
   vimKeybindings: boolean;
   messageParagraphSpacing: number; // 每个消息段落下方的像素间距，默认 8
+  sidebarWorkspaceVisibleCount: number;
   conversationHistoryLoadCount: number;
   totalConversationHistoryLimit: number;
 }
@@ -83,6 +87,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   toolCallDetailLevel: "detailed",
   vimKeybindings: false,
   messageParagraphSpacing: DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  sidebarWorkspaceVisibleCount: DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   conversationHistoryLoadCount: DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
   totalConversationHistoryLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
 };
@@ -209,6 +214,7 @@ type NumericAppSetting =
   | "uiFontSize"
   | "codeFontSize"
   | "messageParagraphSpacing"
+  | "sidebarWorkspaceVisibleCount"
   | "conversationHistoryLoadCount"
   | "totalConversationHistoryLimit";
 
@@ -266,6 +272,15 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
     min: MIN_MESSAGE_PARAGRAPH_SPACING,
     max: MAX_MESSAGE_PARAGRAPH_SPACING,
   });
+  copyClampedNumericSetting(
+    result,
+    "sidebarWorkspaceVisibleCount",
+    stored.sidebarWorkspaceVisibleCount,
+    {
+      min: MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+      max: MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+    },
+  );
   copyClampedNumericSetting(
     result,
     "conversationHistoryLoadCount",

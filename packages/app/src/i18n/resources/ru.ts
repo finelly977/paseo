@@ -569,6 +569,14 @@ export const ru: TranslationResources = {
         reloadedAgent: "Перезагруженный агент",
         failedToReloadAgent: "Не удалось перезагрузить агент",
       },
+      drop: {
+        ariaLabel: "Перетащите сюда папки, чтобы добавить рабочие пространства",
+        overlay: "Отпустите, чтобы добавить рабочее пространство",
+        noLocalHost: "Подключите локальный хост перед добавлением папки.",
+        noFolder: "Папка не обнаружена.",
+        failed: "Не удалось добавить перетащенную папку.",
+        added: "Добавлено рабочих пространств: {{count}}.",
+      },
       confirmations: {
         unsavedTitle: "Несохранённые изменения",
         unsavedMessage:
@@ -954,6 +962,23 @@ export const ru: TranslationResources = {
     sections: {
       sessions: "История",
       schedules: "Расписания",
+    },
+    displayPreferences: {
+      ariaLabel: "Настройки отображения",
+      groupBy: "Группировать по",
+      project: "Проект",
+      status: "Статус",
+      filter: "Фильтр",
+      allHosts: "Все хосты",
+      workspaceTitle: "Название рабочего пространства",
+      title: "Название",
+      branchName: "Имя ветки",
+      sort: {
+        label: "Сортировка проектов",
+        added: "Добавленные в Paseo",
+        name: "Имя",
+        custom: "Пользовательский порядок",
+      },
     },
     worktreeSetup: {
       title: "Настройка сценариев рабочего дерева",
@@ -1731,6 +1756,11 @@ export const ru: TranslationResources = {
         label: "Terminal прокрутка назад",
         description: "Строки, хранящиеся во встроенном буфере терминала.",
         accessibilityLabel: "Линии прокрутки Terminal",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "Рабочие пространства на проект",
+        description: "Количество сессий до разворачивания проекта",
+        accessibilityLabel: "Сессии на проект",
       },
       conversationHistoryLoadCount: {
         label: "Диалогов при открытии",

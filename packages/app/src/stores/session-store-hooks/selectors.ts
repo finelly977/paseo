@@ -7,6 +7,7 @@ import {
 import type { DesktopBadgeWorkspaceStatus } from "@/utils/desktop-badge-state";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import type { ProjectDescriptor, WorkspaceDescriptor } from "../session-store";
+import type { SidebarProjectSortMode } from "@/stores/sidebar-view-store";
 
 export type { DesktopBadgeWorkspaceStatus } from "@/utils/desktop-badge-state";
 export type { WorkspaceStructure, WorkspaceStructureProject } from "@/projects/workspace-structure";
@@ -23,6 +24,7 @@ export interface SessionsSnapshot {
 }
 
 export interface SidebarOrderSnapshot {
+  projectAddedOrder: string[];
   projectOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
 }
@@ -199,33 +201,43 @@ export function selectProjectOrder(state: SidebarOrderSnapshot): string[] {
   return state.projectOrder ?? EMPTY_WORKSPACE_KEYS;
 }
 
+export function selectProjectAddedOrder(state: SidebarOrderSnapshot): string[] {
+  return state.projectAddedOrder ?? EMPTY_WORKSPACE_KEYS;
+}
+
 export function selectWorkspaceOrderByScope(state: SidebarOrderSnapshot): Record<string, string[]> {
   return state.workspaceOrderByProject ?? {};
 }
 
 export function composeWorkspaceStructure(input: {
   projects: WorkspaceStructureProject[];
+  projectAddedOrder: readonly string[];
   projectOrder: readonly string[];
   workspaceOrderByScope: Record<string, readonly string[]>;
+  projectSortMode: SidebarProjectSortMode;
 }): WorkspaceStructure {
   if (input.projects.length === 0) {
     return EMPTY_WORKSPACE_STRUCTURE;
   }
 
+  const projectsWithOrderedWorkspaces = input.projects.map((project) => {
+    const workspaceOrder = input.workspaceOrderByScope[project.projectKey] ?? EMPTY_WORKSPACE_KEYS;
+    return {
+      ...project,
+      workspaceKeys: applyStoredOrdering({
+        items: project.workspaceKeys,
+        storedOrder: workspaceOrder,
+        getKey: (workspaceKey) => workspaceKey,
+      }),
+    };
+  });
+  if (input.projectSortMode === "name") {
+    return { projects: projectsWithOrderedWorkspaces };
+  }
+
   const orderedProjects = applyStoredOrdering({
-    items: input.projects.map((project) => {
-      const workspaceOrder =
-        input.workspaceOrderByScope[project.projectKey] ?? EMPTY_WORKSPACE_KEYS;
-      return {
-        ...project,
-        workspaceKeys: applyStoredOrdering({
-          items: project.workspaceKeys,
-          storedOrder: workspaceOrder,
-          getKey: (workspaceKey) => workspaceKey,
-        }),
-      };
-    }),
-    storedOrder: input.projectOrder,
+    items: projectsWithOrderedWorkspaces,
+    storedOrder: input.projectSortMode === "custom" ? input.projectOrder : input.projectAddedOrder,
     getKey: (project) => project.projectKey,
   });
 

@@ -565,6 +565,14 @@ export const zhCN: TranslationResources = {
         reloadedAgent: "已重新加载 Agent",
         failedToReloadAgent: "重新加载 Agent 失败",
       },
+      drop: {
+        ariaLabel: "将文件夹拖入此处以添加工作区",
+        overlay: "松开以添加工作区",
+        noLocalHost: "请先连接本机 Host，再添加拖入的文件夹。",
+        noFolder: "没有检测到文件夹。",
+        failed: "无法添加拖入的文件夹。",
+        added: "已添加 {{count}} 个工作区。",
+      },
       confirmations: {
         unsavedTitle: "未保存的更改",
         unsavedMessage: "此标签页有尚未保存的更改。关闭将丢弃草稿。",
@@ -925,6 +933,23 @@ export const zhCN: TranslationResources = {
     sections: {
       sessions: "历史",
       schedules: "计划",
+    },
+    displayPreferences: {
+      ariaLabel: "显示偏好",
+      groupBy: "分组方式",
+      project: "工作区",
+      status: "状态",
+      filter: "筛选",
+      allHosts: "全部 Host",
+      workspaceTitle: "工作区标题",
+      title: "标题",
+      branchName: "分支名称",
+      sort: {
+        label: "工作区排序",
+        added: "加入 Paseo 时间",
+        name: "名称",
+        custom: "自定义顺序",
+      },
     },
     worktreeSetup: {
       title: "设置 worktree scripts",
@@ -1678,6 +1703,11 @@ export const zhCN: TranslationResources = {
         label: "终端回滚",
         description: "内置终端缓冲区保留的行数",
         accessibilityLabel: "终端回滚行数",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "每个工作区默认展开的会话数",
+        description: "工作区收起时显示的会话数，展开后仍可查看全部会话",
+        accessibilityLabel: "每个工作区展示的会话数",
       },
       conversationHistoryLoadCount: {
         label: "打开会话时加载的对话数",

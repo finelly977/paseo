@@ -84,6 +84,9 @@ export function useSidebarWorkspacesList(options?: {
   }, [allServerIds, hostRegistryLoaded, reconcileHostFilters]);
 
   const persistedProjectOrder = useSidebarOrderStore((state) => state.projectOrder ?? EMPTY_ORDER);
+  const persistedProjectAddedOrder = useSidebarOrderStore(
+    (state) => state.projectAddedOrder ?? EMPTY_ORDER,
+  );
 
   const hydratedServerIds = useHydratedWorkspaceServerIds(serverIds);
 
@@ -107,18 +110,22 @@ export function useSidebarWorkspacesList(options?: {
     const orderStore = useSidebarOrderStore.getState();
     const updates = computeSidebarOrderUpdates({
       projects,
+      persistedProjectAddedOrder,
       persistedProjectOrder,
       getWorkspaceOrder: (projectKey) =>
         orderStore.workspaceOrderByProject[projectKey] ?? EMPTY_ORDER,
     });
 
+    if (updates.projectAddedOrder) {
+      orderStore.setProjectAddedOrder(updates.projectAddedOrder);
+    }
     if (updates.projectOrder) {
       orderStore.setProjectOrder(updates.projectOrder);
     }
     for (const { projectKey, order } of updates.workspaceOrders) {
       orderStore.setWorkspaceOrder(projectKey, order);
     }
-  }, [persistedProjectOrder, projects]);
+  }, [persistedProjectAddedOrder, persistedProjectOrder, projects]);
 
   const refreshAll = useCallback(() => {
     if (!isActive) return;

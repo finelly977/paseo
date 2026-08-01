@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type UIEvent as ReactUIEvent,
   type RefObject,
 } from "react";
 import { Pressable, Text, View, type ViewStyle } from "react-native";
@@ -134,14 +135,6 @@ function ConversationHistoryIndexMarker({
           style={[styles.tick, isHighlighted && styles.tickHovered, isActive && styles.tickActive]}
         />
       </div>
-      {isHighlighted ? (
-        <View style={styles.tooltip} pointerEvents="none">
-          <Text style={styles.tooltipTitle}>{entry.title}</Text>
-          <Text style={styles.tooltipPreview}>
-            {entry.preview || t("agentStream.historyIndex.noPreview")}
-          </Text>
-        </View>
-      ) : null}
     </Pressable>
   );
 }
@@ -156,8 +149,10 @@ export function ConversationHistoryIndex({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pointerFraction, setPointerFraction] = useState<number | null>(null);
   const [bandHeight, setBandHeight] = useState(0);
+  const [railScrollTop, setRailScrollTop] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const pointerFrameRef = useRef<number | null>(null);
+  const pointerOffsetRef = useRef<number | null>(null);
   const railLayout = useMemo(
     () =>
       resolveHistoryIndexRailLayout({
@@ -183,8 +178,21 @@ export function ConversationHistoryIndex({
       width: 32,
       height: railLayout.railHeight,
       pointerEvents: "auto",
+      overflowY: railLayout.contentHeight > railLayout.railHeight ? "auto" : "hidden",
+      overflowX: "hidden",
+      scrollbarWidth: "none",
+      msOverflowStyle: "none",
     }),
-    [railLayout.railHeight, railLayout.railTop],
+    [railLayout.contentHeight, railLayout.railHeight, railLayout.railTop],
+  );
+  const railContentStyle = useMemo<CSSProperties>(
+    () => ({
+      position: "relative",
+      width: 32,
+      height: railLayout.contentHeight,
+      pointerEvents: "none",
+    }),
+    [railLayout.contentHeight],
   );
   const hoveredIndex = useMemo(() => {
     if (pointerFraction === null || visibleEntries.length === 0) {
@@ -192,6 +200,14 @@ export function ConversationHistoryIndex({
     }
     return Math.round(pointerFraction * (visibleEntries.length - 1));
   }, [pointerFraction, visibleEntries.length]);
+  const hoveredEntry = hoveredIndex === null ? null : (visibleEntries[hoveredIndex] ?? null);
+  const hoveredTooltipTop = useMemo(() => {
+    if (hoveredIndex === null) {
+      return 0;
+    }
+    const markerTop = railLayout.railTop + hoveredIndex * railLayout.markerPitch - railScrollTop;
+    return Math.max(4, Math.min(Math.max(4, bandHeight - 112), markerTop - 18));
+  }, [bandHeight, hoveredIndex, railLayout.markerPitch, railLayout.railTop, railScrollTop]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -219,6 +235,7 @@ export function ConversationHistoryIndex({
       cancelAnimationFrame(pointerFrameRef.current);
       pointerFrameRef.current = null;
     }
+    pointerOffsetRef.current = null;
     setPointerFraction(null);
     const focused = document.activeElement;
     if (focused instanceof HTMLElement && rootRef.current?.contains(focused)) {
@@ -226,25 +243,49 @@ export function ConversationHistoryIndex({
     }
   }, []);
 
-  const handleMouseMove = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const nextFraction = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
-    if (pointerFrameRef.current !== null) {
-      cancelAnimationFrame(pointerFrameRef.current);
-    }
-    pointerFrameRef.current = requestAnimationFrame(() => {
-      pointerFrameRef.current = null;
-      setPointerFraction(nextFraction);
-    });
-  }, []);
+  const handleMouseMove = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const scrollableRail = event.currentTarget;
+      const contentHeight = Math.max(1, railLayout.contentHeight - MARKER_HIT_HEIGHT);
+      const pointerOffset = event.clientY - bounds.top;
+      pointerOffsetRef.current = pointerOffset;
+      const nextFraction = Math.max(
+        0,
+        Math.min(1, (pointerOffset + scrollableRail.scrollTop) / contentHeight),
+      );
+      if (pointerFrameRef.current !== null) {
+        cancelAnimationFrame(pointerFrameRef.current);
+      }
+      pointerFrameRef.current = requestAnimationFrame(() => {
+        pointerFrameRef.current = null;
+        setPointerFraction(nextFraction);
+      });
+    },
+    [railLayout.contentHeight],
+  );
 
   const handleMouseLeave = useCallback(() => {
     if (pointerFrameRef.current !== null) {
       cancelAnimationFrame(pointerFrameRef.current);
       pointerFrameRef.current = null;
     }
+    pointerOffsetRef.current = null;
     setPointerFraction(null);
   }, []);
+  const handleRailScroll = useCallback(
+    (event: ReactUIEvent<HTMLDivElement>) => {
+      const nextScrollTop = event.currentTarget.scrollTop;
+      setRailScrollTop(nextScrollTop);
+      const pointerOffset = pointerOffsetRef.current;
+      if (pointerOffset === null) {
+        return;
+      }
+      const contentHeight = Math.max(1, railLayout.contentHeight - MARKER_HIT_HEIGHT);
+      setPointerFraction(Math.max(0, Math.min(1, (pointerOffset + nextScrollTop) / contentHeight)));
+    },
+    [railLayout.contentHeight],
+  );
 
   const handleMarkerNavigate = useCallback(
     (entry: ConversationHistoryIndexEntry) => {
@@ -357,26 +398,38 @@ export function ConversationHistoryIndex({
         <div
           role="navigation"
           aria-label={t("agentStream.historyIndex.label")}
+          data-hidden-scrollbar
           style={railStyle}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onScroll={handleRailScroll}
           onClickCapture={handleClickCapture}
         >
-          {visibleEntries.map((entry, index) => (
-            <ConversationHistoryIndexMarker
-              key={entry.id}
-              entry={entry}
-              fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
-              offset={index * railLayout.markerPitch}
-              isActive={activeId === entry.id}
-              isPointerHovered={hoveredIndex === index}
-              pointerFraction={pointerFraction}
-              reduceMotion={reduceMotion}
-              viewportRef={viewportRef}
-              onNavigate={handleMarkerNavigate}
-            />
-          ))}
+          <div style={railContentStyle}>
+            {visibleEntries.map((entry, index) => (
+              <ConversationHistoryIndexMarker
+                key={entry.id}
+                entry={entry}
+                fraction={visibleEntries.length === 1 ? 0.5 : index / (visibleEntries.length - 1)}
+                offset={index * railLayout.markerPitch}
+                isActive={activeId === entry.id}
+                isPointerHovered={hoveredIndex === index}
+                pointerFraction={pointerFraction}
+                reduceMotion={reduceMotion}
+                viewportRef={viewportRef}
+                onNavigate={handleMarkerNavigate}
+              />
+            ))}
+          </div>
         </div>
+      ) : null}
+      {hoveredEntry ? (
+        <View style={[styles.tooltip, { top: hoveredTooltipTop }]} pointerEvents="none">
+          <Text style={styles.tooltipTitle}>{hoveredEntry.title}</Text>
+          <Text style={styles.tooltipPreview}>
+            {hoveredEntry.preview || t("agentStream.historyIndex.noPreview")}
+          </Text>
+        </View>
       ) : null}
     </div>
   );
@@ -403,7 +456,6 @@ const styles = StyleSheet.create((theme) => ({
   tooltip: {
     position: "absolute",
     left: 32,
-    top: -18,
     width: 280,
     padding: 12,
     borderRadius: 8,

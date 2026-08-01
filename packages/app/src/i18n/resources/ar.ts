@@ -565,6 +565,14 @@ export const ar: TranslationResources = {
         reloadedAgent: "وكيل إعادة تحميل",
         failedToReloadAgent: "فشل في إعادة تحميل الوكيل",
       },
+      drop: {
+        ariaLabel: "اسحب المجلدات إلى هنا لإضافة مساحات العمل",
+        overlay: "اترك لإضافة مساحة العمل",
+        noLocalHost: "اتصل بالمضيف المحلي قبل إضافة مجلد مسحوب.",
+        noFolder: "لم يتم اكتشاف مجلد.",
+        failed: "تعذر إضافة المجلد المسحوب.",
+        added: "تمت إضافة {{count}} من مساحات العمل.",
+      },
       confirmations: {
         unsavedTitle: "تغييرات غير محفوظة",
         unsavedMessage:
@@ -933,6 +941,23 @@ export const ar: TranslationResources = {
     sections: {
       sessions: "السجل",
       schedules: "الجداول",
+    },
+    displayPreferences: {
+      ariaLabel: "تفضيلات العرض",
+      groupBy: "تجميع حسب",
+      project: "المشروع",
+      status: "الحالة",
+      filter: "التصفية",
+      allHosts: "كل المضيفين",
+      workspaceTitle: "عنوان مساحة العمل",
+      title: "العنوان",
+      branchName: "اسم الفرع",
+      sort: {
+        label: "ترتيب المشاريع",
+        added: "المضافة إلى Paseo",
+        name: "الاسم",
+        custom: "ترتيب مخصص",
+      },
     },
     worktreeSetup: {
       title: "إعداد البرامج النصية لشجرة العمل",
@@ -1698,6 +1723,11 @@ export const ar: TranslationResources = {
         label: "التمرير Terminal",
         description: "يتم الاحتفاظ بالخطوط في المخزن المؤقت الطرفي المدمج",
         accessibilityLabel: "خطوط التمرير Terminal",
+      },
+      sidebarWorkspaceVisibleCount: {
+        label: "مساحات العمل لكل مشروع",
+        description: "عدد الجلسات المعروضة قبل توسيع المشروع",
+        accessibilityLabel: "الجلسات المعروضة لكل مشروع",
       },
       conversationHistoryLoadCount: {
         label: "المحادثات المحمّلة عند الفتح",
