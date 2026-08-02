@@ -2293,7 +2293,7 @@ describe("processAgentStreamEvent", () => {
     expect(result.agent).toBe(null);
   });
 
-  it("does not change agent when status is not running", () => {
+  it("settles a stale agent to idle on turn_completed regardless of current status", () => {
     const turnCompletedEvent: AgentStreamEventPayload = {
       type: "turn_completed",
       provider: "claude",
@@ -2310,8 +2310,12 @@ describe("processAgentStreamEvent", () => {
       timestamp: new Date(2000),
     });
 
-    expect(result.agentChanged).toBe(false);
-    expect(result.agent).toBe(null);
+    expect(result.agentChanged).toBe(true);
+    expect(result.agent).toEqual({
+      status: "idle",
+      updatedAt: new Date(2000),
+      lastActivityAt: new Date(2000),
+    });
   });
 
   it("does not change agent when no agent is provided", () => {

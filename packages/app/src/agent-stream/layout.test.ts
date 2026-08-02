@@ -554,4 +554,40 @@ describe("layoutStream", () => {
       expect(host?.processItemIds).toEqual([]);
     },
   );
+
+  it.each(["web", "android"] as const)(
+    "回合结束后 %s 生成辅助 footer 并收集最后回合的过程项",
+    (platform) => {
+      const thoughtItem = thought("thought-1", 3);
+      const toolItem = toolCall("tool-1", 4);
+      const finalAssistant = assistantMessage("a1", 5);
+      const layout = layoutFor({
+        platform,
+        agentStatus: "idle",
+        tail: [userMessage("u1", 2), thoughtItem, toolItem, finalAssistant],
+        timingIds: [finalAssistant.id],
+      });
+
+      expect(layout.auxiliaryTurnFooter?.itemId).toBe(finalAssistant.id);
+      // 过程项从回合末尾向上收集，顺序为倒序
+      expect(layout.auxiliaryTurnFooter?.processItemIds).toEqual([toolItem.id, thoughtItem.id]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "回合进行中 %s 不生成辅助 footer，过程保持展开",
+    (platform) => {
+      const thoughtItem = thought("thought-1", 3);
+      const toolItem = toolCall("tool-1", 4);
+      const finalAssistant = assistantMessage("a1", 5);
+      const layout = layoutFor({
+        platform,
+        agentStatus: "running",
+        tail: [userMessage("u1", 2), thoughtItem, toolItem, finalAssistant],
+        timingIds: [finalAssistant.id],
+      });
+
+      expect(layout.auxiliaryTurnFooter).toBeNull();
+    },
+  );
 });

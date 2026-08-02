@@ -205,11 +205,11 @@ function deriveOptimisticLifecycleStatus(
   currentStatus: AgentLifecycleStatus,
   event: AgentStreamEventPayload,
 ): AgentLifecycleStatus | null {
-  if (currentStatus !== "running") {
-    return null;
-  }
   switch (event.type) {
     case "turn_completed":
+      // 回合完成是服务端权威终局：无论本地状态是否仍为 running（例如
+      // 运行中的 agent_update 未及时送达），都把状态置为 idle，保证
+      // 回合结束后的收起动作不被本地陈旧状态卡住。
       return "idle";
     case "turn_failed":
       return "error";
