@@ -1423,6 +1423,13 @@ function buildWorkspaceHeaderCheckoutState(input: {
   };
 }
 
+// 右侧栏的 Git 标签不依赖 workspace 描述符：描述符尚未同步（打开会话早期）
+// 时，只要 checkout 查询可用（有 cwd）就能判断是否 git 工作区，让 Git 面板
+// 无需等待智能体目录同步完成即可显示。
+function resolveWorkspaceIsGitCheckout(checkoutState: WorkspaceHeaderCheckoutState): boolean {
+  return checkoutState.kind === "ready" ? checkoutState.checkout.isGit : false;
+}
+
 function deriveWorkspaceHeaderFields(input: {
   workspace: WorkspaceDescriptor | null;
   checkoutState: WorkspaceHeaderCheckoutState;
@@ -1548,7 +1555,6 @@ function renderWorkspaceScreenGateShell(input: {
   if (!input.gate) {
     return null;
   }
-
   return (
     <WorkspaceFocusProvider workspaceKey={input.workspaceKey}>
       <View style={styles.container}>
@@ -1560,6 +1566,19 @@ function renderWorkspaceScreenGateShell(input: {
       </View>
     </WorkspaceFocusProvider>
   );
+}
+
+// 目录同步完成前（workspace 描述符未知）如果已能从智能体记录拿到工作区
+// 目录，直接渲染页面（右侧栏提前可用），不再用 loading 遮罩整个页面。
+function resolveWorkspaceLoadingGateOverride(
+  state: WorkspaceRouteState,
+  workspaceDirectory: string | null,
+  gate: ReactNode,
+): ReactNode {
+  if (state.kind === "loading" && workspaceDirectory) {
+    return null;
+  }
+  return gate;
 }
 
 function WorkspaceDocumentTitleEffectSlot({
@@ -1758,7 +1777,22 @@ function WorkspaceScreenContent({
 
   const client = useHostRuntimeClient(normalizedServerId);
   const isConnected = useHostRuntimeIsConnected(normalizedServerId);
-  const workspaceDirectory = workspaceDescriptor?.workspaceDirectory || null;
+  // workspace 描述符尚未同步（打开会话早期）时，从该工作区的智能体记录取
+  // cwd 作为右侧栏（文件/变更面板）的目录来源，无需等待智能体目录同步完成。
+  const fallbackWorkspaceDirectory = useSessionStore((state) => {
+    const session = state.sessions[normalizedServerId];
+    if (!session || !normalizedWorkspaceId) {
+      return null;
+    }
+    for (const agent of session.agents.values()) {
+      if (agent.workspaceId === normalizedWorkspaceId && agent.cwd) {
+        return agent.cwd;
+      }
+    }
+    return null;
+  });
+  const workspaceDirectory =
+    workspaceDescriptor?.workspaceDirectory || fallbackWorkspaceDirectory || null;
   const isMissingWorkspaceDirectory = Boolean(workspaceDescriptor) && !workspaceDirectory;
   const [isImportSheetVisible, setIsImportSheetVisible] = useState(false);
   const canOpenImportSheet = [client, isConnected, workspaceDirectory].every(Boolean);
@@ -1893,12 +1927,13 @@ function WorkspaceScreenContent({
     workspaceHeaderTitle,
     workspaceHeaderSubtitle,
     shouldShowWorkspaceHeaderSubtitle,
-    isGitCheckout,
     currentBranchName,
   } = deriveWorkspaceHeaderFields({
     workspace: workspaceDescriptor,
     checkoutState: workspaceHeaderCheckoutState,
   });
+  // 右侧栏的 Git 标签不依赖 workspace 描述符，见 resolveWorkspaceIsGitCheckout。
+  const isGitCheckout = resolveWorkspaceIsGitCheckout(workspaceHeaderCheckoutState);
 
   const isExplorerOpen = usePanelStore((state) =>
     selectIsFileExplorerOpen(state, { isCompact: isMobile }),
@@ -3411,7 +3446,11 @@ function WorkspaceScreenContent({
     },
   });
   const gatedWorkspaceScreen = renderWorkspaceScreenGateShell({
-    gate: workspaceScreenGate,
+    gate: resolveWorkspaceLoadingGateOverride(
+      workspaceRouteState,
+      workspaceDirectory,
+      workspaceScreenGate,
+    ),
     workspaceKey: persistenceKey,
   });
 

@@ -2606,7 +2606,7 @@ function ProjectModeList({
         <ScrollView
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator
           testID="sidebar-project-workspace-list-scroll"
         >
           {content}
