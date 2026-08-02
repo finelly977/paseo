@@ -45,6 +45,7 @@ export interface StreamLayoutInput {
 
 interface LayoutSegmentInput {
   strategy: StreamStrategy;
+  agentStatus: string;
   items: StreamItem[];
   timingByAssistantId: Map<string, TurnTiming>;
   auxiliaryTurnFooter: TurnFooterHost | null;
@@ -71,6 +72,7 @@ function createTurnFooterHost(input: {
   turnEndIndex: number;
   processBoundaryAboveItems?: StreamItem[] | null;
   processBoundaryAboveIndex?: number | null;
+  allowPartialBoundary?: boolean;
   timingByAssistantId: Map<string, TurnTiming>;
 }): TurnFooterHost {
   return {
@@ -85,6 +87,9 @@ function createTurnFooterHost(input: {
       turnEndIndex: input.turnEndIndex,
       boundaryAboveItems: input.processBoundaryAboveItems,
       boundaryAboveIndex: input.processBoundaryAboveIndex,
+      ...(input.allowPartialBoundary === undefined
+        ? {}
+        : { allowPartialBoundary: input.allowPartialBoundary }),
     }),
   };
 }
@@ -96,6 +101,7 @@ export function collectCompletedTurnProcessItemIds(input: {
   turnEndIndex: number;
   boundaryAboveItems?: StreamItem[] | null;
   boundaryAboveIndex?: number | null;
+  allowPartialBoundary?: boolean;
 }): string[] {
   const processItemIds: string[] = [];
   const finalAssistantBlockGroupId =
@@ -137,9 +143,10 @@ export function collectCompletedTurnProcessItemIds(input: {
       input.boundaryAboveIndex === null ||
       input.boundaryAboveIndex === undefined
     ) {
-      // 当前分页从一轮对话中间开始。加载到用户消息边界前保持过程展开，避免每次
-      // 加载更早分页时再次收起一个片段并改变视口高度。
-      return [];
+      // 分页从一轮对话中间开始：空闲状态直接收起已加载的过程项，避免一直
+      // 展开、等到更早分页加载后才突然收起造成撕裂；运行中保持展开等待
+      // 边界加载完成。
+      return input.allowPartialBoundary ? processItemIds : [];
     }
 
     items = input.boundaryAboveItems;
@@ -234,6 +241,7 @@ function resolveCompletedFooter(input: {
   index: number;
   item: StreamItem;
   belowItem: StreamItem | null;
+  agentStatus: string;
   timingByAssistantId: Map<string, TurnTiming>;
   auxiliaryTurnFooter: TurnFooterHost | null;
   boundaryAboveItems: StreamItem[] | null;
@@ -262,6 +270,7 @@ function resolveCompletedFooter(input: {
     turnEndIndex: input.index,
     processBoundaryAboveItems: input.boundaryAboveItems,
     processBoundaryAboveIndex: input.boundaryAboveIndex,
+    allowPartialBoundary: input.agentStatus !== "running",
     timingByAssistantId: input.timingByAssistantId,
   });
 }
@@ -270,6 +279,67 @@ function isToolSequenceItem(
   item: StreamItem | null,
 ): item is Extract<StreamItem, { kind: "tool_call" | "thought" | "todo_list" }> {
   return item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
+}
+
+/**
+ * 分页加载从回合中间开始时（tail 开头只有过程项、回合的助手消息还在更早的
+ * 未加载历史里），正常 completedFooter 无法生成。空闲状态下直接收起这段已
+ * 加载的过程项，避免一直展开、等到更早分页加载后才突然收起造成撕裂。
+ */
+function tryResolvePartialTurnFooter(input: {
+  strategy: StreamStrategy;
+  items: StreamItem[];
+  index: number;
+  item: StreamItem;
+  aboveItem: StreamItem | null;
+  agentStatus: string;
+}): TurnFooterHost | null {
+  if (input.agentStatus === "running") {
+    return null;
+  }
+  if (!isToolSequenceItem(input.item)) {
+    return null;
+  }
+  if (input.aboveItem !== null) {
+    if (isToolSequenceItem(input.aboveItem)) {
+      return null;
+    }
+    if (input.aboveItem.kind === "user_message" || input.aboveItem.kind === "assistant_message") {
+      return null;
+    }
+  }
+  // 沿策略的“下方”方向收集过程项（倒序平台方向相反）；段内出现助手消息或
+  // 用户消息时，该回合由正常的 completedFooter/auxiliary footer 逻辑处理。
+  const processItemIds: string[] = [];
+  for (
+    let i = input.index;
+    i >= 0 && i < input.items.length;
+    i = input.strategy.getNeighborIndex(i, "below")
+  ) {
+    const candidate = input.items[i];
+    if (!candidate) {
+      break;
+    }
+    if (candidate.kind === "user_message" || candidate.kind === "assistant_message") {
+      return null;
+    }
+    if (candidate.kind === "activity_log" || candidate.kind === "compaction") {
+      break;
+    }
+    if (!isToolSequenceItem(candidate)) {
+      break;
+    }
+    processItemIds.push(candidate.id);
+  }
+  if (processItemIds.length === 0) {
+    return null;
+  }
+  return {
+    itemId: `partial:${input.item.id}`,
+    items: input.items,
+    startIndex: input.index,
+    processItemIds,
+  };
 }
 
 function getToolSequence(input: {
@@ -342,11 +412,23 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       index,
       item,
       belowItem,
+      agentStatus: input.agentStatus,
       timingByAssistantId: input.timingByAssistantId,
       auxiliaryTurnFooter: input.auxiliaryTurnFooter,
       boundaryAboveItems: input.boundaryAboveItems,
       boundaryAboveIndex: input.boundaryAboveIndex,
     });
+    const partialTurnFooter = completedFooter
+      ? null
+      : tryResolvePartialTurnFooter({
+          strategy: input.strategy,
+          items: input.items,
+          index,
+          item,
+          aboveItem,
+          agentStatus: input.agentStatus,
+        });
+    const turnFooter = completedFooter ?? partialTurnFooter;
 
     return {
       item,
@@ -354,9 +436,9 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       items: input.items,
       aboveItem,
       belowItem,
-      gapBelow: completedFooter ? 0 : getGapBetweenStreamItems(item, belowItem),
+      gapBelow: turnFooter ? 0 : getGapBetweenStreamItems(item, belowItem),
       assistantSpacing,
-      completedFooter,
+      completedFooter: turnFooter,
       toolSequence: getToolSequence({ item, aboveItem, belowItem }),
       isFirstInUserGroup: item.kind === "user_message" && aboveItem?.kind !== "user_message",
       isLastInUserGroup: item.kind === "user_message" && belowItem?.kind !== "user_message",
@@ -388,6 +470,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     // item borders history), so cached layout stays valid between flushes.
     const historyCacheKey = [
       frameOrder,
+      input.agentStatus,
       historyBoundaryIndex ?? "null",
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
@@ -404,6 +487,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     } else {
       history = layoutSegment({
         strategy: input.strategy,
+        agentStatus: input.agentStatus,
         items: input.history,
         timingByAssistantId: input.timingByAssistantId,
         auxiliaryTurnFooter,
@@ -422,6 +506,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
 
   const liveHead = layoutSegment({
     strategy: input.strategy,
+    agentStatus: input.agentStatus,
     items: input.liveHead,
     timingByAssistantId: input.timingByAssistantId,
     auxiliaryTurnFooter,

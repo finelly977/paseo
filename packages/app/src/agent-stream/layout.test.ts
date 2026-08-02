@@ -541,10 +541,26 @@ describe("layoutStream", () => {
   );
 
   it.each(["web", "android"] as const)(
-    "分页只加载到半轮 %s 对话时保持展开，直到用户消息边界可用",
+    "分页只加载到半轮 %s 对话时收起已加载的过程项，不再等待用户消息边界",
     (platform) => {
       const layout = layoutFor({
         platform,
+        tail: [toolCall("partial-tool", 1), assistantMessage("final", 2), userMessage("next", 3)],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "final",
+      )?.completedFooter;
+      expect(host?.processItemIds).toEqual(["partial-tool"]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "分页只加载到半轮且运行中 %s 时保持展开，直到用户消息边界可用",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        agentStatus: "running",
         tail: [toolCall("partial-tool", 1), assistantMessage("final", 2), userMessage("next", 3)],
       });
 
@@ -590,4 +606,62 @@ describe("layoutStream", () => {
       expect(layout.auxiliaryTurnFooter).toBeNull();
     },
   );
+
+  it("空闲状态下分页从回合中间开始时，已加载的过程项直接收起", () => {
+    const thoughtItem = thought("thought-1", 1);
+    const toolItem = toolCall("tool-1", 2);
+    const toolItem2 = toolCall("tool-2", 3);
+    const layout = layoutFor({
+      platform: "web",
+      agentStatus: "idle",
+      tail: [thoughtItem, toolItem, toolItem2],
+      timingIds: [],
+    });
+
+    const host = [...layout.history, ...layout.liveHead].find(
+      (item) => item.completedFooter?.itemId === `partial:${thoughtItem.id}`,
+    )?.completedFooter;
+    expect(host).toBeDefined();
+    expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id, toolItem2.id]);
+  });
+
+  it("运行中分页从回合中间开始时保持展开", () => {
+    const thoughtItem = thought("thought-1", 1);
+    const toolItem = toolCall("tool-1", 2);
+    const layout = layoutFor({
+      platform: "web",
+      agentStatus: "running",
+      tail: [thoughtItem, toolItem],
+      timingIds: [],
+    });
+
+    const host = [...layout.history, ...layout.liveHead].find((item) =>
+      item.completedFooter?.itemId.startsWith("partial:"),
+    )?.completedFooter;
+    expect(host).toBeUndefined();
+  });
+
+  it("段内出现助手消息时不生成 partial footer（交给正常回合逻辑）", () => {
+    const thoughtItem = thought("thought-1", 1);
+    const toolItem = toolCall("tool-1", 2);
+    const finalAssistant = assistantMessage("a1", 3);
+    const nextUser = userMessage("u2", 4);
+    const layout = layoutFor({
+      platform: "web",
+      agentStatus: "idle",
+      tail: [thoughtItem, toolItem, finalAssistant, nextUser],
+      timingIds: [finalAssistant.id],
+    });
+
+    const partial = [...layout.history, ...layout.liveHead].find((item) =>
+      item.completedFooter?.itemId.startsWith("partial:"),
+    )?.completedFooter;
+    expect(partial).toBeUndefined();
+    // 正常 completedFooter 仍生效
+    const host = [...layout.history, ...layout.liveHead].find(
+      (item) => item.completedFooter?.itemId === finalAssistant.id,
+    )?.completedFooter;
+    expect(host).toBeDefined();
+    expect(new Set(host?.processItemIds)).toEqual(new Set([thoughtItem.id, toolItem.id]));
+  });
 });
