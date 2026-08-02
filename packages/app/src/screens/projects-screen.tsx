@@ -46,7 +46,7 @@ export default function ProjectsScreen({ view }: ProjectsScreenProps) {
   if (isLoading && projects.length === 0) {
     return (
       <View style={styles.centered} testID="projects-list">
-        <LoadingSpinner size="large" color={styles.spinnerColor.color} />
+        <LoadingSpinner size={28} color={styles.spinnerColor.color} />
       </View>
     );
   }

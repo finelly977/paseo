@@ -38,7 +38,7 @@ export function QuittingOverlay() {
 
   return (
     <View style={styles.overlay}>
-      <LoadingSpinner size="large" color={theme.colors.foregroundMuted} />
+      <LoadingSpinner size={28} color={theme.colors.foregroundMuted} />
       <Text style={styles.title}>{t("desktop.quitting.title")}</Text>
       <Text style={styles.detail}>{t("desktop.quitting.detail")}</Text>
     </View>

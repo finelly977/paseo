@@ -1800,7 +1800,7 @@ function DiffBodyContent({
   if (isStatusLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
+        <ThemedActivityIndicator size={24} uniProps={foregroundMutedIconColorMapping} />
         <Text style={styles.loadingText}>{checkingRepositoryLabel}</Text>
       </View>
     );
@@ -1822,7 +1822,7 @@ function DiffBodyContent({
   if (isDiffLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size="large" uniProps={foregroundMutedIconColorMapping} />
+        <ThemedActivityIndicator size={24} uniProps={foregroundMutedIconColorMapping} />
       </View>
     );
   }

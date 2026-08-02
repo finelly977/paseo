@@ -247,7 +247,7 @@ function SetupPanel() {
 
       {isWaiting ? (
         <View style={styles.waitingContainer}>
-          <ThemedActivityIndicator size="large" uniProps={foregroundMutedColorMapping} />
+          <ThemedActivityIndicator size={24} uniProps={foregroundMutedColorMapping} />
           <Text style={styles.waitingText}>{t("workspace.setup.waiting")}</Text>
         </View>
       ) : null}

@@ -92,7 +92,7 @@ function SessionsScreenContent() {
       ) : null}
       {isInitialLoad ? (
         <View style={styles.loadingContainer}>
-          <LoadingSpinner size="large" color={theme.colors.foregroundMuted} />
+          <LoadingSpinner size={28} color={theme.colors.foregroundMuted} />
         </View>
       ) : null}
       {!isInitialLoad && showLoadError ? (

@@ -215,7 +215,7 @@ function renderChatAgentNonReadyView(args: {
     return (
       <View style={styles.container} testID="agent-loading">
         <View style={styles.errorContainer}>
-          <ThemedActivityIndicator size="large" uniProps={foregroundMutedColorMapping} />
+          <ThemedActivityIndicator size={24} uniProps={foregroundMutedColorMapping} />
         </View>
       </View>
     );
@@ -716,7 +716,7 @@ function AgentPanelBody({
     return (
       <View style={styles.container} testID="agent-loading">
         <View style={styles.errorContainer}>
-          <ThemedActivityIndicator size="large" uniProps={foregroundMutedColorMapping} />
+          <ThemedActivityIndicator size={24} uniProps={foregroundMutedColorMapping} />
         </View>
       </View>
     );
@@ -1251,7 +1251,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
 
           {showHistorySyncOverlay ? (
             <View style={styles.historySyncOverlay} testID="agent-history-overlay">
-              <ThemedActivityIndicator size="large" uniProps={foregroundMutedColorMapping} />
+              <ThemedActivityIndicator size={24} uniProps={foregroundMutedColorMapping} />
             </View>
           ) : null}
 
@@ -1260,7 +1260,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
 
         {isArchivingCurrentAgent ? (
           <View style={styles.archivingOverlay} testID="agent-archiving-overlay">
-            <ThemedActivityIndicator size="large" uniProps={foregroundColorMapping} />
+            <ThemedActivityIndicator size={24} uniProps={foregroundColorMapping} />
             <Text style={styles.archivingTitle}>{t("agentPanel.states.archivingTitle")}</Text>
             <Text style={styles.archivingSubtitle}>{t("agentPanel.states.archivingSubtitle")}</Text>
           </View>
@@ -1605,7 +1605,7 @@ function AgentSessionUnavailableState({
       <View style={styles.centerState}>
         {isConnecting || isPreparingSession ? (
           <>
-            <ActivityIndicator size="large" />
+            <ActivityIndicator size={24} />
             <Text style={styles.loadingText}>
               {isPreparingSession
                 ? t("agentPanel.unavailable.preparingSession", { serverLabel })

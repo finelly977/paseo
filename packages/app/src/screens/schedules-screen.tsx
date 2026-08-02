@@ -226,7 +226,7 @@ function SchedulesScreenBody({
   if (bodyState.kind === "loading") {
     return (
       <View style={styles.centered}>
-        <LoadingSpinner size="large" color={styles.spinner.color} />
+        <LoadingSpinner size={28} color={styles.spinner.color} />
       </View>
     );
   }
