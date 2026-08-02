@@ -1323,6 +1323,14 @@ interface GitDiffPaneProps {
   enabled?: boolean;
   onOpenFile?: (path: string) => void;
   onAddToChat?: (path: string) => void;
+  /**
+   * While true, height-measurement updates are suppressed: resizing the sidebar
+   * changes the diff's wrapping width, which would otherwise re-measure every
+   * visible row and re-render the FlatList on every frame of the drag. Heights
+   * are still recorded in refs so the next non-suppressed layout pass restores
+   * them without a visible jump.
+   */
+  suppressHeightSync?: boolean;
 }
 
 type PressableStyleFn = (
@@ -1845,6 +1853,10 @@ interface SharedDiffViewProps {
     codeFontSize: number;
     monoFontFamily: string;
   };
+  /**
+   * While true, height-measurement updates are suppressed (see GitDiffPaneProps).
+   */
+  suppressHeightSync?: boolean;
   mode:
     | {
         kind: "working_tree";
@@ -1874,7 +1886,12 @@ interface SharedDiffViewProps {
       };
 }
 
-export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffViewProps) {
+export function SharedDiffView({
+  files,
+  displayPreferences,
+  suppressHeightSync = false,
+  mode,
+}: SharedDiffViewProps) {
   const { layout, wrapLines, codeFontSize, monoFontFamily } = displayPreferences;
   const diffBodyLineHeight = Math.round(codeFontSize * 1.5);
   const typographyKey = [monoFontFamily, codeFontSize, diffBodyLineHeight].join(":");
@@ -2026,9 +2043,11 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
         return;
       }
       folderRowHeightRef.current = height;
-      scheduleHeightVersionUpdate();
+      if (!suppressHeightSync) {
+        scheduleHeightVersionUpdate();
+      }
     },
-    [scheduleHeightVersionUpdate],
+    [scheduleHeightVersionUpdate, suppressHeightSync],
   );
 
   const handleHeaderHeightChange = useCallback(
@@ -2045,9 +2064,11 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
       }
       headerHeightByPathRef.current[path] = height;
       defaultHeaderHeightRef.current = height;
-      scheduleHeightVersionUpdate();
+      if (!suppressHeightSync) {
+        scheduleHeightVersionUpdate();
+      }
     },
-    [scheduleHeightVersionUpdate],
+    [scheduleHeightVersionUpdate, suppressHeightSync],
   );
 
   const handleBodyHeightChange = useCallback(
@@ -2064,9 +2085,11 @@ export function SharedDiffView({ files, displayPreferences, mode }: SharedDiffVi
         return;
       }
       bodyHeightByKeyRef.current[heightKey] = height;
-      scheduleHeightVersionUpdate();
+      if (!suppressHeightSync) {
+        scheduleHeightVersionUpdate();
+      }
     },
-    [getBodyHeightKey, scheduleHeightVersionUpdate],
+    [getBodyHeightKey, scheduleHeightVersionUpdate, suppressHeightSync],
   );
 
   const handleDiffListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -2686,6 +2709,7 @@ export function GitDiffPane({
   enabled,
   onOpenFile,
   onAddToChat,
+  suppressHeightSync,
 }: GitDiffPaneProps) {
   const { settings: appSettings } = useAppSettings();
   const { t } = useTranslation();
@@ -2982,6 +3006,7 @@ export function GitDiffPane({
       <SharedDiffView
         files={files}
         displayPreferences={sharedDisplayPreferences}
+        suppressHeightSync={suppressHeightSync}
         mode={workingTreeMode}
       />
     </DiffBodyContent>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -136,6 +136,7 @@ export function CompactExplorerSidebar({
           workspaceRoot={workspaceRoot}
           isGit={isGit}
           isOpen={isOpen}
+          isResizing={false}
           onOpenFile={onOpenFile}
         />
       </MobilePanelOverlay>
@@ -167,6 +168,9 @@ export function ExplorerSidebar({
   });
   const startWidthRef = useRef(visibleExplorerWidth);
   const resizeWidth = useSharedValue(visibleExplorerWidth);
+  // While the sidebar is being dragged, diff height re-measurement is suppressed
+  // so the FlatList does not re-render on every frame of the drag.
+  const [isResizing, setIsResizing] = useState(false);
 
   useEffect(() => {
     resizeWidth.value = visibleExplorerWidth;
@@ -188,6 +192,7 @@ export function ExplorerSidebar({
         .onStart(() => {
           startWidthRef.current = visibleExplorerWidth;
           resizeWidth.value = visibleExplorerWidth;
+          runOnJS(setIsResizing)(true);
         })
         .onUpdate((event) => {
           const newWidth = startWidthRef.current - event.translationX;
@@ -197,6 +202,7 @@ export function ExplorerSidebar({
           });
         })
         .onEnd(() => {
+          runOnJS(setIsResizing)(false);
           runOnJS(setExplorerWidth)(resizeWidth.value);
         }),
     [resizeWidth, setExplorerWidth, viewportWidth, visibleExplorerWidth],
@@ -232,6 +238,7 @@ export function ExplorerSidebar({
           workspaceRoot={workspaceRoot}
           isGit={isGit}
           isOpen={isOpen}
+          isResizing={isResizing}
           onOpenFile={onOpenFile}
         />
       </View>
@@ -276,6 +283,7 @@ interface SidebarContentProps {
   workspaceRoot: string;
   isGit: boolean;
   isOpen: boolean;
+  isResizing: boolean;
   onOpenFile?: (filePath: string) => void;
 }
 
@@ -288,6 +296,7 @@ function ExplorerSidebarContent({
   workspaceRoot,
   isGit,
   isOpen,
+  isResizing,
   onOpenFile,
 }: SidebarContentProps) {
   const { theme } = useUnistyles();
@@ -396,6 +405,7 @@ function ExplorerSidebarContent({
             workspaceId={workspaceId}
             workspaceRoot={workspaceRoot}
             isOpen={isOpen}
+            isResizing={isResizing}
             onOpenFile={onOpenFile}
           />
         )}
@@ -462,10 +472,11 @@ function ChangedFilesPane({
   workspaceId,
   workspaceRoot,
   isOpen,
+  isResizing,
   onOpenFile,
 }: Pick<
   SidebarContentProps,
-  "serverId" | "workspaceId" | "workspaceRoot" | "isOpen" | "onOpenFile"
+  "serverId" | "workspaceId" | "workspaceRoot" | "isOpen" | "isResizing" | "onOpenFile"
 >) {
   const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
   return (
@@ -474,6 +485,7 @@ function ChangedFilesPane({
       workspaceId={workspaceId}
       cwd={workspaceRoot}
       enabled={isOpen}
+      suppressHeightSync={isResizing}
       onOpenFile={onOpenFile}
       onAddToChat={canAddToChat ? addFile : undefined}
     />
