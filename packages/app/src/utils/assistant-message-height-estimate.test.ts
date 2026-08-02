@@ -64,4 +64,21 @@ describe("assistant message height estimate", () => {
       93,
     );
   });
+
+  it("falls back to text-feature estimate when nothing is cached", () => {
+    // Short single-line message: one paragraph line + vertical padding.
+    expect(estimateAssistantMessageHeightFromCache("Short message")).toBeGreaterThan(24);
+    // A code block with several lines estimates taller than plain text.
+    const plain = estimateAssistantMessageHeightFromCache("line one\nline two\nline three")!;
+    const code = estimateAssistantMessageHeightFromCache("```ts\nconst a = 1;\nconst b = 2;\n```")!;
+    expect(code).toBeGreaterThan(plain);
+  });
+
+  it("caps text-feature estimate to avoid a single huge message anchoring the viewport", () => {
+    const huge = "line\n".repeat(500);
+    const estimated = estimateAssistantMessageHeightFromCache(huge)!;
+    // 40 estimated lines * ~20px + padding, far below the uncapped 500-line height.
+    expect(estimated).toBeLessThan(500 * 20);
+    expect(estimated).toBeGreaterThan(0);
+  });
 });

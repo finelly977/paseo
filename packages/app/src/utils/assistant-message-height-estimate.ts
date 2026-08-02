@@ -117,6 +117,40 @@ function estimateAssistantMarkdownBlockHeightFromCache(
   );
 }
 
+// Fallback estimate used when no measured height is cached yet: a paragraph
+// line is ~1.4em tall, code lines are taller, and empty lines between blocks
+// add a paragraph gap. This is a coarse first-frame anchor; the real height is
+// measured and cached via onLayout shortly after.
+const ESTIMATE_PARAGRAPH_LINE_HEIGHT = 20;
+const ESTIMATE_CODE_LINE_HEIGHT = 21;
+const ESTIMATE_MAX_LINES = 40;
+
+function estimateMarkdownTextHeight(markdown: string, paragraphSpacing: number): number | null {
+  if (markdown.length === 0) {
+    return null;
+  }
+  const lines = markdown.split("\n");
+  const estimatedLines = Math.min(lines.length, ESTIMATE_MAX_LINES);
+  let codeLineCount = 0;
+  let inFence = false;
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      codeLineCount += 1;
+    }
+  }
+  const textLineCount = estimatedLines - codeLineCount;
+  const lineHeight =
+    codeLineCount * ESTIMATE_CODE_LINE_HEIGHT + textLineCount * ESTIMATE_PARAGRAPH_LINE_HEIGHT;
+  // Add a gap between the estimated lines; paragraphs in markdown are separated
+  // by blank lines, which the collapsed markdown treats as spacing.
+  const blockGaps = Math.max(0, Math.min(lines.length, ESTIMATE_MAX_LINES) / 8) * paragraphSpacing;
+  return Math.ceil(ASSISTANT_MESSAGE_VERTICAL_PADDING + lineHeight + blockGaps);
+}
+
 export function estimateAssistantMessageHeightFromCache(
   markdown: string,
   paragraphSpacing?: number,
@@ -124,7 +158,8 @@ export function estimateAssistantMessageHeightFromCache(
   const normalizedParagraphSpacing = normalizeParagraphSpacing(paragraphSpacing);
   return (
     estimateAssistantMarkdownBlockHeightFromCache(markdown, normalizedParagraphSpacing) ??
-    estimateAssistantImageMessageHeightFromCache(markdown)
+    estimateAssistantImageMessageHeightFromCache(markdown) ??
+    estimateMarkdownTextHeight(markdown, normalizedParagraphSpacing)
   );
 }
 

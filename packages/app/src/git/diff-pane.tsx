@@ -11,6 +11,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { DiffStat } from "@/components/diff-stat";
+import { estimateWrappedCharsPerLine } from "@/git/diff-wrap-estimate";
 import {
   View,
   Text,
@@ -2014,9 +2015,31 @@ export function SharedDiffView({
         layout === "split"
           ? getSplitDiffLineCount(file)
           : getDiffFileMetrics(file).unifiedLineCount;
+
+      // When wrapping is enabled and the sidebar is narrow, long lines wrap into
+      // multiple rendered rows. Estimate the wrapped row count from the total
+      // content length and a per-line character budget, so the virtualized
+      // height is closer to the measured one and scrolling does not jump.
+      if (wrapLines) {
+        const metrics = getDiffFileMetrics(file);
+        const charsPerLine = Math.max(1, Math.floor(estimateWrappedCharsPerLine(codeFontSize)));
+        const wrappedLineCount = Math.max(
+          lineCount,
+          Math.ceil(metrics.contentLength / charsPerLine),
+        );
+        return diffBodyChromeHeight + wrappedLineCount * diffBodyLineHeight;
+      }
+
       return diffBodyChromeHeight + lineCount * diffBodyLineHeight;
     },
-    [diffBodyChromeHeight, diffBodyLineHeight, layout, statusBodyHeightEstimate],
+    [
+      codeFontSize,
+      diffBodyChromeHeight,
+      diffBodyLineHeight,
+      layout,
+      statusBodyHeightEstimate,
+      wrapLines,
+    ],
   );
 
   const getFlatItemHeight = useCallback(
