@@ -1365,7 +1365,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
     expect(cwd).toBe("/tmp/b");
   });
 
-  test("preloadProviderSnapshots warms the priority cwd before the global snapshot", async () => {
+  test("preloadProviderSnapshots warms the priority cwd and the global snapshot concurrently", async () => {
     const warmed: Array<string | null> = [];
     const manager = {
       warmUpSnapshotForCwd: vi.fn(async (input: { cwd?: string | null }) => {
@@ -1387,8 +1387,9 @@ describe("ProviderSnapshotManager cwd routing", () => {
       providerSnapshotManager: manager as never,
     });
 
-    expect(warmed).toEqual(["/tmp/project-a", null]);
-    expect(manager.warmUpSnapshotForCwd).toHaveBeenCalledTimes(2);
+    expect(warmed).toHaveLength(2);
+    expect(warmed).toContain("/tmp/project-a");
+    expect(warmed).toContain(null);
   });
 
   test("preloadProviderSnapshots only warms the global snapshot when no priority cwd exists", async () => {

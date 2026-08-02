@@ -934,7 +934,7 @@ export class ProviderSnapshotManager {
 
 /**
  * 从持久化 agent 记录中找出最近活跃的非归档 agent 的工作目录，用于
- * 启动预加载时优先预热该目录（即“上次会话”）的 provider 快照。
+ * 启动预加载时并行预热该目录（即“上次会话”）的 provider 快照。
  * 记录按 ISO 时间字符串比较；没有候选时返回 null（只预热全局快照）。
  */
 export function resolveMostRecentlyActiveAgentCwd(
@@ -967,8 +967,8 @@ export function resolveMostRecentlyActiveAgentCwd(
 
 /**
  * 启动后后台预加载已启用 provider 的模型目录，避免首次使用 provider 时
- * 等待模型列表探测。最近活跃会话所在的 workspace（“上次会话”）优先预热，
- * 随后预热全局快照；调用方应 fire-and-forget，不阻塞 daemon 启动流程。
+ * 等待模型列表探测。最近活跃会话所在的 workspace（“上次会话”）与全局
+ * 范围**同时**预热；调用方应 fire-and-forget，不阻塞 daemon 启动流程。
  */
 export async function preloadProviderSnapshots(input: {
   agentStorage: Pick<AgentStorage, "list">;
@@ -976,10 +976,12 @@ export async function preloadProviderSnapshots(input: {
 }): Promise<void> {
   const records = await input.agentStorage.list();
   const priorityCwd = resolveMostRecentlyActiveAgentCwd(records);
+  const warmups: Promise<void>[] = [];
   if (priorityCwd) {
-    await input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: priorityCwd });
+    warmups.push(input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: priorityCwd }));
   }
-  await input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: null });
+  warmups.push(input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: null }));
+  await Promise.all(warmups);
 }
 
 export function resolveSnapshotCwd(cwd?: string | null): string {

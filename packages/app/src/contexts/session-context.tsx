@@ -4,7 +4,6 @@ import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClientActivity } from "@/hooks/use-client-activity";
-import { useAppVisible } from "@/hooks/use-app-visible";
 import { usePushTokenRegistration } from "@/hooks/use-push-token-registration";
 import {
   createSetAgentInitializing,
@@ -42,7 +41,7 @@ import type { AudioPlaybackSource } from "@/voice/audio-engine-types";
 import { useSessionStore, type MessageEntry, type SessionState } from "@/stores/session-store";
 import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import { sendOsNotification } from "@/utils/os-notifications";
-import { getIsAppActivelyVisible, getIsAppVisible } from "@/utils/app-visibility";
+import { getIsAppActivelyVisible } from "@/utils/app-visibility";
 import {
   getInitKey,
   getInitDeferred,
@@ -535,7 +534,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const viewedTimelineSyncRef = useRef<ViewedTimelineSync | null>(null);
   const audioOutputBuffersRef = useRef<Map<string, BufferedAudioChunk[]>>(new Map());
   const activeAudioGroupsRef = useRef<Set<string>>(new Set());
-  const isAppVisible = useAppVisible();
 
   useEffect(() => {
     setConversationHistoryPolicy({
@@ -553,10 +551,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       subscription.remove();
     };
   }, []);
-
-  useEffect(() => {
-    viewedTimelineSyncRef.current?.setActive(isAppVisible);
-  }, [isAppVisible]);
 
   const recoverTimelineGap = useCallback(
     (agentId: string, cursor: { epoch: string; endSeq: number }) => {
@@ -882,7 +876,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     });
     viewedTimelineSyncRef.current = sync;
     setViewedTimelineSync(serverId, sync);
-    sync.setActive(getIsAppVisible(appStateRef.current));
+    // 时间线订阅保持激活，不随应用可见性关闭：切走或隐藏期间 agent 事件
+    // 仍持续推送到本地存储，返回聚焦时新增内容立即可见，无需重新拉取。
+    sync.setActive(true);
 
     return () => {
       if (viewedTimelineSyncRef.current === sync) {

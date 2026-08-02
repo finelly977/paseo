@@ -711,6 +711,8 @@ async function createWindow(
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      // 窗口失焦或隐藏时不节流页面定时器，agent 流式事件与同步逻辑保持实时。
+      backgroundThrottling: false,
     },
   });
 
