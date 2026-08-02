@@ -17,6 +17,7 @@ import type {
   ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
 import type { ManagedAgent } from "./agent-manager.js";
+import type { AgentStorage } from "./agent-storage.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { ManagedProcessRegistry } from "../managed-processes/managed-processes.js";
 import type {
@@ -929,6 +930,56 @@ export class ProviderSnapshotManager {
     const providerIds = new Set(this.getProviderIds());
     return Array.from(new Set(providers)).filter((provider) => providerIds.has(provider));
   }
+}
+
+/**
+ * 从持久化 agent 记录中找出最近活跃的非归档 agent 的工作目录，用于
+ * 启动预加载时优先预热该目录（即“上次会话”）的 provider 快照。
+ * 记录按 ISO 时间字符串比较；没有候选时返回 null（只预热全局快照）。
+ */
+export function resolveMostRecentlyActiveAgentCwd(
+  records: readonly {
+    internal?: boolean;
+    archivedAt?: string | null;
+    cwd?: string;
+    lastActivityAt?: string | null;
+    updatedAt?: string;
+    createdAt?: string;
+  }[],
+): string | null {
+  let best: string | null = null;
+  let bestTime = "";
+  for (const record of records) {
+    if (record.internal || record.archivedAt || !record.cwd) {
+      continue;
+    }
+    const activityTime = record.lastActivityAt ?? record.updatedAt ?? record.createdAt;
+    if (!activityTime) {
+      continue;
+    }
+    if (activityTime > bestTime) {
+      bestTime = activityTime;
+      best = record.cwd;
+    }
+  }
+  return best;
+}
+
+/**
+ * 启动后后台预加载已启用 provider 的模型目录，避免首次使用 provider 时
+ * 等待模型列表探测。最近活跃会话所在的 workspace（“上次会话”）优先预热，
+ * 随后预热全局快照；调用方应 fire-and-forget，不阻塞 daemon 启动流程。
+ */
+export async function preloadProviderSnapshots(input: {
+  agentStorage: Pick<AgentStorage, "list">;
+  providerSnapshotManager: Pick<ProviderSnapshotManager, "warmUpSnapshotForCwd">;
+}): Promise<void> {
+  const records = await input.agentStorage.list();
+  const priorityCwd = resolveMostRecentlyActiveAgentCwd(records);
+  if (priorityCwd) {
+    await input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: priorityCwd });
+  }
+  await input.providerSnapshotManager.warmUpSnapshotForCwd({ cwd: null });
 }
 
 export function resolveSnapshotCwd(cwd?: string | null): string {

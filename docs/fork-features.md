@@ -302,6 +302,7 @@
 
 ### 17. 启动阶段按需初始化与并发控制
 
+- 守护进程完成监听后，在后台并发预加载已开启 Provider 的模型目录：先按最近活跃会话（“上次会话”）所在目录预热工作区范围，再预热全局范围；预加载与其它启动进程并发、不阻塞守护进程接受连接，未开启的 Provider 只标记不可用而不拉起 CLI，仍受共享的提供方探测并发限制约束，之后打开新建智能体表单或模型选择器时无需再等待模型列表探测。
 - 应用连接守护进程和进入工作区时不再立即启动所有智能体 CLI 做可用性与模型探测；隐藏的新建智能体表单和已挂载会话控制栏同样不会在后台触发探测，避免与首屏会话、时间线和 Git 状态加载争抢进程、磁盘和事件循环资源。
 - 新建智能体、会话导入、提供方设置等确实依赖完整提供方信息的界面仍在打开时加载；老会话的模型选择器改为在用户展开时只刷新当前智能体对应的提供方，不为未使用的提供方启动进程。
 - 守护进程对所有工作区和全局设置范围共享同一个提供方探测并发限制，最多同时执行两个探测；不同范围同时请求也不会突破限制，各提供方完成后仍立即发布自己的最新状态。
@@ -316,6 +317,7 @@
 - `packages/app/src/composer/agent-controls/`
 - `packages/app/src/screens/workspace/workspace-screen.tsx`
 - `packages/server/src/server/agent/provider-snapshot-manager.ts`
+- `packages/server/src/server/bootstrap.ts`
 - `packages/server/src/server/session/checkout/checkout-session.ts`
 - `packages/server/src/server/session.ts`
 - `packages/desktop/src/daemon/daemon-manager.ts`

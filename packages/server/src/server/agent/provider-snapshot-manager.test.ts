@@ -14,10 +14,23 @@ import type {
 import type { ManagedAgent } from "./agent-manager.js";
 import {
   GLOBAL_PROVIDER_SNAPSHOT_KEY,
+  preloadProviderSnapshots,
   ProviderSnapshotManager,
+  resolveMostRecentlyActiveAgentCwd,
   resolveSnapshotCwd,
 } from "./provider-snapshot-manager.js";
 import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
+
+function storedAgentRecord(overrides: Record<string, unknown> = {}): {
+  internal?: boolean;
+  archivedAt?: string | null;
+  cwd?: string;
+  lastActivityAt?: string | null;
+  updatedAt?: string;
+  createdAt?: string;
+} {
+  return overrides;
+}
 
 const TEST_CAPABILITIES = {
   supportsStreaming: false,
@@ -1299,5 +1312,99 @@ describe("ProviderSnapshotManager cwd routing", () => {
     } else {
       expect(resolved).toBeDefined();
     }
+  });
+
+  test("resolveMostRecentlyActiveAgentCwd returns null when there are no usable records", () => {
+    expect(resolveMostRecentlyActiveAgentCwd([])).toBeNull();
+    expect(
+      resolveMostRecentlyActiveAgentCwd([
+        storedAgentRecord({ internal: true, cwd: "/tmp/internal" }),
+        storedAgentRecord({ archivedAt: "2026-01-01T00:00:00.000Z", cwd: "/tmp/archived" }),
+        storedAgentRecord({ cwd: "" }),
+      ]),
+    ).toBeNull();
+  });
+
+  test("resolveMostRecentlyActiveAgentCwd picks the record with the newest lastActivityAt", () => {
+    const cwd = resolveMostRecentlyActiveAgentCwd([
+      storedAgentRecord({ cwd: "/tmp/old", lastActivityAt: "2026-01-01T00:00:00.000Z" }),
+      storedAgentRecord({ cwd: "/tmp/new", lastActivityAt: "2026-06-01T00:00:00.000Z" }),
+      storedAgentRecord({ cwd: "/tmp/mid", lastActivityAt: "2026-03-01T00:00:00.000Z" }),
+    ]);
+    expect(cwd).toBe("/tmp/new");
+  });
+
+  test("resolveMostRecentlyActiveAgentCwd falls back to updatedAt then createdAt", () => {
+    expect(
+      resolveMostRecentlyActiveAgentCwd([
+        storedAgentRecord({ cwd: "/tmp/a", updatedAt: "2026-01-01T00:00:00.000Z" }),
+        storedAgentRecord({ cwd: "/tmp/b", updatedAt: "2026-05-01T00:00:00.000Z" }),
+      ]),
+    ).toBe("/tmp/b");
+    expect(
+      resolveMostRecentlyActiveAgentCwd([
+        storedAgentRecord({ cwd: "/tmp/a", createdAt: "2026-01-01T00:00:00.000Z" }),
+        storedAgentRecord({ cwd: "/tmp/b", createdAt: "2026-05-01T00:00:00.000Z" }),
+      ]),
+    ).toBe("/tmp/b");
+  });
+
+  test("resolveMostRecentlyActiveAgentCwd prefers lastActivityAt over updatedAt", () => {
+    const cwd = resolveMostRecentlyActiveAgentCwd([
+      storedAgentRecord({
+        cwd: "/tmp/a",
+        lastActivityAt: "2026-02-01T00:00:00.000Z",
+        updatedAt: "2026-06-01T00:00:00.000Z",
+      }),
+      storedAgentRecord({
+        cwd: "/tmp/b",
+        lastActivityAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ]);
+    expect(cwd).toBe("/tmp/b");
+  });
+
+  test("preloadProviderSnapshots warms the priority cwd before the global snapshot", async () => {
+    const warmed: Array<string | null> = [];
+    const manager = {
+      warmUpSnapshotForCwd: vi.fn(async (input: { cwd?: string | null }) => {
+        warmed.push(input.cwd ?? null);
+      }),
+    };
+    const agentStorage = {
+      list: vi.fn(async () => [
+        {
+          id: "agent-1",
+          cwd: "/tmp/project-a",
+          lastActivityAt: "2026-06-01T00:00:00.000Z",
+        },
+      ]),
+    };
+
+    await preloadProviderSnapshots({
+      agentStorage: agentStorage as never,
+      providerSnapshotManager: manager as never,
+    });
+
+    expect(warmed).toEqual(["/tmp/project-a", null]);
+    expect(manager.warmUpSnapshotForCwd).toHaveBeenCalledTimes(2);
+  });
+
+  test("preloadProviderSnapshots only warms the global snapshot when no priority cwd exists", async () => {
+    const warmed: Array<string | null> = [];
+    const manager = {
+      warmUpSnapshotForCwd: vi.fn(async (input: { cwd?: string | null }) => {
+        warmed.push(input.cwd ?? null);
+      }),
+    };
+    const agentStorage = { list: vi.fn(async () => []) };
+
+    await preloadProviderSnapshots({
+      agentStorage: agentStorage as never,
+      providerSnapshotManager: manager as never,
+    });
+
+    expect(warmed).toEqual([null]);
   });
 });

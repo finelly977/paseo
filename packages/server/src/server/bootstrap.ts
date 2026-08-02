@@ -137,7 +137,10 @@ import {
   type PaseoToolHostDependencies,
 } from "./agent/tools/paseo-tools.js";
 import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
-import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
+import {
+  ProviderSnapshotManager,
+  preloadProviderSnapshots,
+} from "./agent/provider-snapshot-manager.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import { FileBackedProjectRegistry, FileBackedWorkspaceRegistry } from "./workspace-registry.js";
@@ -1640,6 +1643,14 @@ export async function createPaseoDaemon(
       // model loading doesn't block the server from accepting connections.
       speechService.start();
       scriptHealthMonitor.start();
+      // 启动后后台预加载已启用 provider 的模型目录，避免首次使用时等待；
+      // 最近活跃会话（“上次会话”）所在目录优先，与其它启动进程并发、不阻塞。
+      void preloadProviderSnapshots({
+        agentStorage,
+        providerSnapshotManager,
+      }).catch((error) => {
+        logger.warn({ err: error }, "Provider snapshot preload failed");
+      });
     } catch (error) {
       await serviceProxy.stopStandalone().catch(() => undefined);
       if (mainStarted) {
