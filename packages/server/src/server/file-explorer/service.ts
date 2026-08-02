@@ -166,7 +166,11 @@ export async function listDirectoryEntries({
       } catch (error) {
         // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
         // Skip entries whose targets disappeared instead of failing the whole listing.
-        if (isMissingEntryError(error) || isOutsideWorkspaceError(error)) {
+        if (
+          isMissingEntryError(error) ||
+          isOutsideWorkspaceError(error) ||
+          isBrokenReparsePointError(error)
+        ) {
           return null;
         }
         throw error;
@@ -628,6 +632,15 @@ async function buildEntryPayload({
 function isMissingEntryError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
+}
+
+function isBrokenReparsePointError(error: unknown): boolean {
+  // Windows reports EACCES when resolving a broken/corrupt junction or reparse
+  // point whose target string is invalid (e.g. a Git Bash-created junction
+  // pointing at `/c/Program`). The entry exists on disk but cannot be resolved,
+  // so treat it like a missing entry during listing rather than failing the
+  // whole directory listing.
+  return (error as NodeJS.ErrnoException | null)?.code === "EACCES";
 }
 
 function isOutsideWorkspaceError(error: unknown): boolean {

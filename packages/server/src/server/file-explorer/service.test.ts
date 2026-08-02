@@ -1,9 +1,19 @@
-import { appendFile, chmod, mkdtemp, rm, stat, truncate, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  chmod,
+  mkdtemp,
+  rm,
+  stat,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getExplorerFileVersion,
+  listDirectoryEntries,
   readExplorerFile,
   streamExplorerFile,
   writeExplorerFile,
@@ -369,6 +379,27 @@ describe("file explorer service", () => {
           relativePath: "~/some/file.txt",
         }),
       ).rejects.toThrow("Access outside of workspace is not allowed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(process.platform !== "win32")("file explorer service (Windows)", () => {
+  it("lists directory entries even when a broken junction exists", async () => {
+    const root = await createTempDir("paseo-file-explorer-junction-");
+
+    try {
+      await writeFile(path.join(root, "visible.txt"), "visible\n", "utf-8");
+      // A junction whose target does not exist. Node reports EACCES when
+      // resolving it (e.g. a Git Bash-created junction pointing at `/c/Program`).
+      await symlink("C:\\nonexistent-target-dir", path.join(root, "dangling"), "junction");
+
+      const result = await listDirectoryEntries({ root });
+
+      const names = result.entries.map((entry) => entry.name);
+      expect(names).toContain("visible.txt");
+      expect(names).not.toContain("dangling");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
