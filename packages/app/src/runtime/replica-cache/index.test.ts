@@ -173,12 +173,10 @@ describe("ReplicaCache", () => {
     expect(session?.agents.get("agent-1")?.updatedAt).toBeInstanceOf(Date);
     expect(session?.workspaces.get("workspace-1")?.statusEnteredAt).toBeInstanceOf(Date);
     expect(session?.agentStreamTail.get("agent-1")).toEqual([message("message-1", "Cached")]);
-    expect(session?.agentAuthoritativeHistoryApplied.get("agent-1")).toBe(true);
-    expect(session?.agentTimelineCursor.get("agent-1")).toEqual({
-      epoch: "epoch-1",
-      startSeq: 1,
-      endSeq: 12,
-    });
+    // 副本只是连接前的陈旧展示：不声称权威历史，也不恢复光标，
+    // 连接后重新按配置的对话轮数权威加载。
+    expect(session?.agentAuthoritativeHistoryApplied.has("agent-1")).toBe(false);
+    expect(session?.agentTimelineCursor.has("agent-1")).toBe(false);
     expect(session?.agentTimelineHasOlder.get("agent-1")).toBe(true);
   });
 

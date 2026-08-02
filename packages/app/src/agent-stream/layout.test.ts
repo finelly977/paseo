@@ -591,6 +591,69 @@ describe("layoutStream", () => {
   );
 
   it.each(["web", "android"] as const)(
+    "分页窗口只覆盖最后回合尾部（用户消息未加载）且空闲 %s 时，辅助 footer 收起已加载的过程项",
+    (platform) => {
+      const thoughtItem = thought("thought-1", 3);
+      const toolItem = toolCall("tool-1", 4);
+      const finalAssistant = assistantMessage("a1", 5);
+      const layout = layoutFor({
+        platform,
+        agentStatus: "idle",
+        tail: [thoughtItem, toolItem, finalAssistant],
+        timingIds: [finalAssistant.id],
+      });
+
+      expect(layout.auxiliaryTurnFooter?.itemId).toBe(finalAssistant.id);
+      // 用户消息在窗口外，无法收集到回合起点，空闲状态直接收起已加载的过程项
+      expect(layout.auxiliaryTurnFooter?.processItemIds).toEqual([toolItem.id, thoughtItem.id]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "Claude 回合尾部窗口（reasoning 与多个工具调用，用户消息在外）空闲 %s 时辅助 footer 收起过程项",
+    (platform) => {
+      const items: StreamItem[] = [
+        thought("reasoning-1", 3),
+        toolCall("tool-1", 4),
+        thought("reasoning-2", 5),
+        toolCall("tool-2", 6),
+        assistantMessage("a1", 7),
+      ];
+      const layout = layoutFor({
+        platform,
+        agentStatus: "idle",
+        tail: items,
+        timingIds: ["a1"],
+      });
+
+      expect(layout.auxiliaryTurnFooter?.itemId).toBe("a1");
+      expect(layout.auxiliaryTurnFooter?.processItemIds).toEqual([
+        "tool-2",
+        "reasoning-2",
+        "tool-1",
+        "reasoning-1",
+      ]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "分页窗口只覆盖最后回合尾部（用户消息未加载）且运行中 %s 时，辅助 footer 不生成",
+    (platform) => {
+      const thoughtItem = thought("thought-1", 3);
+      const toolItem = toolCall("tool-1", 4);
+      const finalAssistant = assistantMessage("a1", 5);
+      const layout = layoutFor({
+        platform,
+        agentStatus: "running",
+        tail: [thoughtItem, toolItem, finalAssistant],
+        timingIds: [finalAssistant.id],
+      });
+
+      expect(layout.auxiliaryTurnFooter).toBeNull();
+    },
+  );
+
+  it.each(["web", "android"] as const)(
     "回合进行中 %s 不生成辅助 footer，过程保持展开",
     (platform) => {
       const thoughtItem = thought("thought-1", 3);

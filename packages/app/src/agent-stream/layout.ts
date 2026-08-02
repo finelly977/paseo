@@ -231,6 +231,10 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
     turnEndIndex: latestIndex,
     processBoundaryAboveItems: boundaryAboveItems,
     processBoundaryAboveIndex: boundaryAboveIndex,
+    // 空闲状态：最后回合的用户消息可能尚未加载（打开旧对话的初始窗口从回合
+    // 中间开始），直接收起已加载的过程项，与 completedFooter 的跨边界行为一致，
+    // 避免一直展开、等到用户滚动加载更早分页后才突然收起。
+    allowPartialBoundary: true,
     timingByAssistantId: input.timingByAssistantId,
   });
 }

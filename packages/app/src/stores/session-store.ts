@@ -877,9 +877,11 @@ export const useSessionStore = create<SessionStore>()(
           if (timeline) {
             agentStreamTail.set(timeline.agentId, timeline.items);
             agentTimelineHasOlder.set(timeline.agentId, timeline.hasOlder);
-            agentAuthoritativeHistoryApplied.set(timeline.agentId, true);
+            // 副本只是连接前的陈旧展示：不标记权威历史、不恢复光标，连接后
+            // 仍按配置的对话轮数重新权威加载（tail + conversationLimit）。
+            // 否则 after 增量路径会把"最后 50 条记录"（可能只覆盖一个回合的
+            // 尾部，不含用户消息边界）当作完整历史，50 轮设置被跳过。
             agentHistorySyncGeneration.set(timeline.agentId, session.historySyncGeneration);
-            if (timeline.cursor) agentTimelineCursor.set(timeline.agentId, timeline.cursor);
           }
           const agentLastActivity = new Map(prev.agentLastActivity);
           for (const agent of replica.agents.values()) {
