@@ -664,6 +664,8 @@ export const zhCN: TranslationResources = {
         commitPlaceholder: "消息（在“{{branch}}”上提交）",
         commit: "提交",
         committing: "正在提交...",
+        syncChanges: "同步更改",
+        publishBranch: "发布分支",
       },
       actions: {
         moreOptions: "更多选项",

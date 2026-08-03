@@ -9,12 +9,7 @@ import {
 import { StyleSheet } from "react-native-unistyles";
 import { DiffStat } from "@/components/diff-stat";
 import { FILE_ACTIONS_MENU_WIDTH } from "@/components/file-actions-menu";
-import {
-  TreeChevron,
-  TreeIndentGuides,
-  treeRowPaddingLeft,
-  WORKSPACE_FILE_ROW_VERTICAL_PADDING,
-} from "@/components/tree-primitives";
+import { TreeChevron, TreeIndentGuides, treeRowPaddingLeft } from "@/components/tree-primitives";
 import { type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 
@@ -106,12 +101,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexDirection: "row",
     alignItems: "center",
     paddingRight: theme.spacing[3],
-    paddingVertical: WORKSPACE_FILE_ROW_VERTICAL_PADDING,
+    height: { xs: 34, sm: 34, md: 22 },
     gap: theme.spacing[1],
     minWidth: 0,
   },
   folderRowActive: {
-    backgroundColor: theme.colors.surfaceSidebarHover,
+    backgroundColor: theme.colors.scmListHoverBackground,
   },
   left: {
     flexDirection: "row",
@@ -130,7 +125,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     width: FILE_ACTIONS_MENU_WIDTH,
   },
   folderName: {
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foreground,
     flexShrink: 1,

@@ -675,6 +675,8 @@ export const es: TranslationResources = {
         commitPlaceholder: 'Mensaje para confirmar en "{{branch}}"',
         commit: "Confirmar",
         committing: "Confirmando...",
+        syncChanges: "Sincronizar cambios",
+        publishBranch: "Publicar rama",
       },
       actions: {
         moreOptions: "Más opciones",

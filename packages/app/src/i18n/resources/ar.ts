@@ -668,6 +668,8 @@ export const ar: TranslationResources = {
         commitPlaceholder: 'رسالة للإيداع في "{{branch}}"',
         commit: "إيداع",
         committing: "جارٍ الإيداع...",
+        syncChanges: "مزامنة التغييرات",
+        publishBranch: "نشر الفرع",
       },
       actions: {
         moreOptions: "المزيد من الخيارات",

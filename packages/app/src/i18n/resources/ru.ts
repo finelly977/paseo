@@ -672,6 +672,8 @@ export const ru: TranslationResources = {
         commitPlaceholder: 'Сообщение для коммита в "{{branch}}"',
         commit: "Зафиксировать",
         committing: "Фиксация...",
+        syncChanges: "Синхронизировать изменения",
+        publishBranch: "Опубликовать ветку",
       },
       actions: {
         moreOptions: "Больше возможностей",

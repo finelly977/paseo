@@ -190,6 +190,23 @@ const lightSemanticColors = {
   ...lightDiffColors,
   ...lightStatusColors,
 
+  // VS Code Source Control palette — pixel-matched to VS Code Light+ theme
+  scmBadgeBackground: "#c4c4c4",
+  scmBadgeForeground: "#333333",
+  scmInputBackground: "#ffffff",
+  scmInputForeground: "#333333",
+  scmInputPlaceholder: "#767676",
+  scmFocusBorder: "#0074e8",
+  scmListHoverBackground: "#f0f0f0",
+  scmButtonBackground: "#0e639c",
+  scmButtonHoverBackground: "#1177bb",
+  scmButtonForeground: "#ffffff",
+  scmStatusModified: "#895503",
+  scmStatusAdded: "#587c0c",
+  scmStatusDeleted: "#ad0707",
+  scmStatusUntracked: "#007100",
+  scmStatusConflict: "#ad0707",
+
   terminal: {
     background: "#ffffff",
     foreground: "#1a1a1e",
@@ -305,6 +322,23 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     ...darkDiffColors,
     ...darkStatusColors,
+
+    // VS Code Source Control palette — pixel-matched to VS Code Dark+ theme
+    scmBadgeBackground: "#4d4d4d",
+    scmBadgeForeground: "#ffffff",
+    scmInputBackground: "#3c3c3c",
+    scmInputForeground: "#cccccc",
+    scmInputPlaceholder: "#767676",
+    scmFocusBorder: "#007fd4",
+    scmListHoverBackground: "#2a2d2e",
+    scmButtonBackground: "#0e639c",
+    scmButtonHoverBackground: "#1177bb",
+    scmButtonForeground: "#ffffff",
+    scmStatusModified: "#e2c08d",
+    scmStatusAdded: "#81b88b",
+    scmStatusDeleted: "#c74e39",
+    scmStatusUntracked: "#73c991",
+    scmStatusConflict: "#e4676b",
 
     terminal: {
       background: tint.surface0,

@@ -674,6 +674,8 @@ export const fr: TranslationResources = {
         commitPlaceholder: "Message à valider sur « {{branch}} »",
         commit: "Valider",
         committing: "Validation...",
+        syncChanges: "Synchroniser les modifications",
+        publishBranch: "Publier la branche",
       },
       actions: {
         moreOptions: "Plus d'options",

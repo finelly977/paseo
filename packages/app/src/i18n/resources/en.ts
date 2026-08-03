@@ -665,6 +665,8 @@ export const en = {
         commitPlaceholder: 'Message to commit on "{{branch}}"',
         commit: "Commit",
         committing: "Committing...",
+        syncChanges: "Sync Changes",
+        publishBranch: "Publish Branch",
       },
       actions: {
         moreOptions: "More options",

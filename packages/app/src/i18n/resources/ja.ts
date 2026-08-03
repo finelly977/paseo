@@ -670,6 +670,8 @@ export const ja: TranslationResources = {
         commitPlaceholder: "「{{branch}}」にコミットするメッセージ",
         commit: "コミット",
         committing: "コミット中...",
+        syncChanges: "変更を同期",
+        publishBranch: "ブランチを公開",
       },
       actions: {
         moreOptions: "その他のオプション",

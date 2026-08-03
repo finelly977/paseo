@@ -671,6 +671,8 @@ export const ptBR: TranslationResources = {
         commitPlaceholder: 'Mensagem para commit em "{{branch}}"',
         commit: "Fazer commit",
         committing: "Fazendo commit...",
+        syncChanges: "Sincronizar alterações",
+        publishBranch: "Publicar branch",
       },
       actions: {
         moreOptions: "Mais opções",

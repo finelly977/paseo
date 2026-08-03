@@ -54,11 +54,7 @@ import { type ParsedDiffFile, type DiffLine, type HighlightToken } from "@/git/u
 import { buildDiffFlatItems, sumHeightsBefore, type DiffFlatItem } from "@/git/diff-flat-items";
 import { buildDiffTree, collectDirPaths, compressSingleChildChains } from "@/git/diff-tree";
 import { DiffFolderRow } from "@/git/diff-folder-row";
-import {
-  TreeIndentGuides,
-  treeRowPaddingLeft,
-  WORKSPACE_FILE_ROW_VERTICAL_PADDING,
-} from "@/components/tree-primitives";
+import { TreeIndentGuides, treeRowPaddingLeft } from "@/components/tree-primitives";
 import { SvgXml } from "react-native-svg";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
@@ -130,7 +126,7 @@ import {
   type InlineReviewActions,
 } from "@/review";
 import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
-import type { GitActions } from "@/git/policy";
+import type { GitAction, GitActions } from "@/git/policy";
 import { DiffTooLargeState } from "@/git/diff-too-large-state";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
@@ -142,8 +138,35 @@ export function resolveDiffLayout(
   return canUseSplitLayout ? layout : "unified";
 }
 
-function fileHeaderPressableStyle({ pressed }: PressableStateCallbackType) {
-  return [styles.fileHeader, pressed && styles.fileHeaderPressed];
+function fileHeaderPressableStyle({ hovered, pressed }: PressableStateCallbackType) {
+  return [
+    styles.fileHeader,
+    pressed && styles.fileHeaderPressed,
+    Boolean(hovered) && styles.fileHeaderHovered,
+  ];
+}
+
+// VS Code shows one-letter git status decorations (M/U/D/A) next to each file.
+// The working-tree diff payload only distinguishes new/deleted files, so the
+// remaining files map to "M" (modified).
+function resolveStatusLetter(file: ParsedDiffFile): string {
+  if (file.isDeleted) {
+    return "D";
+  }
+  if (file.isNew) {
+    return "U";
+  }
+  return "M";
+}
+
+function resolveStatusLetterStyle(file: ParsedDiffFile) {
+  if (file.isDeleted) {
+    return styles.statusLetterDeleted;
+  }
+  if (file.isNew) {
+    return styles.statusLetterUntracked;
+  }
+  return styles.statusLetterModified;
 }
 
 interface HighlightedTextProps {
@@ -949,6 +972,22 @@ const DiffFileHeader = memo(function DiffFileHeader({
   const pressHandledRef = useRef(false);
   const pressInRef = useRef<{ ts: number; pageX: number; pageY: number } | null>(null);
   const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const isMobile = useIsCompactFormFactor();
+
+  // VS Code shows row actions on hover (desktop web); touch devices have no
+  // hover, so they keep the actions visible at all times.
+  const showRowActions = !isWeb || isMobile || isHovered;
+  const handleHoverIn = useCallback(() => {
+    if (isWeb) {
+      setIsHovered(true);
+    }
+  }, []);
+  const handleHoverOut = useCallback(() => {
+    if (isWeb) {
+      setIsHovered(false);
+    }
+  }, []);
 
   const toggleExpanded = useCallback(() => {
     if (!interactive) {
@@ -1038,14 +1077,17 @@ const DiffFileHeader = memo(function DiffFileHeader({
   );
 
   const fileName = file.path.split("/").pop() ?? file.path;
+  const statusLetter = resolveStatusLetter(file);
+  const statusLetterStyle = resolveStatusLetterStyle(file);
   const headerContent = (
     <>
       <View ref={dragSourceRef} style={styles.fileHeaderLeft}>
-        {showDir ? null : (
-          <View style={styles.fileIcon}>
-            <SvgXml xml={getFileIconSvg(fileName)} width={16} height={16} />
-          </View>
-        )}
+        <View style={styles.statusLetterWrap}>
+          <Text style={[styles.statusLetter, statusLetterStyle]}>{statusLetter}</Text>
+        </View>
+        <View style={styles.fileIcon}>
+          <SvgXml xml={getFileIconSvg(fileName)} width={16} height={16} />
+        </View>
         <Text style={styles.fileName} numberOfLines={1}>
           {fileName}
         </Text>
@@ -1054,19 +1096,9 @@ const DiffFileHeader = memo(function DiffFileHeader({
             {file.path.includes("/") ? ` ${file.path.slice(0, file.path.lastIndexOf("/"))}` : ""}
           </Text>
         ) : (
-          // Flex spacer in tree mode (no dir suffix) so the New/Deleted badge
-          // stays right-aligned next to the diff stats, as in the flat list.
+          // Flex spacer in tree mode (no dir suffix) so the diff stats
+          // stay right-aligned, as in the flat list.
           <View style={styles.fileDirSpacer} />
-        )}
-        {file.isNew && (
-          <View style={styles.newBadge}>
-            <Text style={styles.newBadgeText}>{t("workspace.git.diff.newFile")}</Text>
-          </View>
-        )}
-        {file.isDeleted && (
-          <View style={styles.deletedBadge}>
-            <Text style={styles.deletedBadgeText}>{t("workspace.git.diff.deletedFile")}</Text>
-          </View>
         )}
       </View>
       <View style={styles.fileHeaderRight}>
@@ -1075,7 +1107,7 @@ const DiffFileHeader = memo(function DiffFileHeader({
           deletions={file.deletions}
           testID={testID ? `${testID}-stat` : undefined}
         />
-        {interactive ? (
+        {interactive && showRowActions ? (
           <FileActionsMenu
             fileKind="file"
             fileExists={!file.isDeleted}
@@ -1108,6 +1140,8 @@ const DiffFileHeader = memo(function DiffFileHeader({
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={toggleExpanded}
+        onHoverIn={handleHoverIn}
+        onHoverOut={handleHoverOut}
         // @ts-ignore - onContextMenu is web-only and not in RN types.
         onContextMenu={handleContextMenu}
       >
@@ -1893,6 +1927,7 @@ export function SharedDiffView({
   suppressHeightSync = false,
   mode,
 }: SharedDiffViewProps) {
+  const isMobile = useIsCompactFormFactor();
   const { layout, wrapLines, codeFontSize, monoFontFamily } = displayPreferences;
   const diffBodyLineHeight = Math.round(codeFontSize * 1.5);
   const typographyKey = [monoFontFamily, codeFontSize, diffBodyLineHeight].join(":");
@@ -1945,7 +1980,9 @@ export function SharedDiffView({
   const headerHeightByPathRef = useRef<Record<string, number>>({});
   const bodyHeightByKeyRef = useRef<Record<string, number>>({});
   const folderRowHeightRef = useRef<number>(0);
-  const defaultHeaderHeightRef = useRef<number>(44);
+  // VS Code SCM rows are 22px on desktop; compact form factors keep a taller
+  // touch target. This is only the initial scroll estimate — onLayout corrects.
+  const defaultHeaderHeightRef = useRef<number>(isMobile ? 34 : 22);
   const [heightVersion, setHeightVersion] = useState(0);
   const heightVersionFrameRef = useRef<number | null>(null);
   const scheduleHeightVersionUpdate = useCallback(() => {
@@ -2452,6 +2489,120 @@ function StagedChangesHeader({ title, count }: { title: string; count: number })
   );
 }
 
+interface ChangesSectionActionsProps {
+  allFileDiffsExpanded: boolean;
+  canUseSplitLayout: boolean;
+  changesCount: number;
+  changesTabOpen: boolean;
+  committedDiffDescription: string | undefined;
+  diffMode: "uncommitted" | "base";
+  forgeBrandLabel: string;
+  hideWhitespace: boolean;
+  isMobile: boolean;
+  isRefreshing: boolean;
+  layout: "unified" | "split";
+  onRefresh: () => void;
+  onSelectBase: () => void;
+  onSelectUncommitted: () => void;
+  onToggleChangesTab: () => void;
+  onToggleExpandAll: () => void;
+  onToggleHideWhitespace: () => void;
+  onToggleLayout: () => void;
+  onToggleViewMode: () => void;
+  onToggleWrapLines: () => void;
+  refreshSupported: boolean;
+  toggleStyles: {
+    expandAll: PressableStyleFn;
+    layout: PressableStyleFn;
+    overflow: PressableStyleFn;
+    viewMode: PressableStyleFn;
+  };
+  viewMode: "flat" | "tree";
+  wrapLines: boolean;
+}
+
+function ChangesSectionActions({
+  allFileDiffsExpanded,
+  canUseSplitLayout,
+  changesCount,
+  changesTabOpen,
+  committedDiffDescription,
+  diffMode,
+  forgeBrandLabel,
+  hideWhitespace,
+  isMobile,
+  isRefreshing,
+  layout,
+  onRefresh,
+  onSelectBase,
+  onSelectUncommitted,
+  onToggleChangesTab,
+  onToggleExpandAll,
+  onToggleHideWhitespace,
+  onToggleLayout,
+  onToggleViewMode,
+  onToggleWrapLines,
+  refreshSupported,
+  toggleStyles,
+  viewMode,
+  wrapLines,
+}: ChangesSectionActionsProps) {
+  const showViewModeToggle = changesCount > 0;
+  const showFilesToolbar = changesCount > 0 && !changesTabOpen;
+  const showLayoutToggle = canUseSplitLayout && !changesTabOpen;
+  return (
+    <View style={styles.diffStatusButtons}>
+      <DiffModeMenu
+        diffMode={diffMode}
+        committedDescription={committedDiffDescription}
+        onSelectUncommitted={onSelectUncommitted}
+        onSelectBase={onSelectBase}
+      />
+      <ChangesTabToggle
+        isMobile={isMobile}
+        selected={changesTabOpen}
+        onPress={onToggleChangesTab}
+      />
+      {showLayoutToggle ? (
+        <DiffLayoutToggle
+          layout={layout}
+          isMobile={isMobile}
+          toggleStyle={toggleStyles.layout}
+          onToggle={onToggleLayout}
+        />
+      ) : null}
+      {showViewModeToggle ? (
+        <DiffViewModeToggle
+          viewMode={viewMode}
+          isMobile={isMobile}
+          toggleStyle={toggleStyles.viewMode}
+          onToggle={onToggleViewMode}
+        />
+      ) : null}
+      {showFilesToolbar ? (
+        <DiffFilesToolbar
+          allFileDiffsExpanded={allFileDiffsExpanded}
+          isMobile={isMobile}
+          expandAllToggleStyle={toggleStyles.expandAll}
+          onToggleExpandAll={onToggleExpandAll}
+        />
+      ) : null}
+      <DiffOptionsMenu
+        brand={forgeBrandLabel}
+        hideWhitespace={hideWhitespace}
+        isMobile={isMobile}
+        isRefreshing={isRefreshing}
+        overflowToggleStyle={toggleStyles.overflow}
+        refreshSupported={refreshSupported}
+        wrapLines={wrapLines}
+        onRefresh={onRefresh}
+        onToggleHideWhitespace={onToggleHideWhitespace}
+        onToggleWrapLines={onToggleWrapLines}
+      />
+    </View>
+  );
+}
+
 function resolveDisplayedForge(
   resolvedForge: string | null,
   remoteUrl: string | null | undefined,
@@ -2547,6 +2698,21 @@ function buildToggleButtonStyle(
     baseStyles,
     (selected || Boolean(hovered) || pressed) && styles.toggleButtonSelected,
   ];
+}
+
+function useChangesSectionCollapse(): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(false);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((current) => !current);
+  }, []);
+  return [collapsed, toggleCollapsed];
+}
+
+function resolveActionHandler(action: GitAction | undefined): (() => void) | undefined {
+  if (action && !action.disabled) {
+    return action.handler;
+  }
+  return undefined;
 }
 
 function useChangesTreeState({
@@ -2968,6 +3134,7 @@ export function GitDiffPane({
 
   const hasChanges = files.length > 0;
   const hasUncommittedChanges = Boolean(status?.isGit && status.isDirty);
+  const [changesCollapsed, toggleChangesCollapsed] = useChangesSectionCollapse();
   const stagedFileCount = resolveStagedFileCount({
     supported: stagedFileCountSupported,
     status,
@@ -2994,6 +3161,25 @@ export function GitDiffPane({
     cwd,
     icons: gitActionsIcons,
   });
+  const syncAction = useMemo(
+    () => gitActions.secondary.find((action) => action.id === "pull-and-push"),
+    [gitActions],
+  );
+  const publishAction = useMemo(
+    () => gitActions.secondary.find((action) => action.id === "push"),
+    [gitActions],
+  );
+  const syncHandler = resolveActionHandler(syncAction);
+  const publishHandler = resolveActionHandler(publishAction);
+  const changesToggleStyles = useMemo(
+    () => ({
+      expandAll: expandAllToggleStyle,
+      layout: layoutToggleStyle,
+      overflow: overflowToggleStyle,
+      viewMode: viewModeToggleStyle,
+    }),
+    [expandAllToggleStyle, layoutToggleStyle, overflowToggleStyle, viewModeToggleStyle],
+  );
   const repositoryGitActions = useMemo(() => repositoryMenuActions(gitActions), [gitActions]);
   const repositoryName = useMemo(
     () => repositoryDisplayName(status?.repoRoot, cwd),
@@ -3060,62 +3246,45 @@ export function GitDiffPane({
             title={t("workspace.git.panel.changes")}
             count={files.length}
             testID="source-control-changes-heading"
+            collapsible
+            collapsed={changesCollapsed}
+            onToggleCollapsed={toggleChangesCollapsed}
           >
-            <View style={styles.diffStatusButtons}>
-              <DiffModeMenu
-                diffMode={diffMode}
-                committedDescription={committedDiffDescription}
-                onSelectUncommitted={handleSelectUncommitted}
-                onSelectBase={handleSelectBase}
-              />
-              <ChangesTabToggle
-                isMobile={isMobile}
-                selected={changesTabOpen}
-                onPress={handleToggleChangesTab}
-              />
-              {canUseSplitLayout && !changesTabOpen ? (
-                <DiffLayoutToggle
-                  layout={changesPreferences.layout}
-                  isMobile={isMobile}
-                  toggleStyle={layoutToggleStyle}
-                  onToggle={handleToggleLayout}
-                />
-              ) : null}
-              {files.length > 0 ? (
-                <DiffViewModeToggle
-                  viewMode={viewMode}
-                  isMobile={isMobile}
-                  toggleStyle={viewModeToggleStyle}
-                  onToggle={changesTree.toggleViewMode}
-                />
-              ) : null}
-              {files.length > 0 && !changesTabOpen ? (
-                <DiffFilesToolbar
-                  allFileDiffsExpanded={changesTree.allExpanded}
-                  isMobile={isMobile}
-                  expandAllToggleStyle={expandAllToggleStyle}
-                  onToggleExpandAll={changesTree.toggleExpandAll}
-                />
-              ) : null}
-              <DiffOptionsMenu
-                brand={getForgePresentation(forge).brandLabel}
-                hideWhitespace={changesPreferences.hideWhitespace}
-                isMobile={isMobile}
-                isRefreshing={isRefreshing}
-                overflowToggleStyle={overflowToggleStyle}
-                refreshSupported={refreshSupported}
-                wrapLines={wrapLines}
-                onRefresh={handleRefresh}
-                onToggleHideWhitespace={handleToggleHideWhitespace}
-                onToggleWrapLines={handleToggleWrapLines}
-              />
-            </View>
+            <ChangesSectionActions
+              canUseSplitLayout={canUseSplitLayout}
+              changesTabOpen={changesTabOpen}
+              committedDiffDescription={committedDiffDescription}
+              diffMode={diffMode}
+              forgeBrandLabel={getForgePresentation(forge).brandLabel}
+              hideWhitespace={changesPreferences.hideWhitespace}
+              isMobile={isMobile}
+              isRefreshing={isRefreshing}
+              layout={changesPreferences.layout}
+              onRefresh={handleRefresh}
+              onSelectBase={handleSelectBase}
+              onSelectUncommitted={handleSelectUncommitted}
+              onToggleChangesTab={handleToggleChangesTab}
+              onToggleExpandAll={changesTree.toggleExpandAll}
+              onToggleHideWhitespace={handleToggleHideWhitespace}
+              onToggleLayout={handleToggleLayout}
+              onToggleWrapLines={handleToggleWrapLines}
+              onToggleViewMode={changesTree.toggleViewMode}
+              refreshSupported={refreshSupported}
+              toggleStyles={changesToggleStyles}
+              viewMode={viewMode}
+              wrapLines={wrapLines}
+              changesCount={files.length}
+              allFileDiffsExpanded={changesTree.allExpanded}
+            />
           </SourceControlSectionHeader>
           <SourceControlCommitComposer
             branchName={branchLabel}
             hasChanges={hasUncommittedChanges}
             status={commitStatus}
+            gitStatus={status}
             onCommit={handleCommit}
+            onSync={syncHandler}
+            onPublish={publishHandler}
           />
         </>
       ) : null}
@@ -3126,7 +3295,7 @@ export function GitDiffPane({
         </View>
       ) : null}
 
-      <View style={styles.diffContainer}>{bodyContent}</View>
+      <View style={styles.diffContainer}>{changesCollapsed ? null : bodyContent}</View>
 
       <CommitsSection
         serverId={serverId}
@@ -3309,7 +3478,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     paddingLeft: theme.spacing[3],
     paddingRight: theme.spacing[3],
-    paddingVertical: WORKSPACE_FILE_ROW_VERTICAL_PADDING,
+    height: { xs: 34, sm: 34, md: 22 },
     gap: theme.spacing[1],
     minWidth: 0,
     zIndex: 2,
@@ -3317,6 +3486,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   fileHeaderPressed: {
     opacity: 0.7,
+  },
+  fileHeaderHovered: {
+    backgroundColor: theme.colors.scmListHoverBackground,
   },
   fileHeaderLeft: {
     flexDirection: "row",
@@ -3331,20 +3503,39 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
     flexShrink: 0,
   },
+  statusLetterWrap: {
+    width: 16,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statusLetter: {
+    fontSize: 11,
+    fontWeight: theme.fontWeight.normal,
+  },
+  statusLetterModified: {
+    color: theme.colors.scmStatusModified,
+  },
+  statusLetterDeleted: {
+    color: theme.colors.scmStatusDeleted,
+  },
+  statusLetterUntracked: {
+    color: theme.colors.scmStatusUntracked,
+  },
   fileIcon: {
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   fileName: {
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foreground,
     flexShrink: 1,
     minWidth: 0,
   },
   fileDir: {
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundMuted,
     flex: 1,
@@ -3353,30 +3544,6 @@ const styles = StyleSheet.create((theme) => ({
   fileDirSpacer: {
     flex: 1,
     minWidth: 0,
-  },
-  newBadge: {
-    backgroundColor: "rgba(46, 160, 67, 0.2)",
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    borderRadius: theme.borderRadius.md,
-    flexShrink: 0,
-  },
-  newBadgeText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.diffAddition,
-  },
-  deletedBadge: {
-    backgroundColor: "rgba(248, 81, 73, 0.2)",
-    paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    borderRadius: theme.borderRadius.md,
-    flexShrink: 0,
-  },
-  deletedBadgeText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.diffDeletion,
   },
   additions: {
     fontSize: theme.fontSize.xs,
