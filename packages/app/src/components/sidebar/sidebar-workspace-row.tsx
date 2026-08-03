@@ -439,8 +439,8 @@ function getWorkspaceRowStyle({
   return [
     styles.workspaceRow,
     isDragging && styles.workspaceRowDragging,
-    selected && styles.sidebarRowSelected,
     isHovered && styles.workspaceRowHovered,
+    selected && styles.sidebarRowSelected,
   ];
 }
 
@@ -475,7 +475,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.shadow.md,
   },
   sidebarRowSelected: {
-    backgroundColor: theme.colors.surfaceSidebarHover,
+    backgroundColor: theme.colors.surface2,
   },
   workspaceCreatingText: {
     color: theme.colors.foregroundMuted,

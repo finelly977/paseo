@@ -783,8 +783,8 @@ function getStatusWorkspaceRowStyle({
 }) {
   return [
     styles.workspaceRow,
-    selected && styles.sidebarRowSelected,
     isHovered && styles.workspaceRowHovered,
+    selected && styles.sidebarRowSelected,
   ];
 }
 
@@ -878,6 +878,6 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   sidebarRowSelected: {
-    backgroundColor: theme.colors.surfaceSidebarHover,
+    backgroundColor: theme.colors.surface2,
   },
 }));

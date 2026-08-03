@@ -384,8 +384,8 @@ function getProjectWorkspaceRowStyle({
   return [
     styles.workspaceRow,
     isDragging && styles.workspaceRowDragging,
-    selected && styles.sidebarRowSelected,
     isHovered && styles.workspaceRowHovered,
+    selected && styles.sidebarRowSelected,
   ];
 }
 
@@ -1047,8 +1047,8 @@ function ProjectHeaderRow({
     ({ pressed }: PressableStateCallbackType) => [
       styles.projectRow,
       isDragging && styles.projectRowDragging,
-      selected && styles.sidebarRowSelected,
       isHovered && styles.projectRowHovered,
+      selected && styles.sidebarRowSelected,
       pressed && styles.projectRowPressed,
     ],
     [isDragging, selected, isHovered],
@@ -2887,7 +2887,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.shadow.md,
   },
   sidebarRowSelected: {
-    backgroundColor: theme.colors.surfaceSidebarHover,
+    backgroundColor: theme.colors.surface2,
   },
   workspaceRowContainer: {
     position: "relative",
