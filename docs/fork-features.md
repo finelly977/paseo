@@ -271,6 +271,8 @@
 ### 16. 右侧 Git 面板采用 VS Code 式源代码管理工作流
 
 - 工作区右侧面板以“Git”为标题，按“存储库、暂存的更改、变更、图表”组织信息；默认展示未提交差异，即使工作区干净也不会自动切到分支对比。隐藏空白后没有剩余差异时保持内容区为空，不显示重复的空状态说明。
+- 变更列表与提交区对原作者面板做像素级 VS Code SCM 复刻（色值取自 VS Code Dark+/Light+，通过主题新增 `scm*` 语义色实现）：分组标题行高 22px、13px 普通字重、左侧带折叠箭头（Changes 分组可点击折叠，折叠后列表区域留空不显示空态）；文件行固定 22px 高（移动端保持 34px 触控行高）、13px 文件名、文件名左侧显示 16px 彩色 git 状态字母（新增用 U、删除用 D、其余用 M，颜色对应 gitDecoration 色值），flat 列表模式也显示文件图标与灰色目录后缀；鼠标悬停整行显示 VS Code 列表悬停背景色，桌面网页端操作按钮（⋮）只在悬停时显示，移动端始终显示；原有“New/Deleted”文本徽标被状态字母取代。
+- 提交说明输入框复刻 VS Code SCM 输入框：圆角 4px、输入框背景色、无内置图标、聚焦时显示蓝色焦点描边、占位符颜色独立；提交按钮为输入框下方独立的按钮行（高 36px），按钮高 26px、圆角 4px、蓝色实底、悬停变亮、禁用时 40% 不透明度。按钮状态随仓库状态自动切换：有未提交变更时显示“Commit”，无变更但有 ahead/behind 时显示“Sync Changes”（带 ↓n↑n 计数，点击执行拉取+推送），无远端分支时显示“Publish Branch”（点击推送并设置上游），否则显示禁用 Commit。
 - 提交说明输入框始终可编辑，只有工作区没有未提交变更、正在提交或说明为空时才禁用提交按钮；说明会原样发送给守护进程，提交成功后清空输入，失败时保留输入并显示错误。
 - 暂存区文件数量由守护进程直接读取 Git 索引，不能用总差异数量推算；只有存在暂存文件时才显示暂存区标题和真实数量。
 - 图表标题右侧提供 Fetch、Refresh、Pull、Push、Sync 纯图标操作，悬停显示英文名称；Fetch 会真正执行远端抓取并刷新分支状态，不会用本地 Refresh 冒充。合并、拉取请求和归档等低频操作保留在存储库菜单。图表高度可以从顶部边界上下拖动并持久保存，受窗口高度和合理最小、最大值约束。
@@ -286,6 +288,8 @@
 
 - `packages/app/src/git/source-control-panel.tsx`
 - `packages/app/src/git/diff-pane.tsx`
+- `packages/app/src/git/diff-folder-row.tsx`
+- `packages/app/src/styles/theme.ts`
 - `packages/app/src/git/commits-section/commits-section.tsx`
 - `packages/app/src/git/commits-section/commit-row.tsx`
 - `packages/app/src/git/commits-section/graph-actions.tsx`
@@ -344,3 +348,15 @@
 - `packages/app/src/stores/sidebar-order-store.ts`
 - `packages/app/src/stores/sidebar-view-store.ts`
 - `packages/app/src/stores/session-store-hooks/`
+
+### 19. OpenCode 事件流断线自动重连
+
+- 守护进程订阅共享 OpenCode server 事件流时启用 SDK 自动重连（最多 3 次，退避 3 秒/6 秒/12 秒），不再在流断开时立即判定所有前台回合失败。
+- 所有智能体共享同一个 OpenCode server，一次断线（例如主机睡眠唤醒后的本地 TCP 重置、OpenCode server 短暂重启）会同时中断所有运行中的回合；上游零重试策略会把这种瞬时断连误判为回合失败并终止智能体。
+- SDK 按 SSE 的 Last-Event-ID 续传重连，不丢事件；重试耗尽后流仍断开（OpenCode server 真正退出）才按原有逻辑结束回合。
+- 回合取消（abort）路径不受影响：主动停止仍即时生效，不会被重连延迟阻塞。
+
+主要涉及：
+
+- `packages/server/src/server/agent/providers/opencode-agent.ts`
+- `packages/server/src/server/agent/providers/opencode-agent.test.ts`

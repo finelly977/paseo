@@ -1384,7 +1384,7 @@ describe("OpenCode adapter startTurn error handling", () => {
 
     expect(fakeClient.global.event).toHaveBeenCalledWith({
       signal: expect.any(AbortSignal),
-      sseMaxRetryAttempts: 0,
+      sseMaxRetryAttempts: 3,
     });
     expect(fakeClient.event.subscribe).not.toHaveBeenCalled();
     expect(turn.turnCompleted).toBe(true);

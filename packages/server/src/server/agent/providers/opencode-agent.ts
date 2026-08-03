@@ -3532,7 +3532,14 @@ class OpenCodeAgentSession implements AgentSession {
     try {
       const result = await this.client.global.event({
         signal: eventStreamAbortController.signal,
-        sseMaxRetryAttempts: 0,
+        // Reconnect the SSE stream on transient disconnects instead of killing
+        // every active turn. A disconnect here takes down all agents sharing
+        // the OpenCode server at once (e.g. TCP resets after the host machine
+        // sleeps, or a brief server restart); with zero retries that turned
+        // into an immediate turn_failed for everyone. The SDK resumes from
+        // Last-Event-ID, so no events are lost, and the retries back off
+        // 3s/6s/12s. Only a permanently dead stream reaches the EOF handling.
+        sseMaxRetryAttempts: 3,
       });
       eventStreamReadyResolved = true;
       this.traceOpenCode("provider.opencode.subscribe.ready", {
