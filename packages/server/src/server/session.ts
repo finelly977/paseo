@@ -2060,6 +2060,12 @@ export class Session {
         return this.checkoutSession.handleCheckoutRenameBranchRequest(msg);
       case "checkout_commit_request":
         return this.checkoutSession.handleCheckoutCommitRequest(msg);
+      case "checkout.index.stage.request":
+        return this.checkoutSession.handleCheckoutIndexStageRequest(msg);
+      case "checkout.index.unstage.request":
+        return this.checkoutSession.handleCheckoutIndexUnstageRequest(msg);
+      case "checkout.working_tree.discard.request":
+        return this.checkoutSession.handleCheckoutWorkingTreeDiscardRequest(msg);
       case "checkout_merge_request":
         return this.checkoutSession.handleCheckoutMergeRequest(msg);
       case "checkout_merge_from_base_request":

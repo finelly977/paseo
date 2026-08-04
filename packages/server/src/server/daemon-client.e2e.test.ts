@@ -1013,6 +1013,7 @@ test("receives server_info on websocket connect", async () => {
     commitsPagination: true,
     stagedFileCount: true,
     checkoutFetch: true,
+    checkoutScmOperations: true,
   });
   expect(serverInfo?.desktopManaged).toBe(false);
   expect(serverInfo?.features?.daemonSelfUpdate).toBe(true);

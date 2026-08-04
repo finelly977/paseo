@@ -270,42 +270,34 @@
 
 ### 16. 右侧 Git 面板采用 VS Code 式源代码管理工作流
 
-- 工作区右侧面板以“Git”为标题，按“存储库、暂存的更改、变更、图表”组织信息；默认展示未提交差异，即使工作区干净也不会自动切到分支对比。隐藏空白后没有剩余差异时保持内容区为空，不显示重复的空状态说明。
-- 变更列表与提交区对原作者面板做像素级 VS Code SCM 复刻（色值取自 VS Code Dark+/Light+，通过主题新增 `scm*` 语义色实现）：分组标题行高 22px、13px 普通字重、左侧带折叠箭头（Changes 分组可点击折叠，折叠后列表区域留空不显示空态）；文件行固定 22px 高（移动端保持 34px 触控行高）、13px 文件名、文件名左侧显示 16px 彩色 git 状态字母（新增用 U、删除用 D、其余用 M，颜色对应 gitDecoration 色值），flat 列表模式也显示文件图标与灰色目录后缀；鼠标悬停整行显示 VS Code 列表悬停背景色，桌面网页端操作按钮（⋮）只在悬停时显示，移动端始终显示；原有“New/Deleted”文本徽标被状态字母取代。
-- 提交说明输入框复刻 VS Code SCM 输入框：圆角 4px、输入框背景色、无内置图标、聚焦时显示蓝色焦点描边、占位符颜色独立；提交按钮为输入框下方独立的按钮行（高 36px），按钮高 26px、圆角 4px、蓝色实底、悬停变亮、禁用时 40% 不透明度。按钮状态随仓库状态自动切换：有未提交变更时显示“Commit”，无变更但有 ahead/behind 时显示“Sync Changes”（带 ↓n↑n 计数，点击执行拉取+推送），无远端分支时显示“Publish Branch”（点击推送并设置上游），否则显示禁用 Commit。
-- 提交说明输入框始终可编辑，只有工作区没有未提交变更、正在提交或说明为空时才禁用提交按钮；说明会原样发送给守护进程，提交成功后清空输入，失败时保留输入并显示错误。
-- 暂存区文件数量由守护进程直接读取 Git 索引，不能用总差异数量推算；只有存在暂存文件时才显示暂存区标题和真实数量。
-- 图表标题右侧提供 Fetch、Refresh、Pull、Push、Sync 纯图标操作，悬停显示英文名称；Fetch 会真正执行远端抓取并刷新分支状态，不会用本地 Refresh 冒充。合并、拉取请求和归档等低频操作保留在存储库菜单。图表高度可以从顶部边界上下拖动并持久保存，受窗口高度和合理最小、最大值约束。
-- 提交图谱批量读取 Git 实际引用，在对应提交上展示本地分支、远端分支和标签，并用不同颜色的双轨与分叉连接线区分当前分支和基础分支。提交行悬停时显示完整提交说明、作者、完整时间、完整提交标识和引用信息，不再把文件列表作为悬停主体。左键点击提交只展开文件列表，右键菜单提供打开完整 Diff。
-- Git 面板启动和 Refresh 只读取本地仓库状态，不等待 GitHub 或其他远端服务；Pull Request 状态在点击相关操作时按需读取，Pull、Push、Fetch、Pull Request 等明确的远端操作失败时通过可关闭的 Toast 提示，不在提交区域留下持久错误。
-- 提交历史每页加载 40 条，滚动到底部继续加载当前分支和基础分支的更早记录，不再固定为最近 10 条基础分支提交；服务端在分页边界保持分支归属和远端状态分类，旧守护进程仍使用原有单页结果。
-- 变更文件仍可原地展开差异或在独立标签页查看，提交图谱用不同轨道颜色区分当前分支和基础分支，保留 Paseo 原有的工作区差异审阅能力。未跟踪路径不是普通文件（目录、符号链接、损坏链接等）或守护进程无法读取其内容时，差异区显示“diff unavailable”占位而不是报错。
-- 面板复用现有跨平台组件和 Git RPC，桌面、网页和移动端保持同一操作语义；各语言资源具有相同结构。
-- 右侧面板（Git 与文件浏览器）不等待智能体目录同步完成：打开会话早期 workspace 描述符尚未同步时，从该工作区的智能体记录取目录，git 工作区判断来自本地 checkout 查询（有目录即可用），页面不再被 loading 遮罩整体挡住，Git 面板随会话打开立即出现；描述符同步完成后无缝切换。
-- 桌面端主侧边栏（会话/项目/工作区列表）显示滚动条：网页端不再隐藏滚动指示器，列表超出窗口高度时可滚动并看到滚动条。
+- 右侧 Git 面板按“存储库、源代码管理、图表”组织信息，桌面端的视图标题、资源组、文件和提交行统一使用 22 像素密度；移动端文件行保留 34 像素触控高度。存储库行集中展示仓库、当前分支和常用操作，低频 Git、合并、拉取请求与归档操作进入同一操作菜单。
+- 守护进程通过一次零终止的 Git 状态读取，准确区分冲突、暂存区、工作区、未跟踪、重命名和复制文件，并把分组文件明细随本地状态推送到客户端；不再只返回“是否有改动”和暂存文件数量。
+- 文件资源行使用 Material 文件图标、文件名、灰色目录和行末 Git 状态字母；桌面端悬停时状态字母让位给操作图标，移动端始终显示操作。资源组和文件行都支持暂存、取消暂存，工作区文件还支持放弃更改；右键或长按菜单提供相同操作。放弃更改前必须确认，已跟踪文件恢复工作区内容，未跟踪文件从磁盘删除。
+- 文件点击后在工作区正文标签中打开并定位完整差异，右侧栏只保留紧凑资源列表，不再在狭窄侧栏内展开差异正文。正文差异仍保留统一/分栏、隐藏空白、折叠文件和内联审阅能力。
+- 提交说明输入支持多行自适应高度，`Ctrl/Cmd + Enter` 提交，`Alt + ↑/↓` 浏览本次面板会话的提交说明历史。提交按钮采用 VS Code 式分裂按钮：有暂存文件时主按钮只提交暂存区，没有暂存文件时主按钮提交全部更改；下拉菜单始终明确提供“提交暂存区”和“提交全部更改”。提交成功后清空说明，失败时保留说明并显示错误。
+- 工作区干净时，提交主按钮继续按仓库状态切换为同步更改或发布分支；同步显示落后与领先计数。Fetch、Refresh、Pull、Push、Sync 都执行真实 Git 操作并显示进行中、成功或失败状态，新写操作不会用旧接口拼接残缺降级路径。
+- 提交图表默认展开并使用 520 像素默认高度，原 280 像素折叠默认值会一次性迁移；用户仍可拖动顶部边界调整并持久保存高度。标题和提交行压缩到 22 像素，主行优先显示提交说明、实底引用标签、作者和相对时间，不再占用固定宽度显示短提交标识；完整提交说明、作者、时间和提交标识放在悬停信息中。
+- 展开提交后，文件使用与变更区一致的普通资源行，不再插入自定义“变更了几个文件”标题块。提交历史每页加载 40 条，滚动到底继续加载；左键展开文件，右键菜单打开该提交的完整差异。
+- 暂存、取消暂存和放弃更改使用带方向后缀的点分 RPC，并通过主机能力集中门控；旧主机收到明确的更新提示，不尝试以旧差异接口模拟写操作。协议新增字段保持可选，旧客户端和旧守护进程仍能互相解析消息。
+- 面板复用现有跨平台组件、主题语义色和文件图标体系，桌面、网页和移动端保持同一操作语义；所有新增界面文案在全部语言资源中保持同构。
 
 主要涉及：
 
 - `packages/app/src/git/source-control-panel.tsx`
+- `packages/app/src/git/scm-changes-list.tsx`
+- `packages/app/src/git/scm-model.ts`
 - `packages/app/src/git/diff-pane.tsx`
-- `packages/app/src/git/diff-folder-row.tsx`
-- `packages/app/src/styles/theme.ts`
-- `packages/app/src/git/commits-section/commits-section.tsx`
-- `packages/app/src/git/commits-section/commit-row.tsx`
-- `packages/app/src/git/commits-section/graph-actions.tsx`
-- `packages/app/src/git/commits-section/graph-resize-handle.tsx`
-- `packages/app/src/git/pr-action-routing.ts`
-- `packages/app/src/git/use-actions.tsx`
-- `packages/app/src/git/use-commits-query.ts`
-- `packages/app/src/panels/diff-panel.tsx`
 - `packages/app/src/git/actions-store.ts`
-- `packages/app/src/components/explorer-sidebar.tsx`
+- `packages/app/src/git/commits-section/`
+- `packages/app/src/hooks/use-changes-preferences/storage.ts`
+- `packages/app/src/styles/theme.ts`
+- `packages/app/src/panels/diff-panel.tsx`
+- `packages/app/src/i18n/resources/`
 - `packages/protocol/src/messages.ts`
 - `packages/client/src/daemon-client.ts`
 - `packages/server/src/utils/checkout-git.ts`
 - `packages/server/src/server/session/checkout/checkout-session.ts`
 - `packages/server/src/server/workspace-git-service.ts`
-- `packages/app/src/i18n/resources/`
 
 ### 17. 启动阶段按需初始化与并发控制
 

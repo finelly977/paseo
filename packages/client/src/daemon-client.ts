@@ -35,6 +35,9 @@ import type {
   CheckoutCommit,
   ParsedDiffFile,
   CheckoutCommitResponse,
+  CheckoutIndexStageResponse,
+  CheckoutIndexUnstageResponse,
+  CheckoutWorkingTreeDiscardResponse,
   CheckoutMergeResponse,
   CheckoutMergeFromBaseResponse,
   CheckoutPullResponse,
@@ -377,6 +380,9 @@ type SubscribeCheckoutDiffPayload = Extract<
 >["payload"];
 type CheckoutDiffPayload = Omit<SubscribeCheckoutDiffPayload, "subscriptionId">;
 type CheckoutCommitPayload = CheckoutCommitResponse["payload"];
+type CheckoutIndexStagePayload = CheckoutIndexStageResponse["payload"];
+type CheckoutIndexUnstagePayload = CheckoutIndexUnstageResponse["payload"];
+type CheckoutWorkingTreeDiscardPayload = CheckoutWorkingTreeDiscardResponse["payload"];
 type CheckoutMergePayload = CheckoutMergeResponse["payload"];
 type CheckoutMergeFromBasePayload = CheckoutMergeFromBaseResponse["payload"];
 type CheckoutPullPayload = CheckoutPullResponse["payload"];
@@ -3617,6 +3623,42 @@ export class DaemonClient {
         addAll: input.addAll,
       },
       responseType: "checkout_commit_response",
+    });
+  }
+
+  async checkoutStage(
+    cwd: string,
+    paths: string[],
+    requestId?: string,
+  ): Promise<CheckoutIndexStagePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.index.stage.response">({
+      requestId,
+      message: { type: "checkout.index.stage.request", cwd, paths },
+      timeout: 120000,
+    });
+  }
+
+  async checkoutUnstage(
+    cwd: string,
+    paths: string[],
+    requestId?: string,
+  ): Promise<CheckoutIndexUnstagePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.index.unstage.response">({
+      requestId,
+      message: { type: "checkout.index.unstage.request", cwd, paths },
+      timeout: 120000,
+    });
+  }
+
+  async checkoutDiscard(
+    cwd: string,
+    paths: string[],
+    requestId?: string,
+  ): Promise<CheckoutWorkingTreeDiscardPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"checkout.working_tree.discard.response">({
+      requestId,
+      message: { type: "checkout.working_tree.discard.request", cwd, paths },
+      timeout: 120000,
     });
   }
 

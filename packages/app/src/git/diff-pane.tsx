@@ -37,13 +37,10 @@ import {
   ChevronDown,
   Columns2,
   Download,
-  FolderTree,
   GitCommitHorizontal,
   GitMerge,
-  List,
   ListChevronsDownUp,
   ListChevronsUpDown,
-  Maximize2,
   Pilcrow,
   RefreshCcw,
   RotateCw,
@@ -59,8 +56,6 @@ import { SvgXml } from "react-native-svg";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
 import { CommitsSection } from "@/git/commits-section/commits-section";
-import { useChangesPreferences } from "@/hooks/use-changes-preferences";
-import { useAppSettings } from "@/hooks/use-settings";
 import { DiffScroll } from "@/components/diff-scroll";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
@@ -79,10 +74,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import * as Clipboard from "expo-clipboard";
 import { FILE_ACTIONS_MENU_WIDTH, FileActionsMenu } from "@/components/file-actions-menu";
-import { useFileDownload } from "@/hooks/use-file-download";
-import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { lineNumberGutterWidth } from "@/components/code-insets";
 import { BranchSwitcher } from "@/components/branch-switcher";
@@ -99,16 +91,22 @@ import {
   type Forge,
 } from "@/git/forge";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
-import type { CheckoutStatusResponse, ForgeAuthState } from "@getpaseo/protocol/messages";
-import { useCheckoutGitActionsStore } from "@/git/actions-store";
+import type {
+  CheckoutScmChanges,
+  CheckoutStatusResponse,
+  ForgeAuthState,
+} from "@getpaseo/protocol/messages";
+import { useCheckoutGitActionsStore, type CheckoutGitActionStatus } from "@/git/actions-store";
+import { ScmChangesList } from "@/git/scm-changes-list";
+import { countScmChanges } from "@/git/scm-model";
+import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore } from "@/stores/session-store";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
-import { usePanelStore } from "@/stores/panel-store";
-import { collectAllTabs, useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
+import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
-import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-actions";
+import { confirmDialog } from "@/utils/confirm-dialog";
 import {
   formatDiffContentText,
   formatDiffGutterText,
@@ -125,9 +123,7 @@ import {
   isInlineReviewEditorForTarget,
   type InlineReviewActions,
 } from "@/review";
-import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
 import type { GitAction, GitActions } from "@/git/policy";
-import { DiffTooLargeState } from "@/git/diff-too-large-state";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -1374,16 +1370,13 @@ type PressableStyleFn = (
 
 const foregroundMutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedAlignJustify = withUnistyles(AlignJustify);
 const ThemedColumns2 = withUnistyles(Columns2);
 const ThemedPilcrow = withUnistyles(Pilcrow);
 const ThemedWrapText = withUnistyles(WrapText);
 const ThemedListChevronsDownUp = withUnistyles(ListChevronsDownUp);
 const ThemedListChevronsUpDown = withUnistyles(ListChevronsUpDown);
-const ThemedFolderTree = withUnistyles(FolderTree);
-const ThemedList = withUnistyles(List);
-const ThemedMaximize2 = withUnistyles(Maximize2);
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
 const ThemedDownload = withUnistyles(Download);
 const ThemedUpload = withUnistyles(Upload);
@@ -1450,12 +1443,6 @@ export function DiffLayoutToggle({
   );
 }
 
-interface ChangesTabToggleProps {
-  isMobile: boolean;
-  selected: boolean;
-  onPress: () => void;
-}
-
 interface DiffModeMenuProps {
   diffMode: "uncommitted" | "base";
   committedDescription?: string;
@@ -1507,83 +1494,6 @@ export function DiffModeMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function ChangesTabToggle({ isMobile, selected, onPress }: ChangesTabToggleProps) {
-  const { t } = useTranslation();
-  const buttonStyle = useMemo(
-    () => buildToggleButtonStyle(selected, styles.expandAllButton),
-    [selected],
-  );
-  const label = t(
-    selected ? "workspace.git.diff.closeChangesTab" : "workspace.git.diff.openChangesTab",
-  );
-  if (isMobile) {
-    return null;
-  }
-  return (
-    <Tooltip delayDuration={300}>
-      <TooltipTrigger asChild>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          testID="changes-open-tab"
-          onPress={onPress}
-          style={buttonStyle}
-        >
-          <ThemedMaximize2 size={14} uniProps={foregroundMutedIconColorMapping} />
-        </Pressable>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <Text style={styles.tooltipText}>{label}</Text>
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-interface DiffViewModeToggleProps {
-  viewMode: "flat" | "tree";
-  isMobile: boolean;
-  toggleStyle: PressableStyleFn;
-  onToggle: () => void;
-}
-
-function DiffViewModeToggle({
-  viewMode,
-  isMobile,
-  toggleStyle,
-  onToggle,
-}: DiffViewModeToggleProps) {
-  const { t } = useTranslation();
-  const label =
-    viewMode === "flat"
-      ? t("workspace.git.diff.showTreeView")
-      : t("workspace.git.diff.showFlatView");
-  return (
-    <Tooltip delayDuration={300}>
-      <TooltipTrigger asChild>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={label}
-          testID="changes-toggle-view-mode"
-          style={toggleStyle}
-          onPress={onToggle}
-        >
-          {viewMode === "flat" ? (
-            <ThemedFolderTree
-              size={isMobile ? 18 : 14}
-              uniProps={foregroundMutedIconColorMapping}
-            />
-          ) : (
-            <ThemedList size={isMobile ? 18 : 14} uniProps={foregroundMutedIconColorMapping} />
-          )}
-        </Pressable>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <Text style={styles.tooltipText}>{label}</Text>
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -1784,100 +1694,6 @@ function getSplitDiffLineCount(file: ParsedDiffFile): number {
     metrics.splitLineCount = buildSplitDiffRows(file).length;
   }
   return metrics.splitLineCount;
-}
-
-function computeEmptyMessage(
-  hideWhitespace: boolean,
-  diffMode: "uncommitted" | "base",
-  baseRefLabel: string,
-  labels: {
-    uncommitted: string;
-    againstBase: (baseRefLabel: string) => string;
-  },
-): string | null {
-  if (hideWhitespace) {
-    return null;
-  }
-  if (diffMode === "uncommitted") {
-    return labels.uncommitted;
-  }
-  return labels.againstBase(baseRefLabel);
-}
-
-interface DiffBodyContentProps {
-  isStatusLoading: boolean;
-  statusErrorMessage: string | null;
-  notGit: boolean;
-  isDiffLoading: boolean;
-  diffErrorMessage: string | null;
-  diffTooLarge: boolean;
-  hasChanges: boolean;
-  emptyMessage: string | null;
-  children: ReactElement;
-  checkingRepositoryLabel: string;
-  notRepositoryLabel: string;
-}
-
-function DiffBodyContent({
-  isStatusLoading,
-  statusErrorMessage,
-  notGit,
-  isDiffLoading,
-  diffErrorMessage,
-  diffTooLarge,
-  hasChanges,
-  emptyMessage,
-  children,
-  checkingRepositoryLabel,
-  notRepositoryLabel,
-}: DiffBodyContentProps) {
-  if (isStatusLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size={24} uniProps={foregroundMutedIconColorMapping} />
-        <Text style={styles.loadingText}>{checkingRepositoryLabel}</Text>
-      </View>
-    );
-  }
-  if (statusErrorMessage) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{statusErrorMessage}</Text>
-      </View>
-    );
-  }
-  if (notGit) {
-    return (
-      <View style={styles.emptyContainer} testID="changes-not-git">
-        <Text style={styles.emptyText}>{notRepositoryLabel}</Text>
-      </View>
-    );
-  }
-  if (isDiffLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ThemedActivityIndicator size={24} uniProps={foregroundMutedIconColorMapping} />
-      </View>
-    );
-  }
-  if (diffTooLarge) {
-    return <DiffTooLargeState />;
-  }
-  if (diffErrorMessage) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>{diffErrorMessage}</Text>
-      </View>
-    );
-  }
-  if (!hasChanges) {
-    return (
-      <View style={styles.emptyContainer}>
-        {emptyMessage ? <Text style={styles.emptyText}>{emptyMessage}</Text> : null}
-      </View>
-    );
-  }
-  return children;
 }
 
 interface SharedDiffViewProps {
@@ -2419,22 +2235,6 @@ export function SharedDiffView({
   );
 }
 
-function computeBaseRefLabel(baseRef: string | undefined, fallbackLabel: string): string {
-  if (!baseRef) return fallbackLabel;
-  const trimmed = baseRef.replace(/^refs\/(heads|remotes)\//, "").trim();
-  return trimmed.startsWith("origin/") ? trimmed.slice("origin/".length) : trimmed;
-}
-
-function computeCommittedDiffDescription(
-  branchLabel: string,
-  baseRefLabel: string,
-): string | undefined {
-  if (!branchLabel || !baseRefLabel) {
-    return undefined;
-  }
-  return branchLabel === baseRefLabel ? undefined : `${branchLabel} -> ${baseRefLabel}`;
-}
-
 function repositoryDisplayName(repoRoot: string | null | undefined, cwd: string): string {
   const normalizedPath = (repoRoot ?? cwd).replace(/[\\/]+$/, "");
   const pathParts = normalizedPath.split(/[\\/]/);
@@ -2461,146 +2261,6 @@ function repositoryMenuActions(gitActions: GitActions): GitActions {
     return true;
   });
   return { primary: null, secondary: [], menu };
-}
-
-function resolveStagedFileCount({
-  supported,
-  status,
-}: {
-  supported: boolean;
-  status: CheckoutStatusResponse["payload"] | null | undefined;
-}): number {
-  if (!supported || !status || !status.isGit) {
-    return 0;
-  }
-  return status.stagedFileCount;
-}
-
-function StagedChangesHeader({ title, count }: { title: string; count: number }) {
-  if (count === 0) {
-    return null;
-  }
-  return (
-    <SourceControlSectionHeader
-      title={title}
-      count={count}
-      testID="source-control-staged-changes-heading"
-    />
-  );
-}
-
-interface ChangesSectionActionsProps {
-  allFileDiffsExpanded: boolean;
-  canUseSplitLayout: boolean;
-  changesCount: number;
-  changesTabOpen: boolean;
-  committedDiffDescription: string | undefined;
-  diffMode: "uncommitted" | "base";
-  forgeBrandLabel: string;
-  hideWhitespace: boolean;
-  isMobile: boolean;
-  isRefreshing: boolean;
-  layout: "unified" | "split";
-  onRefresh: () => void;
-  onSelectBase: () => void;
-  onSelectUncommitted: () => void;
-  onToggleChangesTab: () => void;
-  onToggleExpandAll: () => void;
-  onToggleHideWhitespace: () => void;
-  onToggleLayout: () => void;
-  onToggleViewMode: () => void;
-  onToggleWrapLines: () => void;
-  refreshSupported: boolean;
-  toggleStyles: {
-    expandAll: PressableStyleFn;
-    layout: PressableStyleFn;
-    overflow: PressableStyleFn;
-    viewMode: PressableStyleFn;
-  };
-  viewMode: "flat" | "tree";
-  wrapLines: boolean;
-}
-
-function ChangesSectionActions({
-  allFileDiffsExpanded,
-  canUseSplitLayout,
-  changesCount,
-  changesTabOpen,
-  committedDiffDescription,
-  diffMode,
-  forgeBrandLabel,
-  hideWhitespace,
-  isMobile,
-  isRefreshing,
-  layout,
-  onRefresh,
-  onSelectBase,
-  onSelectUncommitted,
-  onToggleChangesTab,
-  onToggleExpandAll,
-  onToggleHideWhitespace,
-  onToggleLayout,
-  onToggleViewMode,
-  onToggleWrapLines,
-  refreshSupported,
-  toggleStyles,
-  viewMode,
-  wrapLines,
-}: ChangesSectionActionsProps) {
-  const showViewModeToggle = changesCount > 0;
-  const showFilesToolbar = changesCount > 0 && !changesTabOpen;
-  const showLayoutToggle = canUseSplitLayout && !changesTabOpen;
-  return (
-    <View style={styles.diffStatusButtons}>
-      <DiffModeMenu
-        diffMode={diffMode}
-        committedDescription={committedDiffDescription}
-        onSelectUncommitted={onSelectUncommitted}
-        onSelectBase={onSelectBase}
-      />
-      <ChangesTabToggle
-        isMobile={isMobile}
-        selected={changesTabOpen}
-        onPress={onToggleChangesTab}
-      />
-      {showLayoutToggle ? (
-        <DiffLayoutToggle
-          layout={layout}
-          isMobile={isMobile}
-          toggleStyle={toggleStyles.layout}
-          onToggle={onToggleLayout}
-        />
-      ) : null}
-      {showViewModeToggle ? (
-        <DiffViewModeToggle
-          viewMode={viewMode}
-          isMobile={isMobile}
-          toggleStyle={toggleStyles.viewMode}
-          onToggle={onToggleViewMode}
-        />
-      ) : null}
-      {showFilesToolbar ? (
-        <DiffFilesToolbar
-          allFileDiffsExpanded={allFileDiffsExpanded}
-          isMobile={isMobile}
-          expandAllToggleStyle={toggleStyles.expandAll}
-          onToggleExpandAll={onToggleExpandAll}
-        />
-      ) : null}
-      <DiffOptionsMenu
-        brand={forgeBrandLabel}
-        hideWhitespace={hideWhitespace}
-        isMobile={isMobile}
-        isRefreshing={isRefreshing}
-        overflowToggleStyle={toggleStyles.overflow}
-        refreshSupported={refreshSupported}
-        wrapLines={wrapLines}
-        onRefresh={onRefresh}
-        onToggleHideWhitespace={onToggleHideWhitespace}
-        onToggleWrapLines={onToggleWrapLines}
-      />
-    </View>
-  );
 }
 
 function resolveDisplayedForge(
@@ -2700,14 +2360,6 @@ function buildToggleButtonStyle(
   ];
 }
 
-function useChangesSectionCollapse(): [boolean, () => void] {
-  const [collapsed, setCollapsed] = useState(false);
-  const toggleCollapsed = useCallback(() => {
-    setCollapsed((current) => !current);
-  }, []);
-  return [collapsed, toggleCollapsed];
-}
-
 function resolveActionHandler(action: GitAction | undefined): (() => void) | undefined {
   if (action && !action.disabled) {
     return action.handler;
@@ -2715,146 +2367,23 @@ function resolveActionHandler(action: GitAction | undefined): (() => void) | und
   return undefined;
 }
 
-function useChangesTreeState({
-  workspaceId,
-  cwd,
-  files,
-  viewMode,
-  changesTabOpen,
-  onViewModeChange,
-}: {
-  workspaceId?: string | null;
-  cwd: string;
-  files: ParsedDiffFile[];
-  viewMode: "flat" | "tree";
-  changesTabOpen: boolean;
-  onViewModeChange: (viewMode: "flat" | "tree") => void;
-}) {
-  const workspaceStateKey = useMemo(
-    () =>
-      buildWorkspaceExplorerStateKey({
-        workspaceId,
-        workspaceRoot: cwd.trim(),
-      }),
-    [cwd, workspaceId],
-  );
-  const expandedPaths = usePanelStore((state) =>
-    workspaceStateKey ? state.diffExpandedPathsByWorkspace[workspaceStateKey] : undefined,
-  );
-  const collapsedFolders = usePanelStore((state) =>
-    workspaceStateKey ? state.diffCollapsedFoldersByWorkspace[workspaceStateKey] : undefined,
-  );
-  const setExpandedPaths = usePanelStore((state) => state.setDiffExpandedPathsForWorkspace);
-  const setCollapsedFolders = usePanelStore((state) => state.setDiffCollapsedFoldersForWorkspace);
-  const stableExpandedPaths = expandedPaths ?? EMPTY_PATH_LIST;
-  const stableCollapsedFolders = collapsedFolders ?? EMPTY_PATH_LIST;
-  const folderPaths = useMemo(
-    () => collectDirPaths(compressSingleChildChains(buildDiffTree(files))),
-    [files],
-  );
-  const folderPathSet = useMemo(() => new Set(folderPaths), [folderPaths]);
-  const allExpanded = useMemo(() => {
-    if (files.length === 0 || changesTabOpen) {
-      return false;
-    }
-    const everyFileExpanded = files.every((file) => stableExpandedPaths.includes(file.path));
-    const everyFolderExpanded =
-      viewMode !== "tree" ||
-      stableCollapsedFolders.every((folderPath) => !folderPathSet.has(folderPath));
-    return everyFileExpanded && everyFolderExpanded;
-  }, [changesTabOpen, files, folderPathSet, stableCollapsedFolders, stableExpandedPaths, viewMode]);
-  const toggleViewMode = useCallback(() => {
-    const nextViewMode = viewMode === "flat" ? "tree" : "flat";
-    if (nextViewMode === "tree" && workspaceStateKey) {
-      setCollapsedFolders(workspaceStateKey, []);
-    }
-    onViewModeChange(nextViewMode);
-  }, [onViewModeChange, setCollapsedFolders, viewMode, workspaceStateKey]);
-  const toggleExpandAll = useCallback(() => {
-    if (!workspaceStateKey) {
-      return;
-    }
-    if (allExpanded) {
-      setExpandedPaths(workspaceStateKey, []);
-      if (viewMode === "tree") {
-        setCollapsedFolders(workspaceStateKey, folderPaths);
-      }
-      return;
-    }
-    setExpandedPaths(
-      workspaceStateKey,
-      files.map((file) => file.path),
-    );
-    if (viewMode === "tree") {
-      setCollapsedFolders(workspaceStateKey, []);
-    }
-  }, [
-    allExpanded,
-    files,
-    folderPaths,
-    setCollapsedFolders,
-    setExpandedPaths,
-    viewMode,
-    workspaceStateKey,
-  ]);
-  const updateExpandedPaths = useCallback(
-    (paths: string[]) => {
-      if (workspaceStateKey) {
-        setExpandedPaths(workspaceStateKey, paths);
-      }
-    },
-    [setExpandedPaths, workspaceStateKey],
-  );
-  const updateCollapsedFolders = useCallback(
-    (paths: string[]) => {
-      if (workspaceStateKey) {
-        setCollapsedFolders(workspaceStateKey, paths);
-      }
-    },
-    [setCollapsedFolders, workspaceStateKey],
-  );
-
-  return {
-    expandedPaths: changesTabOpen ? EMPTY_PATH_LIST : stableExpandedPaths,
-    collapsedFolders: stableCollapsedFolders,
-    allExpanded,
-    toggleViewMode,
-    toggleExpandAll,
-    updateExpandedPaths,
-    updateCollapsedFolders,
-  };
-}
-
 function useDiffTabNavigation({
   serverId,
   workspaceId,
   cwd,
-  isMobile,
 }: {
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
-  isMobile: boolean;
 }) {
   const openWorkspaceTabFocused = useWorkspaceLayoutStore((state) => state.openTabFocused);
-  const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const persistenceKey = useMemo(
     () => buildWorkspaceTabPersistenceKey({ serverId, workspaceId: workspaceId ?? cwd }),
     [cwd, serverId, workspaceId],
   );
-  const changesTabId = useWorkspaceLayoutStore((state) => {
-    if (!persistenceKey) {
-      return null;
-    }
-    const layout = state.layoutByWorkspace[persistenceKey];
-    return (
-      layout && collectAllTabs(layout.root).find((tab) => tab.target.kind === "working_diff")?.tabId
-    );
-  });
-  const changesTabOpen = !isMobile && Boolean(changesTabId);
   const openChanges = useCallback(
     (path?: string) => {
-      if (!persistenceKey || isMobile) {
+      if (!persistenceKey) {
         return;
       }
       openWorkspaceTabFocused(persistenceKey, {
@@ -2862,18 +2391,8 @@ function useDiffTabNavigation({
         ...(path ? { focusPath: path, focusRequestId: Date.now() } : {}),
       });
     },
-    [isMobile, openWorkspaceTabFocused, persistenceKey],
+    [openWorkspaceTabFocused, persistenceKey],
   );
-  const toggleChanges = useCallback(() => {
-    if (!persistenceKey || isMobile) {
-      return;
-    }
-    if (changesTabId) {
-      closeWorkspaceTab(persistenceKey, changesTabId);
-      return;
-    }
-    openChanges();
-  }, [changesTabId, closeWorkspaceTab, isMobile, openChanges, persistenceKey]);
   const openCommit = useCallback(
     (sha: string) => {
       if (persistenceKey) {
@@ -2883,91 +2402,253 @@ function useDiffTabNavigation({
     [openWorkspaceTabFocused, persistenceKey],
   );
   return {
-    changesTabOpen,
     openChanges,
-    toggleChanges,
     openCommit,
-    onChangesFilePress: changesTabOpen ? openChanges : undefined,
   };
 }
 
-export function GitDiffPane({
-  serverId,
-  workspaceId,
-  cwd,
-  enabled,
+interface ScmPanelBodyProps {
+  changes: CheckoutScmChanges | null;
+  discardStatus: CheckoutGitActionStatus;
+  isCompact: boolean;
+  isGit: boolean;
+  isStatusLoading: boolean;
+  scmOperationsSupported: boolean;
+  stageStatus: CheckoutGitActionStatus;
+  statusErrorMessage: string | null;
+  unstageStatus: CheckoutGitActionStatus;
+  onDiscard: (paths: string[]) => void;
+  onOpenFile: (path: string) => void;
+  onStage: (paths: string[]) => void;
+  onUnstage: (paths: string[]) => void;
+}
+
+function ScmPanelBody({
+  changes,
+  discardStatus,
+  isCompact,
+  isGit,
+  isStatusLoading,
+  scmOperationsSupported,
+  stageStatus,
+  statusErrorMessage,
+  unstageStatus,
+  onDiscard,
   onOpenFile,
-  onAddToChat,
-  suppressHeightSync,
-}: GitDiffPaneProps) {
-  const { settings: appSettings } = useAppSettings();
+  onStage,
+  onUnstage,
+}: ScmPanelBodyProps) {
   const { t } = useTranslation();
-  const isMobile = useIsCompactFormFactor();
-  const canUseSplitLayout = isWeb && !isMobile;
-  const { preferences: changesPreferences, updatePreferences: updateChangesPreferences } =
-    useChangesPreferences();
-  const wrapLines = changesPreferences.wrapLines;
-  const viewMode = changesPreferences.viewMode;
-  const effectiveLayout = resolveDiffLayout(changesPreferences.layout, canUseSplitLayout);
+  if (isStatusLoading) {
+    return (
+      <View style={styles.scmState}>
+        <LoadingSpinner size="small" color={styles.scmStateText.color} />
+        <Text style={styles.scmStateText}>{t("workspace.git.diff.checkingRepository")}</Text>
+      </View>
+    );
+  }
+  if (statusErrorMessage) {
+    return (
+      <View style={styles.scmState}>
+        <Text style={styles.scmErrorText}>{statusErrorMessage}</Text>
+      </View>
+    );
+  }
+  if (!isGit) {
+    return (
+      <View style={styles.scmState}>
+        <Text style={styles.scmStateText}>{t("workspace.git.diff.notRepository")}</Text>
+      </View>
+    );
+  }
+  if (!scmOperationsSupported) {
+    return (
+      <View style={styles.scmState} testID="scm-host-update-required">
+        <Text style={styles.scmStateText}>
+          {t("workspace.git.panel.updateHostForScmOperations")}
+        </Text>
+      </View>
+    );
+  }
+  if (!changes) {
+    return (
+      <View style={styles.scmState}>
+        <Text style={styles.scmErrorText}>{t("workspace.git.panel.changesMissing")}</Text>
+      </View>
+    );
+  }
+  return (
+    <ScmChangesList
+      changes={changes}
+      isCompact={isCompact}
+      stageStatus={stageStatus}
+      unstageStatus={unstageStatus}
+      discardStatus={discardStatus}
+      onOpenFile={onOpenFile}
+      onStage={onStage}
+      onUnstage={onUnstage}
+      onDiscard={onDiscard}
+    />
+  );
+}
 
-  const handleToggleWrapLines = useCallback(() => {
-    void updateChangesPreferences({ wrapLines: !wrapLines });
-  }, [updateChangesPreferences, wrapLines]);
+interface ScmPanelHeaderProps {
+  branchLabel: string;
+  commitStatus: CheckoutGitActionStatus;
+  currentBranchName: string | null;
+  cwd: string;
+  gitActions: GitActions;
+  isRefreshing: boolean;
+  refreshSupported: boolean;
+  repositoryName: string;
+  scmOperationsSupported: boolean;
+  serverId: string;
+  status: CheckoutStatusResponse["payload"] | null;
+  syncHandler: (() => void) | undefined;
+  publishHandler: (() => void) | undefined;
+  totalChangeCount: number;
+  workspaceId?: string | null;
+  changes: CheckoutScmChanges | null;
+  onCommit: (message: string, addAll: boolean) => Promise<boolean>;
+  onRefresh: () => void;
+}
 
-  const handleToggleHideWhitespace = useCallback(() => {
-    void updateChangesPreferences({ hideWhitespace: !changesPreferences.hideWhitespace });
-  }, [changesPreferences.hideWhitespace, updateChangesPreferences]);
-
-  const handleToggleLayout = useCallback(() => {
-    void updateChangesPreferences({
-      layout: changesPreferences.layout === "unified" ? "split" : "unified",
-    });
-  }, [changesPreferences.layout, updateChangesPreferences]);
-
-  const codeFontSize = appSettings.codeFontSize;
-  const layoutToggleStyle = useMemo(
-    () => buildToggleButtonStyle(false, styles.expandAllButton),
+function ScmPanelHeader({
+  branchLabel,
+  changes,
+  commitStatus,
+  currentBranchName,
+  cwd,
+  gitActions,
+  isRefreshing,
+  refreshSupported,
+  repositoryName,
+  scmOperationsSupported,
+  serverId,
+  status,
+  syncHandler,
+  publishHandler,
+  totalChangeCount,
+  workspaceId,
+  onCommit,
+  onRefresh,
+}: ScmPanelHeaderProps) {
+  const { t } = useTranslation();
+  const headerActionStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.scmHeaderAction,
+      (Boolean(hovered) || pressed) && styles.scmHeaderActionActive,
+    ],
     [],
   );
-
-  const viewModeToggleStyle = useMemo(
-    () => buildToggleButtonStyle(viewMode === "tree", styles.expandAllButton),
-    [viewMode],
+  if (!status?.isGit) {
+    return null;
+  }
+  return (
+    <>
+      <SourceControlRepositoryHeader repositoryName={repositoryName} gitActions={gitActions}>
+        <BranchSwitcher
+          currentBranchName={currentBranchName}
+          serverId={serverId}
+          workspaceId={workspaceId ?? cwd}
+          workspaceDirectory={cwd}
+          isGitCheckout
+          testID="changes-branch-switcher"
+        />
+      </SourceControlRepositoryHeader>
+      <SourceControlSectionHeader
+        title={t("workspace.git.panel.sourceControl")}
+        count={changes ? totalChangeCount : null}
+        testID="source-control-changes-heading"
+      >
+        {refreshSupported ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("workspace.git.diff.refresh")}
+            disabled={isRefreshing}
+            onPress={onRefresh}
+            style={headerActionStyle}
+            testID="source-control-refresh"
+          >
+            {isRefreshing ? (
+              <ThemedActivityIndicator size="small" uniProps={foregroundMutedIconColorMapping} />
+            ) : (
+              <ThemedRotateCw size={14} uniProps={foregroundMutedIconColorMapping} />
+            )}
+          </Pressable>
+        ) : null}
+      </SourceControlSectionHeader>
+      {scmOperationsSupported && changes ? (
+        <SourceControlCommitComposer
+          branchName={branchLabel}
+          hasChanges={status.isDirty}
+          stagedFileCount={changes.staged.length}
+          totalChangeCount={totalChangeCount}
+          status={commitStatus}
+          gitStatus={status}
+          onCommit={onCommit}
+          onSync={syncHandler}
+          onPublish={publishHandler}
+        />
+      ) : null}
+    </>
   );
+}
 
-  const expandAllToggleStyle = useMemo(() => buildExpandAllButtonStyle(), []);
-
-  const overflowToggleStyle = useMemo(() => buildOverflowButtonStyle(), []);
-
+export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
+  const { t } = useTranslation();
   const toast = useToast();
+  const isCompact = useIsCompactFormFactor();
   const {
-    changesTabOpen,
-    toggleChanges: handleToggleChangesTab,
-    openCommit: handleCommitPress,
-    onChangesFilePress,
-  } = useDiffTabNavigation({ serverId, workspaceId, cwd, isMobile });
+    status,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+    error: statusError,
+  } = useCheckoutStatusQuery({ serverId, cwd });
+  const isGit = status?.isGit === true;
+  const statusErrorMessage =
+    status?.error?.message ??
+    (isStatusError && statusError instanceof Error ? statusError.message : null);
+  const currentBranchName = isGit && status.currentBranch !== "HEAD" ? status.currentBranch : null;
+  const changes = isGit ? (status.changes ?? null) : null;
+  const totalChangeCount = changes ? countScmChanges(changes) : 0;
+
+  // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除能力门控。
+  const scmOperationsSupported = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutScmOperations === true,
+  );
   const refreshSupported = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
+    (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutRefresh === true,
   );
   // COMPAT(checkoutFetch): v0.2.2 新增，2027-01-27 后移除能力门控。
   const fetchSupported = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.checkoutFetch === true,
+    (state) => state.sessions[serverId]?.serverInfo?.features?.checkoutFetch === true,
   );
-  // COMPAT(stagedFileCount): v0.2.2 新增，2027-01-27 后移除能力门控。
-  const stagedFileCountSupported = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.stagedFileCount === true,
-  );
-  const runRefresh = useCheckoutGitActionsStore((s) => s.refresh);
-  const runFetch = useCheckoutGitActionsStore((s) => s.fetch);
-  const runCommit = useCheckoutGitActionsStore((s) => s.commit);
+
+  const runRefresh = useCheckoutGitActionsStore((state) => state.refresh);
+  const runFetch = useCheckoutGitActionsStore((state) => state.fetch);
+  const runCommit = useCheckoutGitActionsStore((state) => state.commit);
+  const runStage = useCheckoutGitActionsStore((state) => state.stage);
+  const runUnstage = useCheckoutGitActionsStore((state) => state.unstage);
+  const runDiscard = useCheckoutGitActionsStore((state) => state.discard);
   const isFetching =
-    useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "fetch" })) ===
+    useCheckoutGitActionsStore((state) => state.getStatus({ serverId, cwd, actionId: "fetch" })) ===
     "pending";
   const isRefreshing =
-    useCheckoutGitActionsStore((s) => s.getStatus({ serverId, cwd, actionId: "refresh" })) ===
-    "pending";
-  const commitStatus = useCheckoutGitActionsStore((s) =>
-    s.getStatus({ serverId, cwd, actionId: "commit" }),
+    useCheckoutGitActionsStore((state) =>
+      state.getStatus({ serverId, cwd, actionId: "refresh" }),
+    ) === "pending";
+  const commitStatus = useCheckoutGitActionsStore((state) =>
+    state.getStatus({ serverId, cwd, actionId: "commit" }),
+  );
+  const stageStatus = useCheckoutGitActionsStore((state) =>
+    state.getStatus({ serverId, cwd, actionId: "stage" }),
+  );
+  const unstageStatus = useCheckoutGitActionsStore((state) =>
+    state.getStatus({ serverId, cwd, actionId: "unstage" }),
+  );
+  const discardStatus = useCheckoutGitActionsStore((state) =>
+    state.getStatus({ serverId, cwd, actionId: "discard" }),
   );
 
   const handleRefresh = useCallback(() => {
@@ -2991,9 +2672,9 @@ export function GitDiffPane({
   }, [cwd, isFetching, runFetch, serverId, t, toast]);
 
   const handleCommit = useCallback(
-    async (message: string) => {
+    async (message: string, addAll: boolean) => {
       try {
-        await runCommit({ serverId, cwd, message });
+        await runCommit({ serverId, cwd, message, addAll });
         toast.show(t("workspace.git.actions.commit.success"), { variant: "success" });
         return true;
       } catch (error) {
@@ -3006,37 +2687,89 @@ export function GitDiffPane({
     [cwd, runCommit, serverId, t, toast],
   );
 
-  const {
-    status,
-    isStatusLoading,
-    isGit,
-    notGit,
-    statusErrorMessage,
-    baseRef,
-    currentBranchName,
-    diffMode,
-    selectUncommitted: handleSelectUncommitted,
-    selectBase: handleSelectBase,
-    files,
-    diffPayloadError,
-    diffTooLarge,
-    isDiffLoading,
-    reviewActions,
-    reviewAttachment,
-  } = useWorkingDiff({
+  const handleStage = useCallback(
+    (paths: string[]) => {
+      void runStage({ serverId, cwd, paths }).catch((error) => {
+        toast.error(error instanceof Error ? error.message : t("workspace.git.panel.stageFailed"));
+      });
+    },
+    [cwd, runStage, serverId, t, toast],
+  );
+  const handleUnstage = useCallback(
+    (paths: string[]) => {
+      void runUnstage({ serverId, cwd, paths }).catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.git.panel.unstageFailed"),
+        );
+      });
+    },
+    [cwd, runUnstage, serverId, t, toast],
+  );
+  const handleDiscard = useCallback(
+    (paths: string[]) => {
+      void (async () => {
+        const confirmed = await confirmDialog({
+          title: t("workspace.git.panel.discardConfirmTitle"),
+          message:
+            paths.length === 1
+              ? t("workspace.git.panel.discardConfirmFile", { path: paths[0] })
+              : t("workspace.git.panel.discardConfirmMany", { count: paths.length }),
+          confirmLabel: t("workspace.git.panel.discardConfirmAction"),
+          cancelLabel: t("common.actions.cancel"),
+          destructive: true,
+        });
+        if (!confirmed) {
+          return;
+        }
+        await runDiscard({ serverId, cwd, paths });
+      })().catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.git.panel.discardFailed"),
+        );
+      });
+    },
+    [cwd, runDiscard, serverId, t, toast],
+  );
+
+  const { openChanges: handleOpenChanges, openCommit: handleCommitPress } = useDiffTabNavigation({
     serverId,
-    workspaceId: workspaceId ?? undefined,
+    workspaceId,
     cwd,
-    ignoreWhitespace: changesPreferences.hideWhitespace,
-    enabled: enabled !== false,
   });
-  usePublishWorkingDiffAttachment({
-    serverId,
-    workspaceId: workspaceId ?? undefined,
-    cwd,
-    attachment: reviewAttachment,
-    enabled: !changesTabOpen,
-  });
+  const handleOpenScmFile = useCallback(
+    (path: string) => handleOpenChanges(path),
+    [handleOpenChanges],
+  );
+
+  const gitActionsIcons = useMemo(
+    () => ({
+      commit: <ThemedGitCommitHorizontal size={16} uniProps={foregroundMutedIconColorMapping} />,
+      pull: <ThemedDownload size={16} uniProps={foregroundMutedIconColorMapping} />,
+      push: <ThemedUpload size={16} uniProps={foregroundMutedIconColorMapping} />,
+      pullAndPush: <ThemedArrowDownUp size={16} uniProps={foregroundMutedIconColorMapping} />,
+      merge: <ThemedGitMerge size={16} uniProps={foregroundMutedIconColorMapping} />,
+      mergeFromBase: <ThemedRefreshCcw size={16} uniProps={foregroundMutedIconColorMapping} />,
+      archive: <ThemedArchive size={16} uniProps={foregroundMutedIconColorMapping} />,
+    }),
+    [],
+  );
+  const { gitActions, branchLabel } = useGitActions({ serverId, cwd, icons: gitActionsIcons });
+  const syncAction = useMemo(
+    () => gitActions.secondary.find((action) => action.id === "pull-and-push"),
+    [gitActions],
+  );
+  const publishAction = useMemo(
+    () => gitActions.secondary.find((action) => action.id === "push"),
+    [gitActions],
+  );
+  const syncHandler = resolveActionHandler(syncAction);
+  const publishHandler = resolveActionHandler(publishAction);
+  const repositoryGitActions = useMemo(() => repositoryMenuActions(gitActions), [gitActions]);
+  const repositoryName = useMemo(
+    () => repositoryDisplayName(isGit ? status.repoRoot : null, cwd),
+    [cwd, isGit, status],
+  );
+
   const { resolvedForge, authState } = useCheckoutPrStatusQuery({
     serverId,
     cwd,
@@ -3044,7 +2777,7 @@ export function GitDiffPane({
   });
   const forge = resolveDisplayedForge(resolvedForge, status?.remoteUrl);
   const forgeProvidersSupported = useSessionStore(
-    (s) => s.sessions[serverId]?.serverInfo?.features?.forgeProviders === true,
+    (state) => state.sessions[serverId]?.serverInfo?.features?.forgeProviders === true,
   );
   const forgeSetupAction = computeForgeSetupAction({
     forge,
@@ -3061,233 +2794,28 @@ export function GitDiffPane({
       }),
     [forgeSetupAction, forge, status?.remoteUrl, t],
   );
-  const handleViewModeChange = useCallback(
-    (nextViewMode: "flat" | "tree") => {
-      void updateChangesPreferences({ viewMode: nextViewMode });
-    },
-    [updateChangesPreferences],
-  );
-  const changesTree = useChangesTreeState({
-    workspaceId,
-    cwd,
-    files,
-    viewMode,
-    changesTabOpen,
-    onViewModeChange: handleViewModeChange,
-  });
-  const sharedDisplayPreferences = useMemo(
-    () => ({
-      layout: effectiveLayout,
-      wrapLines,
-      codeFontSize,
-      monoFontFamily: appSettings.monoFontFamily,
-    }),
-    [appSettings.monoFontFamily, codeFontSize, effectiveLayout, wrapLines],
-  );
-  const downloadFile = useFileDownload({ serverId, workspaceId, workspaceRoot: cwd });
-  const handleCopyPath = useCallback(
-    (path: string) => {
-      void Clipboard.setStringAsync(
-        buildAbsoluteExplorerPath({ workspaceRoot: cwd, entryPath: path }),
-      );
-    },
-    [cwd],
-  );
-  const handleDownloadPath = useCallback(
-    (path: string) => {
-      downloadFile({ fileName: path.split("/").pop() ?? path, path });
-    },
-    [downloadFile],
-  );
-  const workingTreeMode = useMemo(
-    () => ({
-      kind: "working_tree" as const,
-      viewMode,
-      expandedPaths: changesTree.expandedPaths,
-      collapsedFolders: changesTree.collapsedFolders,
-      reviewActions,
-      onFilePress: onChangesFilePress,
-      workspaceFileDragScope: workspaceId ? { serverId, workspaceId } : undefined,
-      onOpenFile,
-      onAddToChat,
-      onCopyPath: handleCopyPath,
-      onDownload: handleDownloadPath,
-      onExpandedPathsChange: changesTree.updateExpandedPaths,
-      onCollapsedFoldersChange: changesTree.updateCollapsedFolders,
-    }),
-    [
-      viewMode,
-      changesTree.expandedPaths,
-      changesTree.collapsedFolders,
-      reviewActions,
-      onChangesFilePress,
-      serverId,
-      workspaceId,
-      onOpenFile,
-      onAddToChat,
-      handleCopyPath,
-      handleDownloadPath,
-      changesTree.updateExpandedPaths,
-      changesTree.updateCollapsedFolders,
-    ],
-  );
-
-  const hasChanges = files.length > 0;
-  const hasUncommittedChanges = Boolean(status?.isGit && status.isDirty);
-  const [changesCollapsed, toggleChangesCollapsed] = useChangesSectionCollapse();
-  const stagedFileCount = resolveStagedFileCount({
-    supported: stagedFileCountSupported,
-    status,
-  });
-  const diffErrorMessage = diffPayloadError?.message ?? null;
-  const baseRefLabel = useMemo(
-    () => computeBaseRefLabel(baseRef, t("workspace.git.diff.base")),
-    [baseRef, t],
-  );
-  const gitActionsIcons = useMemo(
-    () => ({
-      commit: <ThemedGitCommitHorizontal size={16} uniProps={foregroundMutedIconColorMapping} />,
-      pull: <ThemedDownload size={16} uniProps={foregroundMutedIconColorMapping} />,
-      push: <ThemedUpload size={16} uniProps={foregroundMutedIconColorMapping} />,
-      pullAndPush: <ThemedArrowDownUp size={16} uniProps={foregroundMutedIconColorMapping} />,
-      merge: <ThemedGitMerge size={16} uniProps={foregroundMutedIconColorMapping} />,
-      mergeFromBase: <ThemedRefreshCcw size={16} uniProps={foregroundMutedIconColorMapping} />,
-      archive: <ThemedArchive size={16} uniProps={foregroundMutedIconColorMapping} />,
-    }),
-    [],
-  );
-  const { gitActions, branchLabel } = useGitActions({
-    serverId,
-    cwd,
-    icons: gitActionsIcons,
-  });
-  const syncAction = useMemo(
-    () => gitActions.secondary.find((action) => action.id === "pull-and-push"),
-    [gitActions],
-  );
-  const publishAction = useMemo(
-    () => gitActions.secondary.find((action) => action.id === "push"),
-    [gitActions],
-  );
-  const syncHandler = resolveActionHandler(syncAction);
-  const publishHandler = resolveActionHandler(publishAction);
-  const changesToggleStyles = useMemo(
-    () => ({
-      expandAll: expandAllToggleStyle,
-      layout: layoutToggleStyle,
-      overflow: overflowToggleStyle,
-      viewMode: viewModeToggleStyle,
-    }),
-    [expandAllToggleStyle, layoutToggleStyle, overflowToggleStyle, viewModeToggleStyle],
-  );
-  const repositoryGitActions = useMemo(() => repositoryMenuActions(gitActions), [gitActions]);
-  const repositoryName = useMemo(
-    () => repositoryDisplayName(status?.repoRoot, cwd),
-    [cwd, status?.repoRoot],
-  );
-  const committedDiffDescription = useMemo(
-    () => computeCommittedDiffDescription(branchLabel, baseRefLabel),
-    [baseRefLabel, branchLabel],
-  );
-  const emptyMessage = computeEmptyMessage(
-    changesPreferences.hideWhitespace,
-    diffMode,
-    baseRefLabel,
-    {
-      uncommitted: t("workspace.git.diff.emptyUncommitted"),
-      againstBase: (label) => t("workspace.git.diff.emptyAgainstBase", { baseRef: label }),
-    },
-  );
-
-  const bodyContent: ReactElement = (
-    <DiffBodyContent
-      isStatusLoading={isStatusLoading}
-      statusErrorMessage={statusErrorMessage}
-      notGit={notGit}
-      isDiffLoading={isDiffLoading}
-      diffErrorMessage={diffErrorMessage}
-      diffTooLarge={diffTooLarge}
-      hasChanges={hasChanges}
-      emptyMessage={emptyMessage}
-      checkingRepositoryLabel={t("workspace.git.diff.checkingRepository")}
-      notRepositoryLabel={t("workspace.git.diff.notRepository")}
-    >
-      <SharedDiffView
-        files={files}
-        displayPreferences={sharedDisplayPreferences}
-        suppressHeightSync={suppressHeightSync}
-        mode={workingTreeMode}
-      />
-    </DiffBodyContent>
-  );
-
   return (
     <View style={styles.container}>
-      {isGit ? (
-        <>
-          <SourceControlRepositoryHeader
-            repositoryName={repositoryName}
-            gitActions={repositoryGitActions}
-          >
-            <BranchSwitcher
-              currentBranchName={currentBranchName}
-              serverId={serverId}
-              workspaceId={workspaceId ?? cwd}
-              workspaceDirectory={cwd}
-              isGitCheckout={isGit}
-              testID="changes-branch-switcher"
-            />
-          </SourceControlRepositoryHeader>
-          <StagedChangesHeader
-            title={t("workspace.git.panel.stagedChanges")}
-            count={stagedFileCount}
-          />
-          <SourceControlSectionHeader
-            title={t("workspace.git.panel.changes")}
-            count={files.length}
-            testID="source-control-changes-heading"
-            collapsible
-            collapsed={changesCollapsed}
-            onToggleCollapsed={toggleChangesCollapsed}
-          >
-            <ChangesSectionActions
-              canUseSplitLayout={canUseSplitLayout}
-              changesTabOpen={changesTabOpen}
-              committedDiffDescription={committedDiffDescription}
-              diffMode={diffMode}
-              forgeBrandLabel={getForgePresentation(forge).brandLabel}
-              hideWhitespace={changesPreferences.hideWhitespace}
-              isMobile={isMobile}
-              isRefreshing={isRefreshing}
-              layout={changesPreferences.layout}
-              onRefresh={handleRefresh}
-              onSelectBase={handleSelectBase}
-              onSelectUncommitted={handleSelectUncommitted}
-              onToggleChangesTab={handleToggleChangesTab}
-              onToggleExpandAll={changesTree.toggleExpandAll}
-              onToggleHideWhitespace={handleToggleHideWhitespace}
-              onToggleLayout={handleToggleLayout}
-              onToggleWrapLines={handleToggleWrapLines}
-              onToggleViewMode={changesTree.toggleViewMode}
-              refreshSupported={refreshSupported}
-              toggleStyles={changesToggleStyles}
-              viewMode={viewMode}
-              wrapLines={wrapLines}
-              changesCount={files.length}
-              allFileDiffsExpanded={changesTree.allExpanded}
-            />
-          </SourceControlSectionHeader>
-          <SourceControlCommitComposer
-            branchName={branchLabel}
-            hasChanges={hasUncommittedChanges}
-            status={commitStatus}
-            gitStatus={status}
-            onCommit={handleCommit}
-            onSync={syncHandler}
-            onPublish={publishHandler}
-          />
-        </>
-      ) : null}
+      <ScmPanelHeader
+        branchLabel={branchLabel}
+        changes={changes}
+        commitStatus={commitStatus}
+        currentBranchName={currentBranchName}
+        cwd={cwd}
+        gitActions={repositoryGitActions}
+        isRefreshing={isRefreshing}
+        refreshSupported={refreshSupported}
+        repositoryName={repositoryName}
+        scmOperationsSupported={scmOperationsSupported}
+        serverId={serverId}
+        status={status}
+        syncHandler={syncHandler}
+        publishHandler={publishHandler}
+        totalChangeCount={totalChangeCount}
+        workspaceId={workspaceId}
+        onCommit={handleCommit}
+        onRefresh={handleRefresh}
+      />
 
       {forgeSetupMessage ? (
         <View style={styles.forgeSetupCallout} testID="forge-setup-callout">
@@ -3295,26 +2823,43 @@ export function GitDiffPane({
         </View>
       ) : null}
 
-      <View style={styles.diffContainer}>{changesCollapsed ? null : bodyContent}</View>
+      <View style={styles.scmChangesContainer}>
+        <ScmPanelBody
+          changes={changes}
+          discardStatus={discardStatus}
+          isCompact={isCompact}
+          isGit={isGit}
+          isStatusLoading={isStatusLoading}
+          scmOperationsSupported={scmOperationsSupported}
+          stageStatus={stageStatus}
+          statusErrorMessage={statusErrorMessage}
+          unstageStatus={unstageStatus}
+          onDiscard={handleDiscard}
+          onOpenFile={handleOpenScmFile}
+          onStage={handleStage}
+          onUnstage={handleUnstage}
+        />
+      </View>
 
-      <CommitsSection
-        serverId={serverId}
-        cwd={cwd}
-        gitActions={gitActions}
-        fetchSupported={fetchSupported}
-        hasRemote={status?.hasRemote === true}
-        isFetching={isFetching}
-        onFetch={handleFetch}
-        refreshSupported={refreshSupported}
-        isRefreshing={isRefreshing}
-        onRefresh={handleRefresh}
-        currentBranchName={currentBranchName}
-        onCommitPress={handleCommitPress}
-      />
+      {isGit ? (
+        <CommitsSection
+          serverId={serverId}
+          cwd={cwd}
+          gitActions={gitActions}
+          fetchSupported={fetchSupported}
+          hasRemote={status.hasRemote}
+          isFetching={isFetching}
+          onFetch={handleFetch}
+          refreshSupported={refreshSupported}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          currentBranchName={currentBranchName}
+          onCommitPress={handleCommitPress}
+        />
+      ) : null}
     </View>
   );
 }
-
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
@@ -3408,6 +2953,39 @@ const styles = StyleSheet.create((theme) => ({
   forgeSetupCalloutText: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.foregroundMuted,
+  },
+  scmChangesContainer: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scmState: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+  },
+  scmStateText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
+    textAlign: "center",
+  },
+  scmErrorText: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.destructive,
+    textAlign: "center",
+  },
+  scmHeaderAction: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 3,
+  },
+  scmHeaderActionActive: {
+    backgroundColor: theme.colors.surface2,
   },
   diffContainer: {
     flex: 1,

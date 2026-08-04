@@ -5,7 +5,9 @@ import {
   Text,
   TextInput,
   View,
+  type NativeSyntheticEvent,
   type PressableStateCallbackType,
+  type TextInputKeyPressEventData,
 } from "react-native";
 import {
   ArrowDownUp,
@@ -21,10 +23,18 @@ import type { CheckoutGitActionStatus } from "@/git/actions-store";
 import type { GitActions } from "@/git/policy";
 import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
 import { GitActionsSplitButton } from "@/git/actions-split-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedArrowDownUp = withUnistyles(ArrowDownUp);
 const ThemedCloudUpload = withUnistyles(CloudUpload);
+const ThemedCheck = withUnistyles(Check);
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedChevronRight = withUnistyles(ChevronRight);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 
@@ -47,7 +57,7 @@ export function SourceControlRepositoryHeader({
       </View>
       <View style={styles.repositoryRow}>
         <View style={styles.repositoryIdentity}>
-          <ThemedGitBranch size={17} uniProps={mutedIconColorMapping} />
+          <ThemedGitBranch size={14} uniProps={mutedIconColorMapping} />
           <Text style={styles.repositoryName} numberOfLines={1}>
             {repositoryName}
           </Text>
@@ -130,10 +140,12 @@ export function SourceControlSectionHeader({
 export interface SourceControlCommitComposerProps {
   branchName: string;
   hasChanges: boolean;
+  stagedFileCount: number;
+  totalChangeCount: number;
   status: CheckoutGitActionStatus;
   /** Full checkout status; used only to derive Sync/Publish button state. */
   gitStatus?: CheckoutStatusResponse["payload"] | null | undefined;
-  onCommit: (message: string) => Promise<boolean>;
+  onCommit: (message: string, addAll: boolean) => Promise<boolean>;
   onSync?: (() => void) | undefined;
   onPublish?: (() => void) | undefined;
 }
@@ -182,6 +194,8 @@ function commitButtonPressableStyle({
 export function SourceControlCommitComposer({
   branchName,
   hasChanges,
+  stagedFileCount,
+  totalChangeCount,
   status,
   gitStatus,
   onCommit,
@@ -191,13 +205,18 @@ export function SourceControlCommitComposer({
   const { t } = useTranslation();
   const [message, setMessage] = useState("");
   const [focused, setFocused] = useState(false);
+  const [inputHeight, setInputHeight] = useState(26);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  const [historyDraft, setHistoryDraft] = useState("");
   const isPending = status === "pending";
-  const isGit = Boolean(gitStatus && gitStatus.isGit);
-  const aheadOfOrigin = isGit ? (gitStatus!.aheadOfOrigin ?? 0) : 0;
-  const behindOfOrigin = isGit ? (gitStatus!.behindOfOrigin ?? 0) : 0;
-  const hasRemote = isGit && gitStatus!.hasRemote;
+  const isGit = gitStatus?.isGit === true;
+  const aheadOfOrigin = isGit ? (gitStatus.aheadOfOrigin ?? 0) : 0;
+  const behindOfOrigin = isGit ? (gitStatus.behindOfOrigin ?? 0) : 0;
+  const hasRemote = isGit && gitStatus.hasRemote;
   const hasAhead = aheadOfOrigin > 0;
   const hasBehind = behindOfOrigin > 0;
+  const hasMessage = message.trim().length > 0;
   const buttonKind = resolveButtonKind({ hasChanges, hasRemote, hasAhead, hasBehind, branchName });
 
   const canPress = useMemo(() => {
@@ -210,24 +229,42 @@ export function SourceControlCommitComposer({
     if (buttonKind === "publish") {
       return onPublish !== undefined;
     }
-    return hasChanges && message.trim().length > 0;
-  }, [buttonKind, hasAhead, hasBehind, hasChanges, isPending, message, onPublish, onSync]);
+    return hasChanges && hasMessage;
+  }, [buttonKind, hasAhead, hasBehind, hasChanges, hasMessage, isPending, onPublish, onSync]);
 
-  const submit = useCallback(() => {
-    if (!canPress) {
-      return;
-    }
-    if (buttonKind === "commit") {
-      void onCommit(message.trim())
+  const submitCommit = useCallback(
+    (addAll: boolean) => {
+      if (isPending || !hasChanges || message.trim().length === 0) {
+        return;
+      }
+      const submittedMessage = message.trim();
+      const nextHistory = [
+        submittedMessage,
+        ...history.filter((entry) => entry !== submittedMessage),
+      ].slice(0, 50);
+      void onCommit(submittedMessage, addAll)
         .then((committed) => {
           if (committed) {
+            setHistory(nextHistory);
             setMessage("");
+            setInputHeight(26);
+            setHistoryIndex(null);
+            setHistoryDraft("");
           }
           return committed;
         })
         .catch((error) => {
           console.error("提交操作失败且未被上层处理", error);
         });
+    },
+    [hasChanges, history, isPending, message, onCommit],
+  );
+  const submit = useCallback(() => {
+    if (!canPress) {
+      return;
+    }
+    if (buttonKind === "commit") {
+      submitCommit(stagedFileCount === 0);
       return;
     }
     if (buttonKind === "sync" && onSync) {
@@ -237,7 +274,61 @@ export function SourceControlCommitComposer({
     if (buttonKind === "publish" && onPublish) {
       onPublish();
     }
-  }, [buttonKind, canPress, message, onCommit, onPublish, onSync]);
+  }, [buttonKind, canPress, onPublish, onSync, stagedFileCount, submitCommit]);
+
+  const submitStaged = useCallback(() => submitCommit(false), [submitCommit]);
+  const submitAll = useCallback(() => submitCommit(true), [submitCommit]);
+  const handleContentSizeChange = useCallback(
+    (event: { nativeEvent: { contentSize: { height: number } } }) => {
+      setInputHeight(Math.max(26, Math.min(100, Math.ceil(event.nativeEvent.contentSize.height))));
+    },
+    [],
+  );
+  const handleInputKeyPress = useCallback(
+    (
+      event: NativeSyntheticEvent<
+        TextInputKeyPressEventData & { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }
+      >,
+    ) => {
+      if (event.nativeEvent.altKey === true && event.nativeEvent.key === "ArrowUp") {
+        event.preventDefault();
+        if (history.length === 0) {
+          return;
+        }
+        const nextIndex =
+          historyIndex === null ? 0 : Math.min(historyIndex + 1, history.length - 1);
+        if (historyIndex === null) {
+          setHistoryDraft(message);
+        }
+        setHistoryIndex(nextIndex);
+        setMessage(history[nextIndex] ?? message);
+        return;
+      }
+      if (event.nativeEvent.altKey === true && event.nativeEvent.key === "ArrowDown") {
+        event.preventDefault();
+        if (historyIndex === null) {
+          return;
+        }
+        if (historyIndex === 0) {
+          setHistoryIndex(null);
+          setMessage(historyDraft);
+          return;
+        }
+        const nextIndex = historyIndex - 1;
+        setHistoryIndex(nextIndex);
+        setMessage(history[nextIndex] ?? historyDraft);
+        return;
+      }
+      if (
+        event.nativeEvent.key === "Enter" &&
+        (event.nativeEvent.ctrlKey === true || event.nativeEvent.metaKey === true)
+      ) {
+        event.preventDefault();
+        submit();
+      }
+    },
+    [history, historyDraft, historyIndex, message, submit],
+  );
 
   const commitButtonStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) =>
@@ -255,7 +346,7 @@ export function SourceControlCommitComposer({
   let buttonIcon: ReactNode;
   let buttonLabel: string;
   if (isPending) {
-    buttonIcon = <ActivityIndicator size="small" color={styles.commitButtonText.color} />;
+    buttonIcon = <ThemedActivityIndicator size="small" uniProps={buttonIconColorMapping} />;
     buttonLabel = t("workspace.git.panel.committing");
   } else if (buttonKind === "sync") {
     buttonIcon = <ThemedArrowDownUp size={14} uniProps={buttonIconColorMapping} />;
@@ -264,21 +355,30 @@ export function SourceControlCommitComposer({
     buttonIcon = <ThemedCloudUpload size={14} uniProps={buttonIconColorMapping} />;
     buttonLabel = t("workspace.git.panel.publishBranch");
   } else {
-    buttonIcon = <Check size={14} color={styles.commitButtonText.color} />;
+    buttonIcon = <ThemedCheck size={14} uniProps={buttonIconColorMapping} />;
     buttonLabel = t("workspace.git.panel.commit");
   }
 
   return (
     <View style={styles.commitComposer} testID="source-control-commit-composer">
-      <View style={[styles.commitInputRow, focused && styles.commitInputRowFocused]}>
+      <View
+        style={[
+          styles.commitInputRow,
+          { minHeight: inputHeight },
+          focused && styles.commitInputRowFocused,
+        ]}
+      >
         <TextInput
           value={message}
           onChangeText={setMessage}
-          onSubmitEditing={submit}
+          multiline
+          scrollEnabled={inputHeight >= 100}
+          onContentSizeChange={handleContentSizeChange}
+          onKeyPress={handleInputKeyPress}
           editable={!isPending}
           placeholder={commitPlaceholder}
           placeholderTextColor={styles.commitInputPlaceholder.color}
-          returnKeyType="send"
+          returnKeyType="default"
           accessibilityLabel={commitPlaceholder}
           testID="source-control-commit-message"
           style={styles.commitInput}
@@ -287,25 +387,54 @@ export function SourceControlCommitComposer({
         />
       </View>
       <View style={styles.commitButtonRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={buttonLabel}
-          testID="source-control-commit"
-          disabled={!canPress}
-          onPress={submit}
-          style={commitButtonStyle}
-        >
-          {buttonIcon}
-          <Text style={styles.commitButtonText} numberOfLines={1}>
-            {buttonLabel}
-          </Text>
-          {buttonKind === "sync" ? (
-            <Text style={styles.syncCounts} numberOfLines={1}>
-              {hasBehind ? `↓${behindOfOrigin}` : ""}
-              {hasAhead ? `↑${aheadOfOrigin}` : ""}
+        <View style={styles.commitSplitButton}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={buttonLabel}
+            testID="source-control-commit"
+            disabled={!canPress}
+            onPress={submit}
+            style={commitButtonStyle}
+          >
+            {buttonIcon}
+            <Text style={styles.commitButtonText} numberOfLines={1}>
+              {buttonLabel}
             </Text>
+            {buttonKind === "sync" ? (
+              <Text style={styles.syncCounts} numberOfLines={1}>
+                {hasBehind ? `↓${behindOfOrigin}` : ""}
+                {hasAhead ? `↑${aheadOfOrigin}` : ""}
+              </Text>
+            ) : null}
+          </Pressable>
+          {buttonKind === "commit" ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                accessibilityRole="button"
+                accessibilityLabel={t("workspace.git.panel.commitMoreActions")}
+                disabled={isPending || !hasMessage || totalChangeCount === 0}
+                style={styles.commitCaret}
+                testID="source-control-commit-caret"
+              >
+                <ThemedChevronDown size={14} uniProps={buttonIconColorMapping} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" width={220}>
+                <DropdownMenuItem
+                  disabled={!hasMessage || stagedFileCount === 0}
+                  onSelect={submitStaged}
+                >
+                  {t("workspace.git.panel.commitStaged")}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!hasMessage || totalChangeCount === 0}
+                  onSelect={submitAll}
+                >
+                  {t("workspace.git.panel.commitAll")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
-        </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -325,10 +454,10 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomColor: theme.colors.border,
   },
   sectionHeading: {
-    minHeight: 34,
+    height: 22,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: theme.spacing[3],
+    paddingHorizontal: theme.spacing[2],
   },
   sectionTitle: {
     fontSize: 13,
@@ -336,12 +465,11 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
   },
   repositoryRow: {
-    minHeight: 42,
+    minHeight: 28,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    paddingBottom: theme.spacing[2],
+    paddingHorizontal: theme.spacing[2],
   },
   repositoryIdentity: {
     flex: 1,
@@ -408,7 +536,6 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomColor: theme.colors.border,
   },
   commitInputRow: {
-    height: 26,
     flexDirection: "row",
     alignItems: "center",
     marginHorizontal: 11,
@@ -428,6 +555,7 @@ const styles = StyleSheet.create((theme) => ({
     padding: 0,
     fontSize: 13,
     lineHeight: 18,
+    textAlignVertical: "top",
     color: theme.colors.scmInputForeground,
   },
   commitInputPlaceholder: {
@@ -440,18 +568,35 @@ const styles = StyleSheet.create((theme) => ({
     paddingLeft: 11,
     paddingRight: 11,
   },
-  commitButton: {
+  commitSplitButton: {
     flex: 1,
     minWidth: 0,
     height: 26,
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  commitButton: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     paddingHorizontal: 8,
-    borderRadius: 4,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
     borderWidth: 1,
     borderColor: "transparent",
+    backgroundColor: theme.colors.scmButtonBackground,
+  },
+  commitCaret: {
+    width: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colors.scmButtonHoverBackground,
     backgroundColor: theme.colors.scmButtonBackground,
   },
   commitButtonHovered: {

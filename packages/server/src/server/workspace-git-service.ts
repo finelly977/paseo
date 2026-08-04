@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { LRUCache } from "lru-cache";
 import pLimit from "p-limit";
 import type pino from "pino";
-import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
+import type { CheckoutScmChanges, ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import type { CheckoutContext } from "../utils/checkout-git.js";
 import {
@@ -79,6 +79,7 @@ export interface WorkspaceGitRuntimeSnapshot {
     isPaseoOwnedWorktree: boolean;
     isDirty: boolean | null;
     stagedFileCount: number | null;
+    changes: CheckoutScmChanges | null;
     baseRef: string | null;
     aheadBehind: { ahead: number; behind: number } | null;
     aheadOfOrigin: number | null;
@@ -1852,6 +1853,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       isPaseoOwnedWorktree: checkoutStatus.isPaseoOwnedWorktree,
       isDirty: checkoutStatus.isDirty,
       stagedFileCount: checkoutStatus.stagedFileCount,
+      changes: checkoutStatus.changes,
       baseRef: checkoutStatus.baseRef,
       aheadBehind: checkoutStatus.aheadBehind,
       aheadOfOrigin: checkoutStatus.aheadOfOrigin,
@@ -2222,6 +2224,7 @@ function buildNotGitSnapshot(cwd: string): WorkspaceGitRuntimeSnapshot {
       isPaseoOwnedWorktree: false,
       isDirty: null,
       stagedFileCount: null,
+      changes: null,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,

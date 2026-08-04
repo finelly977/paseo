@@ -1,8 +1,14 @@
-import { resolve, dirname, basename } from "path";
+import { resolve, dirname, basename, isAbsolute } from "path";
 import { existsSync, realpathSync } from "fs";
 import { open as openFile, readFile, stat as statFile } from "fs/promises";
 import { TTLCache } from "@isaacs/ttlcache";
-import type { CheckoutCommit, CheckoutCommitFile } from "@getpaseo/protocol/messages";
+import type {
+  CheckoutCommit,
+  CheckoutCommitFile,
+  CheckoutScmChanges,
+  CheckoutScmFileChange,
+  CheckoutScmFileStatus,
+} from "@getpaseo/protocol/messages";
 import { maxBase64EncryptedPlaintextByteLength } from "@getpaseo/relay";
 import type { Logger } from "pino";
 import type { ParsedDiffFile } from "../server/utils/diff-highlighter.js";
@@ -41,6 +47,9 @@ const READ_ONLY_GIT_ENV = {
  */
 export type GitMutationRefreshReason =
   | "commit-changes"
+  | "stage-changes"
+  | "unstage-changes"
+  | "discard-changes"
   | "pull"
   | "push"
   | "merge-to-base"
@@ -738,6 +747,7 @@ export interface CheckoutStatusGitNonPaseo {
   currentBranch: string | null;
   isDirty: boolean;
   stagedFileCount: number;
+  changes: CheckoutScmChanges;
   baseRef: string | null;
   aheadBehind: AheadBehind | null;
   aheadOfOrigin: number | null;
@@ -754,6 +764,7 @@ export interface CheckoutStatusGitPaseo {
   currentBranch: string | null;
   isDirty: boolean;
   stagedFileCount: number;
+  changes: CheckoutScmChanges;
   baseRef: string;
   aheadBehind: AheadBehind | null;
   aheadOfOrigin: number | null;
@@ -1141,22 +1152,180 @@ async function resolveBaseRefForCwd(
   };
 }
 
-async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promise<boolean> {
-  const { stdout } = await runGitCommand(["status", "--porcelain"], {
-    cwd,
-    envOverlay: READ_ONLY_GIT_ENV,
-    logger: context?.logger,
-  });
-  return stdout.trim().length > 0;
+const CHECKOUT_SCM_CONFLICT_CODES = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
+
+function scmStatusFromPorcelainCode(code: string): CheckoutScmFileStatus {
+  switch (code) {
+    case "A":
+      return "added";
+    case "M":
+    case "T":
+      return "modified";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "?":
+      return "untracked";
+    case "U":
+      return "conflict";
+    default:
+      throw new Error(`无法识别 Git 文件状态：${JSON.stringify(code)}`);
+  }
 }
 
-async function getStagedFileCount(cwd: string, context?: CheckoutContext): Promise<number> {
-  const { stdout } = await runGitCommand(["diff", "--cached", "--name-only", "-z"], {
+function buildScmFileChange(
+  path: string,
+  code: string,
+  originalPath: string | undefined,
+): CheckoutScmFileChange {
+  const status = scmStatusFromPorcelainCode(code);
+  return {
+    path,
+    status,
+    ...(status === "renamed" || status === "copied" ? { originalPath } : {}),
+  };
+}
+
+export function parseCheckoutScmChanges(stdout: string): CheckoutScmChanges {
+  const staged: CheckoutScmFileChange[] = [];
+  const unstaged: CheckoutScmFileChange[] = [];
+  const conflicts: CheckoutScmFileChange[] = [];
+  const records = stdout.split("\x00");
+
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (record.length === 0) {
+      continue;
+    }
+    if (record.length < 4 || record[2] !== " ") {
+      throw new Error(`无法解析 Git 文件状态记录：${JSON.stringify(record)}`);
+    }
+
+    const indexCode = record[0];
+    const workingTreeCode = record[1];
+    const path = record.slice(3);
+    let originalPath: string | undefined;
+    if (
+      indexCode === "R" ||
+      indexCode === "C" ||
+      workingTreeCode === "R" ||
+      workingTreeCode === "C"
+    ) {
+      originalPath = records[index + 1];
+      if (!originalPath) {
+        throw new Error(`Git 重命名状态缺少原始路径：${JSON.stringify(record)}`);
+      }
+      index += 1;
+    }
+
+    const combinedCode = `${indexCode}${workingTreeCode}`;
+    if (CHECKOUT_SCM_CONFLICT_CODES.has(combinedCode)) {
+      conflicts.push({ path, status: "conflict" });
+      continue;
+    }
+    if (combinedCode === "??") {
+      unstaged.push({ path, status: "untracked" });
+      continue;
+    }
+    if (indexCode !== " ") {
+      staged.push(buildScmFileChange(path, indexCode, originalPath));
+    }
+    if (workingTreeCode !== " ") {
+      unstaged.push(buildScmFileChange(path, workingTreeCode, originalPath));
+    }
+  }
+
+  return { staged, unstaged, conflicts };
+}
+
+async function getCheckoutScmChanges(
+  cwd: string,
+  context?: CheckoutContext,
+): Promise<CheckoutScmChanges> {
+  const { stdout } = await runGitCommand(
+    ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    {
+      cwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+      logger: context?.logger,
+    },
+  );
+  return parseCheckoutScmChanges(stdout);
+}
+
+function toLiteralGitPathspecs(paths: string[]): string[] {
+  if (paths.length === 0) {
+    throw new Error("至少需要选择一个文件");
+  }
+  return paths.map((path) => {
+    const segments = path.split(/[\\/]/);
+    if (
+      path.length === 0 ||
+      path.includes("\x00") ||
+      isAbsolute(path) ||
+      /^[A-Za-z]:[\\/]/.test(path) ||
+      segments.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    ) {
+      throw new Error(`文件路径不属于当前仓库：${JSON.stringify(path)}`);
+    }
+    return `:(literal)${path}`;
+  });
+}
+
+export async function stageCheckoutPaths(cwd: string, paths: string[]): Promise<void> {
+  await requireGitRepo(cwd);
+  await runGitCommand(["add", "--", ...toLiteralGitPathspecs(paths)], {
+    cwd,
+    timeout: 120_000,
+  });
+}
+
+export async function unstageCheckoutPaths(cwd: string, paths: string[]): Promise<void> {
+  await requireGitRepo(cwd);
+  const pathspecs = toLiteralGitPathspecs(paths);
+  const head = await runGitCommand(["rev-parse", "--verify", "--quiet", "HEAD"], {
     cwd,
     envOverlay: READ_ONLY_GIT_ENV,
-    logger: context?.logger,
+    acceptExitCodes: [0, 1],
   });
-  return stdout.split("\x00").filter((path) => path.length > 0).length;
+  if (head.exitCode === 0) {
+    await runGitCommand(["restore", "--staged", "--", ...pathspecs], {
+      cwd,
+      timeout: 120_000,
+    });
+    return;
+  }
+  await runGitCommand(["rm", "--cached", "-r", "--ignore-unmatch", "--", ...pathspecs], {
+    cwd,
+    timeout: 120_000,
+  });
+}
+
+export async function discardCheckoutWorkingTreePaths(cwd: string, paths: string[]): Promise<void> {
+  await requireGitRepo(cwd);
+  const changes = await getCheckoutScmChanges(cwd);
+  const requested = new Set(paths);
+  const untrackedPaths = changes.unstaged
+    .filter((change) => change.status === "untracked" && requested.has(change.path))
+    .map((change) => change.path);
+  const untracked = new Set(untrackedPaths);
+  const trackedPaths = paths.filter((path) => !untracked.has(path));
+
+  if (trackedPaths.length > 0) {
+    await runGitCommand(["restore", "--worktree", "--", ...toLiteralGitPathspecs(trackedPaths)], {
+      cwd,
+      timeout: 120_000,
+    });
+  }
+  if (untrackedPaths.length > 0) {
+    await runGitCommand(["clean", "-f", "-d", "--", ...toLiteralGitPathspecs(untrackedPaths)], {
+      cwd,
+      timeout: 120_000,
+    });
+  }
 }
 
 export async function getOriginRemoteUrl(cwd: string): Promise<string | null> {
@@ -2007,10 +2176,9 @@ export async function getCheckoutStatus(
   const currentBranch = facts.currentBranch;
   const remoteUrl = facts.remoteUrl;
   const paseoWorktree = facts.paseoWorktree;
-  const [isDirty, stagedFileCount] = await Promise.all([
-    isWorkingTreeDirty(cwd, context),
-    getStagedFileCount(cwd, context),
-  ]);
+  const changes = await getCheckoutScmChanges(cwd, context);
+  const stagedFileCount = changes.staged.length;
+  const isDirty = stagedFileCount + changes.unstaged.length + changes.conflicts.length > 0;
   const hasRemote = remoteUrl !== null;
   const baseRef = facts.resolvedBaseRef;
   const mainRepoRoot = facts.mainRepoRoot;
@@ -2034,6 +2202,7 @@ export async function getCheckoutStatus(
       currentBranch,
       isDirty,
       stagedFileCount,
+      changes,
       baseRef,
       aheadBehind,
       aheadOfOrigin,
@@ -2052,6 +2221,7 @@ export async function getCheckoutStatus(
     currentBranch,
     isDirty,
     stagedFileCount,
+    changes,
     baseRef,
     aheadBehind,
     aheadOfOrigin,

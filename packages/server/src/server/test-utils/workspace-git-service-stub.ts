@@ -14,6 +14,7 @@ export function createNoGitWorkspaceRuntimeSnapshot(cwd: string): WorkspaceGitRu
       isPaseoOwnedWorktree: false,
       isDirty: null,
       stagedFileCount: null,
+      changes: null,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,

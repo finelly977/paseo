@@ -95,6 +95,70 @@ describe("checkout-git-actions-store", () => {
     });
   });
 
+  it("can commit only the staged changes", async () => {
+    const client = {
+      checkoutCommit: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: {
+        ...state.sessions,
+        [serverId]: { client } as unknown as (typeof state.sessions)[string],
+      },
+    }));
+
+    await useCheckoutGitActionsStore
+      .getState()
+      .commit({ serverId, cwd, message: "只提交暂存区", addAll: false });
+
+    expect(client.checkoutCommit).toHaveBeenCalledWith(cwd, {
+      addAll: false,
+      message: "只提交暂存区",
+    });
+  });
+
+  it("runs stage, unstage, and discard through the gated SCM RPCs", async () => {
+    const client = {
+      checkoutStage: vi.fn(async () => ({ success: true, error: null })),
+      checkoutUnstage: vi.fn(async () => ({ success: true, error: null })),
+      checkoutDiscard: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
+    useSessionStore.getState().updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: null,
+      features: { checkoutScmOperations: true },
+    });
+
+    const store = useCheckoutGitActionsStore.getState();
+    await store.stage({ serverId, cwd, paths: ["src/a.ts"] });
+    await store.unstage({ serverId, cwd, paths: ["src/a.ts"] });
+    await store.discard({ serverId, cwd, paths: ["src/a.ts"] });
+
+    expect(client.checkoutStage).toHaveBeenCalledWith(cwd, ["src/a.ts"]);
+    expect(client.checkoutUnstage).toHaveBeenCalledWith(cwd, ["src/a.ts"]);
+    expect(client.checkoutDiscard).toHaveBeenCalledWith(cwd, ["src/a.ts"]);
+  });
+
+  it("does not call SCM RPCs when the host lacks the feature", async () => {
+    const client = {
+      checkoutStage: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.getState().initializeSession(serverId, client as unknown as DaemonClient);
+    useSessionStore.getState().updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: null,
+      features: {},
+    });
+
+    await expect(
+      useCheckoutGitActionsStore.getState().stage({ serverId, cwd, paths: ["src/a.ts"] }),
+    ).rejects.toThrow();
+    expect(client.checkoutStage).not.toHaveBeenCalled();
+  });
+
   it("runs pull then push sequentially for pull-and-push", async () => {
     const order: string[] = [];
     const client = {

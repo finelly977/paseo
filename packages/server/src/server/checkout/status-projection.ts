@@ -47,7 +47,8 @@ export function buildCheckoutStatusPayloadFromSnapshot({
   if (
     snapshot.git.repoRoot === null ||
     snapshot.git.isDirty === null ||
-    snapshot.git.stagedFileCount === null
+    snapshot.git.stagedFileCount === null ||
+    snapshot.git.changes === null
   ) {
     throw new Error("Workspace git snapshot is missing required checkout status fields");
   }
@@ -65,6 +66,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
       currentBranch: snapshot.git.currentBranch ?? null,
       isDirty: snapshot.git.isDirty,
       stagedFileCount: snapshot.git.stagedFileCount,
+      changes: snapshot.git.changes,
       baseRef: snapshot.git.baseRef,
       aheadBehind: snapshot.git.aheadBehind ?? null,
       aheadOfOrigin: snapshot.git.aheadOfOrigin ?? null,
@@ -85,6 +87,7 @@ export function buildCheckoutStatusPayloadFromSnapshot({
     currentBranch: snapshot.git.currentBranch ?? null,
     isDirty: snapshot.git.isDirty,
     stagedFileCount: snapshot.git.stagedFileCount,
+    changes: snapshot.git.changes,
     baseRef: snapshot.git.baseRef ?? null,
     aheadBehind: snapshot.git.aheadBehind ?? null,
     aheadOfOrigin: snapshot.git.aheadOfOrigin ?? null,

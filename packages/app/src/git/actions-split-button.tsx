@@ -111,32 +111,37 @@ export function GitActionsSplitButton({ gitActions, hideLabels }: GitActionsSpli
     handleActionSelect(gitActions.primary);
   }, [gitActions.primary, handleActionSelect]);
 
-  const overflowMenuButtonStyle = useMemo(() => [styles.iconButton, styles.overflowMenuButton], []);
+  const overflowMenuButtonStyle = useMemo(
+    () => [styles.iconButton, styles.overflowMenuButton, hideLabels && styles.compactIconButton],
+    [hideLabels],
+  );
 
   const primaryDisabled = gitActions.primary?.disabled;
   const primaryPressableStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.splitButtonPrimary,
+      hideLabels && styles.compactSplitButtonPrimary,
       (Boolean(hovered) || pressed) &&
         inlineUnistylesStyle({ backgroundColor: theme.colors.surface2 }),
       primaryDisabled && styles.splitButtonPrimaryDisabled,
     ],
-    [primaryDisabled, theme.colors.surface2],
+    [hideLabels, primaryDisabled, theme.colors.surface2],
   );
 
   const caretTriggerStyle = useCallback(
     ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
       styles.splitButtonCaret,
+      hideLabels && styles.compactSplitButtonCaret,
       (hovered || pressed || open) &&
         inlineUnistylesStyle({ backgroundColor: theme.colors.surface2 }),
     ],
-    [theme.colors.surface2],
+    [hideLabels, theme.colors.surface2],
   );
 
   return (
     <View style={styles.row}>
       {gitActions.primary ? (
-        <View style={styles.splitButton}>
+        <View style={[styles.splitButton, hideLabels && styles.compactSplitButton]}>
           <Pressable
             testID="changes-primary-cta"
             style={primaryPressableStyle}
@@ -245,6 +250,17 @@ const styles = StyleSheet.create((theme) => ({
   splitButtonPrimaryDisabled: {
     opacity: 0.6,
   },
+  compactSplitButton: {
+    borderWidth: 0,
+    borderRadius: 3,
+  },
+  compactSplitButtonPrimary: {
+    width: 22,
+    height: 22,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    alignItems: "center",
+  },
   splitButtonText: {
     fontSize: theme.fontSize.sm,
     lineHeight: theme.fontSize.sm * 1.5,
@@ -267,6 +283,11 @@ const styles = StyleSheet.create((theme) => ({
     borderLeftWidth: theme.borderWidth[1],
     borderLeftColor: theme.colors.borderAccent,
   },
+  compactSplitButtonCaret: {
+    width: 18,
+    height: 22,
+    borderLeftWidth: 0,
+  },
   iconButton: {
     width: 32,
     height: 32,
@@ -276,5 +297,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   overflowMenuButton: {
     marginRight: -theme.spacing[2],
+  },
+  compactIconButton: {
+    width: 22,
+    height: 22,
+    marginRight: 0,
+    borderRadius: 3,
   },
 }));

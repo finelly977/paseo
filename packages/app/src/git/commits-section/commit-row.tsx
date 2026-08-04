@@ -13,6 +13,8 @@ import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import type { ClassifiedCheckoutCommit } from "@/git/use-commits-query";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { formatTimeAgo } from "@/utils/time";
+import { MaterialFileIcon } from "@/components/material-file-icon";
+import { getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
 import { CommitGraphNode } from "./commit-graph-node";
 
 interface CommitRowProps {
@@ -109,14 +111,14 @@ function CommitRowHeader({
         isBranchPoint={isBranchPoint}
       />
       <View style={styles.commitDetails}>
-        <Text dataSet={CODE_SURFACE_DATASET} style={styles.shortSha} numberOfLines={1}>
-          {commit.shortSha}
-        </Text>
-        <Text style={styles.subject} numberOfLines={1}>
+        <Text style={[styles.subject, isFirst && styles.subjectCurrent]} numberOfLines={1}>
           {commit.subject}
         </Text>
         <CommitRefList refs={refs} />
       </View>
+      <Text style={styles.author} numberOfLines={1}>
+        {commit.authorName}
+      </Text>
       <Text style={styles.timestamp}>{formatTimeAgo(new Date(commit.authorDate), now)}</Text>
       <View style={styles.caret}>
         <ThemedChevron
@@ -158,23 +160,28 @@ function CommitTooltipDetails({
 }
 
 function CommitFiles({ commit }: { commit: ClassifiedCheckoutCommit }) {
-  const { t } = useTranslation();
   return (
     <View style={styles.files} testID={`commit-files-${commit.shortSha}`}>
-      <Text style={styles.filesHeading}>
-        {t("workspace.git.diff.commits.filesChanged", { count: commit.files.length })}
-      </Text>
-      {commit.files.map((file) => (
-        <View key={`${file.path}-${file.status ?? ""}`} style={styles.fileRow}>
-          <Text style={styles.filePath} numberOfLines={1}>
-            {file.path}
-          </Text>
-          <Text style={styles.fileStats}>
-            <Text style={styles.additions}>+{file.additions}</Text>{" "}
-            <Text style={styles.deletions}>-{file.deletions}</Text>
-          </Text>
-        </View>
-      ))}
+      {commit.files.map((file) => {
+        const { fileName, directory } = splitScmPath(file.path);
+        const decoration = getScmStatusDecoration(file.status ?? "modified");
+        return (
+          <View key={`${file.path}-${file.status ?? ""}`} style={styles.fileRow}>
+            <MaterialFileIcon fileName={fileName} size={16} />
+            <View style={styles.fileIdentity}>
+              <Text style={styles.fileName} numberOfLines={1}>
+                {fileName}
+              </Text>
+              {directory ? (
+                <Text style={styles.fileDirectory} numberOfLines={1}>
+                  {directory}
+                </Text>
+              ) : null}
+            </View>
+            <Text style={styles.fileStatus}>{decoration.label}</Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -191,6 +198,7 @@ export const CommitRow = memo(function CommitRow({
   onToggleExpanded,
   onOpenCommitDiff,
 }: CommitRowProps) {
+  const { t } = useTranslation();
   const authoredAt = useMemo(
     () => new Date(commit.authorDate).toLocaleString(),
     [commit.authorDate],
@@ -236,7 +244,7 @@ export const CommitRow = memo(function CommitRow({
           testID={`commit-open-diff-${commit.shortSha}`}
           onSelect={handleOpenCommitDiff}
         >
-          打开完整 Diff
+          {t("workspace.git.diff.commits.openFullDiff")}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -245,12 +253,12 @@ export const CommitRow = memo(function CommitRow({
 
 const styles = StyleSheet.create((theme) => ({
   row: {
+    height: 22,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
     paddingLeft: theme.spacing[2],
     paddingRight: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
   },
   rowActive: {
     backgroundColor: theme.colors.surfaceSidebarHover,
@@ -262,18 +270,14 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[1],
   },
-  shortSha: {
-    fontSize: theme.fontSize.xs,
-    fontFamily: theme.fontFamily.mono,
-    color: theme.colors.foregroundMuted,
-    width: 70,
-    flexShrink: 0,
-  },
   subject: {
     flexShrink: 1,
     minWidth: 0,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.xs,
     color: theme.colors.foreground,
+  },
+  subjectCurrent: {
+    fontWeight: theme.fontWeight.medium,
   },
   refs: {
     maxWidth: 220,
@@ -287,33 +291,38 @@ const styles = StyleSheet.create((theme) => ({
   refPill: {
     maxWidth: 140,
     paddingHorizontal: theme.spacing[1],
-    paddingVertical: 1,
+    height: 16,
+    justifyContent: "center",
     borderRadius: theme.borderRadius.sm,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.accent,
   },
   refPillBase: {
-    borderColor: theme.colors.foregroundMuted,
+    backgroundColor: theme.colors.surface3,
   },
   refPillRemote: {
-    borderColor: theme.colors.statusMerged,
+    backgroundColor: theme.colors.statusMerged,
   },
   refPillTag: {
-    borderColor: theme.colors.statusWarning,
+    backgroundColor: theme.colors.statusWarning,
   },
   refText: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.accent,
+    color: theme.colors.accentForeground,
   },
   refTextBase: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
   refTextRemote: {
-    color: theme.colors.statusMerged,
+    color: theme.colors.surface0,
   },
   refTextTag: {
-    color: theme.colors.statusWarning,
+    color: theme.colors.surface0,
+  },
+  author: {
+    maxWidth: 72,
+    flexShrink: 1,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
   },
   timestamp: {
     flexShrink: 0,
@@ -331,40 +340,39 @@ const styles = StyleSheet.create((theme) => ({
     transform: [{ rotate: "90deg" }],
   },
   files: {
-    marginLeft: 24,
-    marginRight: theme.spacing[2],
-    marginBottom: theme.spacing[1],
-    paddingLeft: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
-    borderLeftWidth: 1,
-    borderLeftColor: theme.colors.border,
-    gap: theme.spacing[1],
-  },
-  filesHeading: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.foregroundMuted,
+    paddingBottom: theme.spacing[1],
   },
   fileRow: {
+    height: 22,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: 6,
+    paddingLeft: 42,
+    paddingRight: theme.spacing[2],
   },
-  filePath: {
+  fileIdentity: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 6,
+  },
+  fileName: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foreground,
+    flexShrink: 0,
+  },
+  fileDirectory: {
     flex: 1,
     minWidth: 0,
     fontSize: theme.fontSize.xs,
-    fontFamily: theme.fontFamily.mono,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundMuted,
   },
-  fileStats: {
+  fileStatus: {
+    width: 18,
+    textAlign: "center",
     fontSize: theme.fontSize.xs,
-    fontFamily: theme.fontFamily.mono,
-  },
-  additions: {
-    color: theme.colors.statusSuccess,
-  },
-  deletions: {
-    color: theme.colors.statusDanger,
+    color: theme.colors.foregroundMuted,
   },
   tooltip: {
     gap: theme.spacing[2],

@@ -10,6 +10,7 @@ import { ArrowDownUp, CloudDownload, Download, RefreshCcw, Upload } from "lucide
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/contexts/toast-context";
+import { useTranslation } from "react-i18next";
 import type { GitAction, GitActionId, GitActions } from "@/git/policy";
 
 interface GraphActionsProps {
@@ -147,6 +148,7 @@ export function GraphActions({
   isRefreshing,
   onRefresh,
 }: GraphActionsProps) {
+  const { t } = useTranslation();
   const pull = useMemo(() => findAction(gitActions, "pull"), [gitActions]);
   const push = useMemo(() => findAction(gitActions, "push"), [gitActions]);
   const sync = useMemo(() => findAction(gitActions, "pull-and-push"), [gitActions]);
@@ -156,7 +158,7 @@ export function GraphActions({
       {fetchSupported ? (
         <GraphActionButton
           kind="fetch"
-          label="Fetch"
+          label={t("workspace.git.diff.commits.fetch")}
           pending={isFetching}
           disabled={!hasRemote || isFetching}
           onPress={onFetch}
@@ -165,15 +167,29 @@ export function GraphActions({
       {refreshSupported ? (
         <GraphActionButton
           kind="refresh"
-          label="Refresh"
+          label={t("workspace.git.diff.refresh")}
           pending={isRefreshing}
           disabled={isRefreshing}
           onPress={onRefresh}
         />
       ) : null}
-      {pull ? <GraphActionButton kind="pull" label="Pull" action={pull} /> : null}
-      {push ? <GraphActionButton kind="push" label="Push" action={push} /> : null}
-      {sync ? <GraphActionButton kind="sync" label="Sync" action={sync} /> : null}
+      {pull ? (
+        <GraphActionButton
+          kind="pull"
+          label={t("workspace.git.actions.pull.label")}
+          action={pull}
+        />
+      ) : null}
+      {push ? (
+        <GraphActionButton
+          kind="push"
+          label={t("workspace.git.actions.push.label")}
+          action={push}
+        />
+      ) : null}
+      {sync ? (
+        <GraphActionButton kind="sync" label={t("workspace.git.panel.syncChanges")} action={sync} />
+      ) : null}
     </View>
   );
 }
@@ -185,8 +201,8 @@ const styles = StyleSheet.create((theme) => ({
     marginLeft: "auto",
   },
   button: {
-    width: 26,
-    height: 26,
+    width: 20,
+    height: 20,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.base,

@@ -11,6 +11,9 @@ export type CheckoutGitActionStatus = "idle" | "pending" | "success";
 
 export type CheckoutGitAsyncActionId =
   | "commit"
+  | "stage"
+  | "unstage"
+  | "discard"
   | "pull"
   | "push"
   | "pull-and-push"
@@ -58,6 +61,14 @@ function resolveAutoMergeActionsRpc(serverId: string): AutoMergeActionsRpc {
   throw new Error("Update the host to use auto-merge actions.");
 }
 
+function assertScmOperationsSupported(serverId: string): void {
+  const session = useSessionStore.getState().sessions[serverId];
+  if (session?.serverInfo?.features?.checkoutScmOperations === true) {
+    return;
+  }
+  throw new Error(i18n.t("workspace.git.panel.updateHostForScmOperations"));
+}
+
 function setStatus(
   key: CheckoutKey,
   actionId: CheckoutGitAsyncActionId,
@@ -101,7 +112,15 @@ interface CheckoutGitActionsStoreState {
     actionId: CheckoutGitAsyncActionId;
   }) => CheckoutGitActionStatus;
 
-  commit: (params: { serverId: string; cwd: string; message?: string }) => Promise<void>;
+  commit: (params: {
+    serverId: string;
+    cwd: string;
+    message?: string;
+    addAll?: boolean;
+  }) => Promise<void>;
+  stage: (params: { serverId: string; cwd: string; paths: string[] }) => Promise<void>;
+  unstage: (params: { serverId: string; cwd: string; paths: string[] }) => Promise<void>;
+  discard: (params: { serverId: string; cwd: string; paths: string[] }) => Promise<void>;
   pull: (params: { serverId: string; cwd: string }) => Promise<void>;
   push: (params: { serverId: string; cwd: string }) => Promise<void>;
   pullAndPush: (params: { serverId: string; cwd: string }) => Promise<void>;
@@ -181,14 +200,59 @@ export const useCheckoutGitActionsStore = create<CheckoutGitActionsStoreState>()
     return get().statusByCheckout[key]?.[actionId] ?? "idle";
   },
 
-  commit: async ({ serverId, cwd, message }) => {
+  commit: async ({ serverId, cwd, message, addAll = true }) => {
     await runCheckoutAction({
       serverId,
       cwd,
       actionId: "commit",
       run: async () => {
         const client = resolveClient(serverId);
-        const payload = await client.checkoutCommit(cwd, { addAll: true, message });
+        const payload = await client.checkoutCommit(cwd, { addAll, message });
+        if (payload.error) {
+          throw new Error(payload.error.message);
+        }
+      },
+    });
+  },
+
+  stage: async ({ serverId, cwd, paths }) => {
+    assertScmOperationsSupported(serverId);
+    await runCheckoutAction({
+      serverId,
+      cwd,
+      actionId: "stage",
+      run: async () => {
+        const payload = await resolveClient(serverId).checkoutStage(cwd, paths);
+        if (payload.error) {
+          throw new Error(payload.error.message);
+        }
+      },
+    });
+  },
+
+  unstage: async ({ serverId, cwd, paths }) => {
+    assertScmOperationsSupported(serverId);
+    await runCheckoutAction({
+      serverId,
+      cwd,
+      actionId: "unstage",
+      run: async () => {
+        const payload = await resolveClient(serverId).checkoutUnstage(cwd, paths);
+        if (payload.error) {
+          throw new Error(payload.error.message);
+        }
+      },
+    });
+  },
+
+  discard: async ({ serverId, cwd, paths }) => {
+    assertScmOperationsSupported(serverId);
+    await runCheckoutAction({
+      serverId,
+      cwd,
+      actionId: "discard",
+      run: async () => {
+        const payload = await resolveClient(serverId).checkoutDiscard(cwd, paths);
         if (payload.error) {
           throw new Error(payload.error.message);
         }

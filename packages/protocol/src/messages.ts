@@ -1646,6 +1646,28 @@ const CheckoutDiffCompareSchema = z.object({
   ignoreWhitespace: z.boolean().optional(),
 });
 
+export const CheckoutScmFileStatusSchema = z.enum([
+  "added",
+  "modified",
+  "deleted",
+  "renamed",
+  "copied",
+  "untracked",
+  "conflict",
+]);
+
+export const CheckoutScmFileChangeSchema = z.object({
+  path: z.string(),
+  originalPath: z.string().optional(),
+  status: CheckoutScmFileStatusSchema,
+});
+
+export const CheckoutScmChangesSchema = z.object({
+  staged: z.array(CheckoutScmFileChangeSchema),
+  unstaged: z.array(CheckoutScmFileChangeSchema),
+  conflicts: z.array(CheckoutScmFileChangeSchema),
+});
+
 export const CheckoutStatusRequestSchema = z.object({
   type: z.literal("checkout_status_request"),
   cwd: z.string(),
@@ -1671,6 +1693,24 @@ export const CheckoutCommitRequestSchema = z.object({
   message: z.string().optional(),
   addAll: z.boolean().optional(),
   requestId: z.string(),
+});
+
+const CheckoutScmPathsRequestSchema = z.object({
+  cwd: z.string(),
+  paths: z.array(z.string().min(1)).min(1),
+  requestId: z.string(),
+});
+
+export const CheckoutIndexStageRequestSchema = CheckoutScmPathsRequestSchema.extend({
+  type: z.literal("checkout.index.stage.request"),
+});
+
+export const CheckoutIndexUnstageRequestSchema = CheckoutScmPathsRequestSchema.extend({
+  type: z.literal("checkout.index.unstage.request"),
+});
+
+export const CheckoutWorkingTreeDiscardRequestSchema = CheckoutScmPathsRequestSchema.extend({
+  type: z.literal("checkout.working_tree.discard.request"),
 });
 
 export const CheckoutMergeRequestSchema = z.object({
@@ -2538,6 +2578,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeCheckoutDiffRequestSchema,
   UnsubscribeCheckoutDiffRequestSchema,
   CheckoutCommitRequestSchema,
+  CheckoutIndexStageRequestSchema,
+  CheckoutIndexUnstageRequestSchema,
+  CheckoutWorkingTreeDiscardRequestSchema,
   CheckoutMergeRequestSchema,
   CheckoutMergeFromBaseRequestSchema,
   CheckoutPullRequestSchema,
@@ -2812,6 +2855,8 @@ export const ServerInfoStatusPayloadSchema = z
         checkoutRefresh: z.boolean().optional(),
         // COMPAT(checkoutFetch): v0.2.2 新增，2027-01-27 后移除能力门控。
         checkoutFetch: z.boolean().optional(),
+        // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除能力门控。
+        checkoutScmOperations: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -4038,6 +4083,8 @@ const CheckoutStatusGitNonPaseoSchema = CheckoutStatusCommonSchema.extend({
   behindOfOrigin: z.number().nullable(),
   hasRemote: z.boolean(),
   remoteUrl: z.string().nullable(),
+  // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除可选解析。
+  changes: CheckoutScmChangesSchema.optional(),
 });
 
 const CheckoutStatusGitPaseoSchema = CheckoutStatusCommonSchema.extend({
@@ -4054,6 +4101,8 @@ const CheckoutStatusGitPaseoSchema = CheckoutStatusCommonSchema.extend({
   behindOfOrigin: z.number().nullable(),
   hasRemote: z.boolean(),
   remoteUrl: z.string().nullable(),
+  // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除可选解析。
+  changes: CheckoutScmChangesSchema.optional(),
 });
 
 export const CheckoutStatusResponseSchema = z.object({
@@ -4228,6 +4277,28 @@ export const CheckoutCommitResponseSchema = z.object({
     error: CheckoutErrorSchema.nullable(),
     requestId: z.string(),
   }),
+});
+
+const CheckoutScmOperationResponsePayloadSchema = z.object({
+  cwd: z.string(),
+  success: z.boolean(),
+  error: CheckoutErrorSchema.nullable(),
+  requestId: z.string(),
+});
+
+export const CheckoutIndexStageResponseSchema = z.object({
+  type: z.literal("checkout.index.stage.response"),
+  payload: CheckoutScmOperationResponsePayloadSchema,
+});
+
+export const CheckoutIndexUnstageResponseSchema = z.object({
+  type: z.literal("checkout.index.unstage.response"),
+  payload: CheckoutScmOperationResponsePayloadSchema,
+});
+
+export const CheckoutWorkingTreeDiscardResponseSchema = z.object({
+  type: z.literal("checkout.working_tree.discard.response"),
+  payload: CheckoutScmOperationResponsePayloadSchema,
 });
 
 export const CheckoutMergeResponseSchema = z.object({
@@ -5330,6 +5401,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeCheckoutDiffResponseSchema,
   CheckoutDiffUpdateSchema,
   CheckoutCommitResponseSchema,
+  CheckoutIndexStageResponseSchema,
+  CheckoutIndexUnstageResponseSchema,
+  CheckoutWorkingTreeDiscardResponseSchema,
   CheckoutMergeResponseSchema,
   CheckoutMergeFromBaseResponseSchema,
   CheckoutPullResponseSchema,
@@ -5666,6 +5740,19 @@ export type SubscribeCheckoutDiffResponse = z.infer<typeof SubscribeCheckoutDiff
 export type CheckoutDiffUpdate = z.infer<typeof CheckoutDiffUpdateSchema>;
 export type CheckoutCommitRequest = z.infer<typeof CheckoutCommitRequestSchema>;
 export type CheckoutCommitResponse = z.infer<typeof CheckoutCommitResponseSchema>;
+export type CheckoutScmFileStatus = z.infer<typeof CheckoutScmFileStatusSchema>;
+export type CheckoutScmFileChange = z.infer<typeof CheckoutScmFileChangeSchema>;
+export type CheckoutScmChanges = z.infer<typeof CheckoutScmChangesSchema>;
+export type CheckoutIndexStageRequest = z.infer<typeof CheckoutIndexStageRequestSchema>;
+export type CheckoutIndexStageResponse = z.infer<typeof CheckoutIndexStageResponseSchema>;
+export type CheckoutIndexUnstageRequest = z.infer<typeof CheckoutIndexUnstageRequestSchema>;
+export type CheckoutIndexUnstageResponse = z.infer<typeof CheckoutIndexUnstageResponseSchema>;
+export type CheckoutWorkingTreeDiscardRequest = z.infer<
+  typeof CheckoutWorkingTreeDiscardRequestSchema
+>;
+export type CheckoutWorkingTreeDiscardResponse = z.infer<
+  typeof CheckoutWorkingTreeDiscardResponseSchema
+>;
 export type CheckoutMergeRequest = z.infer<typeof CheckoutMergeRequestSchema>;
 export type CheckoutMergeResponse = z.infer<typeof CheckoutMergeResponseSchema>;
 export type CheckoutMergeFromBaseRequest = z.infer<typeof CheckoutMergeFromBaseRequestSchema>;

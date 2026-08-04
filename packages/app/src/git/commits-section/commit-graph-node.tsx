@@ -50,7 +50,7 @@ export function CommitGraphNode({
 }
 
 const MARKER_SIZE = 8;
-const RAIL_WIDTH = 2;
+const RAIL_WIDTH = 1;
 const WORKSPACE_LANE_LEFT = 3;
 const BASE_LANE_LEFT = 15;
 
@@ -64,8 +64,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   rail: {
     position: "absolute",
-    top: -theme.spacing[1] - 1,
-    bottom: -theme.spacing[1] - 1,
+    top: -1,
+    bottom: -1,
     width: RAIL_WIDTH,
   },
   workspaceLane: {
@@ -85,7 +85,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   branchIncoming: {
     position: "absolute",
-    top: -theme.spacing[1] - 1,
+    top: -1,
     height: "34%",
     left: WORKSPACE_LANE_LEFT,
     width: RAIL_WIDTH,

@@ -171,6 +171,7 @@ function createFallbackWorkspaceGitSnapshot(cwd: string): WorkspaceGitRuntimeSna
       isPaseoOwnedWorktree: false,
       isDirty: null,
       stagedFileCount: null,
+      changes: null,
       baseRef: null,
       aheadBehind: null,
       aheadOfOrigin: null,
@@ -1525,6 +1526,8 @@ export class VoiceAssistantWebSocketServer {
         checkoutRefresh: true,
         // COMPAT(checkoutFetch): v0.2.2 新增，2027-01-27 后移除能力门控。
         checkoutFetch: true,
+        // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除能力门控。
+        checkoutScmOperations: true,
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: true,
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.

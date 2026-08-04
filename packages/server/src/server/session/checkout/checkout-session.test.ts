@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pino from "pino";
 import {
   type CheckoutDiffSubscriber,
@@ -31,6 +35,18 @@ function isCheckDetailsResponse(msg: SessionOutboundMessage): boolean {
 
 function isTimelineResponse(msg: SessionOutboundMessage): boolean {
   return msg.type === "pull_request_timeline_response";
+}
+
+function getEmittedMessageTypes(messages: SessionOutboundMessage[]): string[] {
+  return messages.map((message) => message.type);
+}
+
+function getEmittedPayloads(messages: SessionOutboundMessage[]): unknown[] {
+  return messages.map((message) => ("payload" in message ? message.payload : null));
+}
+
+function getMutationReasons(calls: RecordedGitMutationCalls): string[] {
+  return calls.notifyGitMutation.map((call) => call.reason);
 }
 
 interface FakeDiffSubscription {
@@ -764,6 +780,69 @@ describe("CheckoutSession", () => {
           },
         },
       ]);
+    });
+  });
+
+  describe("源代码管理写操作", () => {
+    it("执行暂存、取消暂存和放弃更改后刷新状态与差异", async () => {
+      const tempDirectory = mkdtempSync(join(tmpdir(), "paseo-checkout-session-scm-"));
+      try {
+        execFileSync("git", ["init", "-b", "main"], { cwd: tempDirectory });
+        execFileSync("git", ["config", "user.email", "test@example.com"], {
+          cwd: tempDirectory,
+        });
+        execFileSync("git", ["config", "user.name", "测试用户"], { cwd: tempDirectory });
+        writeFileSync(join(tempDirectory, "tracked.txt"), "初始内容\n");
+        execFileSync("git", ["add", "."], { cwd: tempDirectory });
+        execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "初始提交"], {
+          cwd: tempDirectory,
+        });
+        writeFileSync(join(tempDirectory, "tracked.txt"), "修改内容\n");
+        writeFileSync(join(tempDirectory, "new.txt"), "新文件\n");
+
+        const diff = createFakeDiffSubscriber({ cwd: "", files: [], error: null });
+        const { checkout, emitted, gitMutationCalls } = makeCheckoutSession({
+          diff: diff.subscriber,
+        });
+
+        await checkout.handleCheckoutIndexStageRequest({
+          type: "checkout.index.stage.request",
+          cwd: tempDirectory,
+          paths: ["tracked.txt", "new.txt"],
+          requestId: "stage-1",
+        });
+        await checkout.handleCheckoutIndexUnstageRequest({
+          type: "checkout.index.unstage.request",
+          cwd: tempDirectory,
+          paths: ["tracked.txt", "new.txt"],
+          requestId: "unstage-1",
+        });
+        await checkout.handleCheckoutWorkingTreeDiscardRequest({
+          type: "checkout.working_tree.discard.request",
+          cwd: tempDirectory,
+          paths: ["tracked.txt", "new.txt"],
+          requestId: "discard-1",
+        });
+
+        expect(getEmittedMessageTypes(emitted)).toEqual([
+          "checkout.index.stage.response",
+          "checkout.index.unstage.response",
+          "checkout.working_tree.discard.response",
+        ]);
+        expect(getEmittedPayloads(emitted)).toEqual([
+          expect.objectContaining({ success: true, requestId: "stage-1" }),
+          expect.objectContaining({ success: true, requestId: "unstage-1" }),
+          expect.objectContaining({ success: true, requestId: "discard-1" }),
+        ]);
+        expect(getMutationReasons(gitMutationCalls)).toEqual([
+          "stage-changes",
+          "unstage-changes",
+          "discard-changes",
+        ]);
+        expect(diff.refreshedCwds).toEqual([tempDirectory, tempDirectory, tempDirectory]);
+      } finally {
+        rmSync(tempDirectory, { recursive: true, force: true });
+      }
     });
   });
 

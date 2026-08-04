@@ -28,8 +28,8 @@ export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
   viewMode: "flat",
   wrapLines: false,
   hideWhitespace: false,
-  commitsCollapsed: true,
-  commitsHeight: 280,
+  commitsCollapsed: false,
+  commitsHeight: 520,
 };
 
 export interface KeyValueStorage {
@@ -53,10 +53,20 @@ export async function loadChangesPreferencesFromStorage(
 ): Promise<ChangesPreferences> {
   const stored = await storage.getItem(CHANGES_PREFERENCES_STORAGE_KEY);
   if (stored) {
-    const parsed = changesPreferencesSchema.safeParse(JSON.parse(stored));
-    if (parsed.success) {
-      return { ...DEFAULT_CHANGES_PREFERENCES, ...parsed.data };
+    const parsed = changesPreferencesSchema.parse(JSON.parse(stored));
+    // COMPAT(changesGraphDefaults): v0.2.2 将旧默认图表升级为展开的 520 像素视图，
+    // 2027-02-04 后可删除这次性偏好迁移。
+    if (parsed.commitsHeight === 280 && parsed.commitsCollapsed !== false) {
+      const migrated = {
+        ...DEFAULT_CHANGES_PREFERENCES,
+        ...parsed,
+        commitsCollapsed: false,
+        commitsHeight: 520,
+      };
+      await storage.setItem(CHANGES_PREFERENCES_STORAGE_KEY, JSON.stringify(migrated));
+      return migrated;
     }
+    return { ...DEFAULT_CHANGES_PREFERENCES, ...parsed };
   }
 
   const legacyWrapLines = await loadLegacyWrapLinesPreference(storage);

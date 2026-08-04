@@ -43,12 +43,15 @@ import type {
 import {
   commitChanges,
   createPullRequest,
+  discardCheckoutWorkingTreePaths,
   forgeAuthStateFromError,
   isForgeAuthError,
   mergeFromBase,
   mergeToBase,
   pullCurrentBranch,
   pushCurrentBranch,
+  stageCheckoutPaths,
+  unstageCheckoutPaths,
   listCheckoutCommits,
   getCommitFileDiff,
 } from "../../../utils/checkout-git.js";
@@ -758,6 +761,66 @@ export class CheckoutSession {
           error: toCheckoutError(error),
           requestId,
         },
+      });
+    }
+  }
+
+  async handleCheckoutIndexStageRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.index.stage.request" }>,
+  ): Promise<void> {
+    const { cwd, paths, requestId } = msg;
+    try {
+      await stageCheckoutPaths(cwd, paths);
+      await this.gitMutation.notifyGitMutation(cwd, "stage-changes");
+      this.scheduleDiffRefresh(cwd);
+      this.host.emit({
+        type: "checkout.index.stage.response",
+        payload: { cwd, success: true, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.index.stage.response",
+        payload: { cwd, success: false, error: toCheckoutError(error), requestId },
+      });
+    }
+  }
+
+  async handleCheckoutIndexUnstageRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.index.unstage.request" }>,
+  ): Promise<void> {
+    const { cwd, paths, requestId } = msg;
+    try {
+      await unstageCheckoutPaths(cwd, paths);
+      await this.gitMutation.notifyGitMutation(cwd, "unstage-changes");
+      this.scheduleDiffRefresh(cwd);
+      this.host.emit({
+        type: "checkout.index.unstage.response",
+        payload: { cwd, success: true, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.index.unstage.response",
+        payload: { cwd, success: false, error: toCheckoutError(error), requestId },
+      });
+    }
+  }
+
+  async handleCheckoutWorkingTreeDiscardRequest(
+    msg: Extract<SessionInboundMessage, { type: "checkout.working_tree.discard.request" }>,
+  ): Promise<void> {
+    const { cwd, paths, requestId } = msg;
+    try {
+      await discardCheckoutWorkingTreePaths(cwd, paths);
+      await this.gitMutation.notifyGitMutation(cwd, "discard-changes");
+      this.scheduleDiffRefresh(cwd);
+      this.host.emit({
+        type: "checkout.working_tree.discard.response",
+        payload: { cwd, success: true, error: null, requestId },
+      });
+    } catch (error) {
+      this.host.emit({
+        type: "checkout.working_tree.discard.response",
+        payload: { cwd, success: false, error: toCheckoutError(error), requestId },
       });
     }
   }
