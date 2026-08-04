@@ -35,8 +35,16 @@ export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {
   return ["checkoutPrStatus", serverId, cwd] as const;
 }
 
-export function checkoutCommitsQueryKey(serverId: string, cwd: string) {
-  return ["checkoutCommits", serverId, cwd] as const;
+export function checkoutCommitsQueryKey(
+  serverId: string,
+  cwd: string,
+  refMode?: "auto" | "all" | "selected",
+  refs: readonly string[] = [],
+) {
+  if (!refMode) {
+    return ["checkoutCommits", serverId, cwd] as const;
+  }
+  return ["checkoutCommits", serverId, cwd, refMode, ...refs] as const;
 }
 
 export function checkoutCommitFileDiffQueryKey(

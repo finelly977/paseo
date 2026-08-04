@@ -1795,6 +1795,13 @@ const CheckoutCommitFileSchema = z.object({
   status: z.enum(["added", "modified", "deleted", "renamed"]).optional(),
 });
 
+const CheckoutCommitReferenceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  revision: z.string(),
+  kind: z.enum(["head", "branch", "remote", "tag"]),
+});
+
 const CheckoutCommitSchema = z.object({
   sha: z.string(),
   shortSha: z.string(),
@@ -1803,6 +1810,18 @@ const CheckoutCommitSchema = z.object({
   message: z.string().optional(),
   // 指向该提交的本地分支、远端分支或标签，旧守护进程可能不返回。
   refs: z.array(z.string()).optional(),
+  // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除可选兼容。
+  parentShas: z.array(z.string()).optional(),
+  // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除可选兼容。
+  references: z.array(CheckoutCommitReferenceSchema).optional(),
+  // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除可选兼容。
+  statistics: z
+    .object({
+      files: z.number().int().nonnegative(),
+      additions: z.number().int().nonnegative(),
+      deletions: z.number().int().nonnegative(),
+    })
+    .optional(),
   authorName: z.string(),
   authorDate: z.string(), // ISO 8601
   isOnRemote: z.boolean(), // false = local-only (unpushed)
@@ -1817,6 +1836,9 @@ export const CheckoutCommitsListRequestSchema = z.object({
   // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除可选兼容。
   cursor: z.number().int().nonnegative().optional(),
   limit: z.number().int().positive().max(100).optional(),
+  // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除可选兼容。
+  refMode: z.enum(["auto", "all", "selected"]).optional(),
+  refs: z.array(z.string().min(1)).min(1).optional(),
   requestId: z.string(),
 });
 
@@ -2903,6 +2925,8 @@ export const ServerInfoStatusPayloadSchema = z
         commitBaseClassification: z.boolean().optional(),
         // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除能力门控。
         commitsPagination: z.boolean().optional(),
+        // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除能力门控。
+        commitGraphV2: z.boolean().optional(),
         // COMPAT(stagedFileCount): v0.2.2 新增，2027-01-27 后移除能力门控。
         stagedFileCount: z.boolean().optional(),
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.
@@ -4412,6 +4436,11 @@ export const CheckoutCommitsListResponseSchema = z.object({
     cwd: z.string(),
     baseRef: z.string().nullable(),
     commits: z.array(CheckoutCommitSchema),
+    // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除可选兼容。
+    availableRefs: z.array(CheckoutCommitReferenceSchema).optional(),
+    headSha: z.string().nullable().optional(),
+    currentRef: z.string().nullable().optional(),
+    upstreamRef: z.string().nullable().optional(),
     // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除可选兼容。
     nextCursor: z.number().int().nonnegative().nullable().optional(),
     error: CheckoutErrorSchema.nullable(),
@@ -5766,6 +5795,7 @@ export type CheckoutFetchResponse = z.infer<typeof CheckoutFetchResponseSchema>;
 export type CheckoutRefreshRequest = z.infer<typeof CheckoutRefreshRequestSchema>;
 export type CheckoutRefreshResponse = z.infer<typeof CheckoutRefreshResponseSchema>;
 export type CheckoutCommitFile = z.infer<typeof CheckoutCommitFileSchema>;
+export type CheckoutCommitReference = z.infer<typeof CheckoutCommitReferenceSchema>;
 export type CheckoutCommit = z.infer<typeof CheckoutCommitSchema>;
 export type CheckoutCommitsListRequest = z.infer<typeof CheckoutCommitsListRequestSchema>;
 export type CheckoutCommitsListResponse = z.infer<typeof CheckoutCommitsListResponseSchema>;

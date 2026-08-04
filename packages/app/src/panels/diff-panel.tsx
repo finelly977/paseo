@@ -276,7 +276,14 @@ function CommitDiffPanel() {
     sha: target.sha,
     enabled: Boolean(cwd),
   });
-  const mode = useMemo(() => ({ kind: "commit" as const }), []);
+  const mode = useMemo(
+    () => ({
+      kind: "commit" as const,
+      focusPath: target.focusPath,
+      focusRequestId: target.focusRequestId,
+    }),
+    [target.focusPath, target.focusRequestId],
+  );
 
   let body: ReactNode;
   if (!cwd) {

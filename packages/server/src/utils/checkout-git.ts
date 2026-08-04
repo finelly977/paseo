@@ -5,6 +5,7 @@ import { TTLCache } from "@isaacs/ttlcache";
 import type {
   CheckoutCommit,
   CheckoutCommitFile,
+  CheckoutCommitReference,
   CheckoutScmChanges,
   CheckoutScmFileChange,
   CheckoutScmFileStatus,
@@ -2243,7 +2244,7 @@ const COMMIT_REF_SEPARATOR = "\x1d";
 // `%x1e`/`%x00` are git placeholders (literal text in the arg, real bytes in the
 // output) — passing actual NUL bytes as a process arg is rejected by Node.
 const COMMIT_LOG_FORMAT =
-  "%x1e%H%x00%h%x00%an%x00%aI%x00%s%x00%(decorate:prefix=,suffix=,separator=%x1d,pointer= -> ,tag=tag: )%x00%B%x00";
+  "%x1e%H%x00%h%x00%an%x00%aI%x00%s%x00%P%x00%(decorate:prefix=,suffix=,separator=%x1d,pointer= -> ,tag=tag: )%x00%B%x00";
 
 type CheckoutCommitFileStatus = NonNullable<CheckoutCommitFile["status"]>;
 
@@ -2253,6 +2254,7 @@ interface ParsedCheckoutCommit {
   authorName: string;
   authorDate: string;
   subject: string;
+  parentShas: string[];
   refs: string[];
   message: string;
   files: CheckoutCommitFile[];
@@ -2341,10 +2343,10 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
   const commits: ParsedCheckoutCommit[] = [];
   for (const record of records) {
     const fields = record.split(COMMIT_FIELD_SEPARATOR);
-    if (fields.length < 7) {
+    if (fields.length < 8) {
       continue;
     }
-    const rawOutput = fields.slice(7).join(COMMIT_FIELD_SEPARATOR);
+    const rawOutput = fields.slice(8).join(COMMIT_FIELD_SEPARATOR);
     const sha = (fields[0] ?? "").trim();
     if (!sha) {
       continue;
@@ -2374,7 +2376,7 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
       });
     }
 
-    const refs = (fields[5] ?? "")
+    const refs = (fields[6] ?? "")
       .split(COMMIT_REF_SEPARATOR)
       .map((ref) => ref.trim().replace(/^HEAD -> /, ""))
       .filter((ref) => ref.length > 0 && !ref.endsWith("/HEAD"));
@@ -2384,8 +2386,9 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
       authorName: fields[2] ?? "",
       authorDate: (fields[3] ?? "").trim(),
       subject: fields[4] ?? "",
+      parentShas: (fields[5] ?? "").split(" ").filter(Boolean),
       refs: [...new Set(refs)],
-      message: (fields[6] ?? fields[4] ?? "").trimEnd(),
+      message: (fields[7] ?? fields[4] ?? "").trimEnd(),
       files,
     });
   }
@@ -2395,6 +2398,27 @@ function parseCheckoutCommitRecords(stdout: string): ParsedCheckoutCommit[] {
 // Returns commits reachable from HEAD that are not reachable from any remote ref.
 async function getUnpushedCommitShas(cwd: string, context?: CheckoutContext): Promise<Set<string>> {
   const { stdout } = await runGitCommand(["rev-list", "HEAD", "--not", "--remotes"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+    logger: context?.logger,
+  });
+  return new Set(
+    stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+}
+
+async function getUnpushedCommitShasForRevisions(
+  cwd: string,
+  revisions: string[],
+  context?: CheckoutContext,
+): Promise<Set<string>> {
+  if (revisions.length === 0) {
+    return new Set();
+  }
+  const { stdout } = await runGitCommand(["rev-list", ...revisions, "--not", "--remotes"], {
     cwd,
     envOverlay: READ_ONLY_GIT_ENV,
     logger: context?.logger,
@@ -2439,6 +2463,10 @@ async function getCheckoutCommitRecords({
 export interface CheckoutCommitsResult {
   baseRef: string | null;
   commits: CheckoutCommit[];
+  availableRefs?: CheckoutCommitReference[];
+  headSha?: string | null;
+  currentRef?: string | null;
+  upstreamRef?: string | null;
   nextCursor?: number | null;
 }
 
@@ -2464,12 +2492,301 @@ function buildCheckoutCommits(
     subject: record.subject,
     message: record.message,
     refs: record.refs,
+    parentShas: record.parentShas,
+    statistics: {
+      files: record.files.length,
+      additions: record.files.reduce((total, file) => total + file.additions, 0),
+      deletions: record.files.reduce((total, file) => total + file.deletions, 0),
+    },
     authorName: record.authorName,
     authorDate: record.authorDate,
     isOnRemote: !unpushedShas.has(record.sha),
     isOnBase,
     files: record.files,
   }));
+}
+
+type CheckoutCommitRefMode = "auto" | "all" | "selected";
+
+const CHECKOUT_REF_FORMAT =
+  "%1e%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(*objecttype)%00";
+
+function parseCheckoutCommitReferences(
+  stdout: string,
+  currentRef: string | null,
+): CheckoutCommitReference[] {
+  const references: CheckoutCommitReference[] = [];
+  for (const record of stdout.split(COMMIT_RECORD_SEPARATOR)) {
+    if (!record) {
+      continue;
+    }
+    const fields = record.split(COMMIT_FIELD_SEPARATOR);
+    const id = (fields[0] ?? "").trim();
+    const directRevision = (fields[1] ?? "").trim();
+    const peeledRevision = (fields[2] ?? "").trim();
+    const directType = (fields[3] ?? "").trim();
+    const peeledType = (fields[4] ?? "").trim();
+    const revision = peeledRevision || directRevision;
+    const revisionType = peeledRevision ? peeledType : directType;
+    if (!id || !revision || revisionType !== "commit" || id.endsWith("/HEAD")) {
+      continue;
+    }
+
+    if (id.startsWith("refs/heads/")) {
+      references.push({
+        id,
+        name: id.slice("refs/heads/".length),
+        revision,
+        kind: id === currentRef ? "head" : "branch",
+      });
+      continue;
+    }
+    if (id.startsWith("refs/remotes/")) {
+      references.push({
+        id,
+        name: id.slice("refs/remotes/".length),
+        revision,
+        kind: "remote",
+      });
+      continue;
+    }
+    if (id.startsWith("refs/tags/")) {
+      references.push({
+        id,
+        name: id.slice("refs/tags/".length),
+        revision,
+        kind: "tag",
+      });
+    }
+  }
+
+  const kindOrder: Record<CheckoutCommitReference["kind"], number> = {
+    head: 0,
+    branch: 1,
+    remote: 2,
+    tag: 3,
+  };
+  return references.sort(
+    (left, right) =>
+      kindOrder[left.kind] - kindOrder[right.kind] || left.name.localeCompare(right.name),
+  );
+}
+
+async function listCheckoutCommitReferences(
+  cwd: string,
+  currentRef: string | null,
+  context?: CheckoutContext,
+): Promise<CheckoutCommitReference[]> {
+  const result = await runGitCommand(
+    ["for-each-ref", `--format=${CHECKOUT_REF_FORMAT}`, "refs/heads", "refs/remotes", "refs/tags"],
+    { cwd, envOverlay: READ_ONLY_GIT_ENV, logger: context?.logger },
+  );
+  if (result.truncated) {
+    throw new Error("Git 引用列表超出输出限制");
+  }
+  return parseCheckoutCommitReferences(result.stdout, currentRef);
+}
+
+async function resolveOptionalGitRevision(
+  cwd: string,
+  args: string[],
+  context?: CheckoutContext,
+): Promise<string | null> {
+  const result = await runGitCommand(args, {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+    acceptExitCodes: [0, 128],
+    logger: context?.logger,
+  });
+  if (result.exitCode !== 0) {
+    return null;
+  }
+  const revision = result.stdout.trim();
+  return revision || null;
+}
+
+function resolveCheckoutGraphRevisions({
+  mode,
+  selectedRefs,
+  availableRefs,
+  upstreamRef,
+  comparisonBaseRef,
+  headSha,
+}: {
+  mode: CheckoutCommitRefMode;
+  selectedRefs: string[] | undefined;
+  availableRefs: CheckoutCommitReference[];
+  upstreamRef: string | null;
+  comparisonBaseRef: string | null;
+  headSha: string | null;
+}): string[] {
+  if (mode === "selected") {
+    if (!selectedRefs || selectedRefs.length === 0) {
+      throw new Error("至少需要选择一个 Git 引用");
+    }
+    const availableIds = new Set(availableRefs.map((reference) => reference.id));
+    for (const reference of selectedRefs) {
+      if (!availableIds.has(reference)) {
+        throw new Error(`Git 引用不存在：${reference}`);
+      }
+    }
+    return [...new Set(selectedRefs)];
+  }
+  if (mode === "all") {
+    const allRefs = availableRefs.map((reference) => reference.id);
+    if (allRefs.length > 0) {
+      return allRefs;
+    }
+    return headSha ? ["HEAD"] : [];
+  }
+  return [headSha ? "HEAD" : null, upstreamRef, comparisonBaseRef].filter(
+    (revision): revision is string => Boolean(revision),
+  );
+}
+
+async function getCheckoutCommitGraphRecords({
+  cwd,
+  revisions,
+  cursor,
+  limit,
+  context,
+}: {
+  cwd: string;
+  revisions: string[];
+  cursor: number;
+  limit: number;
+  context?: CheckoutContext;
+}): Promise<ParsedCheckoutCommit[]> {
+  if (revisions.length === 0) {
+    return [];
+  }
+  const result = await runGitCommand(
+    [
+      "log",
+      "--topo-order",
+      "--date-order",
+      `--skip=${cursor}`,
+      `--max-count=${limit}`,
+      ...revisions,
+      "--diff-merges=first-parent",
+      `--format=${COMMIT_LOG_FORMAT}`,
+      "--raw",
+      "--numstat",
+      "-M",
+    ],
+    { cwd, envOverlay: READ_ONLY_GIT_ENV, logger: context?.logger },
+  );
+  if (result.truncated) {
+    throw new Error("提交历史超出 Git 输出限制");
+  }
+  return parseCheckoutCommitRecords(result.stdout);
+}
+
+async function getBaseReachableCommitShas({
+  cwd,
+  baseRef,
+  maxCount,
+  context,
+}: {
+  cwd: string;
+  baseRef: string | null;
+  maxCount: number;
+  context?: CheckoutContext;
+}): Promise<Set<string> | null> {
+  if (!baseRef) {
+    return null;
+  }
+  const result = await runGitCommand(
+    ["rev-list", "--topo-order", "--date-order", `--max-count=${maxCount}`, baseRef],
+    { cwd, envOverlay: READ_ONLY_GIT_ENV, logger: context?.logger },
+  );
+  return new Set(
+    result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+}
+
+async function listCheckoutCommitGraph({
+  cwd,
+  context,
+  pagination,
+  refMode,
+  refs,
+  currentBranch,
+  comparisonBaseRef,
+}: {
+  cwd: string;
+  context?: CheckoutContext;
+  pagination: CheckoutCommitPagination;
+  refMode: CheckoutCommitRefMode;
+  refs?: string[];
+  currentBranch: string | null;
+  comparisonBaseRef: string | null;
+}): Promise<CheckoutCommitsResult> {
+  const currentRef = currentBranch ? `refs/heads/${currentBranch}` : null;
+  const [headSha, upstreamRef, availableRefs] = await Promise.all([
+    resolveOptionalGitRevision(cwd, ["rev-parse", "--verify", "HEAD"], context),
+    resolveOptionalGitRevision(cwd, ["rev-parse", "--symbolic-full-name", "@{upstream}"], context),
+    listCheckoutCommitReferences(cwd, currentRef, context),
+  ]);
+  const revisions = resolveCheckoutGraphRevisions({
+    mode: refMode,
+    selectedRefs: refs,
+    availableRefs,
+    upstreamRef,
+    comparisonBaseRef,
+    headSha,
+  });
+  const requestedRecordCount = pagination.limit + 1;
+  const [records, unpushedShas, baseReachableShas] = await Promise.all([
+    getCheckoutCommitGraphRecords({
+      cwd,
+      revisions,
+      cursor: pagination.cursor,
+      limit: requestedRecordCount,
+      context,
+    }),
+    getUnpushedCommitShasForRevisions(cwd, revisions, context),
+    getBaseReachableCommitShas({
+      cwd,
+      baseRef: comparisonBaseRef,
+      maxCount: pagination.cursor + requestedRecordCount,
+      context,
+    }),
+  ]);
+  const hasNextPage = records.length > pagination.limit;
+  const pageRecords = records.slice(0, pagination.limit);
+  const referencesByRevision = new Map<string, CheckoutCommitReference[]>();
+  for (const reference of availableRefs) {
+    const existing = referencesByRevision.get(reference.revision);
+    if (existing) {
+      existing.push(reference);
+    } else {
+      referencesByRevision.set(reference.revision, [reference]);
+    }
+  }
+  const commits = buildCheckoutCommits(
+    pageRecords.map((record) => ({
+      record,
+      isOnBase: baseReachableShas ? baseReachableShas.has(record.sha) : true,
+    })),
+    unpushedShas,
+  );
+  for (const commit of commits) {
+    commit.references = referencesByRevision.get(commit.sha) ?? [];
+  }
+
+  return {
+    baseRef: comparisonBaseRef,
+    commits,
+    availableRefs,
+    headSha,
+    currentRef,
+    upstreamRef,
+    nextCursor: hasNextPage ? pagination.cursor + commits.length : null,
+  };
 }
 
 async function tryResolveCheckoutCommitsBaseRef(
@@ -2644,14 +2961,32 @@ export async function listCheckoutCommits({
   context,
   cursor,
   limit,
+  refMode,
+  refs,
 }: {
   cwd: string;
   context?: CheckoutContext;
   cursor?: number;
   limit?: number;
+  refMode?: CheckoutCommitRefMode;
+  refs?: string[];
 }): Promise<CheckoutCommitsResult> {
   const pagination = resolveCheckoutCommitPagination(cursor, limit);
   const currentBranch = await getCurrentBranch(cwd);
+  const revisions = currentBranch
+    ? await resolveCheckoutCommitHistoryRevisions(cwd, currentBranch, context)
+    : { comparisonBaseRef: null, workspaceRevision: null, baseRevision: "" };
+  if (refMode) {
+    return listCheckoutCommitGraph({
+      cwd,
+      context,
+      pagination,
+      refMode,
+      refs,
+      currentBranch,
+      comparisonBaseRef: revisions.comparisonBaseRef,
+    });
+  }
   if (!currentBranch) {
     return {
       baseRef: null,
@@ -2659,7 +2994,6 @@ export async function listCheckoutCommits({
       ...(pagination.requested ? { nextCursor: null } : {}),
     };
   }
-  const revisions = await resolveCheckoutCommitHistoryRevisions(cwd, currentBranch, context);
   return pagination.requested
     ? listPaginatedCheckoutCommits({ cwd, context, pagination, revisions })
     : listLegacyCheckoutCommits({ cwd, context, revisions });

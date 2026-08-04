@@ -33,6 +33,7 @@ import type {
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
+  CheckoutCommitReference,
   ParsedDiffFile,
   CheckoutCommitResponse,
   CheckoutIndexStageResponse,
@@ -3743,10 +3744,22 @@ export class DaemonClient {
 
   async listCheckoutCommits(
     cwd: string,
-    requestIdOrPagination?: string | { cursor: number; limit: number; requestId?: string },
+    requestIdOrPagination?:
+      | string
+      | {
+          cursor: number;
+          limit: number;
+          requestId?: string;
+          refMode?: "auto" | "all" | "selected";
+          refs?: string[];
+        },
   ): Promise<{
     baseRef: string | null;
     commits: CheckoutCommit[];
+    availableRefs?: CheckoutCommitReference[];
+    headSha?: string | null;
+    currentRef?: string | null;
+    upstreamRef?: string | null;
     nextCursor?: number | null;
   }> {
     const pagination =
@@ -3762,6 +3775,8 @@ export class DaemonClient {
           type: "checkout.commits.list.request",
           cwd,
           ...(pagination ? { cursor: pagination.cursor, limit: pagination.limit } : {}),
+          ...(pagination?.refMode ? { refMode: pagination.refMode } : {}),
+          ...(pagination?.refs ? { refs: pagination.refs } : {}),
         },
         timeout: 60000,
       });
@@ -3771,6 +3786,10 @@ export class DaemonClient {
     return {
       baseRef: payload.baseRef,
       commits: payload.commits,
+      ...(payload.availableRefs ? { availableRefs: payload.availableRefs } : {}),
+      ...(payload.headSha !== undefined ? { headSha: payload.headSha } : {}),
+      ...(payload.currentRef !== undefined ? { currentRef: payload.currentRef } : {}),
+      ...(payload.upstreamRef !== undefined ? { upstreamRef: payload.upstreamRef } : {}),
       ...(payload.nextCursor !== undefined ? { nextCursor: payload.nextCursor } : {}),
     };
   }

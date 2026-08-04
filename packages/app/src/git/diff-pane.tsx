@@ -102,6 +102,7 @@ import { countScmChanges } from "@/git/scm-model";
 import { useCheckoutStatusQuery } from "@/git/use-status-query";
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore } from "@/stores/session-store";
+import { useChangesPreferences } from "@/hooks/use-changes-preferences";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
@@ -1364,6 +1365,18 @@ interface GitDiffPaneProps {
   suppressHeightSync?: boolean;
 }
 
+function shouldConstrainScmChangesHeight({
+  isGit,
+  commitGraphSupported,
+  commitsCollapsed,
+}: {
+  isGit: boolean;
+  commitGraphSupported: boolean;
+  commitsCollapsed: boolean;
+}): boolean {
+  return isGit && commitGraphSupported && !commitsCollapsed;
+}
+
 type PressableStyleFn = (
   state: PressableStateCallbackType & { hovered?: boolean; open?: boolean },
 ) => StyleProp<ViewStyle>;
@@ -1734,6 +1747,8 @@ interface SharedDiffViewProps {
       }
     | {
         kind: "commit";
+        focusPath?: string;
+        focusRequestId?: number;
       };
 }
 
@@ -1773,8 +1788,10 @@ export function SharedDiffView({
   const interactive = mode.kind !== "commit";
   const reviewActions = mode.kind === "commit" ? undefined : mode.reviewActions;
   const onFilePress = mode.kind === "working_tree" ? mode.onFilePress : undefined;
-  const focusPath = mode.kind === "working_tab" ? mode.focusPath : undefined;
-  const focusRequestId = mode.kind === "working_tab" ? mode.focusRequestId : undefined;
+  const focusPath =
+    mode.kind === "working_tab" || mode.kind === "commit" ? mode.focusPath : undefined;
+  const focusRequestId =
+    mode.kind === "working_tab" || mode.kind === "commit" ? mode.focusRequestId : undefined;
   const onOpenFile = mode.kind === "working_tree" ? mode.onOpenFile : undefined;
   const onAddToChat = mode.kind === "working_tree" ? mode.onAddToChat : undefined;
   const workspaceFileDragScope =
@@ -2394,9 +2411,13 @@ function useDiffTabNavigation({
     [openWorkspaceTabFocused, persistenceKey],
   );
   const openCommit = useCallback(
-    (sha: string) => {
+    (sha: string, path?: string) => {
       if (persistenceKey) {
-        openWorkspaceTabFocused(persistenceKey, { kind: "commit_diff", sha });
+        openWorkspaceTabFocused(persistenceKey, {
+          kind: "commit_diff",
+          sha,
+          ...(path ? { focusPath: path, focusRequestId: Date.now() } : {}),
+        });
       }
     },
     [openWorkspaceTabFocused, persistenceKey],
@@ -2610,6 +2631,15 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
     status?.error?.message ??
     (isStatusError && statusError instanceof Error ? statusError.message : null);
   const currentBranchName = isGit && status.currentBranch !== "HEAD" ? status.currentBranch : null;
+  const { preferences: changesPreferences } = useChangesPreferences();
+  const commitGraphSupported = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.commitGraphV2 === true,
+  );
+  const constrainChangesHeight = shouldConstrainScmChangesHeight({
+    isGit,
+    commitGraphSupported,
+    commitsCollapsed: changesPreferences.commitsCollapsed,
+  });
   const changes = isGit ? (status.changes ?? null) : null;
   const totalChangeCount = changes ? countScmChanges(changes) : 0;
 
@@ -2823,7 +2853,16 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
         </View>
       ) : null}
 
-      <View style={styles.scmChangesContainer}>
+      <View
+        style={[
+          styles.scmChangesContainer,
+          constrainChangesHeight && styles.scmChangesContainerWithGraph,
+          constrainChangesHeight &&
+            changes &&
+            totalChangeCount === 0 &&
+            styles.scmChangesContainerEmpty,
+        ]}
+      >
         <ScmPanelBody
           changes={changes}
           discardStatus={discardStatus}
@@ -2853,7 +2892,6 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
           refreshSupported={refreshSupported}
           isRefreshing={isRefreshing}
           onRefresh={handleRefresh}
-          currentBranchName={currentBranchName}
           onCommitPress={handleCommitPress}
         />
       ) : null}
@@ -2957,6 +2995,14 @@ const styles = StyleSheet.create((theme) => ({
   scmChangesContainer: {
     flex: 1,
     minHeight: 0,
+  },
+  scmChangesContainerWithGraph: {
+    flex: 0,
+    flexBasis: "36%",
+    maxHeight: "42%",
+  },
+  scmChangesContainerEmpty: {
+    flexBasis: 0,
   },
   scmState: {
     minHeight: 44,

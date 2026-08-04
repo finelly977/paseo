@@ -1574,6 +1574,8 @@ export class VoiceAssistantWebSocketServer {
         commitBaseClassification: true,
         // COMPAT(commitsPagination): v0.2.2 新增，2027-01-27 后移除能力门控。
         commitsPagination: true,
+        // COMPAT(commitGraphV2): v0.2.2 新增，2027-02-04 后移除能力门控。
+        commitGraphV2: true,
         // COMPAT(stagedFileCount): v0.2.2 新增，2027-01-27 后移除能力门控。
         stagedFileCount: true,
         // COMPAT(providerRemoval): added in v0.1.105, drop the gate when floor >= v0.1.105.

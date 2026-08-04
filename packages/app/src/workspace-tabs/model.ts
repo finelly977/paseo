@@ -16,6 +16,13 @@ export interface WorkspaceWorkingDiffTabTarget {
   focusRequestId?: number;
 }
 
+export interface WorkspaceCommitDiffTabTarget {
+  kind: "commit_diff";
+  sha: string;
+  focusPath?: string;
+  focusRequestId?: number;
+}
+
 export type WorkspaceTabTarget =
   | { kind: "draft"; draftId: string; setup?: WorkspaceDraftTabSetup }
   | { kind: "agent"; agentId: string }
@@ -25,7 +32,7 @@ export type WorkspaceTabTarget =
   | WorkspaceFileTabTarget
   | WorkspaceWorkingDiffTabTarget
   | { kind: "setup"; workspaceId: string }
-  | { kind: "commit_diff"; sha: string };
+  | WorkspaceCommitDiffTabTarget;
 
 export interface WorkspaceTab {
   tabId: string;

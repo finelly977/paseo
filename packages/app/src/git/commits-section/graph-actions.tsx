@@ -6,15 +6,43 @@ import {
   View,
   type PressableStateCallbackType,
 } from "react-native";
-import { ArrowDownUp, CloudDownload, Download, RefreshCcw, Upload } from "lucide-react-native";
+import type { CheckoutCommitReference } from "@getpaseo/protocol/messages";
+import {
+  ArrowDownUp,
+  ChevronDown,
+  Cloud,
+  CloudDownload,
+  Download,
+  GitBranch,
+  ListFilter,
+  LocateFixed,
+  MoreHorizontal,
+  RefreshCcw,
+  Tag,
+  Upload,
+} from "lucide-react-native";
+import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/contexts/toast-context";
-import { useTranslation } from "react-i18next";
 import type { GitAction, GitActionId, GitActions } from "@/git/policy";
+import type { CheckoutCommitRefFilter } from "@/git/use-commits-query";
 
 interface GraphActionsProps {
   gitActions: GitActions;
+  availableRefs: CheckoutCommitReference[];
+  filter: CheckoutCommitRefFilter;
+  onFilterChange: (filter: CheckoutCommitRefFilter) => void;
+  onLocateHead: () => void;
+  canLocateHead: boolean;
   fetchSupported: boolean;
   hasRemote: boolean;
   isFetching: boolean;
@@ -24,21 +52,27 @@ interface GraphActionsProps {
   onRefresh: () => void;
 }
 
-type GraphActionKind = "fetch" | "refresh" | "pull" | "push" | "sync";
+type GraphActionKind = "fetch" | "refresh" | "locate";
 
 interface GraphActionButtonProps {
   kind: GraphActionKind;
   label: string;
-  action?: GitAction;
   pending?: boolean;
   disabled?: boolean;
-  onPress?: () => void;
+  onPress: () => void;
 }
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
+const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedCloud = withUnistyles(Cloud);
 const ThemedCloudDownload = withUnistyles(CloudDownload);
-const ThemedRefreshCcw = withUnistyles(RefreshCcw);
 const ThemedDownload = withUnistyles(Download);
+const ThemedGitBranch = withUnistyles(GitBranch);
+const ThemedListFilter = withUnistyles(ListFilter);
+const ThemedLocateFixed = withUnistyles(LocateFixed);
+const ThemedMoreHorizontal = withUnistyles(MoreHorizontal);
+const ThemedRefreshCcw = withUnistyles(RefreshCcw);
+const ThemedTag = withUnistyles(Tag);
 const ThemedUpload = withUnistyles(Upload);
 const ThemedArrowDownUp = withUnistyles(ArrowDownUp);
 
@@ -46,60 +80,44 @@ const iconColorMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
 });
 
+function buttonStyle({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) {
+  return [styles.button, (Boolean(hovered) || pressed) && styles.buttonActive];
+}
+
 function GraphActionIcon({ kind }: { kind: GraphActionKind }) {
   switch (kind) {
     case "fetch":
       return <ThemedCloudDownload size={14} uniProps={iconColorMapping} />;
     case "refresh":
       return <ThemedRefreshCcw size={14} uniProps={iconColorMapping} />;
-    case "pull":
-      return <ThemedDownload size={14} uniProps={iconColorMapping} />;
-    case "push":
-      return <ThemedUpload size={14} uniProps={iconColorMapping} />;
-    case "sync":
-      return <ThemedArrowDownUp size={14} uniProps={iconColorMapping} />;
+    case "locate":
+      return <ThemedLocateFixed size={14} uniProps={iconColorMapping} />;
   }
 }
 
 function GraphActionButton({
   kind,
   label,
-  action,
   pending = false,
   disabled = false,
   onPress,
 }: GraphActionButtonProps) {
-  const toast = useToast();
-  const resolvedPending = action ? action.status === "pending" : pending;
-  const resolvedDisabled = action ? action.disabled : disabled;
-  const unavailableMessage = action ? action.unavailableMessage : undefined;
   const accessibilityState = useMemo(
-    () => ({ disabled: resolvedPending || resolvedDisabled }),
-    [resolvedDisabled, resolvedPending],
+    () => ({ disabled: pending || disabled }),
+    [disabled, pending],
   );
   const pressableStyle = useCallback(
-    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
-      styles.button,
-      (Boolean(hovered) || pressed) && styles.buttonActive,
-      resolvedDisabled && styles.buttonDisabled,
+    (state: PressableStateCallbackType & { hovered?: boolean }) => [
+      ...buttonStyle(state),
+      disabled && styles.buttonDisabled,
     ],
-    [resolvedDisabled],
+    [disabled],
   );
   const handlePress = useCallback(() => {
-    if (resolvedPending || resolvedDisabled) {
-      return;
+    if (!pending && !disabled) {
+      onPress();
     }
-    if (unavailableMessage) {
-      toast.show(unavailableMessage, { durationMs: 3200 });
-      return;
-    }
-    if (action) {
-      action.handler();
-      return;
-    }
-    onPress?.();
-  }, [action, onPress, resolvedDisabled, resolvedPending, toast, unavailableMessage]);
-
+  }, [disabled, onPress, pending]);
   return (
     <Tooltip delayDuration={300}>
       <TooltipTrigger asChild>
@@ -109,24 +127,138 @@ function GraphActionButton({
           accessibilityState={accessibilityState}
           onPress={handlePress}
           style={pressableStyle}
-          testID={`git-graph-action-${label.toLowerCase()}`}
+          testID={`git-graph-action-${kind}`}
         >
-          {resolvedPending ? (
+          {pending ? (
             <ThemedActivityIndicator size="small" uniProps={iconColorMapping} />
           ) : (
             <GraphActionIcon kind={kind} />
           )}
         </Pressable>
       </TooltipTrigger>
-      <TooltipContent side="bottom" align="center" offset={6} maxWidth={300}>
-        <View style={styles.tooltipContent}>
-          <Text style={styles.tooltipLabel}>{label}</Text>
-          {unavailableMessage ? (
-            <Text style={styles.tooltipDescription}>{unavailableMessage}</Text>
-          ) : null}
-        </View>
+      <TooltipContent side="bottom" align="center" offset={6}>
+        <Text style={styles.tooltipLabel}>{label}</Text>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function ReferenceMenuIcon({ kind }: { kind: CheckoutCommitReference["kind"] }) {
+  switch (kind) {
+    case "head":
+      return <ThemedLocateFixed size={14} uniProps={iconColorMapping} />;
+    case "branch":
+      return <ThemedGitBranch size={14} uniProps={iconColorMapping} />;
+    case "remote":
+      return <ThemedCloud size={14} uniProps={iconColorMapping} />;
+    case "tag":
+      return <ThemedTag size={14} uniProps={iconColorMapping} />;
+  }
+}
+
+function GraphRefFilter({
+  availableRefs,
+  filter,
+  onFilterChange,
+}: {
+  availableRefs: CheckoutCommitReference[];
+  filter: CheckoutCommitRefFilter;
+  onFilterChange: (filter: CheckoutCommitRefFilter) => void;
+}) {
+  const { t } = useTranslation();
+  const selectedRefs = useMemo(() => (filter.mode === "selected" ? filter.refs : []), [filter]);
+  let label = t("workspace.git.diff.commits.filterAuto");
+  if (filter.mode === "all") {
+    label = t("workspace.git.diff.commits.filterAll");
+  } else if (filter.mode === "selected") {
+    label = t("workspace.git.diff.commits.filterCount", { count: filter.refs.length });
+  }
+  const handleAutoSelect = useCallback(() => onFilterChange({ mode: "auto" }), [onFilterChange]);
+  const handleAllSelect = useCallback(() => onFilterChange({ mode: "all" }), [onFilterChange]);
+  const handleReferenceSelect = useCallback(
+    (id: string) => {
+      const current = new Set(selectedRefs);
+      if (current.has(id)) {
+        current.delete(id);
+      } else {
+        current.add(id);
+      }
+      const refs = availableRefs
+        .filter((reference) => current.has(reference.id))
+        .map((reference) => reference.id);
+      onFilterChange(refs.length > 0 ? { mode: "selected", refs } : { mode: "auto" });
+    },
+    [availableRefs, onFilterChange, selectedRefs],
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        accessibilityLabel={t("workspace.git.diff.commits.filterLabel")}
+        style={buttonStyle}
+        testID="git-graph-ref-filter"
+      >
+        <ThemedListFilter size={13} uniProps={iconColorMapping} />
+        <Text style={styles.filterLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        <ThemedChevronDown size={11} uniProps={iconColorMapping} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" width={260} scrollable maxHeight={420}>
+        <DropdownMenuItem
+          selected={filter.mode === "auto"}
+          showSelectedCheck
+          onSelect={handleAutoSelect}
+        >
+          {t("workspace.git.diff.commits.filterAuto")}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          selected={filter.mode === "all"}
+          showSelectedCheck
+          onSelect={handleAllSelect}
+        >
+          {t("workspace.git.diff.commits.filterAll")}
+        </DropdownMenuItem>
+        {availableRefs.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>{t("workspace.git.diff.commits.references")}</DropdownMenuLabel>
+            {availableRefs.map((reference) => (
+              <ReferenceFilterItem
+                key={reference.id}
+                reference={reference}
+                selected={selectedRefs.includes(reference.id)}
+                onSelect={handleReferenceSelect}
+              />
+            ))}
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ReferenceFilterItem({
+  reference,
+  selected,
+  onSelect,
+}: {
+  reference: CheckoutCommitReference;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const leading = useMemo(() => <ReferenceMenuIcon kind={reference.kind} />, [reference.kind]);
+  const handleSelect = useCallback(() => onSelect(reference.id), [onSelect, reference.id]);
+  return (
+    <DropdownMenuItem
+      closeOnSelect={false}
+      leading={leading}
+      selected={selected}
+      showSelectedCheck
+      onSelect={handleSelect}
+    >
+      {reference.name}
+    </DropdownMenuItem>
   );
 }
 
@@ -138,8 +270,80 @@ function findAction(gitActions: GitActions, id: GitActionId): GitAction | undefi
   ].find((action) => action.id === id);
 }
 
+function MoreActions({ gitActions }: { gitActions: GitActions }) {
+  const { t } = useTranslation();
+  const actions = useMemo(
+    () =>
+      [
+        findAction(gitActions, "pull"),
+        findAction(gitActions, "push"),
+        findAction(gitActions, "pull-and-push"),
+      ].filter((action): action is GitAction => Boolean(action)),
+    [gitActions],
+  );
+  if (actions.length === 0) {
+    return null;
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        accessibilityLabel={t("workspace.git.diff.commits.moreActions")}
+        style={buttonStyle}
+        testID="git-graph-more-actions"
+      >
+        <ThemedMoreHorizontal size={14} uniProps={iconColorMapping} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" minWidth={210}>
+        {actions.map((action) => (
+          <MoreActionItem key={action.id} action={action} />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MoreActionIcon({ id }: { id: GitActionId }) {
+  switch (id) {
+    case "pull":
+      return <ThemedDownload size={14} uniProps={iconColorMapping} />;
+    case "push":
+      return <ThemedUpload size={14} uniProps={iconColorMapping} />;
+    case "pull-and-push":
+      return <ThemedArrowDownUp size={14} uniProps={iconColorMapping} />;
+    default:
+      return null;
+  }
+}
+
+function MoreActionItem({ action }: { action: GitAction }) {
+  const toast = useToast();
+  const leading = useMemo(() => <MoreActionIcon id={action.id} />, [action.id]);
+  const handleSelect = useCallback(() => {
+    if (action.unavailableMessage) {
+      toast.show(action.unavailableMessage, { durationMs: 3200 });
+      return;
+    }
+    action.handler();
+  }, [action, toast]);
+  return (
+    <DropdownMenuItem
+      disabled={action.disabled && !action.unavailableMessage}
+      leading={leading}
+      status={action.status === "pending" ? "pending" : undefined}
+      onSelect={handleSelect}
+    >
+      {action.label}
+    </DropdownMenuItem>
+  );
+}
+
 export function GraphActions({
   gitActions,
+  availableRefs,
+  filter,
+  onFilterChange,
+  onLocateHead,
+  canLocateHead,
   fetchSupported,
   hasRemote,
   isFetching,
@@ -149,12 +353,19 @@ export function GraphActions({
   onRefresh,
 }: GraphActionsProps) {
   const { t } = useTranslation();
-  const pull = useMemo(() => findAction(gitActions, "pull"), [gitActions]);
-  const push = useMemo(() => findAction(gitActions, "push"), [gitActions]);
-  const sync = useMemo(() => findAction(gitActions, "pull-and-push"), [gitActions]);
-
   return (
     <View style={styles.container}>
+      <GraphRefFilter
+        availableRefs={availableRefs}
+        filter={filter}
+        onFilterChange={onFilterChange}
+      />
+      <GraphActionButton
+        kind="locate"
+        label={t("workspace.git.diff.commits.locateHead")}
+        disabled={!canLocateHead}
+        onPress={onLocateHead}
+      />
       {fetchSupported ? (
         <GraphActionButton
           kind="fetch"
@@ -173,23 +384,7 @@ export function GraphActions({
           onPress={onRefresh}
         />
       ) : null}
-      {pull ? (
-        <GraphActionButton
-          kind="pull"
-          label={t("workspace.git.actions.pull.label")}
-          action={pull}
-        />
-      ) : null}
-      {push ? (
-        <GraphActionButton
-          kind="push"
-          label={t("workspace.git.actions.push.label")}
-          action={push}
-        />
-      ) : null}
-      {sync ? (
-        <GraphActionButton kind="sync" label={t("workspace.git.panel.syncChanges")} action={sync} />
-      ) : null}
+      <MoreActions gitActions={gitActions} />
     </View>
   );
 }
@@ -199,12 +394,16 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     marginLeft: "auto",
+    gap: 1,
   },
   button: {
-    width: 20,
+    minWidth: 20,
     height: 20,
+    paddingHorizontal: 3,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 3,
     borderRadius: theme.borderRadius.base,
   },
   buttonActive: {
@@ -213,16 +412,14 @@ const styles = StyleSheet.create((theme) => ({
   buttonDisabled: {
     opacity: 0.45,
   },
-  tooltipContent: {
-    gap: theme.spacing[1],
+  filterLabel: {
+    maxWidth: 68,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
   },
   tooltipLabel: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.popoverForeground,
     fontWeight: theme.fontWeight.medium,
-  },
-  tooltipDescription: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.foregroundMuted,
   },
 }));

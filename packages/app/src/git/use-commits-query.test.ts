@@ -5,7 +5,14 @@ vi.hoisted(() => {
   (globalThis as typeof globalThis & { __DEV__?: boolean }).__DEV__ = false;
 });
 
-const EMPTY_COMMITS: CheckoutCommitsData = { baseRef: "main", commits: [] };
+const EMPTY_COMMITS: CheckoutCommitsData = {
+  baseRef: "main",
+  commits: [],
+  availableRefs: [],
+  headSha: null,
+  currentRef: null,
+  upstreamRef: null,
+};
 const PAGINATION = {
   hasNextPage: false,
   isFetchingNextPage: false,

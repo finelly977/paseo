@@ -276,20 +276,28 @@ export class CheckoutSession {
   }
 
   async handleCommitsListRequest(msg: CheckoutCommitsListRequest): Promise<void> {
-    const { cwd, requestId, cursor, limit } = msg;
+    const { cwd, requestId, cursor, limit, refMode, refs } = msg;
 
     try {
-      const { baseRef, commits, nextCursor } = await listCheckoutCommits({
-        cwd: expandTilde(cwd),
-        cursor,
-        limit,
-      });
+      const { baseRef, commits, nextCursor, availableRefs, headSha, currentRef, upstreamRef } =
+        await listCheckoutCommits({
+          cwd: expandTilde(cwd),
+          context: { worktreesRoot: this.worktreesRoot, logger: this.logger },
+          cursor,
+          limit,
+          refMode,
+          refs,
+        });
       this.host.emit({
         type: "checkout.commits.list.response",
         payload: {
           cwd,
           baseRef,
           commits,
+          ...(availableRefs ? { availableRefs } : {}),
+          ...(headSha !== undefined ? { headSha } : {}),
+          ...(currentRef !== undefined ? { currentRef } : {}),
+          ...(upstreamRef !== undefined ? { upstreamRef } : {}),
           ...(nextCursor !== undefined ? { nextCursor } : {}),
           error: null,
           requestId,

@@ -38,6 +38,23 @@ describe("checkout.commits.list schemas", () => {
     ).toMatchObject({ cursor: 40, limit: 40 });
   });
 
+  test("解析新版图表的引用筛选请求", () => {
+    expect(
+      CheckoutCommitsListRequestSchema.parse({
+        type: "checkout.commits.list.request",
+        cwd: "/tmp/repo",
+        cursor: 0,
+        limit: 40,
+        refMode: "selected",
+        refs: ["refs/heads/main", "refs/tags/v1.0.0"],
+        requestId: "request-graph",
+      }),
+    ).toMatchObject({
+      refMode: "selected",
+      refs: ["refs/heads/main", "refs/tags/v1.0.0"],
+    });
+  });
+
   test("parses a valid response with local-only and remote commits", () => {
     const payload = {
       cwd: "/tmp/repo",
@@ -114,6 +131,59 @@ describe("checkout.commits.list schemas", () => {
     expect(parsed.payload.commits[0]?.isOnBase).toBeUndefined();
   });
 
+  test("解析新版图表的父提交、结构化引用和定位信息", () => {
+    const parsed = CheckoutCommitsListResponseSchema.parse({
+      type: "checkout.commits.list.response",
+      payload: {
+        cwd: "/tmp/repo",
+        baseRef: "main",
+        commits: [
+          {
+            sha: "1111111111111111111111111111111111111111",
+            shortSha: "1111111",
+            subject: "Merge feature",
+            authorName: "Ada",
+            authorDate: "2026-06-13T10:00:00.000Z",
+            isOnRemote: true,
+            isOnBase: false,
+            parentShas: [
+              "2222222222222222222222222222222222222222",
+              "3333333333333333333333333333333333333333",
+            ],
+            references: [
+              {
+                id: "refs/heads/main",
+                name: "main",
+                revision: "1111111111111111111111111111111111111111",
+                kind: "head",
+              },
+            ],
+            statistics: { files: 2, additions: 8, deletions: 3 },
+            files: [],
+          },
+        ],
+        availableRefs: [
+          {
+            id: "refs/heads/main",
+            name: "main",
+            revision: "1111111111111111111111111111111111111111",
+            kind: "head",
+          },
+        ],
+        headSha: "1111111111111111111111111111111111111111",
+        currentRef: "refs/heads/main",
+        upstreamRef: "refs/remotes/origin/main",
+        nextCursor: null,
+        error: null,
+        requestId: "request-graph",
+      },
+    });
+
+    expect(parsed.payload.commits[0]?.parentShas).toHaveLength(2);
+    expect(parsed.payload.commits[0]?.references?.[0]?.kind).toBe("head");
+    expect(parsed.payload.currentRef).toBe("refs/heads/main");
+  });
+
   test("accepts a null baseRef and an error payload", () => {
     const payload = {
       cwd: "/tmp/repo",
@@ -165,6 +235,7 @@ describe("checkout.commits.list schemas", () => {
           commitsList: true,
           commitBaseClassification: true,
           commitsPagination: true,
+          commitGraphV2: true,
           stagedFileCount: true,
           checkoutFetch: true,
         },
@@ -173,6 +244,7 @@ describe("checkout.commits.list schemas", () => {
       commitsList: true,
       commitBaseClassification: true,
       commitsPagination: true,
+      commitGraphV2: true,
       stagedFileCount: true,
       checkoutFetch: true,
     });

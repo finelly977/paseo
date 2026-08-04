@@ -320,6 +320,88 @@ describe("listCheckoutCommits", () => {
     ]);
   });
 
+  it("返回可渲染真实分叉与合并的新版拓扑历史", async () => {
+    const { repoDir } = initRepoOnMain();
+    git(["checkout", "-b", "feature"], repoDir);
+    commitFile(repoDir, "feature.txt", "feature\n", "Feature work");
+    git(["checkout", "main"], repoDir);
+    commitFile(repoDir, "main.txt", "main\n", "Main work");
+    git(["merge", "--no-ff", "feature", "-m", "Merge feature"], repoDir);
+    git(["tag", "v1.0.0"], repoDir);
+
+    const result = await listCheckoutCommits({
+      cwd: repoDir,
+      cursor: 0,
+      limit: 40,
+      refMode: "all",
+    });
+
+    const merge = result.commits.find((entry) => entry.subject === "Merge feature");
+    expect(merge?.parentShas).toHaveLength(2);
+    expect(merge?.references).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "refs/heads/main", kind: "head" }),
+        expect.objectContaining({ id: "refs/tags/v1.0.0", kind: "tag" }),
+      ]),
+    );
+    expect(merge?.statistics).toEqual({ files: 1, additions: 1, deletions: 0 });
+    expect(result.availableRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "refs/heads/feature", kind: "branch" }),
+        expect.objectContaining({ id: "refs/heads/main", kind: "head" }),
+        expect.objectContaining({ id: "refs/tags/v1.0.0", kind: "tag" }),
+      ]),
+    );
+    expect(result.currentRef).toBe("refs/heads/main");
+    expect(result.headSha).toBe(merge?.sha);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("按指定引用筛选图表历史", async () => {
+    const { repoDir } = initRepoOnMain();
+    git(["checkout", "-b", "feature"], repoDir);
+    commitFile(repoDir, "feature.txt", "feature\n", "Feature work");
+    git(["checkout", "main"], repoDir);
+    commitFile(repoDir, "main.txt", "main\n", "Main work");
+
+    const result = await listCheckoutCommits({
+      cwd: repoDir,
+      cursor: 0,
+      limit: 40,
+      refMode: "selected",
+      refs: ["refs/heads/feature"],
+    });
+
+    expect(result.commits.map((entry) => entry.subject)).toEqual(["Feature work", "initial"]);
+    expect(result.commits.some((entry) => entry.subject === "Main work")).toBe(false);
+    expect(result.commits.every((entry) => entry.isOnRemote === false)).toBe(true);
+  });
+
+  it("返回当前分支的完整上游引用", async () => {
+    const { repoDir, tempDir } = initRepoOnMain();
+    git(["checkout", "-b", "feature"], repoDir);
+    commitFile(repoDir, "feature.txt", "feature\n", "Feature work");
+    addBareRemote(repoDir, tempDir);
+    git(["push", "-u", "origin", "feature"], repoDir);
+
+    const result = await listCheckoutCommits({
+      cwd: repoDir,
+      cursor: 0,
+      limit: 40,
+      refMode: "auto",
+    });
+
+    expect(result.upstreamRef).toBe("refs/remotes/origin/feature");
+    expect(result.availableRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "refs/remotes/origin/feature",
+          kind: "remote",
+        }),
+      ]),
+    );
+  });
+
   it("classifies renamed files with status renamed and correct destination path", async () => {
     const { repoDir } = initRepoOnMain();
     git(["checkout", "-b", "feature"], repoDir);

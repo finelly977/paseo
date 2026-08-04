@@ -55,7 +55,18 @@ function normalizeSimpleWorkspaceTabTarget(value: WorkspaceTabTarget): Workspace
     }
     case "commit_diff": {
       const sha = trimNonEmpty(value.sha);
-      return sha ? { kind: "commit_diff", sha } : null;
+      if (!sha) {
+        return null;
+      }
+      const focusPath = trimNonEmpty(value.focusPath);
+      return {
+        kind: "commit_diff",
+        sha,
+        ...(focusPath ? { focusPath } : {}),
+        ...(typeof value.focusRequestId === "number"
+          ? { focusRequestId: value.focusRequestId }
+          : {}),
+      };
     }
     default:
       return null;
@@ -125,7 +136,11 @@ function secondaryWorkspaceTabTargetsEqual(
     return left.workspaceId === right.workspaceId;
   }
   if (left.kind === "commit_diff" && right.kind === "commit_diff") {
-    return left.sha === right.sha;
+    return (
+      left.sha === right.sha &&
+      left.focusPath === right.focusPath &&
+      left.focusRequestId === right.focusRequestId
+    );
   }
   return false;
 }

@@ -1011,6 +1011,7 @@ test("receives server_info on websocket connect", async () => {
     commitsList: true,
     commitBaseClassification: true,
     commitsPagination: true,
+    commitGraphV2: true,
     stagedFileCount: true,
     checkoutFetch: true,
     checkoutScmOperations: true,

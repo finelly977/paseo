@@ -87,6 +87,23 @@ describe("commit diff tab identity", () => {
     );
   });
 
+  it("keeps file focus inside the same commit diff tab identity", () => {
+    expect(
+      buildDeterministicWorkspaceTabId({
+        kind: "commit_diff",
+        sha: "abc123",
+        focusPath: "src/a.ts",
+        focusRequestId: 1,
+      }),
+    ).toBe("commit_diff_abc123");
+    expect(
+      workspaceTabTargetsEqual(
+        { kind: "commit_diff", sha: "abc123", focusPath: "src/a.ts", focusRequestId: 1 },
+        { kind: "commit_diff", sha: "abc123", focusPath: "src/b.ts", focusRequestId: 2 },
+      ),
+    ).toBe(false);
+  });
+
   it("does not collide a commit diff tab id with a file tab id", () => {
     const diffId = buildDeterministicWorkspaceTabId({ kind: "commit_diff", sha: "abc123" });
     const fileId = buildDeterministicWorkspaceTabId({
