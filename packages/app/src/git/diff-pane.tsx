@@ -2579,7 +2579,7 @@ function ScmPanelHeader({
             testID="source-control-refresh"
           >
             {isRefreshing ? (
-              <ThemedActivityIndicator size="small" uniProps={foregroundMutedIconColorMapping} />
+              <ThemedActivityIndicator size={12} uniProps={foregroundMutedIconColorMapping} />
             ) : (
               <ThemedRotateCw size={14} uniProps={foregroundMutedIconColorMapping} />
             )}
