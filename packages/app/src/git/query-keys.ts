@@ -1,4 +1,5 @@
 import type { Query, QueryClient } from "@tanstack/react-query";
+import { normalizeWorkspacePath } from "@/utils/workspace-identity";
 import { prPanePipelineQueryKind, prPaneTimelineQueryKind } from "./pull-request-panel/query-keys";
 
 interface CheckoutQueryIdentity {
@@ -11,14 +12,26 @@ interface CheckoutQueryScope {
   cwd?: string;
 }
 
-type CheckoutQueryKey = readonly unknown[];
+type CheckoutQueryKey = readonly [kind: string, serverId: string, cwd: string, ...rest: unknown[]];
 
 // A commit's file diff is immutable for a given sha+path, so every consumer
 // can share the same long-lived cache policy.
 export const COMMIT_FILE_DIFF_STALE_TIME = 5 * 60_000;
 
+/**
+ * Git 事件使用守护进程解析后的工作目录，界面路由可能仍保留原始斜杠或尾部斜杠。
+ * 查询键统一路径形式，确保推送状态能命中当前挂载的查询。
+ */
+export function normalizeCheckoutCwd(cwd: string): string {
+  const normalized = normalizeWorkspacePath(cwd);
+  if (!normalized) {
+    throw new Error("Git 工作区路径不能为空");
+  }
+  return normalized;
+}
+
 export function checkoutStatusQueryKey(serverId: string, cwd: string) {
-  return ["checkoutStatus", serverId, cwd] as const;
+  return ["checkoutStatus", serverId, normalizeCheckoutCwd(cwd)] as const;
 }
 
 export function checkoutDiffQueryKey(
@@ -28,11 +41,18 @@ export function checkoutDiffQueryKey(
   baseRef?: string,
   ignoreWhitespace?: boolean,
 ) {
-  return ["checkoutDiff", serverId, cwd, mode, baseRef ?? "", ignoreWhitespace === true] as const;
+  return [
+    "checkoutDiff",
+    serverId,
+    normalizeCheckoutCwd(cwd),
+    mode,
+    baseRef ?? "",
+    ignoreWhitespace === true,
+  ] as const;
 }
 
 export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {
-  return ["checkoutPrStatus", serverId, cwd] as const;
+  return ["checkoutPrStatus", serverId, normalizeCheckoutCwd(cwd)] as const;
 }
 
 export function checkoutCommitsQueryKey(
@@ -42,9 +62,9 @@ export function checkoutCommitsQueryKey(
   refs: readonly string[] = [],
 ) {
   if (!refMode) {
-    return ["checkoutCommits", serverId, cwd] as const;
+    return ["checkoutCommits", serverId, normalizeCheckoutCwd(cwd)] as const;
   }
-  return ["checkoutCommits", serverId, cwd, refMode, ...refs] as const;
+  return ["checkoutCommits", serverId, normalizeCheckoutCwd(cwd), refMode, ...refs] as const;
 }
 
 export function checkoutCommitFileDiffQueryKey(
@@ -53,7 +73,7 @@ export function checkoutCommitFileDiffQueryKey(
   sha: string,
   path: string,
 ) {
-  return ["checkoutCommitFileDiff", serverId, cwd, sha, path] as const;
+  return ["checkoutCommitFileDiff", serverId, normalizeCheckoutCwd(cwd), sha, path] as const;
 }
 
 export async function invalidateCheckoutGitQueriesForClient(
@@ -121,13 +141,14 @@ function checkoutQueryPredicate(
   queryKind: CheckoutQueryKey[0],
   scope: CheckoutQueryScope,
 ): (query: Query) => boolean {
+  const normalizedCwd = scope.cwd === undefined ? undefined : normalizeCheckoutCwd(scope.cwd);
   return (query) => {
     const key = query.queryKey;
     return (
       isCheckoutQueryKey(key) &&
       key[0] === queryKind &&
       key[1] === scope.serverId &&
-      (scope.cwd === undefined || key[2] === scope.cwd)
+      (normalizedCwd === undefined || normalizeCheckoutCwd(key[2]) === normalizedCwd)
     );
   };
 }

@@ -442,7 +442,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   filterLabel: {
     maxWidth: 68,
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foregroundMuted,
   },
   tooltipLabel: {

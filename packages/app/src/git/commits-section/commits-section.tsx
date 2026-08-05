@@ -457,11 +457,11 @@ const styles = StyleSheet.create((theme) => ({
     transform: [{ rotate: "90deg" }],
   },
   title: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foreground,
   },
   count: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 12,
     color: theme.colors.foregroundMuted,
   },
   body: {
@@ -482,17 +482,17 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[2],
   },
   emptyText: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foregroundMuted,
   },
   errorRow: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.statusDanger,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[2],
   },
   unsupportedText: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foregroundMuted,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[2],

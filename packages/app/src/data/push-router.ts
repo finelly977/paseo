@@ -6,6 +6,7 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { agentCommandsQueryRoot } from "@/hooks/agent-commands-query";
 import { orderCheckoutDiffFiles } from "@/git/diff-order";
+import { normalizeCheckoutCwd } from "@/git/query-keys";
 import { daemonConfigQueryKey } from "@/data/daemon-config";
 import { providersSnapshotQueryKey, providersSnapshotQueryRoot } from "@/data/providers-snapshot";
 
@@ -705,7 +706,8 @@ function isCheckoutDiffQueryKeyForRoute(queryKey: QueryKey, route: CheckoutDiffR
   return (
     queryKey[0] === "checkoutDiff" &&
     queryKey[1] === route.serverId &&
-    queryKey[2] === route.cwd &&
+    typeof queryKey[2] === "string" &&
+    normalizeCheckoutCwd(queryKey[2]) === normalizeCheckoutCwd(route.cwd) &&
     queryKey[3] === route.compare.mode &&
     queryKey[4] === (route.compare.baseRef ?? "") &&
     queryKey[5] === (route.compare.ignoreWhitespace === true)

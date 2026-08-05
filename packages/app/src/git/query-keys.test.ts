@@ -17,6 +17,18 @@ describe("checkout query keys", () => {
   const serverId = "server-1";
   const cwd = "/tmp/repo";
 
+  it("统一 Windows 斜杠和尾部斜杠，保证状态推送命中当前查询", () => {
+    expect(checkoutStatusQueryKey(serverId, "E:\\repo\\")).toEqual(
+      checkoutStatusQueryKey(serverId, "E:/repo"),
+    );
+    expect(checkoutCommitsQueryKey(serverId, "E:\\repo\\", "auto")).toEqual(
+      checkoutCommitsQueryKey(serverId, "E:/repo", "auto"),
+    );
+    expect(checkoutDiffQueryKey(serverId, "E:\\repo\\", "uncommitted")).toEqual(
+      checkoutDiffQueryKey(serverId, "E:/repo", "uncommitted"),
+    );
+  });
+
   it("invalidates every query for a checkout without touching other checkouts", async () => {
     const queryClient = new QueryClient();
 

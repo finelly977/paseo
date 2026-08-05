@@ -594,7 +594,7 @@ const styles = StyleSheet.create((theme) => ({
   identityText: {
     flex: 1,
     minWidth: 0,
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foreground,
   },
   subject: {
@@ -642,8 +642,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   referenceText: {
     flexShrink: 1,
-    fontSize: 9,
-    lineHeight: 12,
+    fontSize: 11,
+    lineHeight: 13,
     color: theme.colors.accentForeground,
   },
   referenceOverflowText: {
@@ -693,20 +693,20 @@ const styles = StyleSheet.create((theme) => ({
     gap: 6,
   },
   fileName: {
-    fontSize: theme.fontSize.xs,
+    fontSize: 13,
     color: theme.colors.foreground,
     flexShrink: 0,
   },
   fileDirectory: {
     flex: 1,
     minWidth: 0,
-    fontSize: theme.fontSize.xs,
+    fontSize: 11,
     color: theme.colors.foregroundMuted,
   },
   fileStatus: {
     width: 18,
     textAlign: "center",
-    fontSize: theme.fontSize.xs,
+    fontSize: 12,
     color: theme.colors.foregroundMuted,
   },
   tooltipSurface: {

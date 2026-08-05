@@ -155,6 +155,35 @@ describe("applyCheckoutStatusUpdateFromEvent", () => {
     ).toBe(false);
   });
 
+  it("用规范路径同时更新更改列表并使提交图表失效", () => {
+    const queryClient = createQueryClient();
+    const routedCwd = "E:\\repo\\";
+    const pushedCwd = "E:/repo";
+    const statusKey = checkoutStatusQueryKey(serverId, routedCwd);
+    const commitsKey = checkoutCommitsQueryKey(serverId, routedCwd, "auto");
+    queryClient.setQueryData(statusKey, checkoutStatus({ cwd: routedCwd }));
+    queryClient.setQueryData(commitsKey, { pages: [] });
+
+    const pushed = checkoutStatus({
+      cwd: pushedCwd,
+      repoRoot: pushedCwd,
+      isDirty: true,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/app.ts", status: "modified" }],
+      },
+    });
+    applyCheckoutStatusUpdateFromEvent({
+      queryClient,
+      serverId,
+      message: checkoutStatusUpdate(pushed),
+    });
+
+    expect(queryClient.getQueryData(statusKey)).toEqual(pushed);
+    expect(queryClient.getQueryState(commitsKey)?.isInvalidated).toBe(true);
+  });
+
   it("writes the PR status cache when prStatus is present, and skips it otherwise", () => {
     const queryClient = createQueryClient();
     const pushedPr = prStatus({ requestId: "pr-1" });
