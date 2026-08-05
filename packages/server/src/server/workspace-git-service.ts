@@ -1151,7 +1151,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       let watcher: FSWatcher | null = null;
       try {
         watcher = this.deps.watch(watchPath, { recursive: false }, () => {
-          this.scheduleWorkspaceRefresh(target);
+          this.scheduleWorkspaceRefresh(target, {
+            force: true,
+            reason: "git-ref-watch",
+          });
         });
       } catch (error) {
         this.logger.warn(
@@ -1233,7 +1236,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     );
 
     if (target.debounceTimer) {
-      clearTimeout(target.debounceTimer);
+      return;
     }
 
     target.debounceTimer = setTimeout(() => {
@@ -1690,7 +1693,12 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     request: WorkspaceGitRefreshRequest,
   ): Promise<WorkspaceGitRuntimeSnapshot> {
     if (target.refreshState.status === "in-flight") {
-      const needsForcedRefresh = request.force && !target.refreshState.force;
+      const isFileWatchRefresh =
+        request.reason === "git-ref-watch" ||
+        request.reason === "working-tree-watch" ||
+        request.reason === "working-tree-watch-fallback";
+      const needsForcedRefresh =
+        request.force && (!target.refreshState.force || isFileWatchRefresh);
       const needsGitHubRefresh =
         request.force && request.includeForge && !target.refreshState.includeForge;
       if (needsForcedRefresh || needsGitHubRefresh) {

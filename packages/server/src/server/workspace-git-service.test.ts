@@ -1043,6 +1043,129 @@ describe("WorkspaceGitServiceImpl", () => {
     service.dispose();
   });
 
+  test("working tree refresh is not postponed by a continuous stream of watcher events", async () => {
+    const watchCallbacks: Array<{ path: string; callback: () => void }> = [];
+    const watch = vi.fn(
+      (watchPath: string, _options: { recursive: boolean }, callback: () => void) => {
+        watchCallbacks.push({ path: watchPath, callback });
+        return createWatcher();
+      },
+    );
+    let checkoutStatus = createCheckoutStatus(REPO_CWD);
+    const getCheckoutStatus = vi.fn(async () => checkoutStatus);
+    const service = createService({ getCheckoutStatus, watch });
+    const listener = vi.fn();
+    const subscription = service.registerWorkspace({ cwd: REPO_CWD }, listener);
+
+    await service.getSnapshot(REPO_CWD, { force: true, reason: "initial-status" });
+    await flushPromises();
+
+    const repoRootWatch = watchCallbacks.find((entry) => entry.path === REPO_CWD);
+    expect(repoRootWatch).toBeDefined();
+
+    checkoutStatus = createCheckoutStatus(REPO_CWD, {
+      isDirty: true,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/first.ts", status: "modified" }],
+      },
+    });
+    repoRootWatch?.callback();
+    await vi.advanceTimersByTimeAsync(900);
+
+    checkoutStatus = createCheckoutStatus(REPO_CWD, {
+      isDirty: true,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/latest.ts", status: "modified" }],
+      },
+    });
+    repoRootWatch?.callback();
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+
+    expect(getCheckoutStatus).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenLastCalledWith(
+      createSnapshot(REPO_CWD, {
+        git: {
+          isDirty: true,
+          changes: checkoutStatus.changes,
+        },
+      }),
+    );
+
+    subscription.unsubscribe();
+    service.dispose();
+  });
+
+  test("working tree events during a refresh trigger one follow-up read", async () => {
+    const watchCallbacks: Array<{ path: string; callback: () => void }> = [];
+    const watch = vi.fn(
+      (watchPath: string, _options: { recursive: boolean }, callback: () => void) => {
+        watchCallbacks.push({ path: watchPath, callback });
+        return createWatcher();
+      },
+    );
+    const refreshStatus = createDeferred<CheckoutStatusGit>();
+    const getCheckoutStatus = vi
+      .fn<() => Promise<CheckoutStatusGit>>()
+      .mockImplementationOnce(async () => createCheckoutStatus(REPO_CWD))
+      .mockImplementationOnce(async () => refreshStatus.promise)
+      .mockImplementationOnce(async () =>
+        createCheckoutStatus(REPO_CWD, {
+          isDirty: true,
+          changes: {
+            conflicts: [],
+            staged: [],
+            unstaged: [{ path: "src/latest.ts", status: "modified" }],
+          },
+        }),
+      );
+    const service = createService({ getCheckoutStatus, watch });
+    const listener = vi.fn();
+    const subscription = service.registerWorkspace({ cwd: REPO_CWD }, listener);
+
+    await service.getSnapshot(REPO_CWD, { force: true, reason: "initial-status" });
+    await flushPromises();
+
+    const repoRootWatch = watchCallbacks.find((entry) => entry.path === REPO_CWD);
+    expect(repoRootWatch).toBeDefined();
+
+    repoRootWatch?.callback();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    expect(service.getMetrics().workspaceRefreshInFlightCount).toBe(1);
+    expect(getCheckoutStatus).toHaveBeenCalledTimes(2);
+
+    repoRootWatch?.callback();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    expect(service.getMetrics().workspaceRefreshQueuedCount).toBe(1);
+
+    refreshStatus.resolve(createCheckoutStatus(REPO_CWD));
+    await vi.advanceTimersByTimeAsync(0);
+    await flushPromises();
+
+    expect(getCheckoutStatus).toHaveBeenCalledTimes(3);
+    expect(listener).toHaveBeenLastCalledWith(
+      createSnapshot(REPO_CWD, {
+        git: {
+          isDirty: true,
+          changes: {
+            conflicts: [],
+            staged: [],
+            unstaged: [{ path: "src/latest.ts", status: "modified" }],
+          },
+        },
+      }),
+    );
+
+    subscription.unsubscribe();
+    service.dispose();
+  });
+
   test("checkoutDiffCache evicts least-recently-used entries past its size cap", async () => {
     vi.useRealTimers();
     const getCheckoutDiff = vi.fn(async (cwd: string) => ({
