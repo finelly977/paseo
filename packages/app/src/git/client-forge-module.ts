@@ -25,6 +25,8 @@ export interface ForgeUrlGrammar {
   treeInfix: string;
   /** Path infix before the branch in a blob URL, e.g. "/blob/", "/-/blob/". */
   blobInfix: string;
+  /** Path infix before a commit hash, e.g. "/commit/", "/-/commit/". */
+  commitInfix: string;
   /** Line/range anchor, e.g. github "#L1-L5" vs gitlab "#L1-5". */
   lineAnchor: (start: number, end?: number) => string;
 }
@@ -38,6 +40,7 @@ export function GITHUB_LINE_ANCHOR(start: number, end?: number): string {
 export const GITEA_FAMILY_URL_GRAMMAR: ForgeUrlGrammar = {
   treeInfix: "/src/branch/",
   blobInfix: "/src/branch/",
+  commitInfix: "/commit/",
   lineAnchor: GITHUB_LINE_ANCHOR,
 };
 

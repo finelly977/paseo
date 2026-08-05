@@ -146,6 +146,7 @@ export interface WorkspaceDescriptor {
   pinnedAt?: string | null;
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
+  activityAt: Date | null;
   archivingAt: string | null;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
@@ -163,6 +164,8 @@ export function normalizeWorkspaceDescriptor(
     typeof statusEnteredAtRaw === "string" && statusEnteredAtRaw.length > 0
       ? new Date(statusEnteredAtRaw)
       : null;
+  const activityAt =
+    payload.activityAt === null ? null : parseWorkspaceActivityAt(payload.id, payload.activityAt);
   return {
     id: normalizeWorkspaceOpaqueId(payload.id) ?? payload.id,
     projectId: payload.projectId,
@@ -180,6 +183,7 @@ export function normalizeWorkspaceDescriptor(
     pinnedAt: payload.pinnedAt ?? null,
     status: payload.status,
     statusEnteredAt,
+    activityAt,
     archivingAt: payload.archivingAt ?? null,
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
@@ -188,6 +192,14 @@ export function normalizeWorkspaceDescriptor(
     forge: payload.forge,
     project: payload.project,
   };
+}
+
+function parseWorkspaceActivityAt(workspaceId: string, value: string): Date {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`工作区 ${workspaceId} 的最近活动时间无效: ${value}`);
+  }
+  return parsed;
 }
 
 export interface ProjectDescriptor {

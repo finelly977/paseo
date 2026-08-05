@@ -44,10 +44,13 @@ interface Rect {
 interface TooltipContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  close: () => void;
+  cancelClose: () => void;
   triggerRef: React.RefObject<View | null>;
   enabled: boolean;
   openOnPress: boolean;
   delayDuration: number;
+  interactive: boolean;
 }
 
 const TooltipContext = createContext<TooltipContextValue | null>(null);
@@ -231,6 +234,7 @@ export function Tooltip({
   delayDuration = 0,
   enabledOnDesktop = true,
   enabledOnMobile = false,
+  interactive = false,
   children,
 }: PropsWithChildren<{
   open?: boolean;
@@ -239,8 +243,11 @@ export function Tooltip({
   delayDuration?: number;
   enabledOnDesktop?: boolean;
   enabledOnMobile?: boolean;
+  /** 指针移入可交互内容时保持提示层打开。 */
+  interactive?: boolean;
 }>): ReactElement {
   const triggerRef = useRef<View>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isOpen, setIsOpen] = useControllableOpenState({
     open,
     defaultOpen,
@@ -250,16 +257,46 @@ export function Tooltip({
   const isCompact = useIsCompactFormFactor();
   const enabled = isCompact ? enabledOnMobile : enabledOnDesktop;
 
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+  const setOpen = useCallback(
+    (next: boolean) => {
+      cancelClose();
+      setIsOpen(next);
+    },
+    [cancelClose, setIsOpen],
+  );
+  const close = useCallback(() => {
+    cancelClose();
+    if (!interactive) {
+      setIsOpen(false);
+      return;
+    }
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      setIsOpen(false);
+    }, 140);
+  }, [cancelClose, interactive, setIsOpen]);
+
+  useEffect(() => cancelClose, [cancelClose]);
+
   const value = useMemo<TooltipContextValue>(
     () => ({
       open: isOpen,
-      setOpen: setIsOpen,
+      setOpen,
+      close,
+      cancelClose,
       triggerRef,
       enabled,
       openOnPress: isCompact,
       delayDuration,
+      interactive,
     }),
-    [isOpen, setIsOpen, enabled, isCompact, delayDuration],
+    [cancelClose, close, delayDuration, enabled, interactive, isCompact, isOpen, setOpen],
   );
 
   return <TooltipContext.Provider value={value}>{children}</TooltipContext.Provider>;
@@ -305,7 +342,7 @@ export function TooltipTrigger({
 
   const close = useCallback(() => {
     clearOpenTimer();
-    ctx.setOpen(false);
+    ctx.close();
   }, [clearOpenTimer, ctx]);
 
   useEffect(() => {
@@ -509,6 +546,17 @@ export function TooltipContent({
 
   const handleDismiss = useCallback(() => ctx.setOpen(false), [ctx]);
 
+  const handleContentHoverIn = useCallback(() => {
+    if (ctx.interactive) {
+      ctx.cancelClose();
+    }
+  }, [ctx]);
+  const handleContentHoverOut = useCallback(() => {
+    if (ctx.interactive) {
+      ctx.close();
+    }
+  }, [ctx]);
+
   if (!ctx.open || !ctx.enabled) return null;
 
   // On web, avoid React Native's <Modal/> implementation (it uses <dialog> and can
@@ -516,9 +564,11 @@ export function TooltipContent({
   // exact same positioning math as DropdownMenu, without hover feedback loops.
   if (isWeb) {
     return createPortal(
-      <View pointerEvents="none" style={styles.portalOverlay}>
+      <View pointerEvents={ctx.interactive ? "box-none" : "none"} style={styles.portalOverlay}>
         <FloatingSurface
-          pointerEvents="none"
+          pointerEvents={ctx.interactive ? "auto" : "none"}
+          onMouseEnter={ctx.interactive ? handleContentHoverIn : undefined}
+          onMouseLeave={ctx.interactive ? handleContentHoverOut : undefined}
           entering={FadeIn.duration(80)}
           exiting={FadeOut.duration(80)}
           collapsable={false}
@@ -544,7 +594,7 @@ export function TooltipContent({
     >
       <Pressable style={styles.overlay} onPress={handleDismiss}>
         <FloatingSurface
-          pointerEvents="none"
+          pointerEvents={ctx.interactive ? "auto" : "none"}
           entering={FadeIn.duration(80)}
           exiting={FadeOut.duration(80)}
           collapsable={false}

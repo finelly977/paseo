@@ -13,6 +13,9 @@ import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 export interface FloatingSurfaceProps extends Omit<ComponentProps<typeof Animated.View>, "style"> {
   frameStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
+  /** 仅供网页端交互浮层使用的悬停回调。 */
+  onMouseEnter?: (event: unknown) => void;
+  onMouseLeave?: (event: unknown) => void;
 }
 
 export const FloatingSurface = forwardRef<View, FloatingSurfaceProps>(function FloatingSurface(

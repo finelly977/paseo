@@ -3,6 +3,7 @@ import type { WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
 import {
   appendMissingOrderKeys,
+  prependMissingOrderKeys,
   applyStoredOrdering,
   buildSidebarWorkspaceEntries,
   buildSidebarWorkspacePlacementModel,
@@ -27,6 +28,7 @@ function workspaceWithForge(forge: string | undefined, prUrl: string): Workspace
     title: null,
     status: "done",
     statusEnteredAt: null,
+    activityAt: null,
     archivingAt: null,
     diffStat: null,
     scripts: [],
@@ -134,6 +136,7 @@ function workspace(input: {
     name: input.name,
     status: input.status ?? "done",
     statusEnteredAt: input.statusEnteredAt ?? null,
+    activityAt: null,
     archivingAt: null,
     diffStat: null,
     scripts: [],
@@ -192,6 +195,24 @@ describe("appendMissingOrderKeys", () => {
     });
 
     expect(result).toBe(currentOrder);
+  });
+});
+
+describe("prependMissingOrderKeys", () => {
+  it("places newly discovered sessions before the saved order", () => {
+    const result = prependMissingOrderKeys({
+      currentOrder: ["old-b", "old-a"],
+      visibleKeys: ["newest", "newer", "old-a", "old-b"],
+    });
+
+    expect(result).toEqual(["newest", "newer", "old-b", "old-a"]);
+  });
+
+  it("returns the same array when there are no unseen keys", () => {
+    const currentOrder = ["new", "old"];
+    expect(prependMissingOrderKeys({ currentOrder, visibleKeys: ["new", "old"] })).toBe(
+      currentOrder,
+    );
   });
 });
 
@@ -516,7 +537,7 @@ describe("computeSidebarOrderUpdates", () => {
     expect(updates).toEqual({ projectAddedOrder: null, projectOrder: null, workspaceOrders: [] });
   });
 
-  it("appends unseen projects and sessions after the saved order", () => {
+  it("appends unseen projects and places unseen sessions before the saved order", () => {
     const projects = [
       sidebarProject({ projectKey: "project-a", workspaceKeys: ["ws-1", "ws-2"] }),
       sidebarProject({ projectKey: "project-b", workspaceKeys: ["ws-3"] }),
@@ -532,12 +553,22 @@ describe("computeSidebarOrderUpdates", () => {
     expect(updates.projectAddedOrder).toEqual(["project-a", "project-b"]);
     expect(updates.projectOrder).toEqual(["project-a", "project-b"]);
     expect(updates.workspaceOrders).toEqual([
-      { projectKey: "project-a", order: ["srv:ws-1", "srv:ws-2"] },
-      { projectKey: "project-b", order: ["srv:ws-3"] },
+      { projectKey: "project-a", order: ["srv:ws-2", "srv:ws-1"] },
     ]);
   });
 
-  it("preserves the saved workspace order before newly discovered sessions", () => {
+  it("does not persist the activity-based default session order", () => {
+    const updates = computeSidebarOrderUpdates({
+      projects: [sidebarProject({ projectKey: "project-a", workspaceKeys: ["new", "old"] })],
+      persistedProjectAddedOrder: ["project-a"],
+      persistedProjectOrder: ["project-a"],
+      getWorkspaceOrder: () => [],
+    });
+
+    expect(updates.workspaceOrders).toEqual([]);
+  });
+
+  it("preserves the saved workspace order after newly discovered sessions", () => {
     const projects = [
       sidebarProject({
         projectKey: "project-a",
@@ -555,7 +586,7 @@ describe("computeSidebarOrderUpdates", () => {
     expect(updates.workspaceOrders).toEqual([
       {
         projectKey: "project-a",
-        order: ["srv:old-b", "srv:old-a", "srv:newest", "srv:newer"],
+        order: ["srv:newest", "srv:newer", "srv:old-b", "srv:old-a"],
       },
     ]);
   });

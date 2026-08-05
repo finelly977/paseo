@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildForgeBlobUrl, buildForgeBranchTreeUrl, hasForgeWebUrls } from "./forge-url";
+import {
+  buildForgeBlobUrl,
+  buildForgeBranchTreeUrl,
+  buildForgeCommitUrl,
+  hasForgeWebUrls,
+} from "./forge-url";
 
 describe("buildForgeBranchTreeUrl", () => {
   it("builds a branch-specific GitHub tree URL", () => {
@@ -187,6 +192,35 @@ describe("buildForgeBlobUrl", () => {
         remoteUrl: "https://bitbucket.org/acme/repo.git",
         branch: "main",
         path: "src/index.ts",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("buildForgeCommitUrl", () => {
+  it("builds the canonical GitHub commit URL", () => {
+    expect(
+      buildForgeCommitUrl("github", {
+        remoteUrl: "git@github.com:getpaseo/paseo.git",
+        sha: "536c938a4e",
+      }),
+    ).toBe("https://github.com/getpaseo/paseo/commit/536c938a4e");
+  });
+
+  it("uses the GitLab commit path grammar", () => {
+    expect(
+      buildForgeCommitUrl("gitlab", {
+        remoteUrl: "https://gitlab.com/group/project.git",
+        sha: "abcdef12",
+      }),
+    ).toBe("https://gitlab.com/group/project/-/commit/abcdef12");
+  });
+
+  it("rejects invalid commit hashes", () => {
+    expect(
+      buildForgeCommitUrl("github", {
+        remoteUrl: "https://github.com/getpaseo/paseo.git",
+        sha: "main",
       }),
     ).toBeNull();
   });

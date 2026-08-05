@@ -194,14 +194,14 @@ const stylesheet = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[2],
   },
   turnFooterRow: {
-    marginTop: theme.spacing[4],
+    marginTop: theme.spacing[2],
   },
   turnFooterSlot: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
     minHeight: 24,
-    paddingBottom: theme.spacing[6],
+    paddingBottom: theme.spacing[3],
   },
   turnFooterContent: {
     height: 24,

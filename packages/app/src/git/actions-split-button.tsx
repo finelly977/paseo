@@ -152,7 +152,7 @@ export function GitActionsSplitButton({ gitActions, hideLabels }: GitActionsSpli
           >
             {gitActions.primary.status === "pending" ? (
               <ActivityIndicator
-                size="small"
+                size={12}
                 color={theme.colors.foreground}
                 style={styles.splitButtonSpinnerOnly}
               />

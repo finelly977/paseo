@@ -47,8 +47,11 @@ export function getGapBetweenStreamItems(
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return 0;
   }
+  if (item.kind === "compaction" || belowItem.kind === "compaction") {
+    return SPACING[2];
+  }
   if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
-    return SPACING[4];
+    return SPACING[2];
   }
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
     return SPACING[1];
@@ -60,5 +63,5 @@ export function getGapBetweenStreamItems(
     // Split markdown blocks from one assistant turn should read as continuous prose.
     return SPACING[2];
   }
-  return SPACING[4];
+  return SPACING[3];
 }

@@ -85,6 +85,7 @@ export const githubForgeLogic = {
   urlGrammar: {
     treeInfix: "/tree/",
     blobInfix: "/blob/",
+    commitInfix: "/commit/",
     lineAnchor: GITHUB_LINE_ANCHOR,
   },
   facts: defineForgeFacts({

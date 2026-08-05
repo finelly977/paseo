@@ -7,8 +7,10 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import type { CheckoutCommitFile } from "@getpaseo/protocol/messages";
+import * as Clipboard from "expo-clipboard";
 import {
   Cloud,
+  Copy,
   FileDiff,
   GitBranch,
   GitCommitHorizontal,
@@ -32,6 +34,12 @@ import { isNative } from "@/constants/platform";
 import { getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
+import { ForgeBrandIcon } from "@/git/forge-icon";
+import { getForgePresentation } from "@/git/forge";
+import { buildForgeCommitUrl } from "@/git/forge-url";
+import { openExternalUrl } from "@/utils/open-external-url";
+import { useToast } from "@/contexts/toast-context";
+import { toErrorMessage } from "@/utils/error-messages";
 import { CommitGraphNode, CommitGraphPlaceholder } from "./commit-graph-node";
 import type { CommitGraphViewModel } from "./graph-model";
 
@@ -41,11 +49,14 @@ interface CommitRowProps {
   now: Date;
   isSelected: boolean;
   isExpanded: boolean;
+  remoteUrl: string | null;
+  forge: string;
   onToggleExpanded: (sha: string) => void;
   onOpenCommitDiff: (sha: string, path?: string) => void;
 }
 
 const ThemedCloud = withUnistyles(Cloud);
+const ThemedCopy = withUnistyles(Copy);
 const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
@@ -57,6 +68,12 @@ const ThemedUserRound = withUnistyles(UserRound);
 const mutedIconMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
 });
+const graphLinkIconMapping = (theme: { colors: { scmGraphLinkForeground: string } }) => ({
+  color: theme.colors.scmGraphLinkForeground,
+});
+const currentReferenceIconMapping = (theme: {
+  colors: { scmGraphCurrentRefForeground: string };
+}) => ({ color: theme.colors.scmGraphCurrentRefForeground });
 const badgeIconMapping = (theme: { colors: { accentForeground: string } }) => ({
   color: theme.colors.accentForeground,
 });
@@ -117,14 +134,21 @@ function fileRowStyle({ hovered, pressed }: PressableStateCallbackType & { hover
 
 function ReferenceIcon({
   kind,
+  inTooltip = false,
 }: {
   kind: CommitGraphViewModel["commit"]["references"][number]["kind"];
+  inTooltip?: boolean;
 }) {
   switch (kind) {
     case "head":
       return <ThemedLocateFixed size={10} uniProps={badgeIconMapping} />;
     case "branch":
-      return <ThemedGitBranch size={10} uniProps={branchBadgeIconMapping} />;
+      return (
+        <ThemedGitBranch
+          size={10}
+          uniProps={inTooltip ? currentReferenceIconMapping : branchBadgeIconMapping}
+        />
+      );
     case "remote":
       return <ThemedCloud size={10} uniProps={badgeIconMapping} />;
     case "tag":
@@ -176,14 +200,46 @@ function CommitTooltip({
   viewModel,
   authoredAt,
   relativeTime,
+  remoteUrl,
+  forge,
 }: {
   viewModel: CommitGraphViewModel;
   authoredAt: string;
   relativeTime: string;
+  remoteUrl: string | null;
+  forge: string;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const { commit } = viewModel;
   const message = commit.message?.trim() || commit.subject;
+  const forgePresentation = getForgePresentation(forge);
+  const commitUrl = buildForgeCommitUrl(forge, { remoteUrl, sha: commit.sha });
+  const handleCopySha = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      void Clipboard.setStringAsync(commit.sha)
+        .then(() => toast.copied(t("common.states.copied")))
+        .catch((error) => {
+          console.error("[Git 图表] 复制提交标识失败", error);
+          toast.error(toErrorMessage(error));
+        });
+    },
+    [commit.sha, t, toast],
+  );
+  const handleOpenCommit = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      if (!commitUrl) {
+        return;
+      }
+      void openExternalUrl(commitUrl).catch((error) => {
+        console.error("[Git 图表] 打开远端提交失败", error);
+        toast.error(toErrorMessage(error));
+      });
+    },
+    [commitUrl, toast],
+  );
   return (
     <TooltipContent
       side="left"
@@ -193,17 +249,19 @@ function CommitTooltip({
       style={styles.tooltipSurface}
     >
       <View style={styles.tooltip} testID={`commit-tooltip-${commit.shortSha}`}>
-        <View style={styles.tooltipAuthorRow}>
-          <ThemedUserRound size={14} uniProps={mutedIconMapping} />
-          <Text style={styles.tooltipAuthor}>{commit.authorName},</Text>
-          <ThemedHistory size={14} uniProps={mutedIconMapping} />
-          <Text style={styles.tooltipMetadata} numberOfLines={1}>
-            {relativeTime} ({authoredAt})
-          </Text>
+        <View style={styles.tooltipHeaderSection}>
+          <View style={styles.tooltipAuthorRow}>
+            <ThemedUserRound size={14} uniProps={mutedIconMapping} />
+            <Text style={styles.tooltipAuthor}>{commit.authorName},</Text>
+            <ThemedHistory size={14} uniProps={mutedIconMapping} />
+            <Text style={styles.tooltipMetadata} numberOfLines={1}>
+              {relativeTime} ({authoredAt})
+            </Text>
+          </View>
+          <Text style={styles.tooltipMessage}>{message}</Text>
         </View>
-        <Text style={styles.tooltipMessage}>{message}</Text>
         <View style={styles.tooltipSeparator} />
-        <View style={styles.tooltipStats}>
+        <View style={[styles.tooltipSection, styles.tooltipStats]}>
           <Text style={styles.tooltipMetadata}>
             {t("workspace.git.diff.commits.filesChanged", { count: commit.statistics.files })}
             {commit.statistics.additions > 0 ? (
@@ -225,38 +283,74 @@ function CommitTooltip({
         {commit.references.length > 0 ? (
           <>
             <View style={styles.tooltipSeparator} />
-            <View style={styles.tooltipReferences}>
-              {commit.references.map((reference) => (
-                <View
-                  key={reference.id}
-                  style={[
-                    styles.tooltipReference,
-                    reference.kind === "branch" && styles.referenceBranch,
-                    reference.kind === "remote" && styles.referenceRemote,
-                    reference.kind === "tag" && styles.referenceTag,
-                  ]}
-                >
-                  <ReferenceIcon kind={reference.kind} />
-                  <Text
+            <View style={styles.tooltipSection}>
+              <View style={styles.tooltipReferences}>
+                {commit.references.map((reference) => (
+                  <View
+                    key={reference.id}
                     style={[
-                      styles.referenceText,
-                      reference.kind === "branch" && styles.referenceTextBranch,
-                      reference.kind === "tag" && styles.referenceTextTag,
+                      styles.tooltipReference,
+                      reference.kind === "branch" && styles.tooltipReferenceBranch,
+                      reference.kind === "remote" && styles.referenceRemote,
+                      reference.kind === "tag" && styles.referenceTag,
                     ]}
                   >
-                    {reference.name}
-                  </Text>
-                </View>
-              ))}
+                    <ReferenceIcon kind={reference.kind} inTooltip />
+                    <Text
+                      style={[
+                        styles.referenceText,
+                        styles.tooltipReferenceText,
+                        reference.kind === "branch" && styles.tooltipReferenceTextBranch,
+                        reference.kind === "tag" && styles.referenceTextTag,
+                      ]}
+                    >
+                      {reference.name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             </View>
           </>
         ) : null}
         <View style={styles.tooltipSeparator} />
         <View style={styles.tooltipCommitRow}>
-          <ThemedGitCommitHorizontal size={14} uniProps={mutedIconMapping} />
+          <ThemedGitCommitHorizontal size={14} uniProps={graphLinkIconMapping} />
           <Text dataSet={CODE_SURFACE_DATASET} style={styles.tooltipSha} selectable>
             {commit.shortSha}
           </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("common.actions.copy")}
+            hitSlop={4}
+            onPress={handleCopySha}
+            style={inlineButtonStyle}
+          >
+            <ThemedCopy size={13} uniProps={graphLinkIconMapping} />
+          </Pressable>
+          {commitUrl ? (
+            <>
+              <View style={styles.tooltipCommitDivider} />
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={t("workspace.git.pr.actions.openOn", {
+                  brand: forgePresentation.brandLabel,
+                })}
+                onPress={handleOpenCommit}
+                style={styles.tooltipOpenLink}
+              >
+                <ForgeBrandIcon
+                  iconKind={forgePresentation.icon}
+                  size={14}
+                  uniProps={graphLinkIconMapping}
+                />
+                <Text style={styles.tooltipOpenLinkText}>
+                  {t("workspace.git.pr.actions.openOn", {
+                    brand: forgePresentation.brandLabel,
+                  })}
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
         </View>
       </View>
     </TooltipContent>
@@ -333,6 +427,8 @@ export const CommitRow = memo(function CommitRow({
   now,
   isSelected,
   isExpanded,
+  remoteUrl,
+  forge,
   onToggleExpanded,
   onOpenCommitDiff,
 }: CommitRowProps) {
@@ -382,7 +478,7 @@ export const CommitRow = memo(function CommitRow({
 
   return (
     <ContextMenu>
-      <Tooltip delayDuration={350}>
+      <Tooltip delayDuration={350} interactive>
         <TooltipTrigger asChild triggerRefProp="triggerRef">
           <ContextMenuTrigger
             enabledOnMobile
@@ -448,7 +544,13 @@ export const CommitRow = memo(function CommitRow({
             )}
           </ContextMenuTrigger>
         </TooltipTrigger>
-        <CommitTooltip viewModel={viewModel} authoredAt={authoredAt} relativeTime={relativeTime} />
+        <CommitTooltip
+          viewModel={viewModel}
+          authoredAt={authoredAt}
+          relativeTime={relativeTime}
+          remoteUrl={remoteUrl}
+          forge={forge}
+        />
       </Tooltip>
       {isExpanded ? (
         <CommitFiles
@@ -613,40 +715,48 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.base,
   },
   tooltip: {
-    minWidth: 320,
+    minWidth: 400,
     maxWidth: 440,
+    overflow: "hidden",
+  },
+  tooltipHeaderSection: {
     paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+    paddingTop: theme.spacing[2],
+    paddingBottom: 10,
+  },
+  tooltipSection: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: 10,
   },
   tooltipAuthorRow: {
-    minHeight: 22,
+    minHeight: 24,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
   },
   tooltipAuthor: {
     marginRight: theme.spacing[1],
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
-    color: theme.colors.popoverForeground,
+    color: theme.colors.scmGraphLinkForeground,
   },
   tooltipMessage: {
     marginTop: theme.spacing[1],
-    fontSize: theme.fontSize.xs,
-    lineHeight: 18,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 20,
     color: theme.colors.popoverForeground,
   },
   tooltipMetadata: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 18,
     color: theme.colors.foregroundMuted,
   },
   tooltipSeparator: {
     height: theme.borderWidth[1],
-    marginVertical: theme.spacing[2],
     backgroundColor: theme.colors.border,
   },
   tooltipStats: {
-    minHeight: 18,
+    minHeight: 20,
     justifyContent: "center",
   },
   tooltipAdditions: {
@@ -661,24 +771,52 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
   },
   tooltipReference: {
-    minHeight: 18,
+    minHeight: 26,
     maxWidth: 180,
-    paddingHorizontal: 5,
+    paddingHorizontal: 7,
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    borderRadius: 9,
+    gap: theme.spacing[1],
+    borderRadius: 13,
     backgroundColor: theme.colors.accent,
   },
+  tooltipReferenceBranch: {
+    backgroundColor: theme.colors.scmGraphCurrentRefBackground,
+  },
+  tooltipReferenceText: {
+    fontSize: theme.fontSize.sm,
+    lineHeight: 18,
+  },
+  tooltipReferenceTextBranch: {
+    color: theme.colors.scmGraphCurrentRefForeground,
+  },
   tooltipCommitRow: {
+    minHeight: 36,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
   },
   tooltipSha: {
     flexShrink: 1,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sm,
     fontFamily: theme.fontFamily.mono,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.scmGraphLinkForeground,
+  },
+  tooltipCommitDivider: {
+    width: theme.borderWidth[1],
+    height: 14,
+    marginHorizontal: 2,
+    backgroundColor: theme.colors.border,
+  },
+  tooltipOpenLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
+  tooltipOpenLinkText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.scmGraphLinkForeground,
   },
 }));

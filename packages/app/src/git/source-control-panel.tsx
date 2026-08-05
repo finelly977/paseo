@@ -346,7 +346,7 @@ export function SourceControlCommitComposer({
   let buttonIcon: ReactNode;
   let buttonLabel: string;
   if (isPending) {
-    buttonIcon = <ThemedActivityIndicator size="small" uniProps={buttonIconColorMapping} />;
+    buttonIcon = <ThemedActivityIndicator size={12} uniProps={buttonIconColorMapping} />;
     buttonLabel = t("workspace.git.panel.committing");
   } else if (buttonKind === "sync") {
     buttonIcon = <ThemedArrowDownUp size={14} uniProps={buttonIconColorMapping} />;
@@ -515,18 +515,17 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   countBadge: {
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 5,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 9,
+    borderRadius: 8,
     backgroundColor: theme.colors.scmBadgeBackground,
   },
   countText: {
-    height: 11,
-    fontSize: 11,
-    lineHeight: 11,
+    fontSize: 10,
+    lineHeight: 12,
     textAlign: "center",
     includeFontPadding: false,
     color: theme.colors.scmBadgeForeground,

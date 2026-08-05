@@ -22,6 +22,7 @@ function workspace(
     status: input.status ?? "done",
     archivingAt: input.archivingAt ?? null,
     statusEnteredAt: null,
+    activityAt: input.activityAt ?? null,
     diffStat: input.diffStat ?? null,
     scripts: input.scripts ?? [],
   };

@@ -2861,6 +2861,8 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
           refreshSupported={refreshSupported}
           isRefreshing={isRefreshing}
           onRefresh={handleRefresh}
+          remoteUrl={status.remoteUrl ?? null}
+          forge={forge}
           onCommitPress={handleCommitPress}
         />
       ) : null}

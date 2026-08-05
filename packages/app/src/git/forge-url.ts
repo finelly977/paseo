@@ -27,6 +27,11 @@ export interface ForgeBranchTreeUrlInput {
   branch: string | null | undefined;
 }
 
+export interface ForgeCommitUrlInput {
+  remoteUrl: string | null | undefined;
+  sha: string | null | undefined;
+}
+
 interface ForgeWebLocation {
   host: string;
   repo: string;
@@ -119,6 +124,16 @@ export function buildForgeBlobUrl(forge: string, input: ForgeBlobUrlInput): stri
     url += grammar.lineAnchor(input.lineStart, input.lineEnd);
   }
   return url;
+}
+
+export function buildForgeCommitUrl(forge: string, input: ForgeCommitUrlInput): string | null {
+  const grammar = getClientForgeLogicModule(forge)?.urlGrammar;
+  const location = resolveForgeWebLocation(forge, input.remoteUrl);
+  const sha = input.sha?.trim();
+  if (!grammar || !location || !sha || !/^[0-9a-f]+$/i.test(sha)) {
+    return null;
+  }
+  return `https://${location.host}/${location.repo}${grammar.commitInfix}${encodeURIComponent(sha)}`;
 }
 
 /** Whether the forge has web URL builders (i.e. a known URL grammar). */

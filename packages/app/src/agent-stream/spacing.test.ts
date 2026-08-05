@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
-import { getAssistantBlockSpacing, isSameAssistantBlockGroup } from "./spacing";
+import {
+  getAssistantBlockSpacing,
+  getGapBetweenStreamItems,
+  isSameAssistantBlockGroup,
+} from "./spacing";
 
 function assistantBlock(params: {
   id: string;
@@ -119,5 +123,25 @@ describe("getAssistantBlockSpacing", () => {
     expect(
       getAssistantBlockSpacing({ item: headBlock, aboveItem: tailBlock, belowItem: null }),
     ).toBe("compactTop");
+  });
+});
+
+describe("getGapBetweenStreamItems", () => {
+  it("uses one compact turn gap without component-level spacing duplication", () => {
+    expect(
+      getGapBetweenStreamItems(
+        assistantBlock({ id: "answer", blockGroupId: "answer", blockIndex: 0 }),
+        { kind: "user_message", id: "next", text: "next", timestamp: new Date() },
+      ),
+    ).toBe(12);
+  });
+
+  it("keeps compaction separators closer to surrounding content", () => {
+    expect(
+      getGapBetweenStreamItems(
+        assistantBlock({ id: "answer", blockGroupId: "answer", blockIndex: 0 }),
+        { kind: "compaction", id: "compact", status: "completed", timestamp: new Date() },
+      ),
+    ).toBe(8);
   });
 });

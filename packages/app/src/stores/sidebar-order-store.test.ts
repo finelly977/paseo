@@ -33,4 +33,20 @@ describe("migrateSidebarOrderState", () => {
     expect(migrated.projectAddedOrder).toEqual(["project-a", "project-b"]);
     expect(migrated.projectOrder).toEqual(["project-b", "project-a"]);
   });
+
+  it("升级到新版默认顺序时清理旧的会话排序", () => {
+    const migrated = migrateSidebarOrderState(
+      {
+        projectAddedOrder: ["project-a"],
+        projectOrder: ["project-a"],
+        workspaceOrderByProject: {
+          "project-a": ["host-a:old", "host-a:new"],
+        },
+      },
+      2,
+    );
+
+    expect(migrated.workspaceOrderByProject).toEqual({});
+    expect(migrated.projectOrder).toEqual(["project-a"]);
+  });
 });

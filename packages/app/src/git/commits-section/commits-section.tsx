@@ -52,6 +52,8 @@ interface CommitsSectionProps {
   refreshSupported: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
+  remoteUrl: string | null;
+  forge: string;
   onCommitPress: (sha: string, path?: string) => void;
 }
 
@@ -81,6 +83,8 @@ function CommitsSectionContent({
   now,
   selectedSha,
   expandedSha,
+  remoteUrl,
+  forge,
   listRef,
   onToggleExpanded,
   onCommitPress,
@@ -90,6 +94,8 @@ function CommitsSectionContent({
   now: Date;
   selectedSha: string | null;
   expandedSha: string | null;
+  remoteUrl: string | null;
+  forge: string;
   listRef: React.RefObject<FlatList<CommitGraphViewModel> | null>;
   onToggleExpanded: (sha: string) => void;
   onCommitPress: (sha: string, path?: string) => void;
@@ -104,17 +110,19 @@ function CommitsSectionContent({
         now={now}
         isSelected={selectedSha === item.commit.sha}
         isExpanded={expandedSha === item.commit.sha}
+        remoteUrl={remoteUrl}
+        forge={forge}
         onToggleExpanded={onToggleExpanded}
         onOpenCommitDiff={onCommitPress}
       />
     ),
-    [expandedSha, now, onCommitPress, onToggleExpanded, selectedSha],
+    [expandedSha, forge, now, onCommitPress, onToggleExpanded, remoteUrl, selectedSha],
   );
   const renderFooter = useCallback(
     () =>
       isFetchingNextPage ? (
         <ThemedActivityIndicator
-          size="small"
+          size={12}
           uniProps={activityIndicatorColorMapping}
           style={styles.loadingMore}
           testID="commits-section-loading-more"
@@ -178,6 +186,8 @@ export function CommitsSection({
   refreshSupported,
   isRefreshing,
   onRefresh,
+  remoteUrl,
+  forge,
   onCommitPress,
 }: CommitsSectionProps) {
   const { t } = useTranslation();
@@ -391,6 +401,8 @@ export function CommitsSection({
               now={displayNow}
               selectedSha={selectedSha}
               expandedSha={expandedSha}
+              remoteUrl={remoteUrl}
+              forge={forge}
               listRef={listRef}
               onToggleExpanded={handleToggleExpanded}
               onCommitPress={onCommitPress}

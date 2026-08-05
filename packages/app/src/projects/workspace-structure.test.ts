@@ -18,7 +18,12 @@ function project(input: {
   };
 }
 
-function workspace(id: string, projectId: string, root: string): WorkspaceDescriptor {
+function workspace(
+  id: string,
+  projectId: string,
+  root: string,
+  activityAt: Date | null = null,
+): WorkspaceDescriptor {
   return {
     id,
     projectId,
@@ -31,6 +36,7 @@ function workspace(id: string, projectId: string, root: string): WorkspaceDescri
     name: "main",
     status: "done",
     statusEnteredAt: null,
+    activityAt,
     archivingAt: null,
     diffStat: null,
     scripts: [],
@@ -143,5 +149,23 @@ describe("buildWorkspaceStructureProjects", () => {
 
     expect(result).toHaveLength(2);
     expect(new Set(result.map((item) => item.projectKey)).size).toBe(2);
+  });
+
+  test("orders sessions from newest activity to oldest", () => {
+    const result = buildWorkspaceStructureProjects({
+      sessions: [
+        {
+          serverId: "host-a",
+          projects: [project({ id: "prj_a", key: "project-a", root: "/a/app" })],
+          workspaces: [
+            workspace("old", "prj_a", "/a/app", new Date("2026-08-01T08:00:00.000Z")),
+            workspace("new", "prj_a", "/a/app", new Date("2026-08-05T08:00:00.000Z")),
+            workspace("middle", "prj_a", "/a/app", new Date("2026-08-03T08:00:00.000Z")),
+          ],
+        },
+      ],
+    });
+
+    expect(result[0]?.workspaceKeys).toEqual(["host-a:new", "host-a:middle", "host-a:old"]);
   });
 });

@@ -2637,7 +2637,7 @@ const styles = StyleSheet.create((theme) => ({
     marginBottom: theme.spacing[1],
   },
   projectBlock: {
-    marginBottom: theme.spacing[1],
+    marginBottom: 2,
   },
   workspaceListContainer: {},
   newWorkspaceGhostRow: {
@@ -2698,11 +2698,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectRow: {
     position: "relative",
-    minHeight: 36,
-    paddingVertical: theme.spacing[2],
+    minHeight: { xs: 36, md: 32 },
+    paddingVertical: { xs: theme.spacing[2], md: theme.spacing[1] },
     paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
-    marginBottom: theme.spacing[1],
+    marginBottom: { xs: theme.spacing[1], md: 2 },
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -2836,13 +2836,13 @@ const styles = StyleSheet.create((theme) => ({
   projectActionTooltipShortcut: {},
   projectShortcutBadgeOverlay: {
     position: "absolute",
-    top: theme.spacing[2] + 1,
+    top: { xs: theme.spacing[2] + 1, md: theme.spacing[1] + 1 },
     right: theme.spacing[2],
   },
   workspaceRow: {
-    minHeight: 36,
-    marginBottom: theme.spacing[1],
-    paddingVertical: theme.spacing[2],
+    minHeight: { xs: 36, md: 30 },
+    marginBottom: { xs: theme.spacing[1], md: 2 },
+    paddingVertical: { xs: theme.spacing[2], md: theme.spacing[1] },
     paddingLeft: theme.spacing[2],
     paddingRight: theme.spacing[3],
     borderRadius: theme.borderRadius.lg,

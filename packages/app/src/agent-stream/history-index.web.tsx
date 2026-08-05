@@ -40,6 +40,43 @@ const ACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: true } as const;
 const INACTIVE_MARKER_ACCESSIBILITY_STATE = { selected: false } as const;
 const MARKER_HIT_HEIGHT = 12;
 const RAIL_BOTTOM_EPSILON = 2;
+const CONTENT_BOTTOM_EPSILON = 2;
+
+interface MountedHistoryIndexEntry {
+  entry: ConversationHistoryIndexEntry;
+  top: number;
+  height: number;
+}
+
+export function resolveActiveHistoryIndexEntry(input: {
+  entries: readonly ConversationHistoryIndexEntry[];
+  mountedEntries: readonly MountedHistoryIndexEntry[];
+  targetY: number;
+  isAtBottom: boolean;
+}): ConversationHistoryIndexEntry | null {
+  if (input.entries.length === 0) {
+    return null;
+  }
+  if (input.isAtBottom) {
+    return input.entries[input.entries.length - 1] ?? null;
+  }
+
+  let closestBefore: MountedHistoryIndexEntry | null = null;
+  let firstMounted: MountedHistoryIndexEntry | null = null;
+  for (const mounted of input.mountedEntries) {
+    const center = mounted.top + mounted.height / 2;
+    if (!firstMounted || center < firstMounted.top + firstMounted.height / 2) {
+      firstMounted = mounted;
+    }
+    if (
+      center <= input.targetY &&
+      (!closestBefore || center > closestBefore.top + closestBefore.height / 2)
+    ) {
+      closestBefore = mounted;
+    }
+  }
+  return (closestBefore ?? firstMounted)?.entry ?? null;
+}
 
 function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
   const candidate = root?.parentElement?.querySelector('[data-testid="agent-chat-scroll"]');
@@ -359,8 +396,7 @@ export function ConversationHistoryIndex({
     }
     const bounds = scrollContainer.getBoundingClientRect();
     const targetY = bounds.top + bounds.height * 0.35;
-    let closestEntry: ConversationHistoryIndexEntry | null = null;
-    let closestDistance = Number.POSITIVE_INFINITY;
+    const mountedEntries: MountedHistoryIndexEntry[] = [];
     const mountedTargets = scrollContainer.querySelectorAll<HTMLElement>(
       '[id^="paseo-stream-item-"]',
     );
@@ -370,12 +406,16 @@ export function ConversationHistoryIndex({
         continue;
       }
       const targetBounds = target.getBoundingClientRect();
-      const distance = Math.abs(targetBounds.top + targetBounds.height / 2 - targetY);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestEntry = entry;
-      }
+      mountedEntries.push({ entry, top: targetBounds.top, height: targetBounds.height });
     }
+    const distanceFromBottom =
+      scrollContainer.scrollHeight - scrollContainer.clientHeight - scrollContainer.scrollTop;
+    const closestEntry = resolveActiveHistoryIndexEntry({
+      entries: visibleEntries,
+      mountedEntries,
+      targetY,
+      isAtBottom: distanceFromBottom <= CONTENT_BOTTOM_EPSILON,
+    });
     if (!closestEntry) {
       setActiveId(null);
       return;
@@ -409,10 +449,17 @@ export function ConversationHistoryIndex({
     };
     scrollContainer.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
+    const contentObserver = new MutationObserver(scheduleUpdate);
+    contentObserver.observe(scrollContainer, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     scheduleUpdate();
     return () => {
       scrollContainer.removeEventListener("scroll", scheduleUpdate);
       window.removeEventListener("resize", scheduleUpdate);
+      contentObserver.disconnect();
       if (frame !== null) {
         cancelAnimationFrame(frame);
       }

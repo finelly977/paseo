@@ -206,6 +206,9 @@ const lightSemanticColors = {
   scmStatusDeleted: "#ad0707",
   scmStatusUntracked: "#007100",
   scmStatusConflict: "#ad0707",
+  scmGraphLinkForeground: "#006ab1",
+  scmGraphCurrentRefBackground: "#007acc",
+  scmGraphCurrentRefForeground: "#ffffff",
 
   terminal: {
     background: "#ffffff",
@@ -339,6 +342,9 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
     scmStatusDeleted: "#c74e39",
     scmStatusUntracked: "#73c991",
     scmStatusConflict: "#e4676b",
+    scmGraphLinkForeground: "#4daafc",
+    scmGraphCurrentRefBackground: "#3794ff",
+    scmGraphCurrentRefForeground: "#1f1f1f",
 
     terminal: {
       background: tint.surface0,

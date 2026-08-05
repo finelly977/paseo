@@ -71,7 +71,10 @@ function normalizeLegacyWorkspaceKey(serverId: string, rawWorkspaceKey: string):
   return workspaceKey.startsWith(serverPrefix) ? workspaceKey : `${serverPrefix}${workspaceKey}`;
 }
 
-export function migrateSidebarOrderState(persistedState: unknown): {
+export function migrateSidebarOrderState(
+  persistedState: unknown,
+  persistedVersion = 3,
+): {
   projectAddedOrder: string[];
   projectOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
@@ -109,7 +112,11 @@ export function migrateSidebarOrderState(persistedState: unknown): {
   }
 
   const projectAddedOrder = normalizeKeys(state.projectAddedOrder ?? projectOrder);
-  return { projectAddedOrder, projectOrder, workspaceOrderByProject };
+  return {
+    projectAddedOrder,
+    projectOrder,
+    workspaceOrderByProject: persistedVersion < 3 ? {} : workspaceOrderByProject,
+  };
 }
 
 export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
@@ -153,7 +160,7 @@ export const useSidebarOrderStore = create<SidebarOrderStoreState>()(
         projectOrder: state.projectOrder,
         workspaceOrderByProject: state.workspaceOrderByProject,
       }),
-      version: 2,
+      version: 3,
       migrate: migrateSidebarOrderState,
     },
   ),

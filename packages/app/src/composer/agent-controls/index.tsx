@@ -1434,7 +1434,10 @@ export const AgentControls = memo(function AgentControls({
     entries: snapshotEntries,
     isRefreshing: snapshotIsRefreshing,
     refresh: refreshSnapshot,
-  } = useProvidersSnapshot(serverId, { cwd: agent?.cwd, enabled: false });
+  } = useProvidersSnapshot(serverId, {
+    cwd: agent?.cwd,
+    enabled: isPaneFocused && Boolean(agent),
+  });
 
   const snapshotSelectedEntry = useMemo(
     () => resolveSnapshotSelectedEntry(snapshotEntries, agent?.provider),

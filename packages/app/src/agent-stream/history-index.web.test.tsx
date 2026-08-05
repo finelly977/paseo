@@ -5,7 +5,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
-import { ConversationHistoryIndex } from "./history-index.web";
+import { ConversationHistoryIndex, resolveActiveHistoryIndexEntry } from "./history-index.web";
 
 const { matchMediaMock, theme } = vi.hoisted(() => {
   const hoistedMatchMediaMock = vi.fn((_query: string) => ({
@@ -253,5 +253,38 @@ describe("ConversationHistoryIndex web rail", () => {
     // 波浪半径 = 480 * 0.14 ≈ 67px，约 8 个刻度：可见区域内远离指针处完全不动
     expect(scales[900]).toBe(1);
     expect(scales[0]).toBe(1);
+  });
+});
+
+describe("resolveActiveHistoryIndexEntry", () => {
+  it("keeps the newest turn active while tool calls extend a conversation at the bottom", () => {
+    const entries = [entry(0), entry(1)];
+    const active = resolveActiveHistoryIndexEntry({
+      entries,
+      mountedEntries: [
+        { entry: entries[0]!, top: 180, height: 40 },
+        { entry: entries[1]!, top: 620, height: 40 },
+      ],
+      targetY: 320,
+      isAtBottom: true,
+    });
+
+    expect(active?.id).toBe("turn-1");
+  });
+
+  it("uses the nearest preceding user turn after the user scrolls upward", () => {
+    const entries = [entry(0), entry(1), entry(2)];
+    const active = resolveActiveHistoryIndexEntry({
+      entries,
+      mountedEntries: [
+        { entry: entries[0]!, top: 100, height: 40 },
+        { entry: entries[1]!, top: 280, height: 40 },
+        { entry: entries[2]!, top: 500, height: 40 },
+      ],
+      targetY: 360,
+      isAtBottom: false,
+    });
+
+    expect(active?.id).toBe("turn-1");
   });
 });

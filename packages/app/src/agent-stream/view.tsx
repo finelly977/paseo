@@ -1773,8 +1773,8 @@ const stylesheet = StyleSheet.create((theme) => ({
     },
   },
   forwardListContentContainer: {
-    paddingTop: theme.spacing[4],
-    paddingBottom: theme.spacing[4],
+    paddingTop: theme.spacing[3],
+    paddingBottom: theme.spacing[3],
   },
   list: {
     flex: 1,

@@ -134,7 +134,7 @@ function GraphActionButton({
           testID={`git-graph-action-${kind}`}
         >
           {pending ? (
-            <ThemedActivityIndicator size="small" uniProps={iconColorMapping} />
+            <ThemedActivityIndicator size={12} uniProps={iconColorMapping} />
           ) : (
             <GraphActionIcon kind={kind} />
           )}

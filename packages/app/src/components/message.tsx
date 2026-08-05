@@ -926,7 +926,7 @@ interface AssistantMessageProps {
 
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
-    paddingVertical: theme.spacing[3],
+    paddingVertical: 0,
     ...(isWeb ? { userSelect: "text" as const } : {}),
   },
   containerCompactTop: {
@@ -2157,7 +2157,7 @@ interface SpeakMessageProps {
 
 const speakMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
-    paddingVertical: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
   },
   containerSpacing: {
     marginBottom: theme.spacing[4],
@@ -2406,7 +2406,7 @@ const compactionStylesheet = StyleSheet.create((theme) => ({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
     paddingHorizontal: theme.spacing[4],
     gap: theme.spacing[2],
   },

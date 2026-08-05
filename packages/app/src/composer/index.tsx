@@ -142,7 +142,7 @@ function noop() {}
 const noopCallback = () => {};
 
 function resolveComposerButtonIconSize(): number {
-  return isWeb ? ICON_SIZE.md : ICON_SIZE.lg;
+  return isWeb ? ICON_SIZE.sm : ICON_SIZE.md;
 }
 
 function resolveIsComposerLocked(
@@ -884,7 +884,7 @@ function ComposerCancelButton({
     ? t("composer.cancel.cancelingAgent")
     : t("composer.cancel.stopAgent");
   const icon = isCancellingAgent ? (
-    <ActivityIndicator size="small" color="white" />
+    <ActivityIndicator size={buttonIconSize} color="white" />
   ) : (
     <Square size={buttonIconSize} color="white" fill="white" />
   );
@@ -2179,8 +2179,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     gap: theme.spacing[3],
   },
   cancelButton: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.palette.red[600],
     alignItems: "center",

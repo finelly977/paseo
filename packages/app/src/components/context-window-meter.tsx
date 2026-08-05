@@ -119,7 +119,9 @@ export function ContextWindowMeter({
     (nextOpen: boolean) => {
       setIsTooltipOpen(nextOpen);
       if (nextOpen) {
-        void refreshProviderUsage().catch(() => {});
+        void refreshProviderUsage().catch((error) => {
+          console.error("[上下文窗口] 刷新提供商用量失败", error);
+        });
       }
     },
     [refreshProviderUsage],
@@ -140,7 +142,6 @@ export function ContextWindowMeter({
           width={geometry.svgSize}
           height={geometry.svgSize}
           viewBox={`0 0 ${geometry.svgSize} ${geometry.svgSize}`}
-          style={styles.svg}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
         >
@@ -187,7 +188,6 @@ export function ContextWindowMeter({
             width={svgSize}
             height={svgSize}
             viewBox={`0 0 ${svgSize} ${svgSize}`}
-            style={styles.svg}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
           >
@@ -209,6 +209,8 @@ export function ContextWindowMeter({
               strokeLinecap="round"
               strokeDasharray={circumference}
               strokeDashoffset={dashOffset}
+              rotation={-90}
+              origin={`${center}, ${center}`}
             />
           </Svg>
           {showPercentage ? (
@@ -255,9 +257,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     gap: theme.spacing[1],
     borderRadius: theme.borderRadius.full,
-  },
-  svg: {
-    transform: [{ rotate: "-90deg" }],
   },
   percentageLabel: {
     color: theme.colors.foregroundMuted,

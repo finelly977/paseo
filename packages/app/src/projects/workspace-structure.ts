@@ -34,7 +34,12 @@ interface ProjectDraft {
   projectKind: WorkspaceDescriptor["projectKind"];
   iconWorkingDir: string;
   hosts: Map<string, WorkspaceStructureHostPlacement>;
-  workspaces: Array<{ workspaceId: string; workspaceName: string; workspaceKey: string }>;
+  workspaces: Array<{
+    workspaceId: string;
+    workspaceName: string;
+    workspaceKey: string;
+    activityAt: Date | null;
+  }>;
 }
 
 /** The single app boundary that turns host-local projects into grouped display projects. */
@@ -73,6 +78,7 @@ export function buildWorkspaceStructureProjects(input: {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
         workspaceKey: `${session.serverId}:${workspace.id}`,
+        activityAt: workspace.activityAt,
       });
     }
   }
@@ -146,13 +152,17 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 }
 
 function compareWorkspaceStructureItems(
-  left: { workspaceId: string; workspaceName: string },
-  right: { workspaceId: string; workspaceName: string },
+  left: { workspaceId: string; workspaceName: string; activityAt: Date | null },
+  right: { workspaceId: string; workspaceName: string; activityAt: Date | null },
 ): number {
+  const leftActivity = left.activityAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const rightActivity = right.activityAt?.getTime() ?? Number.NEGATIVE_INFINITY;
   return (
+    rightActivity - leftActivity ||
     left.workspaceName.localeCompare(right.workspaceName, undefined, {
       numeric: true,
       sensitivity: "base",
-    }) || left.workspaceId.localeCompare(right.workspaceId, undefined, { sensitivity: "base" })
+    }) ||
+    left.workspaceId.localeCompare(right.workspaceId, undefined, { sensitivity: "base" })
   );
 }

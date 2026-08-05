@@ -145,6 +145,7 @@ export const gitlabForgeLogic = {
   urlGrammar: {
     treeInfix: "/-/tree/",
     blobInfix: "/-/blob/",
+    commitInfix: "/-/commit/",
     lineAnchor: gitlabLineAnchor,
   },
   facts: defineForgeFacts({
