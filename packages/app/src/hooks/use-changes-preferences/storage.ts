@@ -11,6 +11,7 @@ const changesPreferencesSchema = z.object({
   wrapLines: z.boolean().optional(),
   hideWhitespace: z.boolean().optional(),
   commitsCollapsed: z.boolean().optional(),
+  commitsHeight: z.number().finite().min(140).max(720).optional(),
 });
 
 export interface ChangesPreferences {
@@ -19,6 +20,7 @@ export interface ChangesPreferences {
   wrapLines: boolean;
   hideWhitespace: boolean;
   commitsCollapsed: boolean;
+  commitsHeight: number;
 }
 
 export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
@@ -27,6 +29,7 @@ export const DEFAULT_CHANGES_PREFERENCES: ChangesPreferences = {
   wrapLines: false,
   hideWhitespace: false,
   commitsCollapsed: false,
+  commitsHeight: 520,
 };
 
 export interface KeyValueStorage {

@@ -3,6 +3,9 @@ import type { ClassifiedCheckoutCommit } from "@/git/use-commits-query";
 
 export const COMMIT_GRAPH_ROW_HEIGHT = 22;
 export const COMMIT_GRAPH_LANE_WIDTH = 11;
+export const MIN_COMMIT_GRAPH_HEIGHT = 140;
+export const MAX_COMMIT_GRAPH_HEIGHT = 720;
+const MAX_COMMIT_GRAPH_VIEWPORT_RATIO = 0.7;
 
 export type CommitGraphColorRole =
   | "current"
@@ -27,6 +30,19 @@ export interface CommitGraphViewModel {
 }
 
 const LANE_COLORS: CommitGraphColorRole[] = ["lane-1", "lane-2", "lane-3", "lane-4", "lane-5"];
+
+export function resolveCommitGraphHeight(requestedHeight: number, viewportHeight: number): number {
+  "worklet";
+  const viewportMaximum = Math.max(
+    MIN_COMMIT_GRAPH_HEIGHT,
+    viewportHeight * MAX_COMMIT_GRAPH_VIEWPORT_RATIO,
+  );
+  return Math.min(
+    Math.max(requestedHeight, MIN_COMMIT_GRAPH_HEIGHT),
+    MAX_COMMIT_GRAPH_HEIGHT,
+    viewportMaximum,
+  );
+}
 
 function cloneLanes(lanes: CommitGraphLane[]): CommitGraphLane[] {
   return lanes.map((lane) => ({ ...lane }));

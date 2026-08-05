@@ -32,6 +32,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       wrapLines: true,
       hideWhitespace: false,
       commitsCollapsed: false,
+      commitsHeight: 520,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(JSON.stringify(result));
   });
@@ -55,6 +56,7 @@ describe("loadChangesPreferencesFromStorage", () => {
       hideWhitespace: true,
       wrapLines: false,
       commitsCollapsed: false,
+      commitsHeight: 520,
     });
     expect(storage.entries.get(CHANGES_PREFERENCES_STORAGE_KEY)).toBe(persisted);
     expect(storage.entries.size).toBe(1);
@@ -79,6 +81,30 @@ describe("changes preferences commitsCollapsed", () => {
   it("rejects invalid commitsCollapsed values", async () => {
     const storage = createInMemoryKeyValueStorage({
       [CHANGES_PREFERENCES_STORAGE_KEY]: JSON.stringify({ commitsCollapsed: "nope" }),
+    });
+
+    await expect(loadChangesPreferencesFromStorage(storage)).rejects.toThrow();
+  });
+});
+
+describe("changes preferences commitsHeight", () => {
+  it("defaults to 520 pixels", () => {
+    expect(DEFAULT_CHANGES_PREFERENCES.commitsHeight).toBe(520);
+  });
+
+  it("round-trips a valid graph height", async () => {
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: JSON.stringify({ commitsHeight: 436 }),
+    });
+
+    const prefs = await loadChangesPreferencesFromStorage(storage);
+
+    expect(prefs.commitsHeight).toBe(436);
+  });
+
+  it("rejects a graph height outside the supported range", async () => {
+    const storage = createInMemoryKeyValueStorage({
+      [CHANGES_PREFERENCES_STORAGE_KEY]: JSON.stringify({ commitsHeight: 900 }),
     });
 
     await expect(loadChangesPreferencesFromStorage(storage)).rejects.toThrow();

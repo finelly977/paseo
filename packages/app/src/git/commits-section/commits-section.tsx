@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  Text,
+  View,
+  useWindowDimensions,
+  StyleSheet as RNStyleSheet,
+} from "react-native";
+import { Gesture } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -16,9 +26,11 @@ import { CommitRow } from "./commit-row";
 import {
   buildCommitGraphViewModels,
   getCommitGraphWidth,
+  resolveCommitGraphHeight,
   type CommitGraphViewModel,
 } from "./graph-model";
 import { GraphActions } from "./graph-actions";
+import { GraphResizeHandle } from "./graph-resize-handle";
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const AUTO_REF_FILTER: CheckoutCommitRefFilter = { mode: "auto" };
@@ -71,7 +83,6 @@ function CommitsSectionContent({
   selectedSha,
   expandedSha,
   listRef,
-  onSelect,
   onToggleExpanded,
   onCommitPress,
 }: {
@@ -82,7 +93,6 @@ function CommitsSectionContent({
   selectedSha: string | null;
   expandedSha: string | null;
   listRef: React.RefObject<FlatList<CommitGraphViewModel> | null>;
-  onSelect: (sha: string) => void;
   onToggleExpanded: (sha: string) => void;
   onCommitPress: (sha: string, path?: string) => void;
 }) {
@@ -96,12 +106,11 @@ function CommitsSectionContent({
         now={now}
         isSelected={selectedSha === item.commit.sha}
         isExpanded={expandedSha === item.commit.sha}
-        onSelect={onSelect}
         onToggleExpanded={onToggleExpanded}
         onOpenCommitDiff={onCommitPress}
       />
     ),
-    [expandedSha, graphWidth, now, onCommitPress, onSelect, onToggleExpanded, selectedSha],
+    [expandedSha, graphWidth, now, onCommitPress, onToggleExpanded, selectedSha],
   );
   const renderFooter = useCallback(
     () =>
@@ -174,9 +183,13 @@ export function CommitsSection({
   onCommitPress,
 }: CommitsSectionProps) {
   const { t } = useTranslation();
+  const { height: viewportHeight } = useWindowDimensions();
   const { preferences, updatePreferences } = useChangesPreferences();
   const isPanelActive = useRetainedPanelActive();
   const collapsed = preferences.commitsCollapsed;
+  const resolvedHeight = resolveCommitGraphHeight(preferences.commitsHeight, viewportHeight);
+  const resizeHeight = useSharedValue(resolvedHeight);
+  const startResizeHeight = useSharedValue(resolvedHeight);
   const [now, setNow] = useState(() => new Date());
   const filterIdentity = `${serverId}\u0000${cwd}`;
   const [filterState, setFilterState] = useState<{
@@ -207,6 +220,10 @@ export function CommitsSection({
     filter,
   });
   const loadedData = query.status === "loaded" ? query.data : null;
+  useEffect(() => {
+    resizeHeight.value = resolvedHeight;
+  }, [resizeHeight, resolvedHeight]);
+
   useEffect(() => {
     if (
       loadedData &&
@@ -256,16 +273,38 @@ export function CommitsSection({
     }
     void updatePreferences({ commitsCollapsed: !collapsed });
   }, [collapsed, updatePreferences]);
+  const persistGraphHeight = useCallback(
+    (height: number) => {
+      void updatePreferences({ commitsHeight: height });
+    },
+    [updatePreferences],
+  );
+  const resizeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!collapsed)
+        .hitSlop({ top: 8, bottom: 8, left: 0, right: 0 })
+        .onStart(() => {
+          startResizeHeight.value = resizeHeight.value;
+        })
+        .onUpdate((event) => {
+          resizeHeight.value = resolveCommitGraphHeight(
+            startResizeHeight.value - event.translationY,
+            viewportHeight,
+          );
+        })
+        .onEnd(() => {
+          runOnJS(persistGraphHeight)(resizeHeight.value);
+        }),
+    [collapsed, persistGraphHeight, resizeHeight, startResizeHeight, viewportHeight],
+  );
+  const expandedHeightStyle = useAnimatedStyle(() => ({ height: resizeHeight.value }));
   const handleFilterChange = useCallback(
     (nextFilter: CheckoutCommitRefFilter) => {
       setFilterState({ identity: filterIdentity, filter: nextFilter });
       setSelectedState({ identity: filterIdentity, sha: null });
       setExpandedState({ identity: filterIdentity, sha: null });
     },
-    [filterIdentity],
-  );
-  const handleSelect = useCallback(
-    (sha: string) => setSelectedState({ identity: filterIdentity, sha }),
     [filterIdentity],
   );
   const handleToggleExpanded = useCallback(
@@ -303,75 +342,85 @@ export function CommitsSection({
   const commitCount = query.status === "loaded" ? query.data.commits.length : null;
 
   return (
-    <View style={[styles.container, collapsed && styles.containerCollapsed]}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          testID="commits-section-header"
-          onPress={handleToggleSection}
-          style={styles.headerToggle}
-        >
-          <View style={headerChevronStyle}>
-            <ThemedChevron size={14} uniProps={chevronColorMapping} />
-          </View>
-          <Text style={styles.title}>{t("workspace.git.diff.commits.title")}</Text>
-          {commitCount === null ? null : (
-            <Text
-              style={styles.count}
-              accessibilityLabel={t("workspace.git.diff.commits.countLabel", {
-                count: commitCount,
-              })}
-            >
-              {commitCount}
-            </Text>
-          )}
-        </Pressable>
-        <GraphActions
-          gitActions={gitActions}
-          availableRefs={availableRefs}
-          filter={filter}
-          onFilterChange={handleFilterChange}
-          onLocateHead={handleLocateHead}
-          canLocateHead={headIndex !== -1}
-          fetchSupported={fetchSupported}
-          hasRemote={hasRemote}
-          isFetching={isFetching}
-          onFetch={onFetch}
-          refreshSupported={refreshSupported}
-          isRefreshing={isRefreshing}
-          onRefresh={onRefresh}
-        />
-      </View>
-      {collapsed ? null : (
-        <View style={styles.body}>
-          <CommitsSectionContent
-            query={query}
-            viewModels={viewModels}
-            graphWidth={graphWidth}
-            now={displayNow}
-            selectedSha={selectedSha}
-            expandedSha={expandedSha}
-            listRef={listRef}
-            onSelect={handleSelect}
-            onToggleExpanded={handleToggleExpanded}
-            onCommitPress={onCommitPress}
+    <View style={styles.container}>
+      <Animated.View
+        style={[animatedStaticStyles.resizableContainer, !collapsed && expandedHeightStyle]}
+      >
+        {collapsed ? null : (
+          <GraphResizeHandle
+            accessibilityLabel={t("workspace.git.diff.commits.resize")}
+            gesture={resizeGesture}
+          />
+        )}
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            testID="commits-section-header"
+            onPress={handleToggleSection}
+            style={styles.headerToggle}
+          >
+            <View style={headerChevronStyle}>
+              <ThemedChevron size={14} uniProps={chevronColorMapping} />
+            </View>
+            <Text style={styles.title}>{t("workspace.git.diff.commits.title")}</Text>
+            {commitCount === null ? null : (
+              <Text
+                style={styles.count}
+                accessibilityLabel={t("workspace.git.diff.commits.countLabel", {
+                  count: commitCount,
+                })}
+              >
+                {commitCount}
+              </Text>
+            )}
+          </Pressable>
+          <GraphActions
+            gitActions={gitActions}
+            availableRefs={availableRefs}
+            filter={filter}
+            onFilterChange={handleFilterChange}
+            onLocateHead={handleLocateHead}
+            canLocateHead={headIndex !== -1}
+            fetchSupported={fetchSupported}
+            hasRemote={hasRemote}
+            isFetching={isFetching}
+            onFetch={onFetch}
+            refreshSupported={refreshSupported}
+            isRefreshing={isRefreshing}
+            onRefresh={onRefresh}
           />
         </View>
-      )}
+        {collapsed ? null : (
+          <View style={styles.body}>
+            <CommitsSectionContent
+              query={query}
+              viewModels={viewModels}
+              graphWidth={graphWidth}
+              now={displayNow}
+              selectedSha={selectedSha}
+              expandedSha={expandedSha}
+              listRef={listRef}
+              onToggleExpanded={handleToggleExpanded}
+              onCommitPress={onCommitPress}
+            />
+          </View>
+        )}
+      </Animated.View>
     </View>
   );
 }
 
+const animatedStaticStyles = RNStyleSheet.create({
+  resizableContainer: {
+    position: "relative",
+  },
+});
+
 const styles = StyleSheet.create((theme) => ({
   container: {
-    flex: 1,
-    minHeight: 140,
+    flexShrink: 0,
     borderTopWidth: theme.borderWidth[1],
     borderTopColor: theme.colors.border,
-  },
-  containerCollapsed: {
-    flex: 0,
-    minHeight: 22,
   },
   containerUnsupported: {
     flex: 0,

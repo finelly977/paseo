@@ -127,9 +127,9 @@ export function SourceControlSectionHeader({
           {title}
         </Text>
         {count !== undefined && count !== null ? (
-          <Text style={styles.count} accessibilityLabel={`${title}: ${count}`}>
-            {count}
-          </Text>
+          <View style={styles.countBadge} accessibilityLabel={`${title}: ${count}`}>
+            <Text style={styles.countText}>{count}</Text>
+          </View>
         ) : null}
       </Pressable>
       {children ? <View style={styles.changesHeadingActions}>{children}</View> : null}
@@ -514,17 +514,22 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  count: {
+  countBadge: {
     minWidth: 18,
-    minHeight: 18,
+    height: 18,
     paddingHorizontal: 5,
-    textAlign: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: theme.colors.scmBadgeBackground,
+  },
+  countText: {
+    height: 11,
     fontSize: 11,
     lineHeight: 11,
+    textAlign: "center",
+    includeFontPadding: false,
     color: theme.colors.scmBadgeForeground,
-    backgroundColor: theme.colors.scmBadgeBackground,
-    borderRadius: 11,
-    overflow: "hidden",
   },
   changesHeadingActions: {
     flex: 1,

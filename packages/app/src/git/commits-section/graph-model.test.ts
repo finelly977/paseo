@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ClassifiedCheckoutCommit } from "@/git/use-commits-query";
-import { buildCommitGraphViewModels, getCommitGraphNodeIndex } from "./graph-model";
+import {
+  buildCommitGraphViewModels,
+  getCommitGraphNodeIndex,
+  resolveCommitGraphHeight,
+} from "./graph-model";
 
 function commit(
   sha: string,
@@ -88,5 +92,17 @@ describe("buildCommitGraphViewModels", () => {
 
     expect(models[0]?.outputLanes[0]?.color).toBe("current");
     expect(models[1]?.outputLanes[0]?.color).toBe("remote");
+  });
+});
+
+describe("resolveCommitGraphHeight", () => {
+  it("保留视口范围内的用户高度", () => {
+    expect(resolveCommitGraphHeight(436, 900)).toBe(436);
+  });
+
+  it("限制最小高度、最大高度和视口占比", () => {
+    expect(resolveCommitGraphHeight(80, 900)).toBe(140);
+    expect(resolveCommitGraphHeight(900, 1600)).toBe(720);
+    expect(resolveCommitGraphHeight(700, 600)).toBe(420);
   });
 });

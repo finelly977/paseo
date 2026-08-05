@@ -7,7 +7,16 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import type { CheckoutCommitFile } from "@getpaseo/protocol/messages";
-import { Cloud, FileDiff, GitBranch, LocateFixed, Tag } from "lucide-react-native";
+import {
+  Cloud,
+  FileDiff,
+  GitBranch,
+  GitCommitHorizontal,
+  History,
+  LocateFixed,
+  Tag,
+  UserRound,
+} from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
@@ -23,7 +32,6 @@ import { isNative } from "@/constants/platform";
 import { getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
-import { formatTimeAgo } from "@/utils/time";
 import { CommitGraphNode, CommitGraphPlaceholder } from "./commit-graph-node";
 import type { CommitGraphViewModel } from "./graph-model";
 
@@ -33,7 +41,6 @@ interface CommitRowProps {
   now: Date;
   isSelected: boolean;
   isExpanded: boolean;
-  onSelect: (sha: string) => void;
   onToggleExpanded: (sha: string) => void;
   onOpenCommitDiff: (sha: string, path?: string) => void;
 }
@@ -41,8 +48,11 @@ interface CommitRowProps {
 const ThemedCloud = withUnistyles(Cloud);
 const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitBranch = withUnistyles(GitBranch);
+const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
+const ThemedHistory = withUnistyles(History);
 const ThemedLocateFixed = withUnistyles(LocateFixed);
 const ThemedTag = withUnistyles(Tag);
+const ThemedUserRound = withUnistyles(UserRound);
 
 const mutedIconMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
@@ -59,6 +69,33 @@ const tagBadgeIconMapping = (theme: {
 }) => ({
   color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
 });
+
+const commitRelativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+function formatCommitRelativeTime(date: Date, now: Date): string {
+  const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
+  const absoluteSeconds = Math.abs(seconds);
+  if (absoluteSeconds < 30) {
+    return commitRelativeTimeFormatter.format(0, "second");
+  }
+
+  const ranges: Array<[number, Intl.RelativeTimeFormatUnit, number]> = [
+    [60, "second", 1],
+    [3_600, "minute", 60],
+    [86_400, "hour", 3_600],
+    [604_800, "day", 86_400],
+    [2_592_000, "week", 604_800],
+    [31_536_000, "month", 2_592_000],
+    [Number.POSITIVE_INFINITY, "year", 31_536_000],
+  ];
+  const range = ranges.find(([maximum]) => absoluteSeconds < maximum);
+  if (!range) {
+    throw new Error("无法确定提交时间的相对单位");
+  }
+  const [, unit, divisor] = range;
+  const value = Math.sign(seconds) * Math.max(1, Math.floor(absoluteSeconds / divisor));
+  return commitRelativeTimeFormatter.format(value, unit);
+}
 
 function commitRowPressableStyle({
   hovered,
@@ -144,27 +181,83 @@ function CommitTooltip({
   authoredAt: string;
   relativeTime: string;
 }) {
+  const { t } = useTranslation();
   const { commit } = viewModel;
   const message = commit.message?.trim() || commit.subject;
   return (
-    <TooltipContent side="left" align="center" offset={8} maxWidth={420}>
+    <TooltipContent
+      side="left"
+      align="center"
+      offset={8}
+      maxWidth={480}
+      style={styles.tooltipSurface}
+    >
       <View style={styles.tooltip} testID={`commit-tooltip-${commit.shortSha}`}>
-        <Text style={styles.tooltipMessage}>{message}</Text>
-        <Text style={styles.tooltipMetadata}>
-          {commit.authorName} | {authoredAt} ({relativeTime})
-        </Text>
-        <Text style={styles.tooltipMetadata}>
-          +{commit.statistics.additions} | -{commit.statistics.deletions} |{" "}
-          {commit.statistics.files}
-        </Text>
-        <Text dataSet={CODE_SURFACE_DATASET} style={styles.tooltipSha} selectable>
-          {commit.sha}
-        </Text>
-        {commit.references.length > 0 ? (
-          <Text style={styles.tooltipMetadata}>
-            {commit.references.map((reference) => reference.name).join(", ")}
+        <View style={styles.tooltipAuthorRow}>
+          <ThemedUserRound size={14} uniProps={mutedIconMapping} />
+          <Text style={styles.tooltipAuthor}>{commit.authorName},</Text>
+          <ThemedHistory size={14} uniProps={mutedIconMapping} />
+          <Text style={styles.tooltipMetadata} numberOfLines={1}>
+            {relativeTime} ({authoredAt})
           </Text>
+        </View>
+        <Text style={styles.tooltipMessage}>{message}</Text>
+        <View style={styles.tooltipSeparator} />
+        <View style={styles.tooltipStats}>
+          <Text style={styles.tooltipMetadata}>
+            {t("workspace.git.diff.commits.filesChanged", { count: commit.statistics.files })}
+            {commit.statistics.additions > 0 ? (
+              <Text style={styles.tooltipAdditions}>
+                {`, ${t("workspace.git.diff.commits.insertions", {
+                  count: commit.statistics.additions,
+                })}`}
+              </Text>
+            ) : null}
+            {commit.statistics.deletions > 0 ? (
+              <Text style={styles.tooltipDeletions}>
+                {`, ${t("workspace.git.diff.commits.deletions", {
+                  count: commit.statistics.deletions,
+                })}`}
+              </Text>
+            ) : null}
+          </Text>
+        </View>
+        {commit.references.length > 0 ? (
+          <>
+            <View style={styles.tooltipSeparator} />
+            <View style={styles.tooltipReferences}>
+              {commit.references.map((reference) => (
+                <View
+                  key={reference.id}
+                  style={[
+                    styles.tooltipReference,
+                    reference.kind === "branch" && styles.referenceBranch,
+                    reference.kind === "remote" && styles.referenceRemote,
+                    reference.kind === "tag" && styles.referenceTag,
+                  ]}
+                >
+                  <ReferenceIcon kind={reference.kind} />
+                  <Text
+                    style={[
+                      styles.referenceText,
+                      reference.kind === "branch" && styles.referenceTextBranch,
+                      reference.kind === "tag" && styles.referenceTextTag,
+                    ]}
+                  >
+                    {reference.name}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
         ) : null}
+        <View style={styles.tooltipSeparator} />
+        <View style={styles.tooltipCommitRow}>
+          <ThemedGitCommitHorizontal size={14} uniProps={mutedIconMapping} />
+          <Text dataSet={CODE_SURFACE_DATASET} style={styles.tooltipSha} selectable>
+            {commit.shortSha}
+          </Text>
+        </View>
       </View>
     </TooltipContent>
   );
@@ -240,7 +333,6 @@ export const CommitRow = memo(function CommitRow({
   now,
   isSelected,
   isExpanded,
-  onSelect,
   onToggleExpanded,
   onOpenCommitDiff,
 }: CommitRowProps) {
@@ -249,10 +341,17 @@ export const CommitRow = memo(function CommitRow({
   const [isHovered, setIsHovered] = useState(false);
   const { commit } = viewModel;
   const authoredAt = useMemo(
-    () => new Date(commit.authorDate).toLocaleString(),
+    () =>
+      new Date(commit.authorDate).toLocaleString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+      }),
     [commit.authorDate],
   );
-  const relativeTime = formatTimeAgo(new Date(commit.authorDate), now);
+  const relativeTime = formatCommitRelativeTime(new Date(commit.authorDate), now);
   const showInlineActions = isHovered || isSelected || isNative || isCompact;
   const rowStyle = useCallback(
     (state: PressableStateCallbackType & { hovered?: boolean }) => [
@@ -261,7 +360,9 @@ export const CommitRow = memo(function CommitRow({
     ],
     [isSelected],
   );
-  const handlePress = useCallback(() => onSelect(commit.sha), [commit.sha, onSelect]);
+  const handlePress = useCallback(() => {
+    onToggleExpanded(commit.sha);
+  }, [commit.sha, onToggleExpanded]);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
   const handleHoverOut = useCallback(() => setIsHovered(false), []);
   const handleToggleExpanded = useCallback(
@@ -293,7 +394,13 @@ export const CommitRow = memo(function CommitRow({
             onPress={handlePress}
             style={rowStyle}
           >
-            <CommitGraphNode viewModel={viewModel} width={graphWidth} selected={isSelected} />
+            <CommitGraphNode
+              viewModel={viewModel}
+              width={graphWidth}
+              selected={isSelected}
+              hovered={isHovered}
+              expanded={isExpanded}
+            />
             <View style={styles.commitIdentity}>
               <Text style={styles.identityText} numberOfLines={1}>
                 <Text style={[styles.subject, viewModel.kind === "head" && styles.subjectCurrent]}>
@@ -500,22 +607,78 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     color: theme.colors.foregroundMuted,
   },
+  tooltipSurface: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: theme.borderRadius.base,
+  },
   tooltip: {
-    gap: theme.spacing[2],
-    maxWidth: 390,
+    minWidth: 320,
+    maxWidth: 440,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+  },
+  tooltipAuthorRow: {
+    minHeight: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
+  tooltipAuthor: {
+    marginRight: theme.spacing[1],
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.popoverForeground,
   },
   tooltipMessage: {
-    fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.medium,
+    marginTop: theme.spacing[1],
+    fontSize: theme.fontSize.xs,
+    lineHeight: 18,
     color: theme.colors.popoverForeground,
   },
   tooltipMetadata: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.foregroundMuted,
   },
+  tooltipSeparator: {
+    height: theme.borderWidth[1],
+    marginVertical: theme.spacing[2],
+    backgroundColor: theme.colors.border,
+  },
+  tooltipStats: {
+    minHeight: 18,
+    justifyContent: "center",
+  },
+  tooltipAdditions: {
+    color: theme.colorScheme === "dark" ? "#81b88b" : "#587c0c",
+  },
+  tooltipDeletions: {
+    color: theme.colorScheme === "dark" ? "#c74e39" : "#ad0707",
+  },
+  tooltipReferences: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[1],
+  },
+  tooltipReference: {
+    minHeight: 18,
+    maxWidth: 180,
+    paddingHorizontal: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 9,
+    backgroundColor: theme.colors.accent,
+  },
+  tooltipCommitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
   tooltipSha: {
+    flexShrink: 1,
     fontSize: theme.fontSize.xs,
     fontFamily: theme.fontFamily.mono,
-    color: theme.colors.popoverForeground,
+    color: theme.colors.foregroundMuted,
   },
 }));

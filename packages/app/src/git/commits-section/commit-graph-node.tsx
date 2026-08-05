@@ -14,77 +14,60 @@ import {
 const CURVE_RADIUS = 5;
 const CIRCLE_RADIUS = 4;
 const CIRCLE_STROKE_WIDTH = 2;
-const GRAPH_COLOR_ROLES: CommitGraphColorRole[] = [
-  "current",
-  "remote",
-  "base",
-  "lane-1",
-  "lane-2",
-  "lane-3",
-  "lane-4",
-  "lane-5",
-];
-
-const ThemedCircle = withUnistyles(Circle);
-const ThemedPath = withUnistyles(Path);
-
+const TRANSPARENT = "transparent";
 interface CommitGraphNodeProps {
   viewModel: CommitGraphViewModel;
   width: number;
   selected: boolean;
+  hovered: boolean;
+  expanded: boolean;
+}
+
+interface CommitGraphPalette {
+  colors: Record<CommitGraphColorRole, string>;
+  rowBackground: string;
+  selectedBackground: string;
+  hoveredBackground: string;
 }
 
 function resolveGraphColor(theme: Theme, role: CommitGraphColorRole): string {
   switch (role) {
     case "current":
-      return theme.colors.accentBright;
+      return theme.colorScheme === "dark" ? "#59a4f9" : "#0063d3";
     case "remote":
-      return theme.colors.statusMerged;
+      return theme.colorScheme === "dark" ? "#b180d7" : "#652d90";
     case "base":
-      return theme.colors.statusWarning;
+      return "#ea5c00";
     case "lane-1":
-      return theme.colors.terminal.yellow;
+      return "#ffb000";
     case "lane-2":
-      return theme.colors.terminal.magenta;
+      return "#dc267f";
     case "lane-3":
-      return theme.colors.terminal.brightYellow;
+      return "#994f00";
     case "lane-4":
-      return theme.colors.terminal.cyan;
+      return "#40b0a6";
     case "lane-5":
-      return theme.colors.terminal.brightMagenta;
+      return "#b66dff";
   }
 }
 
-const lineColorMappings = Object.fromEntries(
-  GRAPH_COLOR_ROLES.map((role) => [
-    role,
-    (theme: Theme) => ({ stroke: resolveGraphColor(theme, role) }),
-  ]),
-) as Record<CommitGraphColorRole, (theme: Theme) => { stroke: string }>;
-
-const innerCircleMappings = Object.fromEntries(
-  GRAPH_COLOR_ROLES.map((role) => [
-    role,
-    (theme: Theme) => ({ fill: resolveGraphColor(theme, role) }),
-  ]),
-) as Record<CommitGraphColorRole, (theme: Theme) => { fill: string }>;
-
-function createNodeCircleMappings(selected: boolean) {
-  return Object.fromEntries(
-    GRAPH_COLOR_ROLES.map((role) => [
-      role,
-      (theme: Theme) => ({
-        fill: selected ? theme.colors.surface2 : theme.colors.surface0,
-        stroke: resolveGraphColor(theme, role),
-      }),
-    ]),
-  ) as Record<CommitGraphColorRole, (theme: Theme) => { fill: string; stroke: string }>;
-}
-
-const nodeCircleMappings = {
-  default: createNodeCircleMappings(false),
-  selected: createNodeCircleMappings(true),
-};
+const graphPaletteMapping = (theme: Theme): { palette: CommitGraphPalette } => ({
+  palette: {
+    colors: {
+      current: resolveGraphColor(theme, "current"),
+      remote: resolveGraphColor(theme, "remote"),
+      base: resolveGraphColor(theme, "base"),
+      "lane-1": resolveGraphColor(theme, "lane-1"),
+      "lane-2": resolveGraphColor(theme, "lane-2"),
+      "lane-3": resolveGraphColor(theme, "lane-3"),
+      "lane-4": resolveGraphColor(theme, "lane-4"),
+      "lane-5": resolveGraphColor(theme, "lane-5"),
+    },
+    rowBackground: theme.colors.surface0,
+    selectedBackground: theme.colors.surface2,
+    hoveredBackground: theme.colors.surfaceSidebarHover,
+  },
+});
 
 function findLastLaneIndex(lanes: CommitGraphLane[], id: string): number {
   for (let index = lanes.length - 1; index >= 0; index -= 1) {
@@ -101,61 +84,85 @@ function renderCommitMarker({
   centerX,
   centerY,
   color,
-  selected,
+  palette,
+  rowBackground,
+  hovered,
 }: {
   kind: CommitGraphViewModel["kind"];
   hasMultipleParents: boolean;
   centerX: number;
   centerY: number;
   color: CommitGraphColorRole;
-  selected: boolean;
+  palette: CommitGraphPalette;
+  rowBackground: string;
+  hovered: boolean;
 }): ReactNode {
-  const nodeMapping = nodeCircleMappings[selected ? "selected" : "default"][color];
+  const nodeColor = palette.colors[color];
+  const outerStroke = rowBackground === palette.rowBackground ? rowBackground : TRANSPARENT;
   if (kind === "head") {
     return (
       <>
-        <ThemedCircle
+        <Circle
           cx={centerX}
           cy={centerY}
           r={CIRCLE_RADIUS + 3}
+          fill={nodeColor}
+          stroke={outerStroke}
           strokeWidth={CIRCLE_STROKE_WIDTH}
-          uniProps={nodeMapping}
         />
-        <ThemedCircle cx={centerX} cy={centerY} r={2} uniProps={innerCircleMappings[color]} />
+        <Circle
+          cx={centerX}
+          cy={centerY}
+          r={CIRCLE_STROKE_WIDTH}
+          fill={hovered ? palette.hoveredBackground : palette.rowBackground}
+          stroke={rowBackground}
+          strokeWidth={CIRCLE_RADIUS}
+        />
       </>
     );
   }
   if (hasMultipleParents) {
     return (
       <>
-        <ThemedCircle
+        <Circle
           cx={centerX}
           cy={centerY}
           r={CIRCLE_RADIUS + 2}
+          fill={nodeColor}
+          stroke={outerStroke}
           strokeWidth={CIRCLE_STROKE_WIDTH}
-          uniProps={nodeMapping}
         />
-        <ThemedCircle
+        <Circle
           cx={centerX}
           cy={centerY}
           r={CIRCLE_RADIUS - 1}
-          uniProps={innerCircleMappings[color]}
+          fill={nodeColor}
+          stroke={rowBackground}
+          strokeWidth={CIRCLE_STROKE_WIDTH}
         />
       </>
     );
   }
   return (
-    <ThemedCircle
+    <Circle
       cx={centerX}
       cy={centerY}
       r={CIRCLE_RADIUS + 1}
+      fill={nodeColor}
+      stroke={outerStroke}
       strokeWidth={CIRCLE_STROKE_WIDTH}
-      uniProps={nodeMapping}
     />
   );
 }
 
-export function CommitGraphNode({ viewModel, width, selected }: CommitGraphNodeProps) {
+function CommitGraphNodeBase({
+  viewModel,
+  width,
+  selected,
+  hovered,
+  expanded,
+  palette,
+}: CommitGraphNodeProps & { palette: CommitGraphPalette }) {
   const { commit, inputLanes, outputLanes } = viewModel;
   const inputIndex = inputLanes.findIndex((lane) => lane.id === commit.sha);
   const circleIndex = getCommitGraphNodeIndex(viewModel);
@@ -226,16 +233,23 @@ export function CommitGraphNode({ viewModel, width, selected }: CommitGraphNodeP
 
   const centerX = COMMIT_GRAPH_LANE_WIDTH * (circleIndex + 1);
   const centerY = COMMIT_GRAPH_ROW_HEIGHT / 2;
+  let rowBackground = palette.rowBackground;
+  if (hovered) {
+    rowBackground = palette.hoveredBackground;
+  }
+  if (selected) {
+    rowBackground = palette.selectedBackground;
+  }
   return (
     <Svg width={width} height={COMMIT_GRAPH_ROW_HEIGHT} testID={`commit-graph-${commit.shortSha}`}>
-      {paths.map((path) => (
-        <ThemedPath
+      {paths.map((path, index) => (
+        <Path
           key={path.key}
           d={path.d}
           fill="none"
-          strokeWidth={1}
+          stroke={palette.colors[path.color]}
+          strokeWidth={expanded && index === paths.length - 1 ? 3 : 1}
           strokeLinecap="round"
-          uniProps={lineColorMappings[path.color]}
         />
       ))}
       {renderCommitMarker({
@@ -244,10 +258,18 @@ export function CommitGraphNode({ viewModel, width, selected }: CommitGraphNodeP
         centerX,
         centerY,
         color: circleColor,
-        selected,
+        palette,
+        rowBackground,
+        hovered,
       })}
     </Svg>
   );
+}
+
+const ThemedCommitGraphNode = withUnistyles(CommitGraphNodeBase);
+
+export function CommitGraphNode(props: CommitGraphNodeProps) {
+  return <ThemedCommitGraphNode {...props} uniProps={graphPaletteMapping} />;
 }
 
 function buildPlaceholderPaths(lanes: CommitGraphLane[]) {
@@ -259,26 +281,34 @@ function buildPlaceholderPaths(lanes: CommitGraphLane[]) {
   });
 }
 
-export function CommitGraphPlaceholder({
+function CommitGraphPlaceholderBase({
   lanes,
   width,
+  palette,
 }: {
   lanes: CommitGraphLane[];
   width: number;
+  palette: CommitGraphPalette;
 }) {
   const paths = buildPlaceholderPaths(lanes);
   return (
     <Svg width={width} height={COMMIT_GRAPH_ROW_HEIGHT}>
       {paths.map(({ lane, key }, index) => (
-        <ThemedPath
+        <Path
           key={key}
           d={`M ${COMMIT_GRAPH_LANE_WIDTH * (index + 1)} 0 V ${COMMIT_GRAPH_ROW_HEIGHT}`}
           fill="none"
+          stroke={palette.colors[lane.color]}
           strokeWidth={1}
           strokeLinecap="round"
-          uniProps={lineColorMappings[lane.color]}
         />
       ))}
     </Svg>
   );
+}
+
+const ThemedCommitGraphPlaceholder = withUnistyles(CommitGraphPlaceholderBase);
+
+export function CommitGraphPlaceholder(props: { lanes: CommitGraphLane[]; width: number }) {
+  return <ThemedCommitGraphPlaceholder {...props} uniProps={graphPaletteMapping} />;
 }
