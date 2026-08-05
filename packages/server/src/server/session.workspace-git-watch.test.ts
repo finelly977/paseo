@@ -76,6 +76,8 @@ function createWorkspaceRuntimeSnapshot(
       remoteUrl: "https://github.com/acme/repo.git",
       isPaseoOwnedWorktree: false,
       isDirty: false,
+      stagedFileCount: 0,
+      changes: { conflicts: [], staged: [], unstaged: [] },
       baseRef: "main",
       aheadBehind: { ahead: 0, behind: 0 },
       aheadOfOrigin: 0,
@@ -410,6 +412,11 @@ describe("workspace git watch targets", () => {
         git: {
           currentBranch: "feature/server-push",
           isDirty: true,
+          changes: {
+            conflicts: [],
+            staged: [],
+            unstaged: [{ path: "src/server.ts", status: "modified" }],
+          },
           aheadBehind: { ahead: 3, behind: 1 },
           aheadOfOrigin: 3,
           behindOfOrigin: 1,
@@ -427,6 +434,11 @@ describe("workspace git watch targets", () => {
       repoRoot: REPO_CWD,
       currentBranch: "feature/server-push",
       isDirty: true,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/server.ts", status: "modified" }],
+      },
       baseRef: "main",
       aheadBehind: { ahead: 3, behind: 1 },
       aheadOfOrigin: 3,

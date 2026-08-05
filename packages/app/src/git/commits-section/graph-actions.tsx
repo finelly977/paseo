@@ -52,7 +52,7 @@ interface GraphActionsProps {
   onRefresh: () => void;
 }
 
-type GraphActionKind = "fetch" | "refresh" | "locate";
+type GraphActionKind = "fetch" | "pull" | "push" | "refresh" | "locate";
 
 interface GraphActionButtonProps {
   kind: GraphActionKind;
@@ -88,6 +88,10 @@ function GraphActionIcon({ kind }: { kind: GraphActionKind }) {
   switch (kind) {
     case "fetch":
       return <ThemedCloudDownload size={14} uniProps={iconColorMapping} />;
+    case "pull":
+      return <ThemedDownload size={14} uniProps={iconColorMapping} />;
+    case "push":
+      return <ThemedUpload size={14} uniProps={iconColorMapping} />;
     case "refresh":
       return <ThemedRefreshCcw size={14} uniProps={iconColorMapping} />;
     case "locate":
@@ -140,6 +144,28 @@ function GraphActionButton({
         <Text style={styles.tooltipLabel}>{label}</Text>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function GitGraphActionButton({ kind, action }: { kind: "pull" | "push"; action: GitAction }) {
+  const toast = useToast();
+  const pending = action.status === "pending";
+  const handlePress = useCallback(() => {
+    if (action.unavailableMessage) {
+      toast.show(action.unavailableMessage, { durationMs: 3200 });
+      return;
+    }
+    action.handler();
+  }, [action, toast]);
+
+  return (
+    <GraphActionButton
+      kind={kind}
+      label={pending ? action.pendingLabel : action.label}
+      pending={pending}
+      disabled={action.disabled && !action.unavailableMessage}
+      onPress={handlePress}
+    />
   );
 }
 
@@ -274,11 +300,9 @@ function MoreActions({ gitActions }: { gitActions: GitActions }) {
   const { t } = useTranslation();
   const actions = useMemo(
     () =>
-      [
-        findAction(gitActions, "pull"),
-        findAction(gitActions, "push"),
-        findAction(gitActions, "pull-and-push"),
-      ].filter((action): action is GitAction => Boolean(action)),
+      [findAction(gitActions, "pull-and-push")].filter((action): action is GitAction =>
+        Boolean(action),
+      ),
     [gitActions],
   );
   if (actions.length === 0) {
@@ -353,6 +377,8 @@ export function GraphActions({
   onRefresh,
 }: GraphActionsProps) {
   const { t } = useTranslation();
+  const pullAction = findAction(gitActions, "pull");
+  const pushAction = findAction(gitActions, "push");
   return (
     <View style={styles.container}>
       <GraphRefFilter
@@ -375,6 +401,8 @@ export function GraphActions({
           onPress={onFetch}
         />
       ) : null}
+      {pullAction ? <GitGraphActionButton kind="pull" action={pullAction} /> : null}
+      {pushAction ? <GitGraphActionButton kind="push" action={pushAction} /> : null}
       {refreshSupported ? (
         <GraphActionButton
           kind="refresh"

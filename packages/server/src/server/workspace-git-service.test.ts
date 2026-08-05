@@ -44,6 +44,7 @@ function createSnapshot(
       isPaseoOwnedWorktree: false,
       isDirty: false,
       stagedFileCount: 0,
+      changes: { conflicts: [], staged: [], unstaged: [] },
       baseRef: "main",
       aheadBehind: { ahead: 0, behind: 0 },
       aheadOfOrigin: 0,
@@ -135,6 +136,7 @@ function createCheckoutStatus(
     currentBranch: "main",
     isDirty: false,
     stagedFileCount: 0,
+    changes: { conflicts: [], staged: [], unstaged: [] },
     baseRef: "main",
     aheadBehind: { ahead: 0, behind: 0 },
     aheadOfOrigin: 0,
@@ -558,7 +560,7 @@ describe("WorkspaceGitServiceImpl", () => {
     );
 
     expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
-    expect(resolveAbsoluteGitDir).toHaveBeenCalledTimes(0);
+    expect(resolveAbsoluteGitDir).toHaveBeenCalledTimes(1);
 
     subscription.unsubscribe();
     service.dispose();
@@ -591,7 +593,7 @@ describe("WorkspaceGitServiceImpl", () => {
       expect(runGitFetch).toHaveBeenCalledTimes(1);
     });
 
-    expect(resolveAbsoluteGitDir).toHaveBeenCalledTimes(0);
+    expect(resolveAbsoluteGitDir).toHaveBeenCalledTimes(2);
     expect(hasOriginRemote).toHaveBeenCalledTimes(0);
     expect(runGitFetch).toHaveBeenCalledTimes(1);
 
@@ -992,6 +994,52 @@ describe("WorkspaceGitServiceImpl", () => {
 
     diffSubscription.unsubscribe();
     workspaceSubscription.unsubscribe();
+    service.dispose();
+  });
+
+  test("workspace subscribers receive fresh file changes from the working tree watcher", async () => {
+    const watchCallbacks: Array<{ path: string; callback: () => void }> = [];
+    const watch = vi.fn(
+      (watchPath: string, _options: { recursive: boolean }, callback: () => void) => {
+        watchCallbacks.push({ path: watchPath, callback });
+        return createWatcher();
+      },
+    );
+    let checkoutStatus = createCheckoutStatus(REPO_CWD);
+    const getCheckoutStatus = vi.fn(async () => checkoutStatus);
+    const service = createService({ getCheckoutStatus, watch });
+    const listener = vi.fn();
+    const subscription = service.registerWorkspace({ cwd: REPO_CWD }, listener);
+
+    await service.getSnapshot(REPO_CWD, { force: true, reason: "initial-status" });
+    await flushPromises();
+
+    const repoRootWatch = watchCallbacks.find((entry) => entry.path === REPO_CWD);
+    expect(repoRootWatch).toBeDefined();
+
+    checkoutStatus = createCheckoutStatus(REPO_CWD, {
+      isDirty: true,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/app.ts", status: "modified" }],
+      },
+    });
+    repoRootWatch?.callback();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(listener).toHaveBeenLastCalledWith(
+      createSnapshot(REPO_CWD, {
+        git: {
+          isDirty: true,
+          changes: checkoutStatus.changes,
+        },
+      }),
+    );
+
+    subscription.unsubscribe();
+    expect(service.getMetrics().workingTreeWatchTargetCount).toBe(0);
     service.dispose();
   });
 

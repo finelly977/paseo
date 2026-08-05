@@ -402,7 +402,7 @@ export const CommitRow = memo(function CommitRow({
               expanded={isExpanded}
             />
             <View style={styles.commitIdentity}>
-              <Text style={styles.identityText} numberOfLines={1}>
+              <Text style={styles.identityText} numberOfLines={1} ellipsizeMode="tail">
                 <Text style={[styles.subject, viewModel.kind === "head" && styles.subjectCurrent]}>
                   {commit.subject}
                 </Text>
@@ -490,7 +490,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
   },
   identityText: {
-    flexShrink: 1,
+    flex: 1,
     minWidth: 0,
     fontSize: theme.fontSize.xs,
     color: theme.colors.foreground,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create((theme) => ({
   references: {
     maxWidth: "48%",
     minWidth: 0,
-    flexShrink: 1,
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 3,

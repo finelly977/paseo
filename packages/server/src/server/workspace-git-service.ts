@@ -309,6 +309,7 @@ interface WorkspaceGitTarget {
   pendingDebounceRequest: WorkspaceGitRefreshRequest | null;
   selfHealTimer: NodeJS.Timeout | null;
   forgePrStatusPollSubscription: { unsubscribe: () => void } | null;
+  workingTreeWatchSubscription: { unsubscribe: () => void } | null;
   forgePrStatusPollKey: string | null;
   refreshState: WorkspaceGitRefreshState;
   latestGit: WorkspaceGitRuntimeSnapshot["git"] | null;
@@ -907,6 +908,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       pendingDebounceRequest: null,
       selfHealTimer: null,
       forgePrStatusPollSubscription: null,
+      workingTreeWatchSubscription: null,
       forgePrStatusPollKey: null,
       refreshState: { status: "idle" },
       latestGit: null,
@@ -972,6 +974,14 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const gitDir = facts?.isGit ? facts.absoluteGitDir : null;
     if (!this.isActiveObservedWorkspaceTarget(target)) {
       return;
+    }
+    if (!target.workingTreeWatchSubscription) {
+      const workingTreeWatchSubscription = await this.requestWorkingTreeWatch(target.cwd, () => {});
+      if (!this.isActiveObservedWorkspaceTarget(target)) {
+        workingTreeWatchSubscription.unsubscribe();
+        return;
+      }
+      target.workingTreeWatchSubscription = workingTreeWatchSubscription;
     }
     if (!gitDir) {
       target.observationSetupComplete = true;
@@ -2083,6 +2093,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       target.selfHealTimer = null;
     }
     this.stopForgePrStatusPollForTarget(target);
+    target.workingTreeWatchSubscription?.unsubscribe();
+    target.workingTreeWatchSubscription = null;
 
     for (const watcher of target.watchers) {
       watcher.close();

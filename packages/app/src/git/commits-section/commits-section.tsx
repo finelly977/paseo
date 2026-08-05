@@ -78,7 +78,6 @@ function CommitsSectionSkeleton() {
 function CommitsSectionContent({
   query,
   viewModels,
-  graphWidth,
   now,
   selectedSha,
   expandedSha,
@@ -88,7 +87,6 @@ function CommitsSectionContent({
 }: {
   query: Exclude<CheckoutCommitsQueryResult, { status: "unsupported" }>;
   viewModels: CommitGraphViewModel[];
-  graphWidth: number;
   now: Date;
   selectedSha: string | null;
   expandedSha: string | null;
@@ -102,7 +100,7 @@ function CommitsSectionContent({
     ({ item }: { item: CommitGraphViewModel }) => (
       <CommitRow
         viewModel={item}
-        graphWidth={graphWidth}
+        graphWidth={getCommitGraphWidth(item)}
         now={now}
         isSelected={selectedSha === item.commit.sha}
         isExpanded={expandedSha === item.commit.sha}
@@ -110,7 +108,7 @@ function CommitsSectionContent({
         onOpenCommitDiff={onCommitPress}
       />
     ),
-    [expandedSha, graphWidth, now, onCommitPress, onToggleExpanded, selectedSha],
+    [expandedSha, now, onCommitPress, onToggleExpanded, selectedSha],
   );
   const renderFooter = useCallback(
     () =>
@@ -245,11 +243,6 @@ export function CommitsSection({
           })
         : [],
     [loadedData],
-  );
-  const graphWidth = useMemo(
-    () =>
-      viewModels.reduce((width, viewModel) => Math.max(width, getCommitGraphWidth(viewModel)), 28),
-    [viewModels],
   );
   const headIndex =
     query.status === "loaded" && query.data.headSha
@@ -395,7 +388,6 @@ export function CommitsSection({
             <CommitsSectionContent
               query={query}
               viewModels={viewModels}
-              graphWidth={graphWidth}
               now={displayNow}
               selectedSha={selectedSha}
               expandedSha={expandedSha}

@@ -91,12 +91,16 @@ function ScmRowAction({
   label,
   disabled,
   onPress,
+  onHoverIn,
+  onHoverOut,
   kind,
   testID,
 }: {
   label: string;
   disabled: boolean;
   onPress: () => void;
+  onHoverIn?: () => void;
+  onHoverOut?: () => void;
   kind: ScmRowActionKind;
   testID: string;
 }) {
@@ -114,6 +118,8 @@ function ScmRowAction({
       accessibilityLabel={label}
       disabled={disabled}
       hitSlop={4}
+      onHoverIn={onHoverIn}
+      onHoverOut={onHoverOut}
       onPress={onPress}
       style={actionButtonStyle}
       testID={testID}
@@ -135,18 +141,22 @@ const ScmFileRow = memo(function ScmFileRow({
 }: ScmFileRowProps) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
+  const [actionHovered, setActionHovered] = useState(false);
   const { fileName, directory } = useMemo(() => splitScmPath(change.path), [change.path]);
   const decoration = useMemo(() => getScmStatusDecoration(change.status), [change.status]);
-  const showActions = hovered || isNative || isCompact;
+  const showActions = hovered || actionHovered || isNative || isCompact;
   const openFile = useCallback(() => onOpenFile(change.path), [change.path, onOpenFile]);
   const stage = useCallback(() => onStage([change.path]), [change.path, onStage]);
   const unstage = useCallback(() => onUnstage([change.path]), [change.path, onUnstage]);
   const discard = useCallback(() => onDiscard([change.path]), [change.path, onDiscard]);
   const setRowHovered = useCallback(() => setHovered(true), []);
   const clearRowHovered = useCallback(() => setHovered(false), []);
+  const setActionsHovered = useCallback(() => setActionHovered(true), []);
+  const clearActionsHovered = useCallback(() => setActionHovered(false), []);
   const canStage = group === "unstaged" || group === "conflicts";
   const canUnstage = group === "staged";
   const canDiscard = group === "unstaged";
+  const trailingWidth = (canDiscard && canStage ? 2 : 1) * 20;
 
   return (
     <ContextMenu>
@@ -173,13 +183,32 @@ const ScmFileRow = memo(function ScmFileRow({
             </Text>
           ) : null}
         </View>
-        {showActions ? (
-          <View style={styles.rowActions}>
+        <View style={[styles.rowTrailing, { width: trailingWidth }]}>
+          <Text
+            style={[
+              styles.statusText,
+              styles.rowTrailingLayer,
+              statusTextStyle(decoration.tone),
+              showActions && styles.rowTrailingHidden,
+            ]}
+          >
+            {decoration.label}
+          </Text>
+          <View
+            pointerEvents={showActions ? "auto" : "none"}
+            style={[
+              styles.rowActions,
+              styles.rowTrailingLayer,
+              !showActions && styles.rowTrailingHidden,
+            ]}
+          >
             {canDiscard ? (
               <ScmRowAction
                 label={t("workspace.git.panel.discardChange")}
                 disabled={disabled}
                 onPress={discard}
+                onHoverIn={setActionsHovered}
+                onHoverOut={clearActionsHovered}
                 kind="discard"
                 testID={`scm-discard-${change.path}`}
               />
@@ -189,6 +218,8 @@ const ScmFileRow = memo(function ScmFileRow({
                 label={t("workspace.git.panel.stageChange")}
                 disabled={disabled}
                 onPress={stage}
+                onHoverIn={setActionsHovered}
+                onHoverOut={clearActionsHovered}
                 kind="stage"
                 testID={`scm-stage-${change.path}`}
               />
@@ -198,16 +229,14 @@ const ScmFileRow = memo(function ScmFileRow({
                 label={t("workspace.git.panel.unstageChange")}
                 disabled={disabled}
                 onPress={unstage}
+                onHoverIn={setActionsHovered}
+                onHoverOut={clearActionsHovered}
                 kind="unstage"
                 testID={`scm-unstage-${change.path}`}
               />
             ) : null}
           </View>
-        ) : (
-          <Text style={[styles.statusText, statusTextStyle(decoration.tone)]}>
-            {decoration.label}
-          </Text>
-        )}
+        </View>
       </ContextMenuTrigger>
       <ContextMenuContent side="left" align="start" minWidth={190}>
         <ContextMenuItem onSelect={openFile}>
@@ -454,6 +483,19 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     flexShrink: 0,
+  },
+  rowTrailing: {
+    height: 20,
+    position: "relative",
+    flexShrink: 0,
+  },
+  rowTrailingLayer: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  rowTrailingHidden: {
+    opacity: 0,
   },
   groupActions: {
     flexDirection: "row",
