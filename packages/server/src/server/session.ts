@@ -1161,14 +1161,16 @@ export class Session {
   }
 
   private async ensureWorkspaceGitObserverForCwd(cwd: string): Promise<void> {
-    const workspaces = await this.workspaceRegistry.list();
+    const workspaces = (await this.workspaceRegistry.list()).filter(
+      (workspace) => workspace.archivedAt === null,
+    );
     const workspaceId = resolveWorkspaceIdForPath(cwd, workspaces);
     if (!workspaceId) {
       return;
     }
     const workspace = workspaces.find((candidate) => candidate.workspaceId === workspaceId);
-    if (!workspace || workspace.archivedAt) {
-      return;
+    if (!workspace) {
+      throw new Error(`未找到 Git 观察器对应的工作区：${workspaceId}`);
     }
     await this.workspaceGitObserver.syncObserverForWorkspace(workspace);
   }

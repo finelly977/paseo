@@ -282,6 +282,7 @@ function seedGitWorkspace(input: {
   workspaceId: string;
   cwd: string;
   name: string;
+  archivedAt?: string;
 }) {
   input.projects.set(
     input.projectId,
@@ -304,11 +305,48 @@ function seedGitWorkspace(input: {
       kind: "local_checkout",
       createdAt: "2026-03-01T12:00:00.000Z",
       updatedAt: "2026-03-01T12:00:00.000Z",
+      archivedAt: input.archivedAt,
     }),
   );
 }
 
 describe("workspace git watch targets", () => {
+  test("checkout status observation skips an archived workspace with the same directory", async () => {
+    const { session, projects, workspaces, workspaceGitService } =
+      createSessionForWorkspaceGitWatchTests();
+    seedGitWorkspace({
+      projects,
+      workspaces,
+      projectId: "proj-1",
+      workspaceId: "ws-archived",
+      cwd: REPO_CWD,
+      name: "archived",
+      archivedAt: "2026-03-02T12:00:00.000Z",
+    });
+    seedGitWorkspace({
+      projects,
+      workspaces,
+      projectId: "proj-1",
+      workspaceId: "ws-active",
+      cwd: REPO_CWD,
+      name: "active",
+    });
+
+    await session.handleMessage({
+      type: "checkout_status_request",
+      cwd: REPO_CWD,
+      requestId: "status-with-archived-duplicate",
+    });
+
+    expect(workspaceGitService.registerWorkspace).toHaveBeenCalledTimes(1);
+    expect(workspaceGitService.registerWorkspace).toHaveBeenCalledWith(
+      { cwd: REPO_CWD },
+      expect.any(Function),
+    );
+
+    await session.cleanup();
+  });
+
   test("emits one workspace_update when the workspace git service emits a changed snapshot", async () => {
     const { session, emitted, projects, workspaces, workspaceGitService, subscriptions } =
       createSessionForWorkspaceGitWatchTests();
