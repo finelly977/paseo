@@ -407,9 +407,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
   ) {
     const { t } = useTranslation();
     const router = useRouter();
-    const autoExpandReasoning = useSettings((settings) => settings.autoExpandReasoning);
-    const toolCallDetailLevel = useSettings((settings) => settings.toolCallDetailLevel);
-    const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
+    const {
+      autoExpandReasoning,
+      toolCallDetailLevel,
+      messageParagraphSpacing,
+      conversationMessageSpacing,
+      conversationDividerSpacing,
+      conversationVerticalPadding,
+      conversationHorizontalPadding,
+    } = useSettings((settings) => ({
+      autoExpandReasoning: settings.autoExpandReasoning,
+      toolCallDetailLevel: settings.toolCallDetailLevel,
+      messageParagraphSpacing: settings.messageParagraphSpacing,
+      conversationMessageSpacing: settings.conversationMessageSpacing,
+      conversationDividerSpacing: settings.conversationDividerSpacing,
+      conversationVerticalPadding: settings.conversationVerticalPadding,
+      conversationHorizontalPadding: settings.conversationHorizontalPadding,
+    }));
     const viewportRef = useRef<StreamViewportHandle | null>(null);
     const isMobile = useIsCompactFormFactor();
     const streamRenderStrategy = useMemo(
@@ -675,12 +689,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           history: baseRenderModel.history,
           liveHead: baseRenderModel.segments.liveHead,
           timingByAssistantId: baseRenderModel.turnTiming.byAssistantId,
+          messageSpacing: conversationMessageSpacing,
         }),
       [
         context.status,
         baseRenderModel.history,
         baseRenderModel.segments.liveHead,
         baseRenderModel.turnTiming.byAssistantId,
+        conversationMessageSpacing,
         streamRenderStrategy,
       ],
     );
@@ -1071,6 +1087,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                 status={item.status}
                 trigger={item.trigger}
                 preTokens={item.preTokens}
+                verticalSpacing={conversationDividerSpacing}
               />
             );
 
@@ -1078,7 +1095,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return null;
         }
       },
-      [renderUserMessageItem, renderAssistantMessageItem, renderThoughtItem, renderToolCallItem],
+      [
+        conversationDividerSpacing,
+        renderUserMessageItem,
+        renderAssistantMessageItem,
+        renderThoughtItem,
+        renderToolCallItem,
+      ],
     );
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
@@ -1182,6 +1205,26 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const { boundary, auxiliary } = renderModel;
+    const listContentContainerStyle = useMemo(
+      () => [
+        stylesheet.listContentContainer,
+        {
+          paddingVertical: conversationVerticalPadding,
+          paddingHorizontal: conversationHorizontalPadding,
+        },
+      ],
+      [conversationHorizontalPadding, conversationVerticalPadding],
+    );
+    const forwardListContentContainerStyle = useMemo(
+      () => [
+        stylesheet.forwardListContentContainer,
+        {
+          paddingVertical: conversationVerticalPadding,
+          paddingHorizontal: conversationHorizontalPadding,
+        },
+      ],
+      [conversationHorizontalPadding, conversationVerticalPadding],
+    );
 
     const layoutHistoryItemById = useMemo(() => {
       const itemById = new Map<string, StreamLayoutItem>();
@@ -1314,9 +1357,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               hasOlderHistory: hasOlder,
               scrollEnabled: streamScrollEnabled,
               messageParagraphSpacing,
+              conversationVerticalPadding,
+              conversationHorizontalPadding,
               listStyle: stylesheet.list,
-              baseListContentContainerStyle: stylesheet.listContentContainer,
-              forwardListContentContainerStyle: stylesheet.forwardListContentContainer,
+              baseListContentContainerStyle: listContentContainerStyle,
+              forwardListContentContainerStyle,
             })}
           </MessageOuterSpacingProvider>
           {!isNearBottom && (

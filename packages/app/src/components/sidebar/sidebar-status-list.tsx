@@ -45,6 +45,8 @@ import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header"
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pin";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { useSidebarListSpacing } from "@/components/sidebar/sidebar-list-spacing";
 
 // Themed icon wrappers
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -88,6 +90,11 @@ export function SidebarStatusWorkspaceList({
   onToggleWorkspacePin,
   listHeaderComponent,
 }: StatusWorkspaceListProps) {
+  const { horizontalPadding } = useSidebarListSpacing();
+  const listContentStyle = useMemo(
+    () => [styles.listContent, { paddingHorizontal: horizontalPadding }],
+    [horizontalPadding],
+  );
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
@@ -159,7 +166,7 @@ export function SidebarStatusWorkspaceList({
       {platformIsNative ? (
         <NestableScrollContainer
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
           testID="sidebar-status-list-scroll"
         >
@@ -168,7 +175,7 @@ export function SidebarStatusWorkspaceList({
       ) : (
         <ScrollView
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
           testID="sidebar-status-list-scroll"
         >
@@ -246,6 +253,11 @@ function StatusGroupRows({
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
 }) {
+  const { projectSpacing } = useSidebarListSpacing();
+  const statusGroupBlockStyle = useMemo(
+    () => [styles.statusGroupBlock, { marginBottom: projectSpacing }],
+    [projectSpacing],
+  );
   const {
     visibleItems: visibleWorkspaces,
     expanded: workspacesExpanded,
@@ -254,7 +266,7 @@ function StatusGroupRows({
   } = useLimitedSidebarGroup(group.rows);
 
   return (
-    <View style={styles.statusGroupBlock}>
+    <View style={statusGroupBlockStyle}>
       <StatusGroupHeader group={group} collapsed={collapsed} />
       {!collapsed ? (
         <View
@@ -308,6 +320,9 @@ function buildStatusRowSubtitle({
 
 function StatusGroupHeader({ group, collapsed }: { group: StatusGroup; collapsed: boolean }) {
   const [isHovered, setIsHovered] = useState(false);
+  const isCompact = useIsCompactFormFactor();
+  const { rowVerticalPadding, sessionSpacing } = useSidebarListSpacing();
+  const effectiveVerticalPadding = isCompact ? Math.max(8, rowVerticalPadding) : rowVerticalPadding;
   const toggleStatusGroupCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleStatusGroupCollapsed,
   );
@@ -319,10 +334,15 @@ function StatusGroupHeader({ group, collapsed }: { group: StatusGroup; collapsed
   const rowStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
       styles.statusGroupRow,
+      {
+        minHeight: isCompact ? 36 : 20 + effectiveVerticalPadding * 2,
+        marginBottom: sessionSpacing,
+        paddingVertical: effectiveVerticalPadding,
+      },
       isHovered && styles.statusGroupRowHovered,
       pressed && styles.statusGroupRowPressed,
     ],
-    [isHovered],
+    [effectiveVerticalPadding, isCompact, isHovered, sessionSpacing],
   );
   const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
 
@@ -639,6 +659,9 @@ function StatusWorkspaceRowInner({
   reserveIdleStatusIndicatorSpace?: boolean;
 }) {
   const isTouchPlatform = platformIsNative;
+  const isCompact = useIsCompactFormFactor();
+  const { rowVerticalPadding, sessionSpacing } = useSidebarListSpacing();
+  const effectiveVerticalPadding = isCompact ? Math.max(8, rowVerticalPadding) : rowVerticalPadding;
 
   const isDesktop = !isTouchPlatform;
   const showScriptsIcon = isDesktop && workspace.hasRunningScripts;
@@ -660,13 +683,21 @@ function StatusWorkspaceRowInner({
         const showKebabInSlot = showKebab && !showShortcut;
         const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
         const workspaceRowStyle = getStatusWorkspaceRowStyle({ selected, isHovered });
+        const resolvedWorkspaceRowStyle = [
+          ...workspaceRowStyle,
+          {
+            minHeight: isCompact ? 36 : 20 + effectiveVerticalPadding * 2,
+            marginBottom: sessionSpacing,
+            paddingVertical: effectiveVerticalPadding,
+          },
+        ];
         return (
           <View style={styles.workspaceRowContainer} {...hoverHandlers}>
             <Pressable
               disabled={isArchiving}
               accessibilityRole="button"
               accessibilityState={accessibilityState}
-              style={workspaceRowStyle}
+              style={resolvedWorkspaceRowStyle}
               onPress={onPress}
               testID={`sidebar-workspace-row-${workspace.workspaceKey}`}
             >

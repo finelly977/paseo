@@ -6,7 +6,15 @@ import {
   DEFAULT_APP_SETTINGS,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_CODE_FONT_SIZE,
+  DEFAULT_CONVERSATION_DIVIDER_SPACING,
+  DEFAULT_CONVERSATION_HORIZONTAL_PADDING,
+  DEFAULT_CONVERSATION_MESSAGE_SPACING,
+  DEFAULT_CONVERSATION_VERTICAL_PADDING,
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_SIDEBAR_HORIZONTAL_PADDING,
+  DEFAULT_SIDEBAR_PROJECT_SPACING,
+  DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING,
+  DEFAULT_SIDEBAR_SESSION_SPACING,
   DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   DEFAULT_UI_FONT_SIZE,
   loadAppSettingsFromStorage,
@@ -364,7 +372,15 @@ describe("appearance settings", () => {
     expect(result.syntaxTheme).toBe("one");
     expect(result.toolCallDetailLevel).toBe("detailed");
     expect(result.messageParagraphSpacing).toBe(DEFAULT_MESSAGE_PARAGRAPH_SPACING);
+    expect(result.conversationMessageSpacing).toBe(DEFAULT_CONVERSATION_MESSAGE_SPACING);
+    expect(result.conversationDividerSpacing).toBe(DEFAULT_CONVERSATION_DIVIDER_SPACING);
+    expect(result.conversationVerticalPadding).toBe(DEFAULT_CONVERSATION_VERTICAL_PADDING);
+    expect(result.conversationHorizontalPadding).toBe(DEFAULT_CONVERSATION_HORIZONTAL_PADDING);
     expect(result.sidebarWorkspaceVisibleCount).toBe(DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT);
+    expect(result.sidebarProjectSpacing).toBe(DEFAULT_SIDEBAR_PROJECT_SPACING);
+    expect(result.sidebarSessionSpacing).toBe(DEFAULT_SIDEBAR_SESSION_SPACING);
+    expect(result.sidebarRowVerticalPadding).toBe(DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING);
+    expect(result.sidebarHorizontalPadding).toBe(DEFAULT_SIDEBAR_HORIZONTAL_PADDING);
     expect(result.conversationHistoryLoadCount).toBe(DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT);
     expect(result.totalConversationHistoryLimit).toBe(DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT);
   });
@@ -474,6 +490,34 @@ describe("appearance settings", () => {
       }),
     });
     expect((await loadAppSettingsFromStorage(low)).sidebarWorkspaceVisibleCount).toBe(1);
+  });
+
+  it("校验并限制对话与侧栏间距", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          conversationMessageSpacing: 999,
+          conversationDividerSpacing: -5,
+          conversationVerticalPadding: "无效",
+          conversationHorizontalPadding: 24,
+          sidebarProjectSpacing: 999,
+          sidebarSessionSpacing: -5,
+          sidebarRowVerticalPadding: "无效",
+          sidebarHorizontalPadding: 20,
+        }),
+      }),
+    });
+
+    await expect(loadAppSettingsFromStorage(deps)).resolves.toMatchObject({
+      conversationMessageSpacing: 32,
+      conversationDividerSpacing: 0,
+      conversationVerticalPadding: DEFAULT_CONVERSATION_VERTICAL_PADDING,
+      conversationHorizontalPadding: 24,
+      sidebarProjectSpacing: 24,
+      sidebarSessionSpacing: 0,
+      sidebarRowVerticalPadding: DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING,
+      sidebarHorizontalPadding: 20,
+    });
   });
 
   it("trims an accepted font family", async () => {

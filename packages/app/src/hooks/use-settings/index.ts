@@ -27,9 +27,33 @@ import {
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   MIN_MESSAGE_PARAGRAPH_SPACING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_CONVERSATION_MESSAGE_SPACING,
+  MIN_CONVERSATION_MESSAGE_SPACING,
+  MAX_CONVERSATION_MESSAGE_SPACING,
+  DEFAULT_CONVERSATION_DIVIDER_SPACING,
+  MIN_CONVERSATION_DIVIDER_SPACING,
+  MAX_CONVERSATION_DIVIDER_SPACING,
+  DEFAULT_CONVERSATION_VERTICAL_PADDING,
+  MIN_CONVERSATION_VERTICAL_PADDING,
+  MAX_CONVERSATION_VERTICAL_PADDING,
+  DEFAULT_CONVERSATION_HORIZONTAL_PADDING,
+  MIN_CONVERSATION_HORIZONTAL_PADDING,
+  MAX_CONVERSATION_HORIZONTAL_PADDING,
   DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  DEFAULT_SIDEBAR_PROJECT_SPACING,
+  MIN_SIDEBAR_PROJECT_SPACING,
+  MAX_SIDEBAR_PROJECT_SPACING,
+  DEFAULT_SIDEBAR_SESSION_SPACING,
+  MIN_SIDEBAR_SESSION_SPACING,
+  MAX_SIDEBAR_SESSION_SPACING,
+  DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING,
+  MIN_SIDEBAR_ROW_VERTICAL_PADDING,
+  MAX_SIDEBAR_ROW_VERTICAL_PADDING,
+  DEFAULT_SIDEBAR_HORIZONTAL_PADDING,
+  MIN_SIDEBAR_HORIZONTAL_PADDING,
+  MAX_SIDEBAR_HORIZONTAL_PADDING,
   loadAppSettingsFromStorage as loadAppSettingsFromStoragePure,
   loadSettingsFromStorage as loadSettingsFromStoragePure,
   normalizeAppSettings,
@@ -73,9 +97,33 @@ export {
   DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   MIN_MESSAGE_PARAGRAPH_SPACING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
+  DEFAULT_CONVERSATION_MESSAGE_SPACING,
+  MIN_CONVERSATION_MESSAGE_SPACING,
+  MAX_CONVERSATION_MESSAGE_SPACING,
+  DEFAULT_CONVERSATION_DIVIDER_SPACING,
+  MIN_CONVERSATION_DIVIDER_SPACING,
+  MAX_CONVERSATION_DIVIDER_SPACING,
+  DEFAULT_CONVERSATION_VERTICAL_PADDING,
+  MIN_CONVERSATION_VERTICAL_PADDING,
+  MAX_CONVERSATION_VERTICAL_PADDING,
+  DEFAULT_CONVERSATION_HORIZONTAL_PADDING,
+  MIN_CONVERSATION_HORIZONTAL_PADDING,
+  MAX_CONVERSATION_HORIZONTAL_PADDING,
   DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
   MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  DEFAULT_SIDEBAR_PROJECT_SPACING,
+  MIN_SIDEBAR_PROJECT_SPACING,
+  MAX_SIDEBAR_PROJECT_SPACING,
+  DEFAULT_SIDEBAR_SESSION_SPACING,
+  MIN_SIDEBAR_SESSION_SPACING,
+  MAX_SIDEBAR_SESSION_SPACING,
+  DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING,
+  MIN_SIDEBAR_ROW_VERTICAL_PADDING,
+  MAX_SIDEBAR_ROW_VERTICAL_PADDING,
+  DEFAULT_SIDEBAR_HORIZONTAL_PADDING,
+  MIN_SIDEBAR_HORIZONTAL_PADDING,
+  MAX_SIDEBAR_HORIZONTAL_PADDING,
   parseClampedFontSize,
   parseBoundedInteger,
   parseTerminalScrollbackLines,
@@ -124,7 +172,15 @@ type NumericAppSetting =
   | "uiFontSize"
   | "codeFontSize"
   | "messageParagraphSpacing"
+  | "conversationMessageSpacing"
+  | "conversationDividerSpacing"
+  | "conversationVerticalPadding"
+  | "conversationHorizontalPadding"
   | "sidebarWorkspaceVisibleCount"
+  | "sidebarProjectSpacing"
+  | "sidebarSessionSpacing"
+  | "sidebarRowVerticalPadding"
+  | "sidebarHorizontalPadding"
   | "conversationHistoryLoadCount"
   | "totalConversationHistoryLimit";
 
@@ -216,7 +272,15 @@ export function useSettings<TSelected>(
       copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "conversationMessageSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "conversationDividerSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "conversationVerticalPadding");
+      copyDefinedNumericAppSetting(appUpdates, updates, "conversationHorizontalPadding");
       copyDefinedNumericAppSetting(appUpdates, updates, "sidebarWorkspaceVisibleCount");
+      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarProjectSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarSessionSpacing");
+      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarRowVerticalPadding");
+      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarHorizontalPadding");
       copyDefinedNumericAppSetting(appUpdates, updates, "conversationHistoryLoadCount");
       copyDefinedNumericAppSetting(appUpdates, updates, "totalConversationHistoryLimit");
       if (updates.syntaxTheme !== undefined) {

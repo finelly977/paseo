@@ -142,6 +142,16 @@ describe("getGapBetweenStreamItems", () => {
         assistantBlock({ id: "answer", blockGroupId: "answer", blockIndex: 0 }),
         { kind: "compaction", id: "compact", status: "completed", timestamp: new Date() },
       ),
-    ).toBe(8);
+    ).toBe(0);
+  });
+
+  it("按设置值等比例调整不同关系的消息间距", () => {
+    const assistant = assistantBlock({ id: "answer", blockGroupId: "answer", blockIndex: 0 });
+    const user = { kind: "user_message", id: "next", text: "next", timestamp: new Date() } as const;
+    const tool = toolCallBlock("tool");
+
+    expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(24);
+    expect(getGapBetweenStreamItems(assistant, tool, 24)).toBe(8);
+    expect(getGapBetweenStreamItems(user, tool, 24)).toBe(16);
   });
 });

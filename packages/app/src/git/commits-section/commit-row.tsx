@@ -141,18 +141,18 @@ function ReferenceIcon({
 }) {
   switch (kind) {
     case "head":
-      return <ThemedLocateFixed size={10} uniProps={badgeIconMapping} />;
+      return <ThemedLocateFixed size={inTooltip ? 14 : 10} uniProps={badgeIconMapping} />;
     case "branch":
       return (
         <ThemedGitBranch
-          size={10}
+          size={inTooltip ? 12 : 10}
           uniProps={inTooltip ? currentReferenceIconMapping : branchBadgeIconMapping}
         />
       );
     case "remote":
-      return <ThemedCloud size={10} uniProps={badgeIconMapping} />;
+      return <ThemedCloud size={inTooltip ? 14 : 10} uniProps={badgeIconMapping} />;
     case "tag":
-      return <ThemedTag size={10} uniProps={tagBadgeIconMapping} />;
+      return <ThemedTag size={inTooltip ? 14 : 10} uniProps={tagBadgeIconMapping} />;
   }
 }
 
@@ -245,7 +245,7 @@ function CommitTooltip({
       side="left"
       align="center"
       offset={8}
-      maxWidth={480}
+      maxWidth={440}
       style={styles.tooltipSurface}
     >
       <View style={styles.tooltip} testID={`commit-tooltip-${commit.shortSha}`}>
@@ -262,7 +262,7 @@ function CommitTooltip({
         </View>
         <View style={styles.tooltipSeparator} />
         <View style={[styles.tooltipSection, styles.tooltipStats]}>
-          <Text style={styles.tooltipMetadata}>
+          <Text style={styles.tooltipStatsText}>
             {t("workspace.git.diff.commits.filesChanged", { count: commit.statistics.files })}
             {commit.statistics.additions > 0 ? (
               <Text style={styles.tooltipAdditions}>
@@ -710,54 +710,60 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
   },
   tooltipSurface: {
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    borderRadius: theme.borderRadius.base,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    borderRadius: theme.borderRadius.sm,
+    ...theme.shadow.sm,
   },
   tooltip: {
-    minWidth: 400,
-    maxWidth: 440,
+    minWidth: 320,
+    maxWidth: 420,
     overflow: "hidden",
   },
   tooltipHeaderSection: {
-    paddingHorizontal: theme.spacing[3],
-    paddingTop: theme.spacing[2],
-    paddingBottom: 10,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   tooltipSection: {
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: 10,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   tooltipAuthorRow: {
-    minHeight: 24,
+    minHeight: 20,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: 4,
   },
   tooltipAuthor: {
-    marginRight: theme.spacing[1],
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.scmGraphLinkForeground,
   },
   tooltipMessage: {
-    marginTop: theme.spacing[1],
-    fontSize: theme.fontSize.sm,
-    lineHeight: 20,
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 18,
     color: theme.colors.popoverForeground,
   },
   tooltipMetadata: {
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
     lineHeight: 18,
     color: theme.colors.foregroundMuted,
   },
   tooltipSeparator: {
     height: theme.borderWidth[1],
+    marginVertical: 4,
     backgroundColor: theme.colors.border,
   },
   tooltipStats: {
-    minHeight: 20,
+    minHeight: 18,
     justifyContent: "center",
+  },
+  tooltipStatsText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.colors.popoverForeground,
   },
   tooltipAdditions: {
     color: theme.colorScheme === "dark" ? "#81b88b" : "#587c0c",
@@ -768,55 +774,57 @@ const styles = StyleSheet.create((theme) => ({
   tooltipReferences: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: theme.spacing[1],
+    gap: 4,
   },
   tooltipReference: {
-    minHeight: 26,
+    minHeight: 18,
     maxWidth: 180,
-    paddingHorizontal: 7,
+    paddingHorizontal: 5,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
-    borderRadius: 13,
+    gap: 4,
+    borderRadius: 10,
     backgroundColor: theme.colors.accent,
   },
   tooltipReferenceBranch: {
     backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   tooltipReferenceText: {
-    fontSize: theme.fontSize.sm,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 16,
   },
   tooltipReferenceTextBranch: {
     color: theme.colors.scmGraphCurrentRefForeground,
   },
   tooltipCommitRow: {
-    minHeight: 36,
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+    minHeight: 20,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: 4,
   },
   tooltipSha: {
     flexShrink: 1,
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
+    lineHeight: 18,
     fontFamily: theme.fontFamily.mono,
     color: theme.colors.scmGraphLinkForeground,
   },
   tooltipCommitDivider: {
     width: theme.borderWidth[1],
     height: 14,
-    marginHorizontal: 2,
+    marginHorizontal: 4,
     backgroundColor: theme.colors.border,
   },
   tooltipOpenLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: 4,
   },
   tooltipOpenLinkText: {
-    fontSize: theme.fontSize.sm,
+    fontSize: 13,
+    lineHeight: 18,
     color: theme.colors.scmGraphLinkForeground,
   },
 }));

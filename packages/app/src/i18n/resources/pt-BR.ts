@@ -1918,8 +1918,29 @@ export const ptBR: TranslationResources = {
       },
       spacing: {
         title: "Espaçamento",
+        conversationTitle: "Área de conversa",
+        message: "Espaçamento de mensagens",
+        messageAccessibility: "Espaçamento das mensagens da conversa em pixels",
         paragraph: "Espaçamento de parágrafos",
         paragraphAccessibility: "Espaçamento de parágrafos da mensagem em pixels",
+        divider: "Espaçamento dos divisores",
+        dividerAccessibility: "Espaçamento vertical dos divisores da conversa em pixels",
+        conversationVerticalPadding: "Margem vertical",
+        conversationVerticalPaddingAccessibility: "Margem vertical da área de conversa em pixels",
+        conversationHorizontalPadding: "Margem horizontal",
+        conversationHorizontalPaddingAccessibility:
+          "Margem horizontal da área de conversa em pixels",
+        sidebarTitle: "Lista de espaços de trabalho",
+        sidebarProject: "Espaçamento de espaços de trabalho",
+        sidebarProjectAccessibility: "Espaçamento entre espaços de trabalho em pixels",
+        sidebarSession: "Espaçamento de sessões",
+        sidebarSessionAccessibility: "Espaçamento entre sessões em pixels",
+        sidebarRowPadding: "Margem vertical das linhas",
+        sidebarRowPaddingAccessibility:
+          "Margem vertical das linhas de espaços de trabalho e sessões em pixels",
+        sidebarHorizontalPadding: "Margem horizontal da lista",
+        sidebarHorizontalPaddingAccessibility:
+          "Margem horizontal da lista de espaços de trabalho em pixels",
       },
       fonts: {
         title: "Fontes",

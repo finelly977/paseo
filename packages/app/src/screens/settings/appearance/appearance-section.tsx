@@ -20,11 +20,28 @@ import { Switch } from "@/components/ui/switch";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import {
   MAX_CODE_FONT_SIZE,
+  MAX_CONVERSATION_DIVIDER_SPACING,
+  MAX_CONVERSATION_HORIZONTAL_PADDING,
+  MAX_CONVERSATION_MESSAGE_SPACING,
+  MAX_CONVERSATION_VERTICAL_PADDING,
   MAX_MESSAGE_PARAGRAPH_SPACING,
+  MAX_SIDEBAR_HORIZONTAL_PADDING,
+  MAX_SIDEBAR_PROJECT_SPACING,
+  MAX_SIDEBAR_ROW_VERTICAL_PADDING,
+  MAX_SIDEBAR_SESSION_SPACING,
   MAX_UI_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
+  MIN_CONVERSATION_DIVIDER_SPACING,
+  MIN_CONVERSATION_HORIZONTAL_PADDING,
+  MIN_CONVERSATION_MESSAGE_SPACING,
+  MIN_CONVERSATION_VERTICAL_PADDING,
   MIN_MESSAGE_PARAGRAPH_SPACING,
+  MIN_SIDEBAR_HORIZONTAL_PADDING,
+  MIN_SIDEBAR_PROJECT_SPACING,
+  MIN_SIDEBAR_ROW_VERTICAL_PADDING,
+  MIN_SIDEBAR_SESSION_SPACING,
   MIN_UI_FONT_SIZE,
+  parseBoundedInteger,
   parseClampedFontSize,
   sanitizeFontFamily,
   useAppSettings,
@@ -384,6 +401,79 @@ function FontSizeRow({
   );
 }
 
+interface PixelSpacingRowProps {
+  title: string;
+  accessibilityLabel: string;
+  settingKey: SpacingSettingKey;
+  value: number;
+  min: number;
+  max: number;
+  withBorder?: boolean;
+  onChange: (key: SpacingSettingKey, value: number) => void;
+}
+
+type SpacingSettingKey =
+  | "messageParagraphSpacing"
+  | "conversationMessageSpacing"
+  | "conversationDividerSpacing"
+  | "conversationVerticalPadding"
+  | "conversationHorizontalPadding"
+  | "sidebarProjectSpacing"
+  | "sidebarSessionSpacing"
+  | "sidebarRowVerticalPadding"
+  | "sidebarHorizontalPadding";
+
+function PixelSpacingRow({
+  title,
+  accessibilityLabel,
+  settingKey,
+  value,
+  min,
+  max,
+  withBorder = true,
+  onChange,
+}: PixelSpacingRowProps) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const handleChangeDraft = useCallback((next: string) => {
+    setDraft(next.replace(/[^\d]/g, ""));
+  }, []);
+  const handleCommit = useCallback(() => {
+    const parsed = parseBoundedInteger(draft, { min, max });
+    const next = parsed ?? value;
+    setDraft(String(next));
+    if (next !== value) {
+      onChange(settingKey, next);
+    }
+  }, [draft, max, min, onChange, settingKey, value]);
+
+  return (
+    <View style={withBorder ? styles.rowWithBorder : settingsStyles.row}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{title}</Text>
+      </View>
+      <View style={styles.sizeField}>
+        <TextInput
+          value={draft}
+          onChangeText={handleChangeDraft}
+          onBlur={handleCommit}
+          onSubmitEditing={handleCommit}
+          keyboardType="number-pad"
+          inputMode="numeric"
+          selectTextOnFocus
+          style={styles.sizeInput}
+          accessibilityLabel={accessibilityLabel}
+        />
+        <Text style={styles.unit}>px</Text>
+      </View>
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Syntax highlight theme picker (commits immediately)
 // ---------------------------------------------------------------------------
@@ -468,9 +558,6 @@ export function AppearanceSection() {
   const [monoFontDraft, setMonoFontDraft] = useState(settings.monoFontFamily);
   const [uiSizeDraft, setUiSizeDraft] = useState(String(settings.uiFontSize));
   const [codeSizeDraft, setCodeSizeDraft] = useState(String(settings.codeFontSize));
-  const [paragraphSpacingDraft, setParagraphSpacingDraft] = useState(
-    String(settings.messageParagraphSpacing),
-  );
 
   // Resync numeric drafts when the committed value changes elsewhere.
   useEffect(() => {
@@ -479,9 +566,6 @@ export function AppearanceSection() {
   useEffect(() => {
     setCodeSizeDraft(String(settings.codeFontSize));
   }, [settings.codeFontSize]);
-  useEffect(() => {
-    setParagraphSpacingDraft(String(settings.messageParagraphSpacing));
-  }, [settings.messageParagraphSpacing]);
 
   const handleThemeChange = useCallback(
     (theme: AppSettings["theme"]) => {
@@ -573,21 +657,14 @@ export function AppearanceSection() {
     }
   }, [codeSizeDraft, settings.codeFontSize, updateSettings]);
 
-  const handleParagraphSpacingChange = useCallback((value: string) => {
-    setParagraphSpacingDraft(value.replace(/[^\d]/g, ""));
-  }, []);
-
-  const commitParagraphSpacing = useCallback(() => {
-    const parsed = parseClampedFontSize(paragraphSpacingDraft, {
-      min: MIN_MESSAGE_PARAGRAPH_SPACING,
-      max: MAX_MESSAGE_PARAGRAPH_SPACING,
-    });
-    const next = parsed ?? settings.messageParagraphSpacing;
-    setParagraphSpacingDraft(String(next));
-    if (next !== settings.messageParagraphSpacing) {
-      void updateSettings({ messageParagraphSpacing: next });
-    }
-  }, [paragraphSpacingDraft, settings.messageParagraphSpacing, updateSettings]);
+  const updateSpacing = useCallback(
+    (key: SpacingSettingKey, value: number) => {
+      void updateSettings({ [key]: value }).catch((error) => {
+        console.error("[外观设置] 保存间距失败", error);
+      });
+    },
+    [updateSettings],
+  );
 
   // Live-while-typing: the in-progress drafts drive the preview without
   // committing to the global theme. Empty/invalid fields fall back to the
@@ -619,15 +696,100 @@ export function AppearanceSection() {
           />
         </View>
       </SettingsSection>
-      <SettingsSection title={t("settings.appearance.spacing.title")}>
+      <SettingsSection title={t("settings.appearance.spacing.conversationTitle")}>
         <View style={settingsStyles.card}>
-          <FontSizeRow
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.message")}
+            accessibilityLabel={t("settings.appearance.spacing.messageAccessibility")}
+            settingKey="conversationMessageSpacing"
+            value={settings.conversationMessageSpacing}
+            min={MIN_CONVERSATION_MESSAGE_SPACING}
+            max={MAX_CONVERSATION_MESSAGE_SPACING}
+            withBorder={false}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
             title={t("settings.appearance.spacing.paragraph")}
             accessibilityLabel={t("settings.appearance.spacing.paragraphAccessibility")}
-            draft={paragraphSpacingDraft}
+            settingKey="messageParagraphSpacing"
+            value={settings.messageParagraphSpacing}
+            min={MIN_MESSAGE_PARAGRAPH_SPACING}
+            max={MAX_MESSAGE_PARAGRAPH_SPACING}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.divider")}
+            accessibilityLabel={t("settings.appearance.spacing.dividerAccessibility")}
+            settingKey="conversationDividerSpacing"
+            value={settings.conversationDividerSpacing}
+            min={MIN_CONVERSATION_DIVIDER_SPACING}
+            max={MAX_CONVERSATION_DIVIDER_SPACING}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.conversationVerticalPadding")}
+            accessibilityLabel={t(
+              "settings.appearance.spacing.conversationVerticalPaddingAccessibility",
+            )}
+            settingKey="conversationVerticalPadding"
+            value={settings.conversationVerticalPadding}
+            min={MIN_CONVERSATION_VERTICAL_PADDING}
+            max={MAX_CONVERSATION_VERTICAL_PADDING}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.conversationHorizontalPadding")}
+            accessibilityLabel={t(
+              "settings.appearance.spacing.conversationHorizontalPaddingAccessibility",
+            )}
+            settingKey="conversationHorizontalPadding"
+            value={settings.conversationHorizontalPadding}
+            min={MIN_CONVERSATION_HORIZONTAL_PADDING}
+            max={MAX_CONVERSATION_HORIZONTAL_PADDING}
+            onChange={updateSpacing}
+          />
+        </View>
+      </SettingsSection>
+      <SettingsSection title={t("settings.appearance.spacing.sidebarTitle")}>
+        <View style={settingsStyles.card}>
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.sidebarProject")}
+            accessibilityLabel={t("settings.appearance.spacing.sidebarProjectAccessibility")}
+            settingKey="sidebarProjectSpacing"
+            value={settings.sidebarProjectSpacing}
+            min={MIN_SIDEBAR_PROJECT_SPACING}
+            max={MAX_SIDEBAR_PROJECT_SPACING}
             withBorder={false}
-            onChangeDraft={handleParagraphSpacingChange}
-            onCommit={commitParagraphSpacing}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.sidebarSession")}
+            accessibilityLabel={t("settings.appearance.spacing.sidebarSessionAccessibility")}
+            settingKey="sidebarSessionSpacing"
+            value={settings.sidebarSessionSpacing}
+            min={MIN_SIDEBAR_SESSION_SPACING}
+            max={MAX_SIDEBAR_SESSION_SPACING}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.sidebarRowPadding")}
+            accessibilityLabel={t("settings.appearance.spacing.sidebarRowPaddingAccessibility")}
+            settingKey="sidebarRowVerticalPadding"
+            value={settings.sidebarRowVerticalPadding}
+            min={MIN_SIDEBAR_ROW_VERTICAL_PADDING}
+            max={MAX_SIDEBAR_ROW_VERTICAL_PADDING}
+            onChange={updateSpacing}
+          />
+          <PixelSpacingRow
+            title={t("settings.appearance.spacing.sidebarHorizontalPadding")}
+            accessibilityLabel={t(
+              "settings.appearance.spacing.sidebarHorizontalPaddingAccessibility",
+            )}
+            settingKey="sidebarHorizontalPadding"
+            value={settings.sidebarHorizontalPadding}
+            min={MIN_SIDEBAR_HORIZONTAL_PADDING}
+            max={MAX_SIDEBAR_HORIZONTAL_PADDING}
+            onChange={updateSpacing}
           />
         </View>
       </SettingsSection>

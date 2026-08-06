@@ -144,6 +144,8 @@ describe("createWebStreamStrategy", () => {
             hasOlderHistory: false,
             scrollEnabled: true,
             messageParagraphSpacing: 8,
+            conversationVerticalPadding: 7,
+            conversationHorizontalPadding: 9,
             listStyle: null,
             baseListContentContainerStyle: null,
             forwardListContentContainerStyle: null,
@@ -158,6 +160,14 @@ describe("createWebStreamStrategy", () => {
     // measurement loop would blow far past this bound instead of settling.
     expect(rowRenderCount.mock.calls.length).toBeGreaterThan(0);
     expect(rowRenderCount.mock.calls.length).toBeLessThanOrEqual(historyVirtualized.length * 2);
+    const content = container.querySelector('[data-testid="agent-chat-scroll"]')?.firstElementChild;
+    if (!(content instanceof HTMLElement)) {
+      throw new Error("未找到对话内容容器");
+    }
+    expect(content.style.paddingTop).toBe("7px");
+    expect(content.style.paddingBottom).toBe("7px");
+    expect(content.style.paddingLeft).toBe("9px");
+    expect(content.style.paddingRight).toBe("9px");
   });
 
   it("让旧历史加载指示器脱离消息布局", () => {

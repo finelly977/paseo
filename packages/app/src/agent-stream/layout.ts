@@ -41,6 +41,7 @@ export interface StreamLayoutInput {
   history: StreamItem[];
   liveHead: StreamItem[];
   timingByAssistantId: Map<string, TurnTiming>;
+  messageSpacing: number;
 }
 
 interface LayoutSegmentInput {
@@ -55,6 +56,7 @@ interface LayoutSegmentInput {
   boundaryBelowItem: StreamItem | null;
   boundaryAboveItems: StreamItem[] | null;
   boundaryAboveIndex: number | null;
+  messageSpacing: number;
 }
 
 interface AssistantFooterSource {
@@ -440,7 +442,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       items: input.items,
       aboveItem,
       belowItem,
-      gapBelow: turnFooter ? 0 : getGapBetweenStreamItems(item, belowItem),
+      gapBelow: turnFooter ? 0 : getGapBetweenStreamItems(item, belowItem, input.messageSpacing),
       assistantSpacing,
       completedFooter: turnFooter,
       toolSequence: getToolSequence({ item, aboveItem, belowItem }),
@@ -479,6 +481,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
       auxiliaryTurnFooter?.itemId ?? "null",
+      input.messageSpacing,
     ].join(":");
     let byKey = historyLayoutCache.get(input.history);
     if (!byKey) {
@@ -501,6 +504,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
         boundaryBelowItem: liveHeadBoundaryItem,
         boundaryAboveItems: null,
         boundaryAboveIndex: null,
+        messageSpacing: input.messageSpacing,
       });
       byKey.set(historyCacheKey, history);
     }
@@ -520,6 +524,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     boundaryBelowItem: null,
     boundaryAboveItems: input.history,
     boundaryAboveIndex: historyBoundaryIndex,
+    messageSpacing: input.messageSpacing,
   });
 
   return {

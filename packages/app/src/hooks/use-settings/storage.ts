@@ -39,9 +39,33 @@ export const MAX_FONT_FAMILY_LENGTH = 200;
 export const DEFAULT_MESSAGE_PARAGRAPH_SPACING = 8; // 对应 SPACING[2]，默认的段落间距
 export const MIN_MESSAGE_PARAGRAPH_SPACING = 0;
 export const MAX_MESSAGE_PARAGRAPH_SPACING = 32;
+export const DEFAULT_CONVERSATION_MESSAGE_SPACING = 12;
+export const MIN_CONVERSATION_MESSAGE_SPACING = 0;
+export const MAX_CONVERSATION_MESSAGE_SPACING = 32;
+export const DEFAULT_CONVERSATION_DIVIDER_SPACING = 8;
+export const MIN_CONVERSATION_DIVIDER_SPACING = 0;
+export const MAX_CONVERSATION_DIVIDER_SPACING = 32;
+export const DEFAULT_CONVERSATION_VERTICAL_PADDING = 16;
+export const MIN_CONVERSATION_VERTICAL_PADDING = 0;
+export const MAX_CONVERSATION_VERTICAL_PADDING = 48;
+export const DEFAULT_CONVERSATION_HORIZONTAL_PADDING = 16;
+export const MIN_CONVERSATION_HORIZONTAL_PADDING = 0;
+export const MAX_CONVERSATION_HORIZONTAL_PADDING = 48;
 export const DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 5;
 export const MIN_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 1;
 export const MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT = 100;
+export const DEFAULT_SIDEBAR_PROJECT_SPACING = 2;
+export const MIN_SIDEBAR_PROJECT_SPACING = 0;
+export const MAX_SIDEBAR_PROJECT_SPACING = 24;
+export const DEFAULT_SIDEBAR_SESSION_SPACING = 2;
+export const MIN_SIDEBAR_SESSION_SPACING = 0;
+export const MAX_SIDEBAR_SESSION_SPACING = 24;
+export const DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING = 4;
+export const MIN_SIDEBAR_ROW_VERTICAL_PADDING = 0;
+export const MAX_SIDEBAR_ROW_VERTICAL_PADDING = 16;
+export const DEFAULT_SIDEBAR_HORIZONTAL_PADDING = 8;
+export const MIN_SIDEBAR_HORIZONTAL_PADDING = 0;
+export const MAX_SIDEBAR_HORIZONTAL_PADDING = 32;
 
 export interface AppSettings {
   theme: ThemeName | "auto";
@@ -59,7 +83,15 @@ export interface AppSettings {
   toolCallDetailLevel: ToolCallDetailLevel;
   vimKeybindings: boolean;
   messageParagraphSpacing: number; // 每个消息段落下方的像素间距，默认 8
+  conversationMessageSpacing: number;
+  conversationDividerSpacing: number;
+  conversationVerticalPadding: number;
+  conversationHorizontalPadding: number;
   sidebarWorkspaceVisibleCount: number;
+  sidebarProjectSpacing: number;
+  sidebarSessionSpacing: number;
+  sidebarRowVerticalPadding: number;
+  sidebarHorizontalPadding: number;
   conversationHistoryLoadCount: number;
   totalConversationHistoryLimit: number;
 }
@@ -87,7 +119,15 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   toolCallDetailLevel: "detailed",
   vimKeybindings: false,
   messageParagraphSpacing: DEFAULT_MESSAGE_PARAGRAPH_SPACING,
+  conversationMessageSpacing: DEFAULT_CONVERSATION_MESSAGE_SPACING,
+  conversationDividerSpacing: DEFAULT_CONVERSATION_DIVIDER_SPACING,
+  conversationVerticalPadding: DEFAULT_CONVERSATION_VERTICAL_PADDING,
+  conversationHorizontalPadding: DEFAULT_CONVERSATION_HORIZONTAL_PADDING,
   sidebarWorkspaceVisibleCount: DEFAULT_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
+  sidebarProjectSpacing: DEFAULT_SIDEBAR_PROJECT_SPACING,
+  sidebarSessionSpacing: DEFAULT_SIDEBAR_SESSION_SPACING,
+  sidebarRowVerticalPadding: DEFAULT_SIDEBAR_ROW_VERTICAL_PADDING,
+  sidebarHorizontalPadding: DEFAULT_SIDEBAR_HORIZONTAL_PADDING,
   conversationHistoryLoadCount: DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
   totalConversationHistoryLimit: DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
 };
@@ -214,7 +254,15 @@ type NumericAppSetting =
   | "uiFontSize"
   | "codeFontSize"
   | "messageParagraphSpacing"
+  | "conversationMessageSpacing"
+  | "conversationDividerSpacing"
+  | "conversationVerticalPadding"
+  | "conversationHorizontalPadding"
   | "sidebarWorkspaceVisibleCount"
+  | "sidebarProjectSpacing"
+  | "sidebarSessionSpacing"
+  | "sidebarRowVerticalPadding"
+  | "sidebarHorizontalPadding"
   | "conversationHistoryLoadCount"
   | "totalConversationHistoryLimit";
 
@@ -274,6 +322,42 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   });
   copyClampedNumericSetting(
     result,
+    "conversationMessageSpacing",
+    stored.conversationMessageSpacing,
+    {
+      min: MIN_CONVERSATION_MESSAGE_SPACING,
+      max: MAX_CONVERSATION_MESSAGE_SPACING,
+    },
+  );
+  copyClampedNumericSetting(
+    result,
+    "conversationDividerSpacing",
+    stored.conversationDividerSpacing,
+    {
+      min: MIN_CONVERSATION_DIVIDER_SPACING,
+      max: MAX_CONVERSATION_DIVIDER_SPACING,
+    },
+  );
+  copyClampedNumericSetting(
+    result,
+    "conversationVerticalPadding",
+    stored.conversationVerticalPadding,
+    {
+      min: MIN_CONVERSATION_VERTICAL_PADDING,
+      max: MAX_CONVERSATION_VERTICAL_PADDING,
+    },
+  );
+  copyClampedNumericSetting(
+    result,
+    "conversationHorizontalPadding",
+    stored.conversationHorizontalPadding,
+    {
+      min: MIN_CONVERSATION_HORIZONTAL_PADDING,
+      max: MAX_CONVERSATION_HORIZONTAL_PADDING,
+    },
+  );
+  copyClampedNumericSetting(
+    result,
     "sidebarWorkspaceVisibleCount",
     stored.sidebarWorkspaceVisibleCount,
     {
@@ -281,6 +365,22 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
       max: MAX_SIDEBAR_WORKSPACE_VISIBLE_COUNT,
     },
   );
+  copyClampedNumericSetting(result, "sidebarProjectSpacing", stored.sidebarProjectSpacing, {
+    min: MIN_SIDEBAR_PROJECT_SPACING,
+    max: MAX_SIDEBAR_PROJECT_SPACING,
+  });
+  copyClampedNumericSetting(result, "sidebarSessionSpacing", stored.sidebarSessionSpacing, {
+    min: MIN_SIDEBAR_SESSION_SPACING,
+    max: MAX_SIDEBAR_SESSION_SPACING,
+  });
+  copyClampedNumericSetting(result, "sidebarRowVerticalPadding", stored.sidebarRowVerticalPadding, {
+    min: MIN_SIDEBAR_ROW_VERTICAL_PADDING,
+    max: MAX_SIDEBAR_ROW_VERTICAL_PADDING,
+  });
+  copyClampedNumericSetting(result, "sidebarHorizontalPadding", stored.sidebarHorizontalPadding, {
+    min: MIN_SIDEBAR_HORIZONTAL_PADDING,
+    max: MAX_SIDEBAR_HORIZONTAL_PADDING,
+  });
   copyClampedNumericSetting(
     result,
     "conversationHistoryLoadCount",

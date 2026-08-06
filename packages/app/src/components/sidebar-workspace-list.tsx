@@ -139,6 +139,11 @@ import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import { useOpenProject } from "@/hooks/use-open-project";
 import { useAppSettings } from "@/hooks/use-settings";
 import { SidebarProjectDropZone } from "@/components/sidebar/sidebar-project-drop-zone";
+import {
+  SidebarListSpacingContext,
+  useSidebarListSpacing,
+  type SidebarListSpacing,
+} from "@/components/sidebar/sidebar-list-spacing";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
@@ -150,6 +155,7 @@ const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
 const DEFAULT_STATUS_DOT_OFFSET = 0;
 const EMPHASIZED_STATUS_DOT_OFFSET = -1;
+
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
@@ -1007,6 +1013,10 @@ function ProjectHeaderRow({
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
   const isMobileBreakpoint = useIsCompactFormFactor();
+  const { rowVerticalPadding, sessionSpacing } = useSidebarListSpacing();
+  const effectiveVerticalPadding = isMobileBreakpoint
+    ? Math.max(8, rowVerticalPadding)
+    : rowVerticalPadding;
   const handleBeginWorkspaceSetup = useCallback(() => {
     if (!worktreeTarget) {
       return;
@@ -1046,12 +1056,17 @@ function ProjectHeaderRow({
   const projectRowStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
       styles.projectRow,
+      {
+        minHeight: isMobileBreakpoint ? 36 : 20 + effectiveVerticalPadding * 2,
+        marginBottom: sessionSpacing,
+        paddingVertical: effectiveVerticalPadding,
+      },
       isDragging && styles.projectRowDragging,
       isHovered && styles.projectRowHovered,
       selected && styles.sidebarRowSelected,
       pressed && styles.projectRowPressed,
     ],
-    [isDragging, selected, isHovered],
+    [effectiveVerticalPadding, isDragging, isHovered, isMobileBreakpoint, selected, sessionSpacing],
   );
 
   const rowChildren = (
@@ -1168,7 +1183,9 @@ function WorkspaceRowInner({
   isRemovingAgent,
   reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
-  const _isCompact = useIsCompactFormFactor();
+  const isCompact = useIsCompactFormFactor();
+  const { rowVerticalPadding, sessionSpacing } = useSidebarListSpacing();
+  const effectiveVerticalPadding = isCompact ? Math.max(8, rowVerticalPadding) : rowVerticalPadding;
   const isTouchPlatform = platformIsNative;
   const interaction = useLongPressDragInteraction({
     drag,
@@ -1208,6 +1225,14 @@ function WorkspaceRowInner({
           selected,
           isHovered,
         });
+        const resolvedWorkspaceRowStyle = [
+          ...workspaceRowStyle,
+          {
+            minHeight: isCompact ? 36 : 20 + effectiveVerticalPadding * 2,
+            marginBottom: sessionSpacing,
+            paddingVertical: effectiveVerticalPadding,
+          },
+        ];
         return (
           <View
             {...dragAttributes}
@@ -1221,7 +1246,7 @@ function WorkspaceRowInner({
               aria-selected={selected}
               accessibilityRole="button"
               accessibilityState={accessibilityState}
-              style={workspaceRowStyle}
+              style={resolvedWorkspaceRowStyle}
               onPressIn={interaction.handlePressIn}
               onTouchMove={interaction.handleTouchMove}
               onPressOut={interaction.handlePressOut}
@@ -1763,6 +1788,11 @@ function ProjectBlock({
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
   workspaceVisibleCount: number;
 }) {
+  const { projectSpacing } = useSidebarListSpacing();
+  const projectBlockStyle = useMemo(
+    () => [styles.projectBlock, { marginBottom: projectSpacing }],
+    [projectSpacing],
+  );
   const {
     visibleItems: visibleWorkspaces,
     expanded: workspacesExpanded,
@@ -1956,7 +1986,7 @@ function ProjectBlock({
   }
 
   return (
-    <View role="group" accessibilityLabel={displayName} style={styles.projectBlock}>
+    <View role="group" accessibilityLabel={displayName} style={projectBlockStyle}>
       <ProjectHeaderRow
         project={project}
         displayName={displayName}
@@ -2080,7 +2110,22 @@ export function SidebarWorkspaceList({
   const serverIds = useMemo(() => hosts.map((host) => host.serverId), [hosts]);
   const supportsMultiplicityByServerId = useHostFeatureMap(serverIds, "workspaceMultiplicity");
   const supportsPinningByServerId = useHostFeatureMap(serverIds, "workspacePinning");
-  const workspaceVisibleCount = useAppSettings().settings.sidebarWorkspaceVisibleCount;
+  const appSettings = useAppSettings().settings;
+  const workspaceVisibleCount = appSettings.sidebarWorkspaceVisibleCount;
+  const sidebarListSpacing = useMemo<SidebarListSpacing>(
+    () => ({
+      horizontalPadding: appSettings.sidebarHorizontalPadding,
+      projectSpacing: appSettings.sidebarProjectSpacing,
+      sessionSpacing: appSettings.sidebarSessionSpacing,
+      rowVerticalPadding: appSettings.sidebarRowVerticalPadding,
+    }),
+    [
+      appSettings.sidebarHorizontalPadding,
+      appSettings.sidebarProjectSpacing,
+      appSettings.sidebarRowVerticalPadding,
+      appSettings.sidebarSessionSpacing,
+    ],
+  );
   const onToggleWorkspacePin = useSidebarWorkspacePinController();
   const showHostLabels = useMemo(() => shouldShowSidebarHostLabels(projects), [projects]);
 
@@ -2152,9 +2197,11 @@ export function SidebarWorkspaceList({
     );
 
   return (
-    <SidebarProjectDropZone onDropPaths={handleProjectDrop} onError={handleProjectDropError}>
-      {content}
-    </SidebarProjectDropZone>
+    <SidebarListSpacingContext.Provider value={sidebarListSpacing}>
+      <SidebarProjectDropZone onDropPaths={handleProjectDrop} onError={handleProjectDropError}>
+        {content}
+      </SidebarProjectDropZone>
+    </SidebarListSpacingContext.Provider>
   );
 }
 
@@ -2236,6 +2283,11 @@ function ProjectModeList({
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
   workspaceVisibleCount: number;
 }) {
+  const { horizontalPadding } = useSidebarListSpacing();
+  const listContentStyle = useMemo(
+    () => [styles.listContent, { paddingHorizontal: horizontalPadding }],
+    [horizontalPadding],
+  );
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const { t } = useTranslation();
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
@@ -2596,7 +2648,7 @@ function ProjectModeList({
         <NestableScrollContainer
           {...nativeScrollGestureProps}
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
           testID="sidebar-project-workspace-list-scroll"
         >
@@ -2605,7 +2657,7 @@ function ProjectModeList({
       ) : (
         <ScrollView
           style={styles.list}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator
           testID="sidebar-project-workspace-list-scroll"
         >

@@ -1920,8 +1920,29 @@ export const ru: TranslationResources = {
       },
       spacing: {
         title: "Отступы",
+        conversationTitle: "Область диалога",
+        message: "Интервал между сообщениями",
+        messageAccessibility: "Интервал между сообщениями диалога в пикселях",
         paragraph: "Интервал между абзацами",
         paragraphAccessibility: "Интервал между абзацами сообщения в пикселях",
+        divider: "Интервал разделителей",
+        dividerAccessibility: "Вертикальный интервал разделителей диалога в пикселях",
+        conversationVerticalPadding: "Вертикальные поля",
+        conversationVerticalPaddingAccessibility: "Вертикальные поля области диалога в пикселях",
+        conversationHorizontalPadding: "Горизонтальные поля",
+        conversationHorizontalPaddingAccessibility:
+          "Горизонтальные поля области диалога в пикселях",
+        sidebarTitle: "Список рабочих областей",
+        sidebarProject: "Интервал рабочих областей",
+        sidebarProjectAccessibility: "Интервал между рабочими областями в пикселях",
+        sidebarSession: "Интервал сеансов",
+        sidebarSessionAccessibility: "Интервал между сеансами в пикселях",
+        sidebarRowPadding: "Вертикальные поля строк",
+        sidebarRowPaddingAccessibility:
+          "Вертикальные поля строк рабочих областей и сеансов в пикселях",
+        sidebarHorizontalPadding: "Горизонтальные поля списка",
+        sidebarHorizontalPaddingAccessibility:
+          "Горизонтальные поля списка рабочих областей в пикселях",
       },
       fonts: {
         title: "Шрифты",

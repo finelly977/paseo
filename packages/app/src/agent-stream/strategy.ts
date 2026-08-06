@@ -76,6 +76,8 @@ export interface StreamRenderInput {
   hasOlderHistory: boolean;
   scrollEnabled: boolean;
   messageParagraphSpacing: number;
+  conversationVerticalPadding?: number;
+  conversationHorizontalPadding?: number;
   listStyle: StyleProp<ViewStyle>;
   baseListContentContainerStyle: StyleProp<ViewStyle>;
   forwardListContentContainerStyle: StyleProp<ViewStyle>;

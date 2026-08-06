@@ -36,32 +36,36 @@ const isToolSequenceItem = (item?: StreamItem | null) =>
 export function getGapBetweenStreamItems(
   item: StreamItem | null,
   belowItem: StreamItem | null,
+  messageSpacing: number = SPACING[3],
 ): number {
   if (!item || !belowItem) {
     return 0;
   }
 
+  const compactSpacing = Math.round(messageSpacing / 3);
+  const relatedSpacing = Math.round((messageSpacing * 2) / 3);
+
   if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
-    return SPACING[1];
+    return compactSpacing;
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return 0;
   }
   if (item.kind === "compaction" || belowItem.kind === "compaction") {
-    return SPACING[2];
+    return 0;
   }
   if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
-    return SPACING[2];
+    return relatedSpacing;
   }
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
-    return SPACING[1];
+    return compactSpacing;
   }
   if (isToolSequenceItem(item) && belowItem.kind === "assistant_message") {
-    return SPACING[1];
+    return compactSpacing;
   }
   if (isSameAssistantBlockGroup({ item, other: belowItem })) {
     // Split markdown blocks from one assistant turn should read as continuous prose.
-    return SPACING[2];
+    return relatedSpacing;
   }
-  return SPACING[3];
+  return messageSpacing;
 }

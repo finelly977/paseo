@@ -100,6 +100,7 @@ function layoutFor(input: {
       streamHead: input.head ?? [],
     }),
     timingByAssistantId: timingFor(...(input.timingIds ?? [])),
+    messageSpacing: 12,
   });
 }
 

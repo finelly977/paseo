@@ -1935,8 +1935,30 @@ export const es: TranslationResources = {
       },
       spacing: {
         title: "Espaciado",
+        conversationTitle: "Área de conversación",
+        message: "Espaciado de mensajes",
+        messageAccessibility: "Espaciado de mensajes de conversación en píxeles",
         paragraph: "Espaciado de párrafos",
         paragraphAccessibility: "Espaciado de párrafos de mensajes en píxeles",
+        divider: "Espaciado de divisores",
+        dividerAccessibility: "Espaciado vertical de divisores de conversación en píxeles",
+        conversationVerticalPadding: "Margen vertical",
+        conversationVerticalPaddingAccessibility:
+          "Margen vertical del área de conversación en píxeles",
+        conversationHorizontalPadding: "Margen horizontal",
+        conversationHorizontalPaddingAccessibility:
+          "Margen horizontal del área de conversación en píxeles",
+        sidebarTitle: "Lista de espacios de trabajo",
+        sidebarProject: "Espaciado de espacios de trabajo",
+        sidebarProjectAccessibility: "Espaciado entre espacios de trabajo en píxeles",
+        sidebarSession: "Espaciado de sesiones",
+        sidebarSessionAccessibility: "Espaciado entre sesiones en píxeles",
+        sidebarRowPadding: "Margen vertical de filas",
+        sidebarRowPaddingAccessibility:
+          "Margen vertical de las filas de espacios de trabajo y sesiones en píxeles",
+        sidebarHorizontalPadding: "Margen horizontal de la lista",
+        sidebarHorizontalPaddingAccessibility:
+          "Margen horizontal de la lista de espacios de trabajo en píxeles",
       },
       fonts: {
         title: "Fuentes",

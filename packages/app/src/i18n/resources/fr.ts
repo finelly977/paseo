@@ -1936,8 +1936,30 @@ export const fr: TranslationResources = {
       },
       spacing: {
         title: "Espacement",
+        conversationTitle: "Zone de conversation",
+        message: "Espacement des messages",
+        messageAccessibility: "Espacement des messages de conversation en pixels",
         paragraph: "Espacement des paragraphes",
         paragraphAccessibility: "Espacement des paragraphes de message en pixels",
+        divider: "Espacement des séparateurs",
+        dividerAccessibility: "Espacement vertical des séparateurs de conversation en pixels",
+        conversationVerticalPadding: "Marge verticale",
+        conversationVerticalPaddingAccessibility:
+          "Marge verticale de la zone de conversation en pixels",
+        conversationHorizontalPadding: "Marge horizontale",
+        conversationHorizontalPaddingAccessibility:
+          "Marge horizontale de la zone de conversation en pixels",
+        sidebarTitle: "Liste des espaces de travail",
+        sidebarProject: "Espacement des espaces de travail",
+        sidebarProjectAccessibility: "Espacement entre les espaces de travail en pixels",
+        sidebarSession: "Espacement des sessions",
+        sidebarSessionAccessibility: "Espacement entre les sessions en pixels",
+        sidebarRowPadding: "Marge verticale des lignes",
+        sidebarRowPaddingAccessibility:
+          "Marge verticale des lignes d’espace de travail et de session en pixels",
+        sidebarHorizontalPadding: "Marge horizontale de la liste",
+        sidebarHorizontalPaddingAccessibility:
+          "Marge horizontale de la liste des espaces de travail en pixels",
       },
       fonts: {
         title: "Polices",
