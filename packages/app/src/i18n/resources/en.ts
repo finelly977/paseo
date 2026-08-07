@@ -395,6 +395,8 @@ export const en = {
     },
     fileActions: {
       openFile: "Open file",
+      openInFileManager: "Open in file manager",
+      openInFileManagerFailed: "Couldn't open in file manager",
       copyPath: "Copy path",
       download: "Download",
       addToChat: "Add to chat…",

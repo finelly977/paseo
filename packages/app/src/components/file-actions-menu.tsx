@@ -5,6 +5,7 @@ import {
   Copy,
   Download,
   FileText,
+  FolderOpen,
   MessageSquarePlus,
   MoreVertical,
   type LucideIcon,
@@ -37,6 +38,7 @@ interface FileActionsMenuProps {
   fileKind: "file" | "directory";
   fileExists?: boolean;
   onOpenFile?: () => void;
+  onOpenInFileManager?: () => void;
   onCopyPath?: () => void;
   onDownload?: () => void;
   onAddToChat?: () => void;
@@ -71,6 +73,7 @@ export function FileActionsMenu({
   fileKind,
   fileExists = true,
   onOpenFile,
+  onOpenInFileManager,
   onCopyPath,
   onDownload,
   onAddToChat,
@@ -92,6 +95,15 @@ export function FileActionsMenu({
         icon: FileText,
         onSelect: onOpenFile,
         testID: testIDPrefix ? `${testIDPrefix}-open-file` : undefined,
+      });
+    }
+    if (fileExists && onOpenInFileManager) {
+      next.push({
+        key: "open-in-file-manager",
+        label: t("workspace.fileActions.openInFileManager"),
+        icon: FolderOpen,
+        onSelect: onOpenInFileManager,
+        testID: testIDPrefix ? `${testIDPrefix}-open-in-file-manager` : undefined,
       });
     }
     if (onCopyPath) {
@@ -120,7 +132,17 @@ export function FileActionsMenu({
       });
     }
     return next;
-  }, [fileExists, fileKind, onAddToChat, onCopyPath, onDownload, onOpenFile, t, testIDPrefix]);
+  }, [
+    fileExists,
+    fileKind,
+    onAddToChat,
+    onCopyPath,
+    onDownload,
+    onOpenFile,
+    onOpenInFileManager,
+    t,
+    testIDPrefix,
+  ]);
 
   if (actions.length === 0) {
     return null;

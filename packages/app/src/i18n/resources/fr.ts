@@ -400,6 +400,8 @@ export const fr: TranslationResources = {
     },
     fileActions: {
       openFile: "Ouvrir le fichier",
+      openInFileManager: "Ouvrir dans le gestionnaire de fichiers",
+      openInFileManagerFailed: "Impossible d’ouvrir dans le gestionnaire de fichiers",
       copyPath: "Copier le chemin",
       download: "Télécharger",
       addToChat: "Ajouter au chat…",

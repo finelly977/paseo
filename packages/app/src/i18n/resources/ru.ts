@@ -399,6 +399,8 @@ export const ru: TranslationResources = {
     },
     fileActions: {
       openFile: "Открыть файл",
+      openInFileManager: "Открыть в файловом менеджере",
+      openInFileManagerFailed: "Не удалось открыть в файловом менеджере",
       copyPath: "Копировать путь",
       download: "Скачать",
       addToChat: "Добавить в чат…",

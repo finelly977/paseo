@@ -1,4 +1,5 @@
 import { useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Platform,
   Pressable,
@@ -8,7 +9,8 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { FolderOpen } from "lucide-react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { isNative, isWeb } from "@/constants/platform";
 import { MarkdownTextSpan } from "@/components/markdown-text";
 import { AssistantLinkPressProvider, type AssistantLinkPress } from "./link-press-context";
@@ -19,6 +21,13 @@ import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { useAssistantFileLinkResolverContext } from "./provider";
 import type { AssistantFileLinkSource } from "./resolver";
 import { useFileLink } from "./use-file-link";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import type { Theme } from "@/styles/theme";
 
 interface AssistantMarkdownLinkProps {
   source: AssistantFileLinkSource;
@@ -33,10 +42,14 @@ export function AssistantMarkdownLink({
   monoSurface,
   children,
 }: AssistantMarkdownLinkProps) {
+  const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
-  const { target, onHoverIn, onPress, onAuxPress } = useFileLink(source);
+  const { target, canResolveFile, resolveFileTarget, onHoverIn, onPress, onAuxPress } =
+    useFileLink(source);
   const { configRef } = useAssistantFileLinkResolverContext();
   const workspaceRoot = configRef.current.workspaceRoot;
+  const canOpenInFileManager =
+    canResolveFile && configRef.current.onOpenInFileManager !== undefined;
   const tooltipPath = useMemo(
     () => (target ? formatInlinePathTargetForTooltip(target, workspaceRoot) : null),
     [target, workspaceRoot],
@@ -62,6 +75,16 @@ export function AssistantMarkdownLink({
     () => ({ onPress, accessibilityRole: "link" }),
     [onPress],
   );
+  const handleOpenInFileManager = useStableEvent(async () => {
+    const openInFileManager = configRef.current.onOpenInFileManager;
+    if (!openInFileManager) {
+      return;
+    }
+    const resolvedTarget = await resolveFileTarget();
+    if (resolvedTarget) {
+      openInFileManager(resolvedTarget);
+    }
+  });
 
   if (isNative) {
     // Must be a MarkdownTextSpan, not a plain <Text>: on iOS the link renders
@@ -98,6 +121,30 @@ export function AssistantMarkdownLink({
     );
   }
 
+  const linkText = (
+    <Text dataSet={monoSurface ? CODE_SURFACE_DATASET : undefined} style={hoveredTextStyle}>
+      {children}
+    </Text>
+  );
+  const linkTrigger = canOpenInFileManager ? (
+    <ContextMenuTrigger
+      accessibilityRole="link"
+      onPress={onPress}
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+    >
+      {linkText}
+    </ContextMenuTrigger>
+  ) : (
+    <Pressable
+      accessibilityRole="link"
+      onPress={onPress}
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+    >
+      {linkText}
+    </Pressable>
+  );
   const anchor = (
     <a
       href={source.href}
@@ -105,20 +152,28 @@ export function AssistantMarkdownLink({
       onAuxClickCapture={preventAnchorNavigation}
       style={LINK_ANCHOR_STYLE}
     >
-      <Pressable
-        accessibilityRole="link"
-        onPress={onPress}
-        onHoverIn={handleHoverIn}
-        onHoverOut={handleHoverOut}
-      >
-        <Text dataSet={monoSurface ? CODE_SURFACE_DATASET : undefined} style={hoveredTextStyle}>
-          {children}
-        </Text>
-      </Pressable>
+      {linkTrigger}
     </a>
   );
 
-  return <FileLinkHoverTooltip filePath={tooltipPath}>{anchor}</FileLinkHoverTooltip>;
+  const contextualAnchor = canOpenInFileManager ? (
+    <ContextMenu>
+      {anchor}
+      <ContextMenuContent side="bottom" align="start" minWidth={220}>
+        <ContextMenuItem
+          leading={fileManagerLeadingIcon}
+          onSelect={handleOpenInFileManager}
+          testID="assistant-file-link-open-in-file-manager"
+        >
+          {t("workspace.fileActions.openInFileManager")}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  ) : (
+    anchor
+  );
+
+  return <FileLinkHoverTooltip filePath={tooltipPath}>{contextualAnchor}</FileLinkHoverTooltip>;
 }
 
 interface AssistantMarkdownCodeLinkProps {
@@ -220,6 +275,10 @@ const FILE_LINK_TOOLTIP_TRIGGER_STYLE: ViewStyle = {
 };
 
 const FILE_LINK_TOOLTIP_MOD_KEYS = ["mod"];
+
+const ThemedFolderOpen = withUnistyles(FolderOpen);
+const mutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const fileManagerLeadingIcon = <ThemedFolderOpen size={14} uniProps={mutedIconColorMapping} />;
 
 function FileLinkHoverTooltip({
   filePath,

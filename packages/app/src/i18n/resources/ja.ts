@@ -400,6 +400,8 @@ export const ja: TranslationResources = {
     },
     fileActions: {
       openFile: "ファイルを開く",
+      openInFileManager: "ファイルマネージャーで開く",
+      openInFileManagerFailed: "ファイルマネージャーで開けませんでした",
       copyPath: "パスをコピー",
       download: "ダウンロード",
       addToChat: "チャットに追加…",

@@ -47,6 +47,8 @@ import {
   type ExplorerTreeRow,
 } from "@/file-explorer/tree";
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
+import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
+import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -74,6 +76,7 @@ interface TreeRowItemProps {
   loading: boolean;
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void;
+  onOpenInFileManager?: (path: string) => void;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
   testID?: string;
@@ -104,6 +107,7 @@ function TreeRowItem({
   loading,
   onEntryPress,
   onCopyPath,
+  onOpenInFileManager,
   onDownloadEntry,
   onAddToChat,
   testID,
@@ -137,6 +141,10 @@ function TreeRowItem({
   const handleDownload = useCallback(() => {
     onDownloadEntry(entry);
   }, [onDownloadEntry, entry]);
+
+  const handleOpenInFileManager = useCallback(() => {
+    onOpenInFileManager?.(entry.path);
+  }, [entry.path, onOpenInFileManager]);
 
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(entry.path);
@@ -185,6 +193,7 @@ function TreeRowItem({
       </View>
       <FileActionsMenu
         fileKind={entry.kind}
+        onOpenInFileManager={onOpenInFileManager ? handleOpenInFileManager : undefined}
         onCopyPath={handleCopy}
         onDownload={handleDownload}
         onAddToChat={onAddToChat ? handleAddToChat : undefined}
@@ -214,6 +223,11 @@ export function FileExplorerPane({
   const { t } = useTranslation();
 
   const normalizedWorkspaceRoot = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
+  const isLocalDaemon = useIsLocalDaemon(serverId);
+  const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
+    workspacePath: normalizedWorkspaceRoot,
+    isLocalExecution: isLocalDaemon,
+  });
   const workspaceStateKey = useMemo(
     () =>
       buildWorkspaceExplorerStateKey({
@@ -343,6 +357,17 @@ export function FileExplorerPane({
     [normalizedWorkspaceRoot],
   );
 
+  const handleOpenInFileManager = useCallback(
+    (path: string) => {
+      const absolutePath = buildAbsoluteExplorerPath({
+        workspaceRoot: normalizedWorkspaceRoot,
+        entryPath: path,
+      });
+      void openInFileManager(absolutePath);
+    },
+    [normalizedWorkspaceRoot, openInFileManager],
+  );
+
   const handleDownloadEntry = useCallback(
     (entry: ExplorerEntry) => {
       if (entry.kind !== "file") {
@@ -451,6 +476,7 @@ export function FileExplorerPane({
         isDirectoryLoading={isDirectoryLoading}
         onEntryPress={handleEntryPress}
         onCopyPath={handleCopyPath}
+        onOpenInFileManager={canOpenInFileManager ? handleOpenInFileManager : undefined}
         onDownloadEntry={handleDownloadEntry}
         onAddToChat={onAddToChat}
       />
@@ -459,10 +485,12 @@ export function FileExplorerPane({
       expandedPaths,
       handleEntryPress,
       handleCopyPath,
+      handleOpenInFileManager,
       handleDownloadEntry,
       isDirectoryLoading,
       selectedEntryPath,
       onAddToChat,
+      canOpenInFileManager,
       serverId,
       workspaceId,
     ],
@@ -773,6 +801,7 @@ function TreeRowDispatcher({
   isDirectoryLoading,
   onEntryPress,
   onCopyPath,
+  onOpenInFileManager,
   onDownloadEntry,
   onAddToChat,
 }: {
@@ -784,6 +813,7 @@ function TreeRowDispatcher({
   isDirectoryLoading: (path: string) => boolean;
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void | Promise<void>;
+  onOpenInFileManager?: (path: string) => void;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
 }) {
@@ -805,6 +835,7 @@ function TreeRowDispatcher({
       loading={loading}
       onEntryPress={onEntryPress}
       onCopyPath={onCopyPath}
+      onOpenInFileManager={onOpenInFileManager}
       onDownloadEntry={onDownloadEntry}
       onAddToChat={onAddToChat}
       testID={`file-explorer-row-${info.index}`}

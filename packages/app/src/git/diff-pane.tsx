@@ -244,6 +244,7 @@ interface DiffFileSectionProps {
   interactive?: boolean;
   onToggle?: (path: string) => void;
   onOpenFile?: (path: string) => void;
+  onOpenInFileManager?: (path: string) => void;
   onAddToChat?: (path: string) => void;
   onCopyPath?: (path: string) => void;
   onDownload?: (path: string) => void;
@@ -950,6 +951,7 @@ const DiffFileHeader = memo(function DiffFileHeader({
   interactive = true,
   onToggle,
   onOpenFile,
+  onOpenInFileManager,
   onAddToChat,
   onCopyPath,
   onDownload,
@@ -996,6 +998,10 @@ const DiffFileHeader = memo(function DiffFileHeader({
   const handleOpenFile = useCallback(() => {
     onOpenFile?.(file.path);
   }, [file.path, onOpenFile]);
+
+  const handleOpenInFileManager = useCallback(() => {
+    onOpenInFileManager?.(file.path);
+  }, [file.path, onOpenInFileManager]);
 
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(file.path);
@@ -1108,6 +1114,7 @@ const DiffFileHeader = memo(function DiffFileHeader({
             fileKind="file"
             fileExists={!file.isDeleted}
             onOpenFile={onOpenFile ? handleOpenFile : undefined}
+            onOpenInFileManager={onOpenInFileManager ? handleOpenInFileManager : undefined}
             onCopyPath={onCopyPath ? handleCopyPath : undefined}
             onDownload={onDownload ? handleDownload : undefined}
             onAddToChat={onAddToChat ? handleAddToChat : undefined}
@@ -1718,6 +1725,7 @@ interface SharedDiffViewProps {
         onFilePress?: (path: string) => void;
         workspaceFileDragScope?: { serverId: string; workspaceId: string };
         onOpenFile?: (path: string) => void;
+        onOpenInFileManager?: (path: string) => void;
         onAddToChat?: (path: string) => void;
         onCopyPath?: (path: string) => void;
         onDownload?: (path: string) => void;
@@ -1730,6 +1738,7 @@ interface SharedDiffViewProps {
         reviewActions: InlineReviewActions;
         focusPath?: string;
         focusRequestId?: number;
+        onOpenInFileManager?: (path: string) => void;
         onExpandedPathsChange: (paths: string[]) => void;
       }
     | {
@@ -1780,6 +1789,7 @@ export function SharedDiffView({
   const focusRequestId =
     mode.kind === "working_tab" || mode.kind === "commit" ? mode.focusRequestId : undefined;
   const onOpenFile = mode.kind === "working_tree" ? mode.onOpenFile : undefined;
+  const onOpenInFileManager = mode.kind === "commit" ? undefined : mode.onOpenInFileManager;
   const onAddToChat = mode.kind === "working_tree" ? mode.onAddToChat : undefined;
   const workspaceFileDragScope =
     mode.kind === "working_tree" ? mode.workspaceFileDragScope : undefined;
@@ -2131,6 +2141,7 @@ export function SharedDiffView({
             interactive={interactive}
             onToggle={interactive ? (onFilePress ?? handleToggleExpanded) : undefined}
             onOpenFile={onOpenFile}
+            onOpenInFileManager={onOpenInFileManager}
             onAddToChat={onAddToChat}
             onCopyPath={onCopyPath}
             onDownload={onDownload}
@@ -2168,6 +2179,7 @@ export function SharedDiffView({
       interactive,
       onFilePress,
       onOpenFile,
+      onOpenInFileManager,
       onAddToChat,
       onCopyPath,
       onDownload,

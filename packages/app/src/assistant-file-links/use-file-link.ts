@@ -18,6 +18,8 @@ import {
 
 export interface UseFileLinkResult {
   target: InlinePathTarget | null;
+  canResolveFile: boolean;
+  resolveFileTarget: () => Promise<InlinePathTarget | null>;
   onHoverIn: () => void;
   onPress: () => void;
   onAuxPress: () => void;
@@ -124,6 +126,54 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     open(stableSource, "side");
   });
 
+  const resolveFileTarget = useStableEvent(async (): Promise<InlinePathTarget | null> => {
+    const capturedConfig = context.configRef.current;
+    const capturedResolution = classifyForResolution(stableSource, {
+      workspaceRoot: capturedConfig.workspaceRoot,
+    });
+    if (capturedResolution.kind === "resolved") {
+      return capturedResolution.value.kind === "file" ? capturedResolution.value.target : null;
+    }
+
+    try {
+      const resolvedTarget = await queryClient.fetchQuery({
+        queryKey: assistantFileLinkQueryKey({
+          serverId: capturedConfig.serverId,
+          workspaceRoot: capturedConfig.workspaceRoot,
+          ambiguousQuery: capturedResolution.ambiguousQuery,
+        }),
+        queryFn: () =>
+          fetchDaemonResolution({
+            ambiguousQuery: capturedResolution.ambiguousQuery,
+            token: capturedResolution.token,
+            target: capturedResolution.target,
+            workspaceRoot: capturedConfig.workspaceRoot,
+            getDirectorySuggestions: context.getDirectorySuggestions,
+          }),
+        retry: 0,
+        staleTime: Infinity,
+      });
+      const currentConfig = context.configRef.current;
+      if (
+        currentConfig.serverId !== capturedConfig.serverId ||
+        currentConfig.workspaceRoot !== capturedConfig.workspaceRoot
+      ) {
+        return null;
+      }
+      return resolvedTarget;
+    } catch (error) {
+      console.error("[对话文件链接] 解析文件管理器目标失败", error);
+      await dispatchUnresolvedError({
+        error,
+        noFileFoundMessage: t("common.errors.noFileFound", { token: capturedResolution.token }),
+        capturedServerId: capturedConfig.serverId,
+        capturedWorkspaceRoot: capturedConfig.workspaceRoot,
+        context,
+      });
+      return null;
+    }
+  });
+
   const target = useMemo(() => {
     if (resolution.kind === "resolved") {
       return resolution.value.kind === "file" ? resolution.value.target : null;
@@ -131,9 +181,11 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
     return query.data ?? null;
   }, [query.data, resolution]);
 
+  const canResolveFile = resolution.kind === "needsLookup" || resolution.value.kind === "file";
+
   return useMemo(
-    () => ({ target, onHoverIn, onPress, onAuxPress, open }),
-    [target, onHoverIn, onPress, onAuxPress, open],
+    () => ({ target, canResolveFile, resolveFileTarget, onHoverIn, onPress, onAuxPress, open }),
+    [target, canResolveFile, resolveFileTarget, onHoverIn, onPress, onAuxPress, open],
   );
 }
 

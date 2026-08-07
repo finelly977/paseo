@@ -4,9 +4,8 @@ import { FolderOpen } from "lucide-react-native";
 import { withUnistyles } from "react-native-unistyles";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { getIsElectron } from "@/constants/platform";
-import { useToast } from "@/contexts/toast-context";
 import type { Theme } from "@/styles/theme";
-import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
+import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 
 interface OpenInFileManagerMenuItemProps {
   path?: string | null;
@@ -23,32 +22,23 @@ const leadingIcon = <ThemedFolderOpen size={14} uniProps={foregroundMutedColorMa
 
 export function OpenInFileManagerMenuItem({ path, testID }: OpenInFileManagerMenuItemProps) {
   const { t } = useTranslation();
-  const toast = useToast();
   const isElectron = getIsElectron();
   const workspacePath = path?.trim() ?? "";
-  const { targets } = useDesktopOpenTargets({
+  const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
+    workspacePath,
     isLocalExecution: isElectron && workspacePath.length > 0,
   });
-  const fileManagerTarget = targets.find((target) => target.kind === "file-manager");
+  const handleOpenInFileManager = useCallback(() => {
+    void openInFileManager();
+  }, [openInFileManager]);
 
-  const openInFileManager = useCallback(() => {
-    if (!fileManagerTarget || workspacePath.length === 0) return;
-    void openDesktopTarget({
-      editorId: fileManagerTarget.id,
-      workspacePath,
-    }).catch((error) => {
-      console.warn("[open-in-file-manager] open failed", error);
-      toast.error(t("sidebar.project.actions.openFolderFailed"));
-    });
-  }, [fileManagerTarget, t, toast, workspacePath]);
-
-  if (!isElectron || !fileManagerTarget || workspacePath.length === 0) {
+  if (!isElectron || !canOpenInFileManager) {
     return null;
   }
 
   return (
-    <DropdownMenuItem testID={testID} leading={leadingIcon} onSelect={openInFileManager}>
-      {t("sidebar.project.actions.openFolder")}
+    <DropdownMenuItem testID={testID} leading={leadingIcon} onSelect={handleOpenInFileManager}>
+      {t("workspace.fileActions.openInFileManager")}
     </DropdownMenuItem>
   );
 }

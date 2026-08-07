@@ -28,6 +28,9 @@ import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import { useWorkspaceDirectory } from "@/stores/session-store-hooks";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
+import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
+import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
+import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 
 const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
@@ -148,6 +151,11 @@ function WorkingDiffPanel() {
   const toast = useToast();
   const { serverId, workspaceId, tabId, target } = usePaneContext();
   const cwd = useWorkspaceDirectory(serverId, workspaceId);
+  const isLocalDaemon = useIsLocalDaemon(serverId);
+  const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
+    workspacePath: cwd ?? "",
+    isLocalExecution: isLocalDaemon,
+  });
   const isConnected = useHostRuntimeIsConnected(serverId);
   const isActive = useRetainedPanelActive();
   const panelPreferences = useDiffPanelPreferences();
@@ -197,6 +205,23 @@ function WorkingDiffPanel() {
   const toggleExpandAll = useCallback(() => {
     setExpandedPaths(allFilesExpanded ? [] : null);
   }, [allFilesExpanded]);
+  const handleOpenInFileManager = useCallback(
+    (path: string) => {
+      if (!cwd) {
+        const error = new Error("工作区目录不可用，无法解析文件绝对路径");
+        console.error("[差异文件] 无法在文件管理器中打开", error);
+        toast.error(t("workspace.fileActions.openInFileManagerFailed"));
+        return;
+      }
+      void openInFileManager(
+        buildAbsoluteExplorerPath({
+          workspaceRoot: cwd,
+          entryPath: path,
+        }),
+      );
+    },
+    [cwd, openInFileManager, t, toast],
+  );
   const mode = useMemo(
     () => ({
       kind: "working_tab" as const,
@@ -204,9 +229,17 @@ function WorkingDiffPanel() {
       reviewActions: workingDiff.reviewActions,
       focusPath: target.focusPath,
       focusRequestId: target.focusRequestId,
+      onOpenInFileManager: canOpenInFileManager ? handleOpenInFileManager : undefined,
       onExpandedPathsChange: setExpandedPaths,
     }),
-    [expandedPaths, target.focusPath, target.focusRequestId, workingDiff.reviewActions],
+    [
+      canOpenInFileManager,
+      expandedPaths,
+      handleOpenInFileManager,
+      target.focusPath,
+      target.focusRequestId,
+      workingDiff.reviewActions,
+    ],
   );
 
   const baseRefLabel = workingDiff.baseRef?.replace(/^refs\/(heads|remotes)\//, "") ?? "";

@@ -396,6 +396,8 @@ export const ar: TranslationResources = {
     },
     fileActions: {
       openFile: "افتح الملف",
+      openInFileManager: "فتح في مدير الملفات",
+      openInFileManagerFailed: "تعذر الفتح في مدير الملفات",
       copyPath: "نسخ المسار",
       download: "تحميل",
       addToChat: "إضافة إلى الدردشة…",

@@ -83,6 +83,7 @@ import {
 import {
   createWorkspaceFileTabTarget,
   normalizeWorkspaceFileLocation,
+  resolveWorkspaceFilePaths,
   type OpenFileDisposition,
   type WorkspaceFileOpenRequest,
 } from "@/workspace/file-open";
@@ -113,6 +114,8 @@ import {
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
 import { isStandaloneMarkdownImage } from "./provider-image-message-model";
+import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
+import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -473,6 +476,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
+    const isLocalDaemon = useIsLocalDaemon(resolvedServerId);
+    const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
+      workspacePath: workspaceRoot,
+      isLocalExecution: isLocalDaemon,
+    });
     const { requestDirectoryListing } = useFileExplorerActions({
       serverId: resolvedServerId,
       workspaceId: context.workspaceId,
@@ -564,6 +572,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         });
       },
     );
+    const handleInlinePathOpenInFileManager = useStableEvent((target: InlinePathTarget) => {
+      const resolvedPath = resolveWorkspaceFilePaths({
+        path: target.path,
+        workspaceRoot,
+      });
+      if (!resolvedPath) {
+        const error = new Error("无法解析对话文件链接的本地绝对路径");
+        console.error("[对话文件链接] 无法在文件管理器中打开", error);
+        toast?.error(t("workspace.fileActions.openInFileManagerFailed"));
+        return;
+      }
+      void openInFileManager(resolvedPath.absolutePath);
+    });
 
     const handleToolCallOpenFile = useStableEvent((filePath: string) => {
       handleInlinePathPress({ raw: filePath, path: filePath }, "main");
@@ -928,6 +949,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
             onOpenWorkspaceFile={handleInlinePathPress}
+            onOpenInFileManager={
+              canOpenInFileManager ? handleInlinePathOpenInFileManager : undefined
+            }
             toast={toast}
           >
             {shouldCollapseImage ? (
@@ -938,7 +962,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           </AssistantFileLinkResolverProvider>
         );
       },
-      [client, context.provider, handleInlinePathPress, resolvedServerId, toast, workspaceRoot],
+      [
+        canOpenInFileManager,
+        client,
+        context.provider,
+        handleInlinePathOpenInFileManager,
+        handleInlinePathPress,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
 
     const renderThoughtItem = useCallback(

@@ -138,6 +138,35 @@ describe("useFileLink", () => {
     expect(result.current.onPress).toBe(first.onPress);
     expect(result.current.onAuxPress).toBe(first.onAuxPress);
     expect(result.current.open).toBe(first.open);
+    expect(result.current.resolveFileTarget).toBe(first.resolveFileTarget);
+  });
+
+  it("为文件管理器操作解析本地文件目标", async () => {
+    const getDirectorySuggestions = vi.fn(async () =>
+      resolvedSuggestions([{ path: "docs/dumm.md", kind: "file" }]),
+    );
+    const openedFiles: OpenedFile[] = [];
+    const { result } = renderHook(() => useFileLink(SOURCE), {
+      wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles }),
+    });
+
+    expect(result.current.canResolveFile).toBe(true);
+    await expect(result.current.resolveFileTarget()).resolves.toMatchObject({
+      path: "/Users/test/project/docs/dumm.md",
+    });
+    expect(openedFiles).toEqual([]);
+  });
+
+  it("外部网址不提供本地文件管理器目标", async () => {
+    const getDirectorySuggestions = vi.fn(async () => resolvedSuggestions([]));
+    const openedFiles: OpenedFile[] = [];
+    const { result } = renderHook(() => useFileLink({ href: "https://example.com/docs" }), {
+      wrapper: createWrapper({ client: { getDirectorySuggestions }, openedFiles }),
+    });
+
+    expect(result.current.canResolveFile).toBe(false);
+    await expect(result.current.resolveFileTarget()).resolves.toBeNull();
+    expect(getDirectorySuggestions).not.toHaveBeenCalled();
   });
 
   it("does not cache unresolved lookups forever", async () => {
