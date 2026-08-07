@@ -423,6 +423,24 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
   );
 }
 
+function EditFilePathsSection({ filePaths }: { filePaths: string[] }) {
+  return (
+    <View style={styles.editFilePaths} testID="tool-call-edit-file-paths">
+      {filePaths.map((filePath) => (
+        <Text
+          key={filePath}
+          selectable
+          numberOfLines={1}
+          style={styles.editFilePath}
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {filePath}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 interface ScrollableContentProps {
   content: string;
   ds: DetailStyles;
@@ -663,7 +681,14 @@ function buildDetailSections(
     ];
   }
   if (detail.type === "edit") {
-    return [<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />];
+    const sections: ReactNode[] = [];
+    if (detail.filePaths && detail.filePaths.length > 1) {
+      sections.push(<EditFilePathsSection key="edit-files" filePaths={detail.filePaths} />);
+    }
+    if (diffLines) {
+      sections.push(<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />);
+    }
+    return sections;
   }
   if (detail.type === "write") {
     return [
@@ -790,6 +815,19 @@ const styles = StyleSheet.create((theme) => {
     fullBleedContainer: {
       gap: theme.spacing[2],
       padding: 0,
+    },
+    editFilePaths: {
+      gap: theme.spacing[1],
+      paddingHorizontal: theme.spacing[3],
+      paddingVertical: theme.spacing[2],
+      borderBottomWidth: theme.borderWidth[1],
+      borderBottomColor: theme.colors.border,
+    },
+    editFilePath: {
+      fontFamily: theme.fontFamily.mono,
+      fontSize: theme.fontSize.code,
+      color: theme.colors.foreground,
+      lineHeight: 18,
     },
     groupHeader: {
       flexDirection: "row",

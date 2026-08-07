@@ -449,6 +449,7 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
     z.object({
       type: z.literal("edit"),
       filePath: z.string(),
+      filePaths: z.array(z.string()).optional(),
       oldString: z.string().optional(),
       newString: z.string().optional(),
       unifiedDiff: z.string().optional(),

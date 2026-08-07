@@ -204,6 +204,7 @@
 
 - 智能体运行期间完整展示思考、工具调用、待办和中间助手消息；回合成功结束后默认收起这些中间过程，只保留模型最后一条助手消息作为最终结论。回合完成事件到达时，客户端无条件把状态归位为空闲（即使本地状态因状态推送丢失而陈旧），确保“完成后收起”不被本地陈旧状态卡住。
 - 收起入口位于原过程开始位置，显示本回合隐藏的过程项数量，用户可以展开查看全部过程并再次收起；包含最终错误记录的失败回合保持完整展开，避免隐藏失败原因。分页加载从回合中间开始时（该回合的助手消息或用户消息还在更早的未加载历史里），空闲状态下把已加载的过程项按收起入口处理，直接收起而不再等边界加载；时间线末尾最后一个回合同样适用，打开旧对话时即使初始窗口只覆盖回合尾部也会立即收起，无需先向上滚动加载更早分页；运行中仍保持展开。
+- Codex 单次补丁修改多个文件时，实时事件和历史恢复都保留完整文件路径列表；工具调用汇总按全部路径去重计数，折叠行展示所有路径，展开详情列出每个文件，不再只显示补丁中的第一个文件。
 - 恢复持久化旧会话时，在发布可交互状态前主动读取提供方当前上下文用量并与已保存用量合并，不必等待下一次对话才更新输入框旁的上下文进度；圆形进度固定从十二点方向开始顺时针绘制，输入框的发送和停止主操作使用更紧凑的 24 像素按钮。
 - Claude 使用 Agent SDK 上下文接口，Codex 使用恢复线程上报的最新用量，OpenCode 从原生会话消息读取最近用量，OMP 与 Pi 使用会话统计接口；提供方没有可用快照时保留已保存数据，查询失败会写入错误日志。
 
@@ -211,10 +212,15 @@
 
 - `packages/app/src/agent-stream/layout.ts`
 - `packages/app/src/agent-stream/view.tsx`
+- `packages/app/src/components/tool-call-details.tsx`
+- `packages/app/src/tool-calls/detail-level/overview/model.ts`
+- `packages/protocol/src/agent-types.ts`
+- `packages/protocol/src/tool-call-display.ts`
 - `packages/server/src/server/agent/agent-sdk-types.ts`
 - `packages/server/src/server/agent/agent-manager.ts`
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/server/src/server/agent/providers/codex/tool-call-mapper.ts`
 - `packages/server/src/server/agent/providers/opencode-agent.ts`
 - `packages/server/src/server/agent/providers/omp/agent.ts`
 - `packages/server/src/server/agent/providers/pi/agent.ts`

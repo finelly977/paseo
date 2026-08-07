@@ -513,6 +513,43 @@ describe("codex tool-call mapper", () => {
     });
   });
 
+  it("preserves every file from object-style multi-file changes", () => {
+    const item = expectMapped(
+      mapCodexToolCallFromThreadItem(
+        {
+          type: "fileChange",
+          id: "codex-content-object-multi",
+          status: "completed",
+          changes: {
+            "E:\\paseo\\docs\\fork-features.md": {
+              type: "update",
+              unified_diff: "@@\n-old docs\n+new docs\n",
+            },
+            "E:\\paseo\\packages\\app\\src\\message.tsx": {
+              type: "update",
+              unified_diff: "@@\n-old app\n+new app\n",
+            },
+            "E:\\paseo\\packages\\server\\src\\session.ts": {
+              type: "update",
+              unified_diff: "@@\n-old server\n+new server\n",
+            },
+          },
+        },
+        { cwd: "E:\\paseo" },
+      ),
+    );
+
+    expect(item.detail).toMatchObject({
+      type: "edit",
+      filePath: "docs/fork-features.md",
+      filePaths: [
+        "docs/fork-features.md",
+        "packages/app/src/message.tsx",
+        "packages/server/src/session.ts",
+      ],
+    });
+  });
+
   it("maps fileChange array payloads that use file_path aliases", () => {
     const item = expectMapped(
       mapCodexToolCallFromThreadItem(
@@ -963,6 +1000,10 @@ describe("codex tool-call mapper", () => {
     expect(item.detail).toMatchInlineSnapshot(`
       {
         "filePath": "src/app/index.tsx",
+        "filePaths": [
+          "src/app/index.tsx",
+          "src/app-support/index-startup.ts",
+        ],
         "type": "edit",
         "unifiedDiff": "diff --git a//tmp/repo/src/app/index.tsx b//tmp/repo/src/app/index.tsx
       --- a//tmp/repo/src/app/index.tsx

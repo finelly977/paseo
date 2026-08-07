@@ -1943,6 +1943,38 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("preserves all paths from live object-style multi-file patch notifications", () => {
+    const item = mapCodexPatchNotificationToToolCall({
+      callId: "patch-object-multi",
+      changes: {
+        "E:\\paseo\\docs\\fork-features.md": {
+          type: "update",
+          unified_diff: "@@\n-old docs\n+new docs\n",
+        },
+        "E:\\paseo\\packages\\app\\src\\message.tsx": {
+          type: "update",
+          unified_diff: "@@\n-old app\n+new app\n",
+        },
+        "E:\\paseo\\packages\\server\\src\\session.ts": {
+          type: "update",
+          unified_diff: "@@\n-old server\n+new server\n",
+        },
+      },
+      cwd: "E:\\paseo",
+      running: false,
+    });
+
+    expect(item.detail.type).toBe("edit");
+    if (item.detail.type === "edit") {
+      expect(item.detail.filePath).toBe("docs/fork-features.md");
+      expect(item.detail.filePaths).toEqual([
+        "docs/fork-features.md",
+        "packages/app/src/message.tsx",
+        "packages/server/src/session.ts",
+      ]);
+    }
+  });
+
   test("maps patch notifications with file_path aliases in array-style changes", () => {
     const item = mapCodexPatchNotificationToToolCall({
       callId: "patch-array-file-path",

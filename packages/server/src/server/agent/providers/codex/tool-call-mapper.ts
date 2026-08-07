@@ -333,14 +333,18 @@ function parseCodexApplyPatchDirective(line: string): CodexApplyPatchDirective |
   return null;
 }
 
+function extractPatchFileDirectives(patch: string): CodexApplyPatchDirective[] {
+  return patch
+    .split(/\r?\n/)
+    .map(parseCodexApplyPatchDirective)
+    .filter(
+      (directive): directive is CodexApplyPatchDirective =>
+        directive !== null && directive.path.length > 0,
+    );
+}
+
 function extractPatchPrimaryFilePath(patch: string): string | undefined {
-  for (const line of patch.split(/\r?\n/)) {
-    const directive = parseCodexApplyPatchDirective(line);
-    if (directive && directive.path.length > 0) {
-      return directive.path;
-    }
-  }
-  return undefined;
+  return extractPatchFileDirectives(patch)[0]?.path;
 }
 
 function looksLikeCodexApplyPatch(text: string): boolean {
@@ -490,6 +494,8 @@ function normalizeToolCallEditRecordInput(input: Record<string, unknown>): unkno
 
   const textFields = asEditTextFields(candidatePatchText);
   const rawPath = findToolCallEditInputPath(input, candidatePatchText);
+  const patchFiles = extractPatchFileDirectives(candidatePatchText);
+  const hasStructuredFiles = Array.isArray(input.files) && input.files.length > 0;
 
   const {
     patch: _patch,
@@ -502,6 +508,7 @@ function normalizeToolCallEditRecordInput(input: Record<string, unknown>): unkno
   const normalized: Record<string, unknown> = {
     ...rest,
     ...(rawPath ? { path: rawPath } : {}),
+    ...(!hasStructuredFiles && patchFiles.length > 0 ? { files: patchFiles } : {}),
     ...(textFields.unifiedDiff ? { patch: textFields.unifiedDiff } : {}),
     ...(textFields.newString ? { content: textFields.newString } : {}),
   };
@@ -516,9 +523,11 @@ function normalizeToolCallEditRecordInput(input: Record<string, unknown>): unkno
 function normalizeToolCallEditInput(input: unknown): unknown {
   if (typeof input === "string") {
     const textFields = asEditTextFields(input);
-    const path = extractPatchPrimaryFilePath(input);
+    const files = extractPatchFileDirectives(input);
+    const path = files[0]?.path;
     return {
       ...(path ? { path } : {}),
+      ...(files.length > 0 ? { files } : {}),
       ...(textFields.unifiedDiff ? { patch: textFields.unifiedDiff } : {}),
       ...(textFields.newString ? { content: textFields.newString } : {}),
     };

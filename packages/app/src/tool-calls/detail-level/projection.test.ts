@@ -271,19 +271,23 @@ describe("tool call detail-level projection", () => {
 
   it("counts unique edited files and every shell command in overview", () => {
     const calls = [
-      toolCall("1", { type: "edit", filePath: "/repo/a.ts" }),
+      toolCall("1", {
+        type: "edit",
+        filePath: "/repo/a.ts",
+        filePaths: ["/repo/a.ts", "/repo/c.ts"],
+      }),
       toolCall("2", { type: "edit", filePath: "/repo/a.ts" }),
       toolCall("3", { type: "write", filePath: "/repo/b.ts" }),
       toolCall("4", { type: "shell", command: "npm test" }),
       toolCall("5", { type: "shell", command: "npm run lint" }),
-      toolCall("6", { type: "read", filePath: "/repo/c.ts" }),
+      toolCall("6", { type: "read", filePath: "/repo/d.ts" }),
     ];
 
     const result = project({ level: "overview", head: calls });
 
     expect(result.groupsByHostId.get("1")).toMatchObject({
       summary: {
-        editedFileCount: 2,
+        editedFileCount: 3,
         commandCount: 2,
         readFileCount: 1,
         otherToolCount: 0,

@@ -43,7 +43,12 @@ export function buildOverviewGroup(run: ToolCallRun): OverviewToolCallGroup {
     isLoading ||= descriptor.status === "running" || descriptor.status === "executing";
     if (isPaseoCall(descriptor.name, normalizedName)) {
       paseoCallCount += 1;
-    } else if (descriptor.detail.type === "edit" || descriptor.detail.type === "write") {
+    } else if (descriptor.detail.type === "edit") {
+      const filePaths = descriptor.detail.filePaths ?? [descriptor.detail.filePath];
+      for (const filePath of filePaths) {
+        editedFiles.add(filePath);
+      }
+    } else if (descriptor.detail.type === "write") {
       editedFiles.add(descriptor.detail.filePath);
     } else if (descriptor.detail.type === "shell") {
       commandCount += 1;

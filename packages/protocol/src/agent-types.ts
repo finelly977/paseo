@@ -213,6 +213,7 @@ export type ToolCallDetail =
   | {
       type: "edit";
       filePath: string;
+      filePaths?: string[];
       oldString?: string;
       newString?: string;
       unifiedDiff?: string;

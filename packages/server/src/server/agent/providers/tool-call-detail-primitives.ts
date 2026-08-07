@@ -541,31 +541,43 @@ export const ToolEditTextSchema = z
     diff: z.string().optional(),
     unified_diff: z.string().optional(),
     unifiedDiff: z.string().optional(),
+    files: z.array(ToolPathInputSchema).optional(),
   })
   .passthrough();
 
+function mapParsedFilePaths(files: Array<{ filePath: string }> | undefined): string[] | undefined {
+  if (!files || files.length === 0) {
+    return undefined;
+  }
+  return files.map((file) => file.filePath);
+}
+
 export const ToolEditInputSchema = z
   .intersection(ToolPathInputSchema, ToolEditTextSchema)
-  .transform((value) => ({
-    filePath: value.filePath,
-    oldString:
-      nonEmptyString(value.old_string) ??
-      nonEmptyString(value.old_str) ??
-      nonEmptyString(value.oldContent) ??
-      nonEmptyString(value.old_content),
-    newString:
-      nonEmptyString(value.new_string) ??
-      nonEmptyString(value.new_str) ??
-      nonEmptyString(value.newContent) ??
-      nonEmptyString(value.new_content) ??
-      nonEmptyString(value.content),
-    unifiedDiff: truncateDiffText(
-      nonEmptyString(value.patch) ??
-        nonEmptyString(value.diff) ??
-        nonEmptyString(value.unified_diff) ??
-        nonEmptyString(value.unifiedDiff),
-    ),
-  }));
+  .transform((value) => {
+    const filePaths = mapParsedFilePaths(value.files);
+    return {
+      filePath: value.filePath,
+      ...(filePaths ? { filePaths } : {}),
+      oldString:
+        nonEmptyString(value.old_string) ??
+        nonEmptyString(value.old_str) ??
+        nonEmptyString(value.oldContent) ??
+        nonEmptyString(value.old_content),
+      newString:
+        nonEmptyString(value.new_string) ??
+        nonEmptyString(value.new_str) ??
+        nonEmptyString(value.newContent) ??
+        nonEmptyString(value.new_content) ??
+        nonEmptyString(value.content),
+      unifiedDiff: truncateDiffText(
+        nonEmptyString(value.patch) ??
+          nonEmptyString(value.diff) ??
+          nonEmptyString(value.unified_diff) ??
+          nonEmptyString(value.unifiedDiff),
+      ),
+    };
+  });
 
 const ToolEditOutputFileSchema = z.union([
   z
@@ -641,11 +653,15 @@ export const ToolEditOutputSchema = z.union([
   z
     .object({ files: z.array(ToolEditOutputFileSchema).min(1) })
     .passthrough()
-    .transform((value) => ({
-      filePath: value.files[0]?.filePath,
-      unifiedDiff: value.files[0]?.unifiedDiff,
-      newString: undefined,
-    })),
+    .transform((value) => {
+      const filePaths = mapParsedFilePaths(value.files);
+      return {
+        filePath: value.files[0]?.filePath,
+        ...(filePaths ? { filePaths } : {}),
+        unifiedDiff: value.files[0]?.unifiedDiff,
+        newString: undefined,
+      };
+    }),
   ToolEditTextSchema.transform((value) => ({
     filePath: undefined,
     newString:
@@ -773,6 +789,31 @@ function normalizeDetailPath(
   return normalizePath ? normalizePath(trimmed) : trimmed;
 }
 
+function additionalEditFilePaths(
+  value: ParsedToolEditInput | ParsedToolEditOutput | null,
+): string[] {
+  if (!value || !("filePaths" in value)) {
+    return [];
+  }
+  return value.filePaths ?? [];
+}
+
+function normalizeEditFilePaths(
+  rawFilePaths: Array<string | undefined>,
+  normalizePath?: NormalizePathFn,
+): string[] {
+  const filePaths: string[] = [];
+  const seenFilePaths = new Set<string>();
+  for (const rawFilePath of rawFilePaths) {
+    const normalizedPath = normalizeDetailPath(rawFilePath, normalizePath);
+    if (normalizedPath && !seenFilePaths.has(normalizedPath)) {
+      seenFilePaths.add(normalizedPath);
+      filePaths.push(normalizedPath);
+    }
+  }
+  return filePaths;
+}
+
 function isParsedToolGlobOutput(
   output:
     | ParsedToolGrepOutput
@@ -870,7 +911,16 @@ export function toEditToolDetail(
   output: ParsedToolEditOutput | null,
   options?: { normalizePath?: NormalizePathFn },
 ): ToolCallDetail | undefined {
-  const filePath = normalizeDetailPath(input?.filePath ?? output?.filePath, options?.normalizePath);
+  const filePaths = normalizeEditFilePaths(
+    [
+      input?.filePath,
+      output?.filePath,
+      ...additionalEditFilePaths(input),
+      ...additionalEditFilePaths(output),
+    ],
+    options?.normalizePath,
+  );
+  const filePath = filePaths[0];
   if (!filePath) {
     return undefined;
   }
@@ -880,6 +930,7 @@ export function toEditToolDetail(
   return {
     type: "edit",
     filePath,
+    ...(filePaths.length > 1 ? { filePaths } : {}),
     ...(input?.oldString ? { oldString: input.oldString } : {}),
     ...(newString ? { newString } : {}),
     ...(unifiedDiff ? { unifiedDiff } : {}),

@@ -79,6 +79,17 @@ function buildFilePathDisplay(
   };
 }
 
+function buildEditDisplay(
+  detail: Extract<ToolCallDisplayInput["detail"], { type: "edit" }>,
+  cwd: string | undefined,
+): DetailDisplay {
+  const filePaths = detail.filePaths ?? [detail.filePath];
+  return {
+    displayName: "Edit",
+    summary: filePaths.map((filePath) => stripCwdPrefix(filePath, cwd)).join(", "),
+  };
+}
+
 function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay {
   switch (input.detail.type) {
     case "shell":
@@ -89,7 +100,7 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
     case "read":
       return buildFilePathDisplay("Read", input.detail.filePath, input.cwd);
     case "edit":
-      return buildFilePathDisplay("Edit", input.detail.filePath, input.cwd);
+      return buildEditDisplay(input.detail, input.cwd);
     case "write":
       return buildFilePathDisplay("Write", input.detail.filePath, input.cwd);
     case "search":

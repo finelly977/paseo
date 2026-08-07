@@ -46,6 +46,42 @@ describe("shared messages tool_call schema", () => {
     expect(canceled.type).toBe("tool_call");
   });
 
+  it("parses optional multi-file edit paths while accepting legacy single-file detail", () => {
+    const multiFile = AgentTimelineItemPayloadSchema.parse({
+      type: "tool_call",
+      callId: "call_multi_edit",
+      name: "apply_patch",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "edit",
+        filePath: "src/a.ts",
+        filePaths: ["src/a.ts", "src/b.ts"],
+        unifiedDiff: "@@\n-old\n+new",
+      },
+    });
+    const legacySingleFile = AgentTimelineItemPayloadSchema.parse({
+      type: "tool_call",
+      callId: "call_single_edit",
+      name: "apply_patch",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "edit",
+        filePath: "src/a.ts",
+        unifiedDiff: "@@\n-old\n+new",
+      },
+    });
+
+    expect(multiFile.type === "tool_call" && multiFile.detail.type === "edit").toBe(true);
+    if (multiFile.type === "tool_call" && multiFile.detail.type === "edit") {
+      expect(multiFile.detail.filePaths).toEqual(["src/a.ts", "src/b.ts"]);
+    }
+    expect(legacySingleFile.type === "tool_call" && legacySingleFile.detail.type === "edit").toBe(
+      true,
+    );
+  });
+
   it("rejects non-recoverable invalid tool_call payloads", () => {
     const missingCallId = AgentTimelineItemPayloadSchema.safeParse({
       type: "tool_call",

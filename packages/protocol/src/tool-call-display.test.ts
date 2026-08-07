@@ -21,6 +21,25 @@ describe("shared tool-call display mapping", () => {
     });
   });
 
+  it("shows every path for a multi-file edit", () => {
+    const display = buildToolCallDisplayModel({
+      name: "apply_patch",
+      status: "completed",
+      error: null,
+      detail: {
+        type: "edit",
+        filePath: "/tmp/repo/src/a.ts",
+        filePaths: ["/tmp/repo/src/a.ts", "/tmp/repo/src/b.ts", "/tmp/repo/docs/c.md"],
+      },
+      cwd: "/tmp/repo",
+    });
+
+    expect(display).toEqual({
+      displayName: "Edit",
+      summary: "src/a.ts, src/b.ts, docs/c.md",
+    });
+  });
+
   it("does not infer summaries from unknown raw detail", () => {
     const display = buildToolCallDisplayModel({
       name: "exec_command",
