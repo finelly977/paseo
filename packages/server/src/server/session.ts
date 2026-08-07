@@ -228,6 +228,7 @@ import { WorkspaceAutoName } from "./workspace-auto-name.js";
 import {
   buildAgentSessionConfig as buildWorktreeAgentSessionConfig,
   createPaseoWorktreeWorkflow as createWorktreeWorkflow,
+  type AgentMetadataSelection,
   type CreatePaseoWorktreeSetupContinuationInput,
   type CreatePaseoWorktreeWorkflowResult,
   handleCreatePaseoWorktreeRequest as handleCreateWorktreeRequest,
@@ -1287,6 +1288,14 @@ export class Session {
       return undefined;
     }
 
+    return this.getAgentSelection(agent);
+  }
+
+  private getAgentSelection(agent: ManagedAgent): {
+    provider: string;
+    model: string | null;
+    thinkingOptionId: string | null;
+  } {
     return {
       provider: agent.provider,
       model: agent.runtimeInfo?.model ?? agent.config.model ?? null,
@@ -3128,6 +3137,7 @@ export class Session {
         target: worktree,
         firstAgentContext,
         hasLegacyGitOptions: Boolean(git),
+        currentSelection: config,
       });
       createdWorktreeForCleanup = createdWorktree;
       const resolvedIntent = await this.resolveSessionCreateAgentIntent({
@@ -3177,7 +3187,7 @@ export class Session {
             cwd: resolvedIntent.config.cwd,
             firstAgentContext,
           },
-          { currentSelection: this.getFocusedAgentSelectionForCwd(resolvedIntent.config.cwd) },
+          { currentSelection: this.getAgentSelection(liveSnapshot) },
         );
       }
       this.createAgentLifecycleDispatch.registerAutoArchiveIfRequested({
@@ -3596,6 +3606,7 @@ export class Session {
         createPaseoWorktree: (input, serviceOptions) =>
           this.createPaseoWorktreeWorkflow(input, {
             ...serviceOptions,
+            currentSelection: config,
             setupContinuation: {
               kind: "agent",
               terminalManager: this.terminalManager,
@@ -5842,6 +5853,7 @@ export class Session {
     options?: {
       resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
       setupContinuation?: CreatePaseoWorktreeSetupContinuationInput;
+      currentSelection?: AgentMetadataSelection;
     },
   ): Promise<CreatePaseoWorktreeWorkflowResult> {
     return createWorktreeWorkflow(
@@ -5851,9 +5863,9 @@ export class Session {
         createPaseoWorktree: (workflowInput, serviceOptions) =>
           this.createPaseoWorktree(workflowInput, serviceOptions),
         warmWorkspaceGitData: (workspace) => this.warmWorkspaceGitDataForWorkspace(workspace),
-        autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
+        autoNameWorkspaceBranchForFirstAgent: ({ currentSelection, ...autoNameInput }) =>
           this.workspaceAutoName.scheduleForWorktree(autoNameInput, {
-            currentSelection: this.getFocusedAgentSelectionForCwd(autoNameInput.workspace.cwd),
+            currentSelection: currentSelection ?? null,
           }),
         emitWorkspaceUpdateForWorkspaceId: (workspaceId) =>
           this.emitWorkspaceUpdateForWorkspaceId(workspaceId),

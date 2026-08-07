@@ -10,6 +10,7 @@ import {
   resolveStructuredGenerationProviders,
   type StructuredGenerationDaemonConfig,
 } from "./agent/structured-generation-providers.js";
+import type { StructuredGenerationProvider } from "./agent/agent-response-loop.js";
 import { buildAgentBranchNameSeed } from "./agent/prompt-attachments.js";
 import { buildMetadataPrompt } from "../utils/build-metadata-prompt.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
@@ -90,6 +91,36 @@ export interface GeneratedWorkspaceName {
   branch: string | null;
 }
 
+async function resolveWorkspaceNameProviders(
+  options: GenerateBranchNameFromFirstAgentContextOptions,
+): Promise<StructuredGenerationProvider[]> {
+  const currentSelection = options.currentSelection;
+  if (currentSelection) {
+    const provider = currentSelection.provider?.trim();
+    if (!provider) {
+      throw new Error("会话自动命名缺少当前智能体的 Provider");
+    }
+    const model = currentSelection.model?.trim();
+    const thinkingOptionId = currentSelection.thinkingOptionId?.trim();
+    return [
+      {
+        provider,
+        ...(model ? { model } : {}),
+        ...(thinkingOptionId ? { thinkingOptionId } : {}),
+      },
+    ];
+  }
+
+  if (!options.providerSnapshotManager) {
+    return [];
+  }
+  return resolveStructuredGenerationProviders({
+    cwd: options.cwd,
+    providerSnapshotManager: options.providerSnapshotManager,
+    daemonConfig: options.daemonConfig,
+  });
+}
+
 export async function generateBranchNameFromFirstAgentContext(
   options: GenerateBranchNameFromFirstAgentContextOptions,
 ): Promise<GeneratedWorkspaceName | null> {
@@ -103,14 +134,7 @@ export async function generateBranchNameFromFirstAgentContext(
     generateStructuredAgentResponseWithFallback;
 
   try {
-    const providers = options.providerSnapshotManager
-      ? await resolveStructuredGenerationProviders({
-          cwd: options.cwd,
-          providerSnapshotManager: options.providerSnapshotManager,
-          daemonConfig: options.daemonConfig,
-          currentSelection: options.currentSelection,
-        })
-      : [];
+    const providers = await resolveWorkspaceNameProviders(options);
     const result = await generator({
       manager: options.agentManager,
       cwd: options.cwd,

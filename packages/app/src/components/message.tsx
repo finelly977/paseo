@@ -72,7 +72,7 @@ import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
-import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
@@ -2135,7 +2135,11 @@ export const AssistantMessage = memo(function AssistantMessage({
         <AssistantMessageBlockContainer
           key={key}
           block={block}
-          marginBottom={index < keyedBlocks.length - 1 ? messageParagraphSpacing : 0}
+          marginBottom={getMarkdownBlockGap(
+            block,
+            keyedBlocks[index + 1]?.block,
+            messageParagraphSpacing,
+          )}
         >
           <MemoizedMarkdownBlock
             text={block}

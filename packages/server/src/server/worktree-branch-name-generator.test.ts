@@ -183,31 +183,37 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     expect(firstCall.prompt).toContain("Review flaky checkout");
   });
 
-  test("uses the current selection as the final provider fallback", async () => {
+  test("即使配置了元数据提供商也只使用新会话自身的选择", async () => {
     const structured = createStructuredGenerator({
       title: "Focused task",
       branch: "focused-branch",
     });
+    const listProviders = vi.fn(async () => [
+      {
+        provider: "claude",
+        status: "ready" as const,
+        enabled: true,
+        models: [
+          {
+            provider: "claude",
+            id: "claude-haiku-4-5",
+            label: "Haiku 4.5",
+            isDefault: true,
+          },
+        ],
+      },
+    ]);
 
     const result = await generateBranchNameFromFirstAgentContext({
       agentManager: {} as AgentManager,
       cwd: "/tmp/repo",
       providerSnapshotManager: {
-        listProviders: vi.fn(async () => [
-          {
-            provider: "focused-provider",
-            status: "ready" as const,
-            enabled: true,
-            models: [
-              {
-                provider: "focused-provider",
-                id: "selected-model",
-                label: "Selected Model",
-                isDefault: true,
-              },
-            ],
-          },
-        ]),
+        listProviders,
+      },
+      daemonConfig: {
+        metadataGeneration: {
+          providers: [{ provider: "claude", model: "claude-haiku-4-5" }],
+        },
       },
       currentSelection: {
         provider: "focused-provider",
@@ -227,6 +233,31 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     expect(firstCall.providers).toEqual([
       { provider: "focused-provider", model: "selected-model", thinkingOptionId: "medium" },
     ]);
+    expect(listProviders).not.toHaveBeenCalled();
+  });
+
+  test("当前会话选择缺少 Provider 时不会回退到其他智能体", async () => {
+    const structured = createStructuredGenerator({
+      title: "不应生成",
+      branch: "must-not-generate",
+    });
+    const listProviders = vi.fn(async () => []);
+    const logger = createLogger();
+
+    const result = await generateBranchNameFromFirstAgentContext({
+      agentManager: {} as AgentManager,
+      cwd: "/tmp/repo",
+      providerSnapshotManager: { listProviders },
+      currentSelection: { provider: "   ", model: "selected-model" },
+      firstAgentContext: { prompt: "Fix the login flow" },
+      logger,
+      deps: { generateStructuredAgentResponseWithFallback: structured.generateStructured },
+    });
+
+    expect(result).toBeNull();
+    expect(structured.calls).toEqual([]);
+    expect(listProviders).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledOnce();
   });
 
   test.each([

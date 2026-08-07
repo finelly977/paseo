@@ -187,6 +187,7 @@ export async function createAgentCommand(
 
   resolved.setupContinuation?.startAfterAgentCreate({
     agentId: snapshot.id,
+    config: resolved.config,
   });
 
   let liveSnapshot = snapshot;

@@ -5,6 +5,7 @@ import type { ForgeService } from "../../services/forge-service.js";
 import { isPaseoOwnedWorktreeCwd } from "../../utils/worktree.js";
 import { archiveByScope, type ActiveWorkspaceRef } from "../workspace-archive-service.js";
 import type {
+  AgentMetadataSelection,
   CreatePaseoWorktreeWorkflowFn,
   CreatePaseoWorktreeWorkflowResult,
 } from "../worktree-session.js";
@@ -62,6 +63,7 @@ export class CreateAgentLifecycleDispatch {
     target: CreateAgentWorktreeTarget | undefined;
     firstAgentContext: FirstAgentContext;
     hasLegacyGitOptions: boolean;
+    currentSelection: AgentMetadataSelection;
   }): Promise<CreatePaseoWorktreeWorkflowResult | null> {
     if (input.target && input.hasLegacyGitOptions) {
       throw new Error("create_agent_request worktree cannot be combined with git options");
@@ -70,7 +72,12 @@ export class CreateAgentLifecycleDispatch {
       return null;
     }
 
-    return this.createWorktreeForTarget(input.cwd, input.target, input.firstAgentContext);
+    return this.createWorktreeForTarget(
+      input.cwd,
+      input.target,
+      input.firstAgentContext,
+      input.currentSelection,
+    );
   }
 
   registerAutoArchiveIfRequested(input: {
@@ -115,6 +122,7 @@ export class CreateAgentLifecycleDispatch {
     cwd: string,
     target: CreateAgentWorktreeTarget,
     firstAgentContext: FirstAgentContext,
+    currentSelection: AgentMetadataSelection,
   ): Promise<CreatePaseoWorktreeWorkflowResult> {
     const baseInput = {
       cwd,
@@ -125,28 +133,39 @@ export class CreateAgentLifecycleDispatch {
     } as const;
 
     switch (target.mode) {
-      case "branch-off":
+      case "branch-off": {
+        const base = target.base;
         return this.dependencies.createPaseoWorktreeWorkflow(
           {
             ...baseInput,
             worktreeSlug: target.newBranch,
             action: "branch-off",
-            ...(target.base ? { refName: target.base } : {}),
+            ...(base ? { refName: base } : {}),
           },
-          target.base ? { resolveDefaultBranch: async () => target.base! } : undefined,
+          {
+            currentSelection,
+            ...(base ? { resolveDefaultBranch: async () => base } : {}),
+          },
         );
+      }
       case "checkout-branch":
-        return this.dependencies.createPaseoWorktreeWorkflow({
-          ...baseInput,
-          action: "checkout",
-          refName: target.branch,
-        });
+        return this.dependencies.createPaseoWorktreeWorkflow(
+          {
+            ...baseInput,
+            action: "checkout",
+            refName: target.branch,
+          },
+          { currentSelection },
+        );
       case "checkout-pr":
-        return this.dependencies.createPaseoWorktreeWorkflow({
-          ...baseInput,
-          action: "checkout",
-          githubPrNumber: target.prNumber,
-        });
+        return this.dependencies.createPaseoWorktreeWorkflow(
+          {
+            ...baseInput,
+            action: "checkout",
+            githubPrNumber: target.prNumber,
+          },
+          { currentSelection },
+        );
       default:
         throw new Error("Unsupported create_agent_request worktree target");
     }

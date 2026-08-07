@@ -65,6 +65,14 @@ describe("assistant message height estimate", () => {
     );
   });
 
+  it("高度预估不重复计算横线两侧的段落间距", () => {
+    setAssistantMarkdownBlockHeight({ block: "Before", width: 804, height: 18 });
+    setAssistantMarkdownBlockHeight({ block: "---", width: 804, height: 1 });
+    setAssistantMarkdownBlockHeight({ block: "After", width: 804, height: 20 });
+
+    expect(estimateAssistantMessageHeightFromCache("Before\n\n---\n\nAfter", 8)).toBe(63);
+  });
+
   it("falls back to text-feature estimate when nothing is cached", () => {
     // Short single-line message: one paragraph line + vertical padding.
     expect(estimateAssistantMessageHeightFromCache("Short message")).toBeGreaterThan(24);

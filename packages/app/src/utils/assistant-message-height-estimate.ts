@@ -1,6 +1,6 @@
 import { MAX_CONTENT_WIDTH } from "@/constants/layout";
 import { estimateAssistantMessageHeightFromCache as estimateAssistantImageMessageHeightFromCache } from "@/utils/assistant-image-metadata";
-import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 
 const ASSISTANT_MARKDOWN_BLOCK_HEIGHT_CACHE_LIMIT = 1000;
 const ASSISTANT_MARKDOWN_BLOCK_ESTIMATE_WIDTH = MAX_CONTENT_WIDTH - 16;
@@ -110,11 +110,13 @@ function estimateAssistantMarkdownBlockHeightFromCache(
     blockHeight += cachedHeight;
   }
 
-  return (
-    ASSISTANT_MESSAGE_VERTICAL_PADDING +
-    blockHeight +
-    paragraphSpacing * Math.max(0, blocks.length - 1)
+  const blockGap = blocks.reduce(
+    (total, block, index) =>
+      total + getMarkdownBlockGap(block, blocks[index + 1], paragraphSpacing),
+    0,
   );
+
+  return ASSISTANT_MESSAGE_VERTICAL_PADDING + blockHeight + blockGap;
 }
 
 // Fallback estimate used when no measured height is cached yet: a paragraph

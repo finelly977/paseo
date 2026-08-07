@@ -2398,7 +2398,7 @@ describe("create_agent MCP tool", () => {
           ? {
               setupContinuation: {
                 kind: "agent" as const,
-                startAfterAgentCreate: ({ agentId }: { agentId: string }) => {
+                startAfterAgentCreate: ({ agentId }) => {
                   startedAgentSetupIds.push(agentId);
                 },
               },

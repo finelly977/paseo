@@ -55,3 +55,28 @@ export function splitMarkdownBlocks(text: string): string[] {
 
   return blocks.filter((block) => block.length > 0);
 }
+
+export function isStandaloneMarkdownHorizontalRule(block: string): boolean {
+  if (block.includes("\n")) {
+    return false;
+  }
+
+  return /^(?: {0,3})(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(block);
+}
+
+export function getMarkdownBlockGap(
+  block: string,
+  nextBlock: string | undefined,
+  paragraphSpacing: number,
+): number {
+  if (nextBlock === undefined) {
+    return 0;
+  }
+
+  // 横线自身负责上下留白，两侧不再叠加外层段落间距。
+  if (isStandaloneMarkdownHorizontalRule(block) || isStandaloneMarkdownHorizontalRule(nextBlock)) {
+    return 0;
+  }
+
+  return paragraphSpacing;
+}

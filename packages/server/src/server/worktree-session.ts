@@ -73,6 +73,10 @@ type AgentWorktreeSetupTimelineWriter = (input: {
   agentId: string;
   item: AgentWorktreeSetupTimelineItem;
 }) => Promise<boolean>;
+export type AgentMetadataSelection = Pick<
+  AgentSessionConfig,
+  "provider" | "model" | "thinkingOptionId"
+>;
 
 interface BuildAgentSessionConfigDependencies {
   paseoHome?: string;
@@ -122,6 +126,7 @@ interface CreatePaseoWorktreeWorkflowDependencies extends CreatePaseoWorktreeInB
   autoNameWorkspaceBranchForFirstAgent: (input: {
     workspace: PersistedWorkspaceRecord;
     firstAgentContext: FirstAgentContext;
+    currentSelection?: AgentMetadataSelection;
   }) => void;
 }
 
@@ -139,7 +144,7 @@ export type CreatePaseoWorktreeSetupContinuationInput =
 
 export interface AgentWorktreeSetupContinuation {
   kind: "agent";
-  startAfterAgentCreate: (input: { agentId: string }) => void;
+  startAfterAgentCreate: (input: { agentId: string; config: AgentMetadataSelection }) => void;
 }
 
 export type CreatePaseoWorktreeWorkflowResult = CreatePaseoWorktreeResult & {
@@ -151,6 +156,7 @@ export type CreatePaseoWorktreeWorkflowFn = (
   options?: {
     resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
     setupContinuation?: CreatePaseoWorktreeSetupContinuationInput;
+    currentSelection?: AgentMetadataSelection;
   },
 ) => Promise<CreatePaseoWorktreeWorkflowResult>;
 
@@ -588,6 +594,7 @@ export async function createPaseoWorktreeWorkflow(
   options?: {
     resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
     setupContinuation?: CreatePaseoWorktreeSetupContinuationInput;
+    currentSelection?: AgentMetadataSelection;
   },
 ): Promise<CreatePaseoWorktreeWorkflowResult> {
   const createdWorktree = await dependencies.createPaseoWorktree(
@@ -606,10 +613,11 @@ export async function createPaseoWorktreeWorkflow(
   const setupContinuation = options?.setupContinuation ?? { kind: "workspace" };
 
   setTimeout(() => {
-    if (input.firstAgentContext) {
+    if (setupContinuation.kind === "workspace" && input.firstAgentContext) {
       dependencies.autoNameWorkspaceBranchForFirstAgent({
         workspace,
         firstAgentContext: input.firstAgentContext,
+        ...(options?.currentSelection ? { currentSelection: options.currentSelection } : {}),
       });
     }
     void dependencies.warmWorkspaceGitData(workspace).catch((error) => {
@@ -637,7 +645,14 @@ export async function createPaseoWorktreeWorkflow(
       ...createdWorktree,
       setupContinuation: {
         kind: "agent",
-        startAfterAgentCreate: ({ agentId }) => {
+        startAfterAgentCreate: ({ agentId, config }) => {
+          if (input.firstAgentContext) {
+            dependencies.autoNameWorkspaceBranchForFirstAgent({
+              workspace,
+              firstAgentContext: input.firstAgentContext,
+              currentSelection: config,
+            });
+          }
           void runAsyncWorktreeBootstrap({
             agentId,
             workspaceId: workspace.workspaceId,

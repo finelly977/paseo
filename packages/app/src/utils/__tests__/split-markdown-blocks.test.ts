@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { splitMarkdownBlocks } from "../split-markdown-blocks";
+import {
+  getMarkdownBlockGap,
+  isStandaloneMarkdownHorizontalRule,
+  splitMarkdownBlocks,
+} from "../split-markdown-blocks";
 
 describe("splitMarkdownBlocks", () => {
   it("returns a single block for a single paragraph", () => {
@@ -72,5 +76,18 @@ describe("splitMarkdownBlocks", () => {
       "First paragraph",
       "Second paragraph",
     ]);
+  });
+
+  it("识别独立 Markdown 横线且不把缩进代码误判为横线", () => {
+    expect(isStandaloneMarkdownHorizontalRule("---")).toBe(true);
+    expect(isStandaloneMarkdownHorizontalRule("* * *")).toBe(true);
+    expect(isStandaloneMarkdownHorizontalRule("    ---")).toBe(false);
+    expect(isStandaloneMarkdownHorizontalRule("---\ntext")).toBe(false);
+  });
+
+  it("横线两侧不再叠加段落间距", () => {
+    expect(getMarkdownBlockGap("Before", "---", 8)).toBe(0);
+    expect(getMarkdownBlockGap("---", "After", 8)).toBe(0);
+    expect(getMarkdownBlockGap("Before", "After", 8)).toBe(8);
   });
 });

@@ -1052,8 +1052,10 @@ export async function createPaseoDaemon(
               .map((session) => session.warmWorkspaceGitDataForWorkspace(workspace)) ?? [],
           );
         },
-        autoNameWorkspaceBranchForFirstAgent: (autoNameInput) =>
-          workspaceAutoName.scheduleForWorktree(autoNameInput),
+        autoNameWorkspaceBranchForFirstAgent: ({ currentSelection, ...autoNameInput }) =>
+          workspaceAutoName.scheduleForWorktree(autoNameInput, {
+            currentSelection: currentSelection ?? null,
+          }),
         emitWorkspaceUpdateForWorkspaceId: async (workspaceId) => {
           await emitWorkspaceUpdatesExternal([workspaceId]);
         },

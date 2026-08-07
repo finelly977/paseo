@@ -141,7 +141,7 @@ function ReferenceIcon({
 }) {
   switch (kind) {
     case "head":
-      return <ThemedLocateFixed size={inTooltip ? 14 : 10} uniProps={badgeIconMapping} />;
+      return <ThemedLocateFixed size={inTooltip ? 12 : 10} uniProps={badgeIconMapping} />;
     case "branch":
       return (
         <ThemedGitBranch

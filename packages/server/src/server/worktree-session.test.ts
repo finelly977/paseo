@@ -451,12 +451,73 @@ describe("resolveGitCreateBaseBranch", () => {
 });
 
 describe("create-agent worktree setup boundary", () => {
+  test("现代工作树会话使用请求中的智能体配置进行自动命名", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    const paseoHome = path.join(tempDir, ".paseo");
+    const autoNameSelections: Array<{
+      provider?: string;
+      model?: string;
+      thinkingOptionId?: string;
+    }> = [];
+
+    try {
+      await createPaseoWorktreeWorkflow(
+        {
+          paseoHome,
+          createPaseoWorktree: createPaseoWorktreeForTest({ paseoHome }),
+          warmWorkspaceGitData: async () => {},
+          autoNameWorkspaceBranchForFirstAgent: ({ currentSelection }) => {
+            autoNameSelections.push(currentSelection ?? {});
+          },
+          emitWorkspaceUpdateForWorkspaceId: async () => {},
+          cacheWorkspaceSetupSnapshot: () => {},
+          emit: () => {},
+          sessionLogger: createLogger(),
+          terminalManager: null,
+          archiveWorkspaceRecord: async () => {},
+          serviceProxy: null,
+          scriptRuntimeStore: null,
+          getDaemonTcpPort: null,
+          getDaemonTcpHost: null,
+          onScriptsChanged: null,
+        },
+        {
+          cwd: repoDir,
+          worktreeSlug: "agent-selection-auto-name",
+          firstAgentContext: { prompt: "Use this agent to name the worktree" },
+          runSetup: false,
+          paseoHome,
+        },
+        {
+          currentSelection: {
+            provider: "codex",
+            model: "gpt-5.6-sol",
+            thinkingOptionId: "xhigh",
+          },
+        },
+      );
+
+      await vi.waitFor(() => {
+        expect(autoNameSelections).toEqual([
+          { provider: "codex", model: "gpt-5.6-sol", thinkingOptionId: "xhigh" },
+        ]);
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("agent setup continuation starts setup for the created agent timeline", async () => {
     const { tempDir, repoDir } = createGitRepo();
     const paseoHome = path.join(tempDir, ".paseo");
     const appendedItems: Array<{ name: string; status: string }> = [];
     const liveItems: Array<{ name: string; status: string }> = [];
     const workspaceSetupEvents: SessionOutboundMessage[] = [];
+    const autoNameSelections: Array<{
+      provider?: string;
+      model?: string;
+      thinkingOptionId?: string;
+    }> = [];
 
     try {
       const result = await createPaseoWorktreeWorkflow(
@@ -464,7 +525,9 @@ describe("create-agent worktree setup boundary", () => {
           paseoHome,
           createPaseoWorktree: createPaseoWorktreeForTest({ paseoHome }),
           warmWorkspaceGitData: async () => {},
-          autoNameWorkspaceBranchForFirstAgent: () => {},
+          autoNameWorkspaceBranchForFirstAgent: ({ currentSelection }) => {
+            autoNameSelections.push(currentSelection ?? {});
+          },
           emitWorkspaceUpdateForWorkspaceId: async () => {},
           cacheWorkspaceSetupSnapshot: () => {},
           emit: (message) => workspaceSetupEvents.push(message),
@@ -480,6 +543,7 @@ describe("create-agent worktree setup boundary", () => {
         {
           cwd: repoDir,
           worktreeSlug: "agent-setup-after-create",
+          firstAgentContext: { prompt: "Use this agent to name the worktree" },
           runSetup: false,
           paseoHome,
         },
@@ -510,8 +574,20 @@ describe("create-agent worktree setup boundary", () => {
 
       expect(result.setupContinuation?.kind).toBe("agent");
       expect(workspaceSetupEvents).toEqual([]);
+      expect(autoNameSelections).toEqual([]);
 
-      result.setupContinuation?.startAfterAgentCreate({ agentId: "agent-after-create" });
+      result.setupContinuation?.startAfterAgentCreate({
+        agentId: "agent-after-create",
+        config: {
+          provider: "codex",
+          model: "gpt-5.6-sol",
+          thinkingOptionId: "xhigh",
+        },
+      });
+
+      expect(autoNameSelections).toEqual([
+        { provider: "codex", model: "gpt-5.6-sol", thinkingOptionId: "xhigh" },
+      ]);
 
       await vi.waitFor(() => {
         expect(appendedItems).toContainEqual({

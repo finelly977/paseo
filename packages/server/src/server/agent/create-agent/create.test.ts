@@ -165,6 +165,56 @@ test("session create applies the resolved mode from the provider create config",
   );
 });
 
+test("创建会话时把实际智能体配置传给工作树自动命名", async () => {
+  const snapshot = {
+    id: "agent-1",
+    provider: "codex",
+    cwd: "/tmp/paseo-create-test",
+    runtimeInfo: null,
+  } as ManagedAgent;
+  const startAfterAgentCreate = vi.fn();
+  const dependencies: Parameters<typeof createAgentCommand>[0] = {
+    agentManager: {
+      createAgent: vi.fn(async () => snapshot),
+      getAgent: vi.fn(() => snapshot),
+    } as unknown as Parameters<typeof createAgentCommand>[0]["agentManager"],
+    agentStorage: {} as Parameters<typeof createAgentCommand>[0]["agentStorage"],
+    logger: createTestLogger(),
+    providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+  };
+
+  await createAgentCommand(dependencies, {
+    kind: "session",
+    config: {
+      provider: "codex",
+      cwd: "/tmp/paseo-create-test",
+      model: "gpt-5.6-sol",
+      thinkingOptionId: "xhigh",
+    },
+    workspaceId: "ws-create-test",
+    labels: {},
+    provisionalTitle: null,
+    firstAgentContext: { attachments: [] },
+    buildSessionConfig: async (config) => ({
+      sessionConfig: config,
+      setupContinuation: { kind: "agent", startAfterAgentCreate },
+      createdWorkspaceId: "ws-created-worktree",
+    }),
+  });
+
+  expect(startAfterAgentCreate).toHaveBeenCalledWith({
+    agentId: "agent-1",
+    config: {
+      provider: "codex",
+      cwd: "/tmp/paseo-create-test",
+      model: "gpt-5.6-sol",
+      thinkingOptionId: "xhigh",
+      modeId: undefined,
+      featureValues: undefined,
+    },
+  });
+});
+
 test("mcp create accepts provider-only internal input and leaves model undefined", async () => {
   const snapshot = {
     id: "agent-1",

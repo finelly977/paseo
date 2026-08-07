@@ -8627,6 +8627,73 @@ test("workspace auto-name replaces the unchanged prompt title", async () => {
   }
 });
 
+test("工作区自动命名把新会话选择传给标题生成", async () => {
+  vi.useFakeTimers();
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-agent-selection",
+    projectId: "proj-agent-selection",
+    cwd: REPO_CWD,
+    kind: "directory",
+    displayName: "repo",
+    title: "Name this workspace",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const stored = new Map([[workspace.workspaceId, workspace]]);
+  let currentSelection: {
+    provider?: string | null;
+    model?: string | null;
+    thinkingOptionId?: string | null;
+  } | null = null;
+  const workspaceAutoName = new WorkspaceAutoName({
+    agentManager: asAgentManager({}),
+    workspaceRegistry: {
+      get: async (workspaceId) => stored.get(workspaceId) ?? null,
+      upsert: async (record) => {
+        stored.set(record.workspaceId, record);
+      },
+    },
+    workspaceGitService: createNoopWorkspaceGitService(),
+    providerSnapshotManager: createProviderSnapshotManagerStub().manager,
+    readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
+    gitMutation: { notifyGitMutation: async () => {} },
+    emitWorkspaceUpdateForCwd: async () => {},
+    emitWorkspaceUpdateForWorkspaceId: async () => {},
+    logger: asSessionLogger(createTestLogger()),
+    generateWorkspaceName: async (options) => {
+      currentSelection = options.currentSelection ?? null;
+      return { title: "Named by Codex", branch: null };
+    },
+  });
+
+  try {
+    workspaceAutoName.scheduleForDirectory(
+      {
+        workspaceId: workspace.workspaceId,
+        cwd: workspace.cwd,
+        firstAgentContext: { prompt: "Name this workspace" },
+      },
+      {
+        currentSelection: {
+          provider: "codex",
+          model: "gpt-5.6-sol",
+          thinkingOptionId: "xhigh",
+        },
+      },
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentSelection).toEqual({
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      thinkingOptionId: "xhigh",
+    });
+    expect(stored.get(workspace.workspaceId)?.title).toBe("Named by Codex");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("workspace auto-name uses the backing root for a nested worktree", async () => {
   vi.useFakeTimers();
   const tempDir = realpathSync(mkdtempSync(path.join(tmpdir(), "workspace-auto-name-rejected-")));
