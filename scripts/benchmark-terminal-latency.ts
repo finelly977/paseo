@@ -15,13 +15,13 @@
  * Optional:
  *   BENCH_INCLUDE_L3=1   include the L3 level (L2 + a second noisy terminal)
  *
- * Output: pretty table to stdout + JSON to /tmp/paseo-terminal-bench/<ts>.json
+ * Output: pretty table to stdout + JSON to the OS temp directory under paseo-terminal-bench.
  *
  * Requires built client/protocol dist (packages/client/dist). Build with:
  *   npm run build:client
  */
 
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -180,9 +180,9 @@ async function bootDaemon(): Promise<BootedDaemon> {
     throw new Error("Refusing to use port 6767 (the developer daemon)");
   }
   const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-bench-home-"));
-  const tsxBin = execSync("which tsx").toString().trim();
+  const tsxCli = path.join(REPO_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 
-  const child = spawn(tsxBin, ["scripts/supervisor-entrypoint.ts", "--dev"], {
+  const child = spawn(process.execPath, [tsxCli, "scripts/supervisor-entrypoint.ts", "--dev"], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -655,11 +655,10 @@ function printTable(results: LevelResult[]): void {
 }
 
 function getCommitHash(): string {
-  try {
-    return execSync("git rev-parse --short HEAD", { cwd: REPO_ROOT }).toString().trim();
-  } catch {
-    return "unknown";
-  }
+  return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  }).trim();
 }
 
 // --- main -------------------------------------------------------------------
@@ -711,7 +710,7 @@ async function main(): Promise<void> {
 
     printTable(results);
 
-    const outDir = "/tmp/paseo-terminal-bench";
+    const outDir = path.join(os.tmpdir(), "paseo-terminal-bench");
     await mkdir(outDir, { recursive: true });
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const outPath = path.join(outDir, `${timestamp}.json`);

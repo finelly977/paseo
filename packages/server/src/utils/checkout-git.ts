@@ -2509,13 +2509,29 @@ function buildCheckoutCommits(
 type CheckoutCommitRefMode = "auto" | "all" | "selected";
 
 const CHECKOUT_REF_FORMAT =
-  "%1e%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(*objecttype)%00";
+  "%1e%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(*objecttype)%00%(upstream)%00";
+
+interface CheckoutCommitReferencesResult {
+  references: CheckoutCommitReference[];
+  upstreamRef: string | null;
+}
+
+function getCurrentCheckoutUpstream(
+  upstreamsByRef: ReadonlyMap<string, string>,
+  currentRef: string | null,
+): string | null {
+  if (!currentRef) {
+    return null;
+  }
+  return upstreamsByRef.get(currentRef) || null;
+}
 
 function parseCheckoutCommitReferences(
   stdout: string,
   currentRef: string | null,
-): CheckoutCommitReference[] {
+): CheckoutCommitReferencesResult {
   const references: CheckoutCommitReference[] = [];
+  const upstreamsByRef = new Map<string, string>();
   for (const record of stdout.split(COMMIT_RECORD_SEPARATOR)) {
     if (!record) {
       continue;
@@ -2526,6 +2542,7 @@ function parseCheckoutCommitReferences(
     const peeledRevision = (fields[2] ?? "").trim();
     const directType = (fields[3] ?? "").trim();
     const peeledType = (fields[4] ?? "").trim();
+    const upstream = (fields[5] ?? "").trim();
     const revision = peeledRevision || directRevision;
     const revisionType = peeledRevision ? peeledType : directType;
     if (!id || !revision || revisionType !== "commit" || id.endsWith("/HEAD")) {
@@ -2533,6 +2550,7 @@ function parseCheckoutCommitReferences(
     }
 
     if (id.startsWith("refs/heads/")) {
+      upstreamsByRef.set(id, upstream);
       references.push({
         id,
         name: id.slice("refs/heads/".length),
@@ -2566,17 +2584,21 @@ function parseCheckoutCommitReferences(
     remote: 2,
     tag: 3,
   };
-  return references.sort(
+  references.sort(
     (left, right) =>
       kindOrder[left.kind] - kindOrder[right.kind] || left.name.localeCompare(right.name),
   );
+  return {
+    references,
+    upstreamRef: getCurrentCheckoutUpstream(upstreamsByRef, currentRef),
+  };
 }
 
 async function listCheckoutCommitReferences(
   cwd: string,
   currentRef: string | null,
   context?: CheckoutContext,
-): Promise<CheckoutCommitReference[]> {
+): Promise<CheckoutCommitReferencesResult> {
   const result = await runGitCommand(
     ["for-each-ref", `--format=${CHECKOUT_REF_FORMAT}`, "refs/heads", "refs/remotes", "refs/tags"],
     { cwd, envOverlay: READ_ONLY_GIT_ENV, logger: context?.logger },
@@ -2726,11 +2748,11 @@ async function listCheckoutCommitGraph({
   comparisonBaseRef: string | null;
 }): Promise<CheckoutCommitsResult> {
   const currentRef = currentBranch ? `refs/heads/${currentBranch}` : null;
-  const [headSha, upstreamRef, availableRefs] = await Promise.all([
+  const [headSha, referenceResult] = await Promise.all([
     resolveOptionalGitRevision(cwd, ["rev-parse", "--verify", "HEAD"], context),
-    resolveOptionalGitRevision(cwd, ["rev-parse", "--symbolic-full-name", "@{upstream}"], context),
     listCheckoutCommitReferences(cwd, currentRef, context),
   ]);
+  const { references: availableRefs, upstreamRef } = referenceResult;
   const revisions = resolveCheckoutGraphRevisions({
     mode: refMode,
     selectedRefs: refs,

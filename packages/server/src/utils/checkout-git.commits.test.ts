@@ -354,6 +354,7 @@ describe("listCheckoutCommits", () => {
     );
     expect(result.currentRef).toBe("refs/heads/main");
     expect(result.headSha).toBe(merge?.sha);
+    expect(result.upstreamRef).toBeNull();
     expect(result.nextCursor).toBeNull();
   });
 

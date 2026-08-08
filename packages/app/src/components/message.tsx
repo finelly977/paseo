@@ -924,6 +924,16 @@ interface AssistantMessageProps {
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
 }
 
+const assistantMarkdownParser = MarkdownIt({ typographer: true, linkify: true });
+const defaultAssistantValidateLink =
+  assistantMarkdownParser.validateLink.bind(assistantMarkdownParser);
+assistantMarkdownParser.validateLink = (url: string) => {
+  if (url.trim().toLowerCase().startsWith("file://")) {
+    return true;
+  }
+  return defaultAssistantValidateLink(url);
+};
+
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
     paddingVertical: 0,
@@ -1772,18 +1782,6 @@ export const AssistantMessage = memo(function AssistantMessage({
   spacing = "default",
 }: AssistantMessageProps) {
   const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
-  const markdownParser = useMemo(() => {
-    const parser = MarkdownIt({ typographer: true, linkify: true });
-    const defaultValidateLink = parser.validateLink.bind(parser);
-    parser.validateLink = (url: string) => {
-      if (url.trim().toLowerCase().startsWith("file://")) {
-        return true;
-      }
-
-      return defaultValidateLink(url);
-    };
-    return parser;
-  }, []);
 
   const fileLinkActions = useAssistantFileLinkActions();
   const handleMarkdownLinkPress = useStableEvent((url: string) => {
@@ -1964,7 +1962,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           );
         }
 
-        const inlineCodeLinkUrl = getInlineCodeAutoLinkUrl(markdownParser, content);
+        const inlineCodeLinkUrl = getInlineCodeAutoLinkUrl(assistantMarkdownParser, content);
         if (inlineCodeLinkUrl) {
           const source = getInlineCodeAutoLinkSource({
             href: inlineCodeLinkUrl,
@@ -2110,7 +2108,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         );
       },
     };
-  }, [client, fileLinkActions, markdownParser, serverId, workspaceRoot]);
+  }, [client, fileLinkActions, serverId, workspaceRoot]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(message), [message]);
   const keyedBlocks = useMemo(
@@ -2144,7 +2142,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           <MemoizedMarkdownBlock
             text={block}
             rules={markdownRules}
-            parser={markdownParser}
+            parser={assistantMarkdownParser}
             onLinkPress={handleMarkdownLinkPress}
           />
         </AssistantMessageBlockContainer>

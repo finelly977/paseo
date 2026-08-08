@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { countScmChanges, getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
+import {
+  buildScmListItems,
+  countScmChanges,
+  getScmStatusDecoration,
+  splitScmPath,
+} from "@/git/scm-model";
 
 describe("源代码管理视图模型", () => {
   test("状态字母与语义颜色保持稳定", () => {
@@ -25,5 +30,47 @@ describe("源代码管理视图模型", () => {
       conflicts: [],
     };
     expect(countScmChanges(changes)).toBe(2);
+  });
+
+  test("折叠组只保留组头，展开组保留文件顺序", () => {
+    const items = buildScmListItems([
+      {
+        group: "staged",
+        title: "已暂存的更改",
+        changes: [{ path: "a.ts", status: "modified" }],
+        collapsed: true,
+      },
+      {
+        group: "unstaged",
+        title: "更改",
+        changes: [
+          { path: "b.ts", status: "modified" },
+          { path: "c.ts", status: "untracked" },
+        ],
+        collapsed: false,
+      },
+    ]);
+
+    expect(items).toEqual([
+      {
+        type: "header",
+        group: "staged",
+        title: "已暂存的更改",
+        changes: [{ path: "a.ts", status: "modified" }],
+        collapsed: true,
+      },
+      {
+        type: "header",
+        group: "unstaged",
+        title: "更改",
+        changes: [
+          { path: "b.ts", status: "modified" },
+          { path: "c.ts", status: "untracked" },
+        ],
+        collapsed: false,
+      },
+      { type: "file", group: "unstaged", change: { path: "b.ts", status: "modified" } },
+      { type: "file", group: "unstaged", change: { path: "c.ts", status: "untracked" } },
+    ]);
   });
 });

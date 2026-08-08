@@ -2,9 +2,10 @@ import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
+  FlatList,
   Text,
   View,
+  type ListRenderItemInfo,
   type PressableStateCallbackType,
 } from "react-native";
 import { Minus, Plus, Undo2 } from "lucide-react-native";
@@ -20,10 +21,16 @@ import {
 } from "@/components/ui/context-menu";
 import { isNative } from "@/constants/platform";
 import type { CheckoutGitActionStatus } from "@/git/actions-store";
-import { getScmStatusDecoration, splitScmPath, type ScmStatusTone } from "@/git/scm-model";
+import {
+  buildScmListItems,
+  getScmStatusDecoration,
+  splitScmPath,
+  type ScmGroupKind,
+  type ScmListGroup,
+  type ScmListItem,
+  type ScmStatusTone,
+} from "@/git/scm-model";
 import { SourceControlSectionHeader } from "@/git/source-control-panel";
-
-type ScmGroupKind = "conflicts" | "staged" | "unstaged";
 
 interface ScmChangesListProps {
   changes: CheckoutScmChanges;
@@ -262,51 +269,50 @@ const ScmFileRow = memo(function ScmFileRow({
   );
 });
 
-interface ScmGroupProps extends Omit<ScmFileRowProps, "change" | "group"> {
-  group: ScmGroupKind;
-  title: string;
-  changes: CheckoutScmFileChange[];
+interface ScmGroupProps {
+  group: ScmListGroup;
   status: CheckoutGitActionStatus;
+  disabled: boolean;
+  onToggleCollapsed: (group: ScmGroupKind) => void;
+  onStage: (paths: string[]) => void;
+  onUnstage: (paths: string[]) => void;
+  onDiscard: (paths: string[]) => void;
 }
 
-function ScmGroup({
+function ScmGroupHeader({
   group,
-  title,
-  changes,
   status,
-  isCompact,
+  onToggleCollapsed,
   disabled,
-  onOpenFile,
   onStage,
   onUnstage,
   onDiscard,
 }: ScmGroupProps) {
   const { t } = useTranslation();
-  const [collapsed, setCollapsed] = useState(false);
-  const paths = useMemo(() => changes.map((change) => change.path), [changes]);
-  const toggleCollapsed = useCallback(() => setCollapsed((value) => !value), []);
+  const paths = useMemo(() => group.changes.map((change) => change.path), [group.changes]);
+  const toggleCollapsed = useCallback(
+    () => onToggleCollapsed(group.group),
+    [group.group, onToggleCollapsed],
+  );
   const stageAll = useCallback(() => onStage(paths), [onStage, paths]);
   const unstageAll = useCallback(() => onUnstage(paths), [onUnstage, paths]);
   const discardAll = useCallback(() => onDiscard(paths), [onDiscard, paths]);
-  if (changes.length === 0) {
-    return null;
-  }
 
   return (
     <View>
       <SourceControlSectionHeader
-        title={title}
-        count={changes.length}
+        title={group.title}
+        count={group.changes.length}
         collapsible
-        collapsed={collapsed}
+        collapsed={group.collapsed}
         onToggleCollapsed={toggleCollapsed}
-        testID={`scm-group-${group}`}
+        testID={`scm-group-${group.group}`}
       >
         <View style={styles.groupActions}>
           {status === "pending" ? (
             <ThemedActivityIndicator size="small" uniProps={mutedIconColorMapping} />
           ) : null}
-          {group === "unstaged" ? (
+          {group.group === "unstaged" ? (
             <ScmRowAction
               label={t("workspace.git.panel.discardAllChanges")}
               disabled={disabled}
@@ -315,7 +321,7 @@ function ScmGroup({
               testID="scm-discard-all"
             />
           ) : null}
-          {group === "staged" ? (
+          {group.group === "staged" ? (
             <ScmRowAction
               label={t("workspace.git.panel.unstageAllChanges")}
               disabled={disabled}
@@ -329,26 +335,11 @@ function ScmGroup({
               disabled={disabled}
               onPress={stageAll}
               kind="stage"
-              testID={`scm-stage-all-${group}`}
+              testID={`scm-stage-all-${group.group}`}
             />
           )}
         </View>
       </SourceControlSectionHeader>
-      {collapsed
-        ? null
-        : changes.map((change) => (
-            <ScmFileRow
-              key={`${group}:${change.path}`}
-              change={change}
-              group={group}
-              isCompact={isCompact}
-              disabled={disabled}
-              onOpenFile={onOpenFile}
-              onStage={onStage}
-              onUnstage={onUnstage}
-              onDiscard={onDiscard}
-            />
-          ))}
     </View>
   );
 }
@@ -365,47 +356,112 @@ export function ScmChangesList({
   onDiscard,
 }: ScmChangesListProps) {
   const { t } = useTranslation();
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<ScmGroupKind>>(() => new Set());
   const disabled =
     stageStatus === "pending" || unstageStatus === "pending" || discardStatus === "pending";
+
+  const groups = useMemo<ScmListGroup[]>(
+    () => [
+      {
+        group: "conflicts",
+        title: t("workspace.git.panel.mergeChanges"),
+        changes: changes.conflicts,
+        collapsed: collapsedGroups.has("conflicts"),
+      },
+      {
+        group: "staged",
+        title: t("workspace.git.panel.stagedChanges"),
+        changes: changes.staged,
+        collapsed: collapsedGroups.has("staged"),
+      },
+      {
+        group: "unstaged",
+        title: t("workspace.git.panel.changes"),
+        changes: changes.unstaged,
+        collapsed: collapsedGroups.has("unstaged"),
+      },
+    ],
+    [changes, collapsedGroups, t],
+  );
+  const groupStatuses = useMemo<Record<ScmGroupKind, CheckoutGitActionStatus>>(
+    () => ({
+      conflicts: stageStatus,
+      staged: unstageStatus,
+      unstaged: stageStatus === "pending" ? stageStatus : discardStatus,
+    }),
+    [discardStatus, stageStatus, unstageStatus],
+  );
+  const items = useMemo(() => buildScmListItems(groups), [groups]);
+  const toggleCollapsed = useCallback((group: ScmGroupKind) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) {
+        next.delete(group);
+      } else {
+        next.add(group);
+      }
+      return next;
+    });
+  }, []);
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<ScmListItem>) => {
+      if (item.type === "header") {
+        return (
+          <ScmGroupHeader
+            group={item}
+            status={groupStatuses[item.group]}
+            onToggleCollapsed={toggleCollapsed}
+            disabled={disabled}
+            onStage={onStage}
+            onUnstage={onUnstage}
+            onDiscard={onDiscard}
+          />
+        );
+      }
+      return (
+        <ScmFileRow
+          change={item.change}
+          group={item.group}
+          isCompact={isCompact}
+          disabled={disabled}
+          onOpenFile={onOpenFile}
+          onStage={onStage}
+          onUnstage={onUnstage}
+          onDiscard={onDiscard}
+        />
+      );
+    },
+    [
+      disabled,
+      groupStatuses,
+      isCompact,
+      onDiscard,
+      onOpenFile,
+      onStage,
+      onUnstage,
+      toggleCollapsed,
+    ],
+  );
+  const keyExtractor = useCallback(
+    (item: ScmListItem) =>
+      item.type === "header" ? `header:${item.group}` : `file:${item.group}:${item.change.path}`,
+    [],
+  );
+
   return (
-    <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-      <ScmGroup
-        group="conflicts"
-        title={t("workspace.git.panel.mergeChanges")}
-        changes={changes.conflicts}
-        status={stageStatus}
-        isCompact={isCompact}
-        disabled={disabled}
-        onOpenFile={onOpenFile}
-        onStage={onStage}
-        onUnstage={onUnstage}
-        onDiscard={onDiscard}
-      />
-      <ScmGroup
-        group="staged"
-        title={t("workspace.git.panel.stagedChanges")}
-        changes={changes.staged}
-        status={unstageStatus}
-        isCompact={isCompact}
-        disabled={disabled}
-        onOpenFile={onOpenFile}
-        onStage={onStage}
-        onUnstage={onUnstage}
-        onDiscard={onDiscard}
-      />
-      <ScmGroup
-        group="unstaged"
-        title={t("workspace.git.panel.changes")}
-        changes={changes.unstaged}
-        status={stageStatus === "pending" ? stageStatus : discardStatus}
-        isCompact={isCompact}
-        disabled={disabled}
-        onOpenFile={onOpenFile}
-        onStage={onStage}
-        onUnstage={onUnstage}
-        onDiscard={onDiscard}
-      />
-    </ScrollView>
+    <FlatList
+      style={styles.list}
+      contentContainerStyle={styles.listContent}
+      data={items}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      initialNumToRender={24}
+      maxToRenderPerBatch={24}
+      windowSize={9}
+      removeClippedSubviews={isNative}
+      showsVerticalScrollIndicator
+      testID="scm-changes-list"
+    />
   );
 }
 

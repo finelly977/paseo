@@ -7,6 +7,23 @@ export interface ScmStatusDecoration {
   tone: ScmStatusTone;
 }
 
+export type ScmGroupKind = "conflicts" | "staged" | "unstaged";
+
+export interface ScmListGroup {
+  group: ScmGroupKind;
+  title: string;
+  changes: CheckoutScmChanges["staged"];
+  collapsed: boolean;
+}
+
+export type ScmListItem =
+  | ({ type: "header" } & ScmListGroup)
+  | {
+      type: "file";
+      group: ScmGroupKind;
+      change: CheckoutScmChanges["staged"][number];
+    };
+
 export function getScmStatusDecoration(status: CheckoutScmFileStatus): ScmStatusDecoration {
   switch (status) {
     case "added":
@@ -39,4 +56,21 @@ export function splitScmPath(path: string): { fileName: string; directory: strin
 
 export function countScmChanges(changes: CheckoutScmChanges): number {
   return changes.staged.length + changes.unstaged.length + changes.conflicts.length;
+}
+
+export function buildScmListItems(groups: readonly ScmListGroup[]): ScmListItem[] {
+  const items: ScmListItem[] = [];
+  for (const group of groups) {
+    if (group.changes.length === 0) {
+      continue;
+    }
+    items.push({ type: "header", ...group });
+    if (group.collapsed) {
+      continue;
+    }
+    for (const change of group.changes) {
+      items.push({ type: "file", group: group.group, change });
+    }
+  }
+  return items;
 }
