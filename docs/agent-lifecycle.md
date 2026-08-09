@@ -31,6 +31,12 @@ Active schedules targeting an existing agent protect that agent from collection.
 and new-agent schedules do not. A pane may remain open after collection; its next prompt resumes the
 runtime.
 
+用户可以从会话菜单手动释放一个常驻运行时。手动释放只作用于对应的 Paseo 智能体 ID：
+关闭提供方会话及其拥有的子进程，把智能体持久化为 `closed`，同时保留对话、原生会话句柄、
+工作区、标题、标签、注意状态和错误详情。该操作不会归档或移除智能体，不会级联关闭受管
+子智能体或同级会话。共享提供方服务继续遵循原有引用计数，只在最后一个使用它的会话释放后
+退出。之后再次发送消息时，会恢复同一个原生会话和时间线。
+
 ### Cancellation
 
 Cancellation changes lifecycle state only after the provider acknowledges the interrupt or emits a terminal turn event. If the interrupt is rejected or times out, the agent remains `running` with its active foreground turn intact. Follow-up actions such as replacement, reload, rewind, and Stop must report that failure instead of accepting work they cannot perform. Synthesizing a local cancellation without provider acknowledgment creates a split-brain session: Paseo accepts a new prompt while the provider still owns the previous foreground turn.

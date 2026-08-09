@@ -247,6 +247,42 @@ test("agent.remove.request 只移除 Paseo 记录和空工作区", async () => {
   });
 });
 
+test("agent.runtime.release.request 只释放目标会话运行时", async () => {
+  const targetAgentId = "11111111-1111-4111-8111-111111111111";
+  const otherAgentId = "22222222-2222-4222-8222-222222222222";
+  const messages: SessionOutboundMessage[] = [];
+  const releaseAgentRuntime = vi.fn().mockResolvedValue(undefined);
+  const session = createSessionForTest({
+    messages,
+    agentManager: {
+      releaseAgentRuntime,
+      listAgents: vi.fn(() => [
+        { id: targetAgentId, provider: "codex", lifecycle: "error" },
+        { id: otherAgentId, provider: "codex", lifecycle: "running" },
+      ]),
+    },
+  });
+
+  await session.handleMessage({
+    type: "agent.runtime.release.request",
+    agentId: targetAgentId,
+    requestId: "release-agent",
+  });
+
+  expect(releaseAgentRuntime).toHaveBeenCalledTimes(1);
+  expect(releaseAgentRuntime).toHaveBeenCalledWith(targetAgentId);
+  expect(releaseAgentRuntime).not.toHaveBeenCalledWith(otherAgentId);
+  expect(messages).toContainEqual({
+    type: "agent.runtime.release.response",
+    payload: {
+      requestId: "release-agent",
+      agentId: targetAgentId,
+      accepted: true,
+      error: null,
+    },
+  });
+});
+
 const checkoutGitMocks = vi.hoisted(() => ({
   checkoutResolvedBranch: vi.fn(),
   commitChanges: vi.fn(),

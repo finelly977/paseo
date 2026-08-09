@@ -2491,6 +2491,19 @@ export class DaemonClient {
     }
   }
 
+  async releaseAgentRuntime(agentId: string): Promise<void> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.runtime.release.response">({
+        message: {
+          type: "agent.runtime.release.request",
+          agentId,
+        },
+      });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "释放会话运行时失败");
+    }
+  }
+
   async detachAgent(agentId: string): Promise<void> {
     const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.detach.response">({
       message: {

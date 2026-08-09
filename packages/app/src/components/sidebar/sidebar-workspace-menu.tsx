@@ -12,6 +12,7 @@ import {
   Pin,
   PinOff,
   RotateCw,
+  Unplug,
 } from "lucide-react-native";
 import { isNative, isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
@@ -39,6 +40,7 @@ const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedEyeOff = withUnistyles(EyeOff);
 const ThemedRotateCw = withUnistyles(RotateCw);
+const ThemedUnplug = withUnistyles(Unplug);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -50,6 +52,7 @@ const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMappin
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
 const removeLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
 const reloadLeadingIcon = <ThemedRotateCw size={14} uniProps={foregroundMutedColorMapping} />;
+const releaseRuntimeLeadingIcon = <ThemedUnplug size={14} uniProps={foregroundMutedColorMapping} />;
 
 function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return (
@@ -75,6 +78,8 @@ interface SidebarWorkspaceMenuProps {
   isPinned?: boolean;
   onTogglePin?: () => void;
   onReloadAgent?: () => void;
+  onReleaseAgentRuntime?: () => void;
+  isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
   openInFileManagerPath?: string | null;
@@ -95,6 +100,8 @@ export function SidebarWorkspaceMenu({
   isPinned,
   onTogglePin,
   onReloadAgent,
+  onReleaseAgentRuntime,
+  isReleasingAgentRuntime,
   onRemoveAgent,
   isRemovingAgent,
   openInFileManagerPath,
@@ -169,6 +176,17 @@ export function SidebarWorkspaceMenu({
             onSelect={onReloadAgent}
           >
             {t("workspace.tabs.menu.reloadAgent")}
+          </DropdownMenuItem>
+        ) : null}
+        {onReleaseAgentRuntime ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-release-runtime-${workspaceKey}`}
+            leading={releaseRuntimeLeadingIcon}
+            onSelect={onReleaseAgentRuntime}
+            status={isReleasingAgentRuntime ? "pending" : "idle"}
+            pendingLabel={t("sidebar.workspace.actions.releasingAgentRuntime")}
+          >
+            {t("sidebar.workspace.actions.releaseAgentRuntime")}
           </DropdownMenuItem>
         ) : null}
         {onRemoveAgent ? (

@@ -7314,6 +7314,92 @@ test("closeAgent persists one final closed snapshot", async () => {
   }
 });
 
+test("releaseAgentRuntime 只关闭目标会话并保留其他会话", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-manual-release-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentIds = ["00000000-0000-4000-8000-000000000218", "00000000-0000-4000-8000-000000000219"];
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    logger,
+    idFactory: () => {
+      const agentId = agentIds.shift();
+      if (!agentId) {
+        throw new Error("测试智能体 ID 已用完");
+      }
+      return agentId;
+    },
+  });
+
+  try {
+    const target = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-release-target",
+    });
+    const other = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: "workspace-release-other",
+    });
+
+    await manager.releaseAgentRuntime(target.id);
+    await manager.flush();
+
+    expect(manager.getAgent(target.id)).toBeNull();
+    expect(await storage.get(target.id)).toMatchObject({ lastStatus: "closed" });
+    expect((await storage.get(target.id))?.archivedAt).toBeUndefined();
+    expect(manager.getAgent(other.id)).toMatchObject({ id: other.id, lifecycle: "idle" });
+    expect(await storage.get(other.id)).toMatchObject({ lastStatus: "idle" });
+    expect((await storage.get(other.id))?.archivedAt).toBeUndefined();
+
+    const closedTarget = await storage.get(target.id);
+    if (!closedTarget) {
+      throw new Error("目标智能体记录不存在");
+    }
+    const attentionTimestamp = "2026-08-09T00:00:00.000Z";
+    await storage.upsert({
+      ...closedTarget,
+      lastStatus: "error",
+      lastError: "提供方异常退出",
+      requiresAttention: true,
+      attentionReason: "error",
+      attentionTimestamp,
+    });
+    const closedAgain = deferred<ManagedAgent>();
+    const unsubscribe = manager.subscribe(
+      (event) => {
+        if (event.type === "agent_state" && event.agent.id === target.id) {
+          closedAgain.resolve(event.agent);
+        }
+      },
+      { agentId: target.id, replayState: false },
+    );
+    await manager.releaseAgentRuntime(target.id);
+    const closedState = await closedAgain.promise;
+    unsubscribe();
+
+    expect(await storage.get(target.id)).toMatchObject({
+      lastStatus: "closed",
+      lastError: "提供方异常退出",
+      requiresAttention: true,
+      attentionReason: "error",
+      attentionTimestamp,
+    });
+    expect(closedState).toMatchObject({
+      lifecycle: "closed",
+      lastError: "提供方异常退出",
+      attention: {
+        requiresAttention: true,
+        attentionReason: "error",
+        attentionTimestamp: new Date(attentionTimestamp),
+      },
+    });
+    expect(manager.getAgent(other.id)).toMatchObject({ id: other.id, lifecycle: "idle" });
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    await manager.flush();
+    await storage.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("collectIdleAgents releases an idle runtime and resumes the same agent and timeline", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-collection-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

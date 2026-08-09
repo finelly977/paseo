@@ -311,6 +311,8 @@ interface WorkspaceRowInnerProps {
   isPinned?: boolean;
   onTogglePin?: () => void;
   onReloadAgent?: () => void;
+  onReleaseAgentRuntime?: () => void;
+  isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
   reserveIdleStatusIndicatorSpace?: boolean;
@@ -671,6 +673,8 @@ function WorkspaceRowRightGroup({
   isPinned,
   onTogglePin,
   onReloadAgent,
+  onReleaseAgentRuntime,
+  isReleasingAgentRuntime,
   onRemoveAgent,
   isRemovingAgent,
 }: {
@@ -693,6 +697,8 @@ function WorkspaceRowRightGroup({
   isPinned?: boolean;
   onTogglePin?: () => void;
   onReloadAgent?: () => void;
+  onReleaseAgentRuntime?: () => void;
+  isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
 }) {
@@ -737,6 +743,8 @@ function WorkspaceRowRightGroup({
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
                 onReloadAgent={onReloadAgent}
+                onReleaseAgentRuntime={onReleaseAgentRuntime}
+                isReleasingAgentRuntime={isReleasingAgentRuntime}
                 onRemoveAgent={onRemoveAgent}
                 isRemovingAgent={isRemovingAgent}
                 openInFileManagerPath={workspacePath}
@@ -1179,6 +1187,8 @@ function WorkspaceRowInner({
   isPinned,
   onTogglePin,
   onReloadAgent,
+  onReleaseAgentRuntime,
+  isReleasingAgentRuntime,
   onRemoveAgent,
   isRemovingAgent,
   reserveIdleStatusIndicatorSpace = true,
@@ -1283,6 +1293,8 @@ function WorkspaceRowInner({
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
                   onReloadAgent={onReloadAgent}
+                  onReleaseAgentRuntime={onReleaseAgentRuntime}
+                  isReleasingAgentRuntime={isReleasingAgentRuntime}
                   onRemoveAgent={onRemoveAgent}
                   isRemovingAgent={isRemovingAgent}
                 />
@@ -1344,12 +1356,17 @@ function WorkspaceRowWithMenu({
   const supportsAgentRemoval = useSessionStore(
     (state) => state.sessions[workspace.serverId]?.serverInfo?.features?.agentRemoval === true,
   );
+  const supportsAgentRuntimeRelease = useSessionStore(
+    (state) =>
+      state.sessions[workspace.serverId]?.serverInfo?.features?.agentRuntimeRelease === true,
+  );
   const hostClient = getHostRuntimeStore().getClient(workspace.serverId);
   const { refreshAgent } = useAgentInitialization({
     serverId: workspace.serverId,
     client: hostClient,
   });
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
+  const [isReleasingAgentRuntime, setIsReleasingAgentRuntime] = useState(false);
   const [isRemovingAgent, setIsRemovingAgent] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
@@ -1461,6 +1478,54 @@ function WorkspaceRowWithMenu({
       });
   }, [refreshAgent, t, toast, workspaceAgent]);
 
+  const handleReleaseAgentRuntime = useCallback(async () => {
+    if (isReleasingAgentRuntime) {
+      return;
+    }
+    if (!supportsAgentRuntimeRelease) {
+      toast.error(t("sidebar.workspace.toasts.updateHostToReleaseAgentRuntime"));
+      return;
+    }
+    if (!workspaceAgent || !hostClient) {
+      toast.error(t("sidebar.workspace.toasts.hostDisconnected"));
+      return;
+    }
+    const confirmed = await confirmDialog({
+      title: t("sidebar.workspace.confirmations.releaseAgentRuntimeTitle"),
+      message: t("sidebar.workspace.confirmations.releaseAgentRuntimeMessage", {
+        workspaceName: workspace.title ?? workspace.name,
+      }),
+      confirmLabel: t("sidebar.workspace.confirmations.releaseAgentRuntimeConfirm"),
+      cancelLabel: t("sidebar.workspace.confirmations.cancel"),
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    setIsReleasingAgentRuntime(true);
+    try {
+      await hostClient.releaseAgentRuntime(workspaceAgent.id);
+      toast.show(t("sidebar.workspace.toasts.agentRuntimeReleased"), { variant: "success" });
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.workspace.toasts.releaseAgentRuntimeFailed"),
+      );
+    } finally {
+      setIsReleasingAgentRuntime(false);
+    }
+  }, [
+    hostClient,
+    isReleasingAgentRuntime,
+    supportsAgentRuntimeRelease,
+    t,
+    toast,
+    workspace.name,
+    workspace.title,
+    workspaceAgent,
+  ]);
+
   const handleRemoveAgent = useCallback(async () => {
     if (isRemovingAgent) {
       return;
@@ -1555,6 +1620,12 @@ function WorkspaceRowWithMenu({
         isPinned={isPinned}
         onTogglePin={onTogglePin}
         onReloadAgent={workspaceAgent ? handleReloadAgent : undefined}
+        onReleaseAgentRuntime={
+          workspaceAgent && workspaceAgent.status !== "closed"
+            ? handleReleaseAgentRuntime
+            : undefined
+        }
+        isReleasingAgentRuntime={isReleasingAgentRuntime}
         onRemoveAgent={workspaceAgent ? handleRemoveAgent : undefined}
         isRemovingAgent={isRemovingAgent}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}

@@ -1829,6 +1829,7 @@ export class Session {
     const promise =
       this.dispatchVoiceAndControlMessage(msg) ??
       this.dispatchAgentRewindMessage(msg) ??
+      this.dispatchAgentRuntimeMessage(msg) ??
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??
@@ -1899,6 +1900,15 @@ export class Session {
     switch (msg.type) {
       case "agent.rewind.request":
         return this.handleAgentRewindRequest(msg);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchAgentRuntimeMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.runtime.release.request":
+        return this.handleReleaseAgentRuntimeRequest(msg.agentId, msg.requestId);
       default:
         return undefined;
     }
@@ -2477,6 +2487,37 @@ export class Session {
       this.sessionLogger.error({ err: error, agentId }, "Failed to remove agent from Paseo");
       this.emit({
         type: "agent.remove.response",
+        payload: {
+          requestId,
+          agentId,
+          accepted: false,
+          error: message,
+        },
+      });
+    }
+  }
+
+  private async handleReleaseAgentRuntimeRequest(
+    agentId: string,
+    requestId: string,
+  ): Promise<void> {
+    this.sessionLogger.info({ agentId, requestId }, "正在释放智能体运行时");
+    try {
+      await this.agentManager.releaseAgentRuntime(agentId);
+      this.emit({
+        type: "agent.runtime.release.response",
+        payload: {
+          requestId,
+          agentId,
+          accepted: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.error({ err: error, agentId }, "释放智能体运行时失败");
+      this.emit({
+        type: "agent.runtime.release.response",
         payload: {
           requestId,
           agentId,

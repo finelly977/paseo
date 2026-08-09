@@ -1087,6 +1087,8 @@ export const ptBR: TranslationResources = {
         hideFromSidebar: "Ocultar da barra lateral",
         removeAgent: "移除",
         removingAgent: "正在移除...",
+        releaseAgentRuntime: "释放运行时",
+        releasingAgentRuntime: "正在释放...",
         archiving: "Arquivando...",
         hiding: "Ocultando...",
       },
@@ -1099,6 +1101,10 @@ export const ptBR: TranslationResources = {
         removeAgentMessage:
           "从 Paseo 移除「{{workspaceName}}」？\n\n只会删除 Paseo 的本地会话记录，不会归档或删除智能体中的原始会话，之后仍可重新导入。",
         removeAgentConfirm: "移除",
+        releaseAgentRuntimeTitle: "释放此会话的运行时？",
+        releaseAgentRuntimeMessage:
+          "将结束「{{workspaceName}}」当前运行的智能体及其子进程，但保留会话和对话记录。下次继续对话时会自动恢复。\n\n其他会话不会受到影响。",
+        releaseAgentRuntimeConfirm: "释放",
         cancel: "Cancelar",
       },
       rename: {
@@ -1114,6 +1120,9 @@ export const ptBR: TranslationResources = {
         hideFailed: "Falha ao ocultar workspace",
         removeAgentFailed: "从 Paseo 移除会话失败",
         updateHostToRemoveAgent: "请更新主机后再从 Paseo 移除会话。",
+        releaseAgentRuntimeFailed: "释放会话运行时失败",
+        updateHostToReleaseAgentRuntime: "请更新主机后再释放会话运行时。",
+        agentRuntimeReleased: "会话运行时已释放",
         archiveFailed: "Falha ao arquivar workspace",
       },
     },

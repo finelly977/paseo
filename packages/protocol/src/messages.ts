@@ -813,6 +813,12 @@ export const AgentRemoveRequestSchema = z.object({
   requestId: z.string(),
 });
 
+export const AgentRuntimeReleaseRequestSchema = z.object({
+  type: z.literal("agent.runtime.release.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+
 export const CloseItemsRequestMessageSchema = z.object({
   type: z.literal("close_items_request"),
   agentIds: z.array(z.string()).default([]),
@@ -2544,6 +2550,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DeleteAgentRequestMessageSchema,
   ArchiveAgentRequestMessageSchema,
   AgentRemoveRequestSchema,
+  AgentRuntimeReleaseRequestSchema,
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
   ProjectRenameRequestSchema,
@@ -2944,6 +2951,8 @@ export const ServerInfoStatusPayloadSchema = z
         stableProjectIdentity: z.boolean().optional(),
         // COMPAT(agentRemoval): v0.2.0-beta.4 新增，2027-01-25 后移除能力门控。
         agentRemoval: z.boolean().optional(),
+        // COMPAT(agentRuntimeRelease): v0.2.3 新增，2027-02-09 后移除能力门控。
+        agentRuntimeRelease: z.boolean().optional(),
         // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
         conversationHistoryLimit: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。
@@ -4037,6 +4046,11 @@ export const AgentDeletedMessageSchema = z.object({
 
 export const AgentRemoveResponseSchema = z.object({
   type: z.literal("agent.remove.response"),
+  payload: AgentActionResponsePayloadSchema,
+});
+
+export const AgentRuntimeReleaseResponseSchema = z.object({
+  type: z.literal("agent.runtime.release.response"),
   payload: AgentActionResponsePayloadSchema,
 });
 
@@ -5412,6 +5426,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentFeatureResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRemoveResponseSchema,
+  AgentRuntimeReleaseResponseSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
   ProjectRenameResponseSchema,

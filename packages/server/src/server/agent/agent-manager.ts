@@ -291,6 +291,25 @@ function resolveInitialAttention(input: AttentionState | undefined): AttentionSt
   };
 }
 
+function resolveStoredAttention(record: StoredAgentRecord): AttentionState {
+  if (record.requiresAttention !== true) {
+    return { requiresAttention: false };
+  }
+  if (!record.attentionReason || !record.attentionTimestamp) {
+    throw new Error(`智能体 ${record.id} 的注意状态不完整`);
+  }
+
+  const attentionTimestamp = new Date(record.attentionTimestamp);
+  if (Number.isNaN(attentionTimestamp.getTime())) {
+    throw new Error(`智能体 ${record.id} 的注意时间无效`);
+  }
+  return {
+    requiresAttention: true,
+    attentionReason: record.attentionReason,
+    attentionTimestamp,
+  };
+}
+
 interface StreamEventFlags {
   shouldDispatchEvent: boolean;
   shouldNotifyWaiters: boolean;
@@ -1381,6 +1400,38 @@ export class AgentManager {
     return close;
   }
 
+  async releaseAgentRuntime(agentId: string): Promise<void> {
+    const liveAgent = this.agents.get(agentId);
+    if (liveAgent) {
+      await this.closeAgent(agentId);
+      return;
+    }
+
+    await this.waitForAgentClose(agentId);
+    if (this.agents.has(agentId)) {
+      await this.closeAgent(agentId);
+      return;
+    }
+
+    const record = await this.requireRegistry().get(agentId);
+    if (!record) {
+      throw new Error(`未找到智能体 ${agentId}`);
+    }
+    if (record.lastStatus === "closed") {
+      return;
+    }
+
+    const closedRecord: StoredAgentRecord = {
+      ...record,
+      lastStatus: "closed",
+      updatedAt: new Date().toISOString(),
+    };
+    await this.requireRegistry().upsert(closedRecord);
+    if (!closedRecord.internal) {
+      this.dispatchStoredAgentState(closedRecord);
+    }
+  }
+
   private async closeAgentRuntime(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
     this.logger.trace(
@@ -1540,7 +1591,7 @@ export class AgentManager {
     if (this.agents.has(record.id)) {
       this.notifyAgentState(record.id);
     } else if (!archivedRecord.internal) {
-      this.dispatchArchivedStoredAgent(archivedRecord);
+      this.dispatchStoredAgentState(archivedRecord);
     }
 
     await this.fireAgentArchived(record.id);
@@ -1560,7 +1611,7 @@ export class AgentManager {
     }
   }
 
-  private dispatchArchivedStoredAgent(record: StoredAgentRecord): void {
+  private dispatchStoredAgentState(record: StoredAgentRecord): void {
     const updatedAt = new Date(record.updatedAt);
     this.dispatch({
       type: "agent_state",
@@ -1593,7 +1644,7 @@ export class AgentManager {
         lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
         lastUsage: undefined,
         lastError: record.lastError ?? undefined,
-        attention: { requiresAttention: false },
+        attention: resolveStoredAttention(record),
         internal: record.internal,
         labels: record.labels,
       },
@@ -1817,7 +1868,7 @@ export class AgentManager {
     } else {
       this.discardRetainedAgentState(agentId);
       if (!nextRecord.internal) {
-        this.dispatchArchivedStoredAgent(nextRecord);
+        this.dispatchStoredAgentState(nextRecord);
       }
     }
 
