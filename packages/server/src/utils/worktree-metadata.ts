@@ -86,6 +86,17 @@ export function normalizeBaseRefName(input: string): string {
   return trimmed;
 }
 
+export function branchNameFromRef(ref: string | null | undefined): string | null {
+  if (!ref) return null;
+  let normalized = ref;
+  if (ref.startsWith("refs/heads/")) {
+    normalized = ref.slice("refs/heads/".length);
+  } else if (ref.startsWith("refs/remotes/")) {
+    normalized = ref.slice("refs/remotes/".length);
+  }
+  return normalized.trim() || null;
+}
+
 export function writePaseoWorktreeMetadata(
   worktreeRoot: string,
   options: {

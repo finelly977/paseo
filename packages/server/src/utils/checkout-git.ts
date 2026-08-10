@@ -751,6 +751,7 @@ export interface CheckoutStatusGitNonPaseo {
   changes: CheckoutScmChanges;
   baseRef: string | null;
   aheadBehind: AheadBehind | null;
+  upstreamRef: string | null;
   aheadOfOrigin: number | null;
   behindOfOrigin: number | null;
   hasRemote: boolean;
@@ -768,6 +769,7 @@ export interface CheckoutStatusGitPaseo {
   changes: CheckoutScmChanges;
   baseRef: string;
   aheadBehind: AheadBehind | null;
+  upstreamRef: string | null;
   aheadOfOrigin: number | null;
   behindOfOrigin: number | null;
   hasRemote: boolean;
@@ -778,6 +780,22 @@ export interface CheckoutStatusGitPaseo {
 export type CheckoutStatusGit = CheckoutStatusGitNonPaseo | CheckoutStatusGitPaseo;
 
 export type CheckoutStatusResult = CheckoutStatus | CheckoutStatusGit;
+
+export interface UpstreamStatus {
+  ref: string;
+  aheadBehind: AheadBehind;
+}
+
+export interface CheckoutRefDerivedState {
+  aheadBehind: AheadBehind | null;
+  diffStat: CheckoutShortstat | null;
+  upstreamStatus: UpstreamStatus | null;
+}
+
+export interface CheckoutWorktreeState {
+  isDirty: boolean;
+  diffStat: CheckoutShortstat | null;
+}
 
 export type CheckoutDiffResult =
   | { diff: string; structured?: ParsedDiffFile[]; diffTooLarge?: false }
@@ -826,6 +844,7 @@ export type CheckoutSnapshotFacts =
       comparisonBaseRef: string | null;
       branchRemoteName: string | null;
       branchMergeRef: string | null;
+      upstreamStatus?: UpstreamStatus | null;
       pullRequestLookupTarget: PullRequestStatusLookupTarget | null;
     };
 
@@ -2184,12 +2203,15 @@ export async function getCheckoutStatus(
   const baseRef = facts.resolvedBaseRef;
   const mainRepoRoot = facts.mainRepoRoot;
   const factsContext = { ...context, facts };
-  const [aheadBehind, originAheadBehind] = await Promise.all([
+  const [aheadBehind, originAheadBehind, upstreamRef] = await Promise.all([
     baseRef && currentBranch
       ? getAheadBehind(cwd, baseRef, currentBranch, factsContext)
       : Promise.resolve(null),
     hasRemote && currentBranch
       ? getOriginAheadBehind(cwd, currentBranch, factsContext)
+      : Promise.resolve(null),
+    currentBranch
+      ? getConfiguredUpstreamRef(cwd, currentBranch, factsContext)
       : Promise.resolve(null),
   ]);
   const aheadOfOrigin = originAheadBehind?.ahead ?? null;
@@ -2206,6 +2228,7 @@ export async function getCheckoutStatus(
       changes,
       baseRef,
       aheadBehind,
+      upstreamRef,
       aheadOfOrigin,
       behindOfOrigin,
       hasRemote,
@@ -2225,12 +2248,52 @@ export async function getCheckoutStatus(
     changes,
     baseRef,
     aheadBehind,
+    upstreamRef,
     aheadOfOrigin,
     behindOfOrigin,
     hasRemote,
     remoteUrl,
     isPaseoOwnedWorktree: false,
   };
+}
+
+export async function getCheckoutRefDerivedState(
+  cwd: string,
+  facts: Extract<CheckoutSnapshotFacts, { isGit: true }>,
+  current: Pick<CheckoutRefDerivedState, "aheadBehind" | "diffStat">,
+  _movedRemoteRefs: ReadonlySet<string>,
+  context?: CheckoutContext,
+): Promise<CheckoutRefDerivedState> {
+  const status = await getCheckoutStatus(cwd, { ...context, facts });
+  if (!status.isGit) {
+    return { aheadBehind: null, diffStat: current.diffStat, upstreamStatus: null };
+  }
+  const upstreamStatus =
+    status.upstreamRef && status.aheadOfOrigin !== null && status.behindOfOrigin !== null
+      ? {
+          ref: status.upstreamRef.startsWith("refs/")
+            ? status.upstreamRef
+            : `refs/remotes/${status.upstreamRef}`,
+          aheadBehind: { ahead: status.aheadOfOrigin, behind: status.behindOfOrigin },
+        }
+      : null;
+  return {
+    aheadBehind: status.aheadBehind ?? current.aheadBehind,
+    diffStat: current.diffStat,
+    upstreamStatus,
+  };
+}
+
+export async function getCheckoutWorktreeState(
+  cwd: string,
+  context: CheckoutContext,
+): Promise<CheckoutWorktreeState> {
+  const status = await getCheckoutStatus(cwd, context);
+  if (!status.isGit) {
+    return { isDirty: false, diffStat: null };
+  }
+  const diffStat = await getCheckoutShortstat(cwd, context, { force: true });
+  return { isDirty: status.isDirty, diffStat };
 }
 
 // Workspace history stays complete; base history is bounded context until the
