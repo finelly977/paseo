@@ -251,6 +251,7 @@ interface DarkThemeConfig {
   surfaceDiffEmpty: string;
   surfaceSidebar: string;
   surfaceSidebarHover: string;
+  foreground: string;
   foregroundMuted: string;
   foregroundExtraMuted: string;
   scrollbarHandle: string;
@@ -260,6 +261,7 @@ interface DarkThemeConfig {
   accentBright: string;
   accentForeground?: string;
   destructive: string;
+  success?: string;
 }
 
 const darkTerminalAnsi = {
@@ -291,7 +293,7 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surfaceSidebarHover: tint.surfaceSidebarHover,
     surfaceWorkspace: tint.surface1,
 
-    foreground: "#fafafa",
+    foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
 
@@ -306,17 +308,17 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     destructive: tint.destructive,
     destructiveForeground: "#ffffff",
-    success: tint.accent,
+    success: tint.success ?? tint.accent,
     successForeground: "#ffffff",
 
     // Legacy aliases (for gradual migration)
     background: tint.surface0,
     popover: tint.surface2,
-    popoverForeground: "#fafafa",
-    primary: "#fafafa",
+    popoverForeground: tint.foreground,
+    primary: tint.foreground,
     primaryForeground: tint.surface0,
     secondary: tint.surface2,
-    secondaryForeground: "#fafafa",
+    secondaryForeground: tint.foreground,
     muted: tint.surface2,
     mutedForeground: tint.foregroundMuted,
     accentBorder: tint.borderAccent,
@@ -348,11 +350,11 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
 
     terminal: {
       background: tint.surface0,
-      foreground: "#fafafa",
-      cursor: "#fafafa",
+      foreground: tint.foreground,
+      cursor: tint.foreground,
       cursorAccent: tint.surface0,
       selectionBackground: "rgba(255, 255, 255, 0.2)",
-      selectionForeground: "#fafafa",
+      selectionForeground: tint.foreground,
       black: tint.surfaceSidebar,
       ...darkTerminalAnsi,
       brightBlack: tint.surface3,
@@ -364,24 +366,26 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
 // Dark tint definitions
 // ---------------------------------------------------------------------------
 
-// Paseo — subtle teal-green tint (default)
+// 默认 Dark 主题：中性黑灰表面与蓝色强调色
 const paseoDarkColors = buildDarkSemanticColors({
-  surface0: "#181B1A",
-  surface1: "#1E2120",
-  surface2: "#272A29",
-  surface3: "#434645",
-  surface4: "#595B5B",
-  surfaceDiffEmpty: "#252827",
-  surfaceSidebar: "#141716",
-  surfaceSidebarHover: "#1c1f1e",
-  foregroundMuted: "#A1A5A4",
-  foregroundExtraMuted: "#717574",
-  scrollbarHandle: "#717574",
-  border: "#252B2A",
-  borderAccent: "#2F3534",
-  accent: "#20744A",
-  accentBright: "#7ccba0",
-  destructive: "#c64f43", // warm red, hue ~7 — reads as red (not pink) against the green tint
+  surface0: "#111111",
+  surface1: "#111111",
+  surface2: "#1F1F1F",
+  surface3: "#2A2A2A",
+  surface4: "#3A3A3A",
+  surfaceDiffEmpty: "#181818",
+  surfaceSidebar: "#0D0D0D",
+  surfaceSidebarHover: "#1F1F1F",
+  foreground: "#E6E6E6",
+  foregroundMuted: "#A3A3A3",
+  foregroundExtraMuted: "#6F6F6F",
+  scrollbarHandle: "#3A3A3A",
+  border: "#262626",
+  borderAccent: "#333333",
+  accent: "#0169CC",
+  accentBright: "#1687E6",
+  destructive: "#D14D49",
+  success: "#16A34A",
 });
 
 // Zinc — neutral gray, no tint
@@ -394,6 +398,7 @@ const zincDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#242427",
   surfaceSidebar: "#131316",
   surfaceSidebarHover: "#1b1b1e",
+  foreground: "#fafafa",
   foregroundMuted: "#a1a1aa",
   foregroundExtraMuted: "#71717a",
   scrollbarHandle: "#71717a",
@@ -415,6 +420,7 @@ const midnightDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#222430",
   surfaceSidebar: "#121420",
   surfaceSidebarHover: "#1a1c28",
+  foreground: "#fafafa",
   foregroundMuted: "#9a9db0",
   foregroundExtraMuted: "#6b6e82",
   scrollbarHandle: "#6b6e82",
@@ -435,6 +441,7 @@ const claudeDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#2a2826",
   surfaceSidebar: "#1a1918",
   surfaceSidebarHover: "#222120",
+  foreground: "#fafafa",
   foregroundMuted: "#ada9a5",
   foregroundExtraMuted: "#78746f",
   scrollbarHandle: "#78746f",
@@ -455,6 +462,7 @@ const ghosttyDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#323643",
   surfaceSidebar: "#21252d",
   surfaceSidebarHover: "#292d36",
+  foreground: "#fafafa",
   foregroundMuted: "#c8ccd8",
   foregroundExtraMuted: "#a0a4b2",
   scrollbarHandle: "#a0a4b2",
@@ -672,7 +680,7 @@ export const THEME_TO_UNISTYLES: Record<ThemeName, UnistylesThemeKey> = {
 
 export const THEME_SWATCHES: Record<ThemeName, string> = {
   light: "#ffffff",
-  dark: "#2D8B62",
+  dark: "#0169CC",
   zinc: "#808080",
   midnight: "#4A6BA8",
   claude: "#D97757",

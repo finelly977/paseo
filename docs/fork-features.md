@@ -69,19 +69,21 @@
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/app/src/components/rewind/`
 
-### 5. 对话 Markdown 使用更紧凑的排版密度
+### 5. 对话排版、间距与默认 Dark 主题
 
 - 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距；Markdown 横线固定使用原主题间距的一半，横线自身独占上下留白，不再与相邻段落间距叠加；压缩上下文分割线使用更短的上下留白。时间线列表统一负责消息外间距，助手消息和回合尾部不再重复叠加内外两层空白。
 - 设置的“外观”页分别提供对话区域与工作区列表的像素级间距控制。对话可独立调整消息、段落、压缩分割线、区域上下边距和区域左右边距；侧栏可独立调整工作区、会话、行内上下留白和列表左右边距。修改立即作用于网页虚拟化列表、原生列表以及项目和状态两种侧栏分组，Markdown 横线由自身样式持有上下留白，压缩分割线由自身设置持有上下留白，均不再与消息外间距重复叠加。
 - 超过 12 行或 1200 个字符的用户消息默认只展示 8 行，用户可以展开或收起；复制消息仍复制完整原文。
 - 助手消息中的本地文件链接优先按可见路径文本解析，Windows 盘符路径的末尾行号会作为编辑器定位信息，不会误并入文件名；本机桌面会话支持右键在系统文件管理器中定位已解析文件，远端会话和外部网址不显示该操作，外部网址仍按网页链接打开。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
+- 默认 Dark 主题使用中性黑灰层级：应用与工作区背景固定为 `#111111`，主要前景固定为 `#E6E6E6`，侧栏、输入框、浮层、悬停和边框只通过亮度区分，不再带绿色或蓝灰色偏；强调色使用 `#0169CC`，成功、警告、错误等语义状态继续保留独立颜色。Zinc、Midnight、Claude 和 Ghostty 等用户主动选择的暗色变体保持原样。
 
 主要涉及：
 
 - `packages/app/src/agent-stream/spacing.ts`
 - `packages/app/src/agent-stream/view.tsx`
 - `packages/app/src/styles/markdown-styles.ts`
+- `packages/app/src/styles/theme.ts`
 - `packages/app/src/hooks/use-settings/storage.ts`
 - `packages/app/src/screens/settings/appearance/appearance-section.tsx`
 - `packages/app/src/components/message.tsx`
