@@ -333,7 +333,7 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
     scmBadgeForeground: "#ffffff",
     scmInputBackground: "#3c3c3c",
     scmInputForeground: "#cccccc",
-    scmInputPlaceholder: "#767676",
+    scmInputPlaceholder: "#a8a8a8",
     scmFocusBorder: "#007fd4",
     scmListHoverBackground: "#2a2d2e",
     scmButtonBackground: "#0e639c",

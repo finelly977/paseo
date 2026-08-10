@@ -38,6 +38,7 @@ describe("checkout-git-actions-store", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     __resetCheckoutGitActionsStoreForTests();
     appQueryClient.clear();
     useSessionStore.setState((state) => ({ ...state, sessions: {} }));
@@ -93,6 +94,42 @@ describe("checkout-git-actions-store", () => {
       addAll: true,
       message: "功能：重构源代码管理面板",
     });
+  });
+
+  it("提交成功后不等待后台 Git 查询刷新", async () => {
+    const refreshDeferred = createDeferred<void>();
+    const invalidateSpy = vi
+      .spyOn(appQueryClient, "invalidateQueries")
+      .mockReturnValue(refreshDeferred.promise);
+    const client = {
+      checkoutCommit: vi.fn(async () => ({ success: true, error: null })),
+    };
+    useSessionStore.setState((state) => ({
+      ...state,
+      sessions: {
+        ...state.sessions,
+        [serverId]: { client } as unknown as (typeof state.sessions)[string],
+      },
+    }));
+
+    const commitPromise = useCheckoutGitActionsStore
+      .getState()
+      .commit({ serverId, cwd, message: "快速完成本地提交" });
+
+    await vi.waitFor(() => {
+      expect(
+        useCheckoutGitActionsStore.getState().getStatus({
+          serverId,
+          cwd,
+          actionId: "commit",
+        }),
+      ).toBe("success");
+    });
+    await commitPromise;
+    expect(invalidateSpy).toHaveBeenCalled();
+
+    refreshDeferred.resolve();
+    await refreshDeferred.promise;
   });
 
   it("can commit only the staged changes", async () => {

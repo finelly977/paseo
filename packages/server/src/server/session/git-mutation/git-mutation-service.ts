@@ -81,7 +81,11 @@ export function createGitMutationService(deps: {
       workspaceGitService.invalidateForge(cwd);
     }
     try {
-      await workspaceGitService.getSnapshot(cwd, { force: true, reason });
+      await workspaceGitService.getSnapshot(cwd, {
+        force: true,
+        includeForge: false,
+        reason,
+      });
     } catch (error) {
       logger.warn(
         { err: error, cwd, reason },

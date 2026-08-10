@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { Animated, Easing, Platform, Text, ToastAndroid, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
@@ -13,6 +13,7 @@ import {
   HEADER_INNER_HEIGHT_MOBILE,
   HEADER_TOP_PADDING_MOBILE,
 } from "@/constants/layout";
+import { SPACING, type Theme } from "@/styles/theme";
 
 export type ToastVariant = "default" | "info" | "success" | "warning" | "error";
 
@@ -44,12 +45,21 @@ type ToastViewportPlacement = "app-shell" | "panel";
 
 const DEFAULT_DURATION_MS = 2200;
 
+const foregroundIconMapping = (theme: Theme) => ({ color: theme.colors.foreground });
+const infoIconMapping = (theme: Theme) => ({ color: theme.colors.palette.blue[300] });
+const successIconMapping = (theme: Theme) => ({ color: theme.colors.primary });
+const warningIconMapping = (theme: Theme) => ({ color: theme.colors.palette.amber[500] });
+const errorIconMapping = (theme: Theme) => ({ color: theme.colors.destructive });
+
+const ThemedAlertTriangle = withUnistyles(AlertTriangle);
+const ThemedCheckCircle2 = withUnistyles(CheckCircle2);
+const ThemedInfo = withUnistyles(Info);
+
 export function useToastHost(): {
   api: ToastApi;
   toast: ToastState | null;
   dismiss: () => void;
 } {
-  const { theme } = useUnistyles();
   const { t } = useTranslation();
   const [toast, setToast] = useState<ToastState | null>(null);
   const idRef = useRef(0);
@@ -89,11 +99,11 @@ export function useToastHost(): {
       copied: (label?: string) =>
         show(label ? t("common.states.copiedLabel", { label }) : t("common.states.copied"), {
           variant: "success",
-          icon: <CheckCircle2 size={18} color={theme.colors.foreground} />,
+          icon: <ThemedCheckCircle2 size={18} uniProps={foregroundIconMapping} />,
         }),
       error: (message: string) => show(message, { variant: "error", durationMs: 3200 }),
     }),
-    [show, theme.colors.foreground, t],
+    [show, t],
   );
 
   const dismiss = useCallback(() => {
@@ -112,7 +122,6 @@ export function ToastViewport({
   onDismiss: () => void;
   placement?: ToastViewportPlacement;
 }) {
-  const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const isMobile = useIsCompactFormFactor();
   const opacity = useRef(new Animated.Value(0)).current;
@@ -223,8 +232,8 @@ export function ToastViewport({
   const headerTopPadding = isMobile ? HEADER_TOP_PADDING_MOBILE : 0;
   const topOffset =
     placement === "app-shell"
-      ? insets.top + headerTopPadding + headerHeight + theme.spacing[2]
-      : theme.spacing[3];
+      ? insets.top + headerTopPadding + headerHeight + SPACING[2]
+      : SPACING[3];
 
   const toastVariant = toast?.variant;
   const toastAnimatedStyle = useMemo(
@@ -253,13 +262,13 @@ export function ToastViewport({
 
   let defaultIcon: ReactNode = null;
   if (toast.variant === "info") {
-    defaultIcon = <Info size={18} color={theme.colors.palette.blue[300]} />;
+    defaultIcon = <ThemedInfo size={18} uniProps={infoIconMapping} />;
   } else if (toast.variant === "success") {
-    defaultIcon = <CheckCircle2 size={18} color={theme.colors.primary} />;
+    defaultIcon = <ThemedCheckCircle2 size={18} uniProps={successIconMapping} />;
   } else if (toast.variant === "warning") {
-    defaultIcon = <AlertTriangle size={18} color={theme.colors.palette.amber[500]} />;
+    defaultIcon = <ThemedAlertTriangle size={18} uniProps={warningIconMapping} />;
   } else if (toast.variant === "error") {
-    defaultIcon = <AlertTriangle size={18} color={theme.colors.destructive} />;
+    defaultIcon = <ThemedAlertTriangle size={18} uniProps={errorIconMapping} />;
   }
   const icon = toast.icon ?? defaultIcon;
 

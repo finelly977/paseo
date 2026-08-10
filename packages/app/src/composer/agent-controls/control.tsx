@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, type ComponentType } from "react";
 import { Text, View, type PressableStateCallbackType } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
 import { ComposerToolbarGlyph } from "@/composer/agent-controls/glyph";
+import type { Theme } from "@/styles/theme";
 
 export interface AgentControlIconProps {
   size?: number;
@@ -11,10 +12,62 @@ export interface AgentControlIconProps {
 }
 
 export type AgentControlIcon = ComponentType<AgentControlIconProps>;
+export type AgentControlIconTone = "muted" | "foreground" | "blue" | "green" | "yellow";
+
+interface ThemedAgentControlIconProps extends AgentControlIconProps {
+  icon: AgentControlIcon;
+  tone: AgentControlIconTone;
+  mutedColor: string;
+  foregroundColor: string;
+  blueColor: string;
+  greenColor: string;
+  yellowColor: string;
+}
+
+function resolveAgentControlIconColor(props: ThemedAgentControlIconProps): string {
+  if (props.tone === "foreground") return props.foregroundColor;
+  if (props.tone === "blue") return props.blueColor;
+  if (props.tone === "green") return props.greenColor;
+  if (props.tone === "yellow") return props.yellowColor;
+  return props.mutedColor;
+}
+
+function AgentControlIconView(props: ThemedAgentControlIconProps) {
+  const { icon: Icon, size } = props;
+  return <Icon size={size} color={resolveAgentControlIconColor(props)} />;
+}
+
+const ThemedAgentControlIcon = withUnistyles(AgentControlIconView);
+const agentControlIconColorMapping = (theme: Theme) => ({
+  mutedColor: theme.colors.foregroundMuted,
+  foregroundColor: theme.colors.foreground,
+  blueColor: theme.colors.palette.blue[400],
+  greenColor: theme.colors.palette.green[400],
+  yellowColor: theme.colors.palette.yellow[400],
+});
+
+export function AgentControlIconGlyph({
+  icon,
+  size,
+  tone = "muted",
+}: {
+  icon: AgentControlIcon;
+  size: number;
+  tone?: AgentControlIconTone;
+}) {
+  return (
+    <ThemedAgentControlIcon
+      icon={icon}
+      size={size}
+      tone={tone}
+      uniProps={agentControlIconColorMapping}
+    />
+  );
+}
 
 interface AgentControlTriggerProps {
   icon: AgentControlIcon;
-  iconColor?: string;
+  iconTone?: AgentControlIconTone;
   surface: "toolbar" | "sheet";
   label: string;
   value?: string;
@@ -31,7 +84,7 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
   function AgentControlTrigger(
     {
       icon: Icon,
-      iconColor,
+      iconTone = "muted",
       surface,
       label,
       value,
@@ -48,7 +101,6 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
     const { glyphSize } = useComposerControlLayout();
     const isSheet = surface === "sheet";
     const resolvedGlyphSize = isSheet ? 16 : glyphSize;
-    const resolvedIconColor = iconColor ?? styles.iconColor.color;
     const showValue = isSheet || showToolbarLabel;
     const triggerStyle = useCallback(
       ({ pressed, hovered }: PressableStateCallbackType) => [
@@ -75,11 +127,11 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
       >
         {isSheet ? (
           <View style={styles.sheetGlyph}>
-            <Icon size={resolvedGlyphSize} color={resolvedIconColor} />
+            <AgentControlIconGlyph icon={Icon} size={resolvedGlyphSize} tone={iconTone} />
           </View>
         ) : (
           <ComposerToolbarGlyph size={resolvedGlyphSize}>
-            <Icon size={resolvedGlyphSize} color={resolvedIconColor} />
+            <AgentControlIconGlyph icon={Icon} size={resolvedGlyphSize} tone={iconTone} />
           </ComposerToolbarGlyph>
         )}
         {isSheet ? (
@@ -166,8 +218,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   disabled: {
     opacity: 0.5,
-  },
-  iconColor: {
-    color: theme.colors.foregroundMuted,
   },
 }));

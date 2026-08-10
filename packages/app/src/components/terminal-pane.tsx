@@ -7,7 +7,7 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import Animated, { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { encodeTerminalKeyInput } from "@getpaseo/protocol/terminal-key-input";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
 import { useTranslation } from "react-i18next";
@@ -49,6 +49,7 @@ import type {
   TerminalLocalFileLinkSource,
   TerminalLocalFileLinkTarget,
 } from "@/terminal/local-links/terminal-local-link-provider";
+import type { Theme } from "@/styles/theme";
 import {
   normalizeWorkspaceFileLocation,
   type OpenFileDisposition,
@@ -112,6 +113,15 @@ const EMPTY_MODIFIERS: ModifierState = {
   shift: false,
   alt: false,
 };
+
+const ThemedTerminalEmulator = withUnistyles(TerminalEmulator);
+const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
+const terminalThemeMapping = (theme: Theme) => ({
+  xtermTheme: toXtermTheme(theme.colors.terminal),
+});
+const loadingIndicatorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 
 function terminalScopeKey(input: { serverId: string; cwd: string }): string {
   return `${input.serverId}:${input.cwd}`;
@@ -178,9 +188,7 @@ export function TerminalPane({
 }: TerminalPaneProps) {
   const { t } = useTranslation();
   const isAppActivelyVisible = useAppActivelyVisible();
-  const { theme } = useUnistyles();
   const { settings } = useAppSettings();
-  const xtermTheme = useMemo(() => toXtermTheme(theme.colors.terminal), [theme]);
   const terminalFontFamily = useMemo(() => {
     const trimmed = settings.monoFontFamily.trim();
     return trimmed.length > 0 ? trimmed : undefined;
@@ -803,12 +811,12 @@ export function TerminalPane({
       <View style={styles.outputContainer}>
         {isWorkspaceFocused ? (
           <View style={styles.terminalGestureContainer}>
-            <TerminalEmulator
+            <ThemedTerminalEmulator
               ref={emulatorRef}
               dom={TERMINAL_EMULATOR_DOM_PROPS}
               streamKey={terminalStreamKey}
               testId="terminal-surface"
-              xtermTheme={xtermTheme}
+              uniProps={terminalThemeMapping}
               scrollbackLines={settings.terminalScrollbackLines}
               fontFamily={terminalFontFamily}
               fontSize={settings.codeFontSize}
@@ -836,7 +844,7 @@ export function TerminalPane({
 
         {showLoadingOverlay ? (
           <View style={styles.attachOverlay} pointerEvents="none" testID="terminal-attach-loading">
-            <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+            <ThemedActivityIndicator size="small" uniProps={loadingIndicatorMapping} />
           </View>
         ) : null}
       </View>

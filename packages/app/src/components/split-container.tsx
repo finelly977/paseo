@@ -29,7 +29,7 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { View, Text } from "react-native";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import { ResizeHandle } from "@/components/resize-handle";
 import { RetainedPanel } from "@/components/retained-panel";
 import { resolveSplitContainerRoot } from "@/components/split-container-focus";
@@ -678,22 +678,6 @@ function DragOverlayTabChipInner({
   normalizedWorkspaceId: string;
 }) {
   const { t } = useTranslation();
-  const { theme } = useUnistyles();
-
-  const chipStyle = useMemo(
-    () => [
-      styles.dragOverlayChip,
-      {
-        backgroundColor: theme.colors.surface1,
-        borderColor: theme.colors.borderAccent,
-      },
-    ],
-    [theme.colors.surface1, theme.colors.borderAccent],
-  );
-  const chipLabelStyle = useMemo(
-    () => [styles.dragOverlayLabel, { color: theme.colors.foreground }],
-    [theme.colors.foreground],
-  );
 
   return (
     <WorkspaceTabPresentationResolver
@@ -706,9 +690,9 @@ function DragOverlayTabChipInner({
           presentation.titleState === "loading" ? t("common.states.loading") : presentation.label;
 
         return (
-          <View style={chipStyle}>
+          <View style={styles.dragOverlayChip}>
             <WorkspaceTabIcon presentation={presentation} active size={14} />
-            <Text numberOfLines={1} style={chipLabelStyle}>
+            <Text numberOfLines={1} style={styles.dragOverlayLabel}>
               {label}
             </Text>
           </View>
@@ -922,7 +906,6 @@ function SplitPaneView({
   focusModeEnabled,
   onExitFocusMode,
 }: SplitPaneViewProps) {
-  const { theme: _theme } = useUnistyles();
   const paneRef = useRef<View | null>(null);
   const stableOnFocusPane = useStableEvent(onFocusPane);
   const paneState = useMemo(
@@ -1177,10 +1160,13 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
     borderWidth: 1,
+    borderColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.surface1,
     maxWidth: 200,
   },
   dragOverlayLabel: {
     fontSize: theme.fontSize.sm,
+    color: theme.colors.foreground,
     flexShrink: 1,
   },
 }));

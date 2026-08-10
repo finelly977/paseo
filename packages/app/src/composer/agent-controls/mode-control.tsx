@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import {
@@ -37,7 +37,7 @@ import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispat
 import { resolveNextAgentModeId } from "@/composer/agent-controls/mode";
 import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
-import { AgentControlTrigger } from "@/composer/agent-controls/control";
+import { AgentControlIconGlyph, AgentControlTrigger } from "@/composer/agent-controls/control";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
 import {
   getModeVisuals,
@@ -69,7 +69,6 @@ interface ModeComboboxOptionProps {
   onPress: () => void;
   provider: string;
   providerDefinitions: AgentProviderDefinition[];
-  iconColor: string;
 }
 
 function ModeComboboxOption({
@@ -79,13 +78,15 @@ function ModeComboboxOption({
   onPress,
   provider,
   providerDefinitions,
-  iconColor,
 }: ModeComboboxOptionProps) {
   const visuals = getModeVisuals(provider, option.id, providerDefinitions);
   const IconComponent = visuals?.icon ? MODE_ICONS[visuals.icon] : undefined;
   const leadingSlot = useMemo(
-    () => (IconComponent ? <IconComponent size={16} color={iconColor} /> : null),
-    [IconComponent, iconColor],
+    () =>
+      IconComponent ? (
+        <AgentControlIconGlyph icon={IconComponent} size={16} tone="foreground" />
+      ) : null,
+    [IconComponent],
   );
   return (
     <ComboboxItem
@@ -121,7 +122,6 @@ export function AgentModeControl({
   surface = "toolbar",
   onClose,
 }: AgentModeControlValue & { surface?: "toolbar" | "sheet"; onClose?: () => void }) {
-  const { theme } = useUnistyles();
   const { presentation } = useComposerControlLayout();
   const { t } = useTranslation();
   const { isActiveComposer } = useComposerKeyboardScope();
@@ -141,7 +141,6 @@ export function AgentModeControl({
     ? getModeVisuals(provider, selectedMode.id, providerDefinitions)
     : undefined;
   const Icon = visuals?.icon ? (MODE_ICONS[visuals.icon] ?? Bot) : Bot;
-  const iconColor = theme.colors.foregroundMuted;
   const selectedModeLabel = selectedMode ? formatAgentModeLabel(selectedMode) : "";
 
   const allOptions = useMemo<ComboboxOption[]>(
@@ -210,10 +209,9 @@ export function AgentModeControl({
         onPress={args.onPress}
         provider={provider}
         providerDefinitions={providerDefinitions}
-        iconColor={theme.colors.foreground}
       />
     ),
-    [provider, providerDefinitions, theme.colors.foreground],
+    [provider, providerDefinitions],
   );
 
   const sheetHeader = useMemo<SheetHeader>(
@@ -237,7 +235,6 @@ export function AgentModeControl({
           <AgentControlTrigger
             ref={anchorRef}
             icon={Icon}
-            iconColor={iconColor}
             surface={surface}
             label={t("agentControls.mode.title")}
             value={selectedModeLabel}

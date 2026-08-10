@@ -96,6 +96,12 @@ function invalidateCheckoutGitQueries(serverId: string, cwd: string) {
   return invalidateCheckoutGitQueriesForClient(appQueryClient, { serverId, cwd });
 }
 
+function refreshCheckoutGitQueriesInBackground(serverId: string, cwd: string): void {
+  void invalidateCheckoutGitQueries(serverId, cwd).catch((error) => {
+    console.error("Git 操作已完成，但后台刷新 Git 面板失败", error);
+  });
+}
+
 const successTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlight = new Map<string, Promise<unknown>>();
 
@@ -173,8 +179,8 @@ async function runCheckoutAction({
   const promise = (async () => {
     try {
       await run();
-      await invalidateCheckoutGitQueries(serverId, cwd);
       setStatus(key, actionId, "success");
+      refreshCheckoutGitQueriesInBackground(serverId, cwd);
       const timer = setTimeout(() => {
         setStatus(key, actionId, "idle");
         successTimers.delete(inflightId);

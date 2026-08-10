@@ -34,14 +34,24 @@ function createFakeGit(opts: FakeGitOptions = {}) {
   const resolution = opts.resolution ?? { kind: "local", name: "main" };
   const isDirty = opts.isDirty ?? false;
   const branchExists = opts.branchExists ?? false;
-  const snapshotCalls: Array<{ cwd: string; force: boolean; reason?: string }> = [];
+  const snapshotCalls: Array<{
+    cwd: string;
+    force: boolean;
+    includeForge?: boolean;
+    reason?: string;
+  }> = [];
   const invalidateCalls: Array<{ cwd: string }> = [];
   const git: GitSource = {
     async validateBranchRef() {
       return resolution;
     },
     async getSnapshot(cwd, options) {
-      snapshotCalls.push({ cwd, force: options?.force === true, reason: options?.reason });
+      snapshotCalls.push({
+        cwd,
+        force: options?.force === true,
+        includeForge: options?.includeForge,
+        reason: options?.reason,
+      });
       if (opts.getSnapshotThrows) {
         throw new Error("snapshot boom");
       }
@@ -135,7 +145,12 @@ describe("checkoutExistingBranch", () => {
     expect(result.source).toBe("local");
     expect(headBranch(dir)).toBe("feature");
     expect(invalidateCalls).toEqual([{ cwd: dir }]);
-    expect(snapshotCalls).toContainEqual({ cwd: dir, force: true, reason: "switch-branch" });
+    expect(snapshotCalls).toContainEqual({
+      cwd: dir,
+      force: true,
+      includeForge: false,
+      reason: "switch-branch",
+    });
   });
 });
 
@@ -187,7 +202,12 @@ describe("createBranchFromBase", () => {
     await service.createBranchFromBase({ cwd: dir, baseBranch: "main", newBranchName: "feature2" });
     expect(headBranch(dir)).toBe("feature2");
     expect(invalidateCalls).toEqual([]);
-    expect(snapshotCalls).toContainEqual({ cwd: dir, force: true, reason: "create-branch" });
+    expect(snapshotCalls).toContainEqual({
+      cwd: dir,
+      force: true,
+      includeForge: false,
+      reason: "create-branch",
+    });
   });
 });
 
@@ -196,14 +216,23 @@ describe("notifyGitMutation", () => {
     const { service, snapshotCalls, invalidateCalls } = buildService();
     await service.notifyGitMutation("/tmp/repo", "commit-changes", { invalidateForge: true });
     expect(invalidateCalls).toEqual([{ cwd: "/tmp/repo" }]);
-    expect(snapshotCalls).toEqual([{ cwd: "/tmp/repo", force: true, reason: "commit-changes" }]);
+    expect(snapshotCalls).toEqual([
+      {
+        cwd: "/tmp/repo",
+        force: true,
+        includeForge: false,
+        reason: "commit-changes",
+      },
+    ]);
   });
 
   test("force-refreshes without invalidating github by default", async () => {
     const { service, snapshotCalls, invalidateCalls } = buildService();
     await service.notifyGitMutation("/tmp/repo", "pull");
     expect(invalidateCalls).toEqual([]);
-    expect(snapshotCalls).toEqual([{ cwd: "/tmp/repo", force: true, reason: "pull" }]);
+    expect(snapshotCalls).toEqual([
+      { cwd: "/tmp/repo", force: true, includeForge: false, reason: "pull" },
+    ]);
   });
 
   test("swallows a snapshot-refresh failure", async () => {

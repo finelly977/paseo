@@ -178,7 +178,7 @@
         ]
       }
     },
-    // useUnistyles burn-down: 74 files total; the 68 files below still enforce the raw-query ban.
+    // useUnistyles 逐步清理：当前共 66 个历史豁免文件，其中下方 60 个仍执行原始查询禁令。
     {
       "files": [
         "packages/app/src/app/_layout.tsx",
@@ -186,8 +186,6 @@
         "packages/app/src/components/adaptive-modal-sheet.tsx",
         "packages/app/src/components/add-host-method-modal.tsx",
         "packages/app/src/components/add-host-modal.tsx",
-        "packages/app/src/components/agent-list.tsx",
-        "packages/app/src/components/agent-status-dot.tsx",
         "packages/app/src/components/attachment-lightbox.tsx",
         "packages/app/src/components/browser-pane.electron.tsx",
         "packages/app/src/components/browser-pane.tsx",
@@ -204,7 +202,6 @@
         "packages/app/src/components/host-status-dot.tsx",
         "packages/app/src/components/hosts/host-picker.tsx",
         "packages/app/src/components/icons/paseo-logo.tsx",
-        "packages/app/src/components/left-sidebar.tsx",
         "packages/app/src/components/pair-link-modal.tsx",
         "packages/app/src/components/plan-card.tsx",
         "packages/app/src/components/provider-diagnostic-sheet.tsx",
@@ -215,10 +212,7 @@
         "packages/app/src/components/rewind/rewind-menu.tsx",
         "packages/app/src/components/settings-textarea.tsx",
         "packages/app/src/components/sidebar-callout.tsx",
-        "packages/app/src/components/split-container.tsx",
         "packages/app/src/components/split-drop-zone.tsx",
-        "packages/app/src/components/terminal-pane.tsx",
-        "packages/app/src/components/toast-host.tsx",
         "packages/app/src/components/tool-call-sheet.tsx",
         "packages/app/src/components/ui/alert.tsx",
         "packages/app/src/components/ui/autocomplete.tsx",
@@ -229,8 +223,6 @@
         "packages/app/src/components/volume-meter.tsx",
         "packages/app/src/components/web-desktop-scrollbar.tsx",
         "packages/app/src/components/welcome-screen.tsx",
-        "packages/app/src/composer/agent-controls/index.tsx",
-        "packages/app/src/composer/agent-controls/mode-control.tsx",
         "packages/app/src/constants/layout.ts",
         "packages/app/src/desktop/components/desktop-permission-row.tsx",
         "packages/app/src/desktop/components/desktop-permissions-section.tsx",

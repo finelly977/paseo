@@ -23,7 +23,7 @@ import {
 import { Gesture } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { resolveDesktopSidebarWidth } from "@/components/desktop-sidebar-layout";
 import { HostPicker } from "@/components/hosts/host-picker";
@@ -65,14 +65,32 @@ import {
   buildSettingsRoute,
 } from "@/utils/host-routes";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
 
-type SidebarTheme = ReturnType<typeof useUnistyles>["theme"];
+type SidebarIconTone = "foreground" | "muted";
+
+interface SidebarIconProps {
+  icon: typeof FolderPlus;
+  size: number;
+  tone: SidebarIconTone;
+  foregroundColor: string;
+  mutedColor: string;
+}
+
+function SidebarIcon({ icon: Icon, size, tone, foregroundColor, mutedColor }: SidebarIconProps) {
+  return <Icon size={size} color={tone === "foreground" ? foregroundColor : mutedColor} />;
+}
+
+const ThemedSidebarIcon = withUnistyles(SidebarIcon);
+const sidebarIconColorMapping = (theme: Theme) => ({
+  foregroundColor: theme.colors.foreground,
+  mutedColor: theme.colors.foregroundMuted,
+});
 
 interface SidebarSharedProps {
-  theme: SidebarTheme;
   statusGroups: StatusGroup[];
   pinnedGroups: PinnedSidebarGroups;
   projects: SidebarProjectEntry[];
@@ -123,7 +141,6 @@ interface DesktopSidebarProps extends SidebarSharedProps {
 }
 
 export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boolean }) {
-  const { theme } = useUnistyles();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const isCompactLayout = useIsCompactFormFactor();
@@ -233,7 +250,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
   );
 
   const sharedProps = {
-    theme,
     statusGroups,
     pinnedGroups,
     projects,
@@ -301,7 +317,6 @@ function FooterIconButton({
   icon: Icon,
   iconSize,
   shortcutKeys,
-  theme,
 }: {
   onPress: () => void;
   testID: string;
@@ -309,7 +324,6 @@ function FooterIconButton({
   icon: typeof FolderPlus;
   iconSize?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
-  theme: SidebarTheme;
   buttonRef?: RefObject<View | null>;
 }) {
   return (
@@ -327,9 +341,11 @@ function FooterIconButton({
           onPress={onPress}
         >
           {({ hovered }) => (
-            <Icon
-              size={iconSize ?? theme.iconSize.md}
-              color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+            <ThemedSidebarIcon
+              icon={Icon}
+              size={iconSize ?? ICON_SIZE.md}
+              tone={hovered ? "foreground" : "muted"}
+              uniProps={sidebarIconColorMapping}
             />
           )}
         </Pressable>
@@ -351,12 +367,10 @@ function FooterAddProjectButton({
   onPress,
   label,
   shortcutKeys,
-  theme,
 }: {
   onPress: () => void;
   label: string;
   shortcutKeys: ReturnType<typeof useShortcutKeys>;
-  theme: SidebarTheme;
 }) {
   return (
     <Tooltip delayDuration={300}>
@@ -374,9 +388,11 @@ function FooterAddProjectButton({
             const isHovered = Boolean(hovered);
             return (
               <>
-                <FolderPlus
-                  size={theme.iconSize.sm}
-                  color={isHovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+                <ThemedSidebarIcon
+                  icon={FolderPlus}
+                  size={ICON_SIZE.sm}
+                  tone={isHovered ? "foreground" : "muted"}
+                  uniProps={sidebarIconColorMapping}
                 />
                 <Text
                   numberOfLines={1}
@@ -400,12 +416,10 @@ function FooterAddProjectButton({
 }
 
 function SidebarHostPicker({
-  theme,
   label,
   onAddHost,
   onOpenHostSettings,
 }: {
-  theme: SidebarTheme;
   label: string;
   onAddHost: () => void;
   onOpenHostSettings: (serverId: string) => void;
@@ -447,8 +461,7 @@ function SidebarHostPicker({
         testID="sidebar-hosts-trigger"
         label={label}
         icon={Server}
-        iconSize={theme.iconSize.sm}
-        theme={theme}
+        iconSize={ICON_SIZE.sm}
       />
     </HostPicker>
   );
@@ -525,7 +538,6 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
 });
 
 function SidebarFooter({
-  theme,
   handleOpenProject,
   handleHome,
   handleSettings,
@@ -533,7 +545,6 @@ function SidebarFooter({
   handleAddHost,
   handleOpenHostSettings,
 }: {
-  theme: SidebarTheme;
   handleOpenProject: () => void;
   handleHome: () => void;
   handleSettings: () => void;
@@ -556,11 +567,9 @@ function SidebarFooter({
         onPress={handleOpenProject}
         label={labels.addProject}
         shortcutKeys={newAgentKeys}
-        theme={theme}
       />
       <View style={styles.footerIconRow}>
         <SidebarHostPicker
-          theme={theme}
           label={labels.hosts}
           onAddHost={handleAddHost}
           onOpenHostSettings={handleOpenHostSettings}
@@ -570,7 +579,6 @@ function SidebarFooter({
           testID="sidebar-home"
           label={labels.home}
           icon={Home}
-          theme={theme}
         />
         <SidebarHelpMenu />
         <FooterIconButton
@@ -579,7 +587,6 @@ function SidebarFooter({
           label={labels.settings}
           icon={Settings}
           shortcutKeys={settingsKeys}
-          theme={theme}
         />
       </View>
     </View>
@@ -587,7 +594,6 @@ function SidebarFooter({
 }
 
 function MobileSidebar({
-  theme,
   statusGroups,
   pinnedGroups,
   projects,
@@ -638,18 +644,13 @@ function MobileSidebar({
     () => ({
       paddingTop: insetsTop,
       paddingBottom: insetsBottom,
-      backgroundColor: theme.colors.surfaceSidebar,
     }),
-    [insetsTop, insetsBottom, theme.colors.surfaceSidebar],
+    [insetsTop, insetsBottom],
   );
 
   return (
-    <MobilePanelOverlay
-      panel="agent-list"
-      closeGesture={closeGesture}
-      panelStyle={mobileSidebarInsetStyle}
-    >
-      <View style={styles.sidebarContent} pointerEvents="auto">
+    <MobilePanelOverlay panel="agent-list" closeGesture={closeGesture}>
+      <View style={[styles.sidebarContent, mobileSidebarInsetStyle]} pointerEvents="auto">
         <WindowChromeSafeArea placement="below" />
         <View style={styles.sidebarHeaderGroup}>
           <SidebarNewWorkspaceHeaderRow
@@ -688,9 +689,11 @@ function MobileSidebar({
             hitSlop={8}
           >
             {({ hovered, pressed }) => (
-              <X
-                size={theme.iconSize.md}
-                color={hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted}
+              <ThemedSidebarIcon
+                icon={X}
+                size={ICON_SIZE.md}
+                tone={hovered || pressed ? "foreground" : "muted"}
+                uniProps={sidebarIconColorMapping}
               />
             )}
           </Pressable>
@@ -719,7 +722,6 @@ function MobileSidebar({
         )}
 
         <SidebarFooter
-          theme={theme}
           handleOpenProject={handleOpenProject}
           handleHome={handleHome}
           handleSettings={handleSettings}
@@ -733,7 +735,6 @@ function MobileSidebar({
 }
 
 function DesktopSidebar({
-  theme,
   statusGroups,
   pinnedGroups,
   projects,
@@ -886,7 +887,6 @@ function DesktopSidebar({
         <SidebarCalloutSlot />
 
         <SidebarFooter
-          theme={theme}
           handleOpenProject={handleOpenProject}
           handleHome={handleHome}
           handleSettings={handleSettings}
@@ -906,7 +906,6 @@ function DesktopSidebar({
 }
 
 function WorkspacesSectionHeader() {
-  const { theme } = useUnistyles();
   const { t } = useTranslation();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
@@ -933,11 +932,11 @@ function WorkspacesSectionHeader() {
               onPress={handleSearchPress}
             >
               {({ hovered, pressed }) => (
-                <Search
-                  size={14}
-                  color={
-                    hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted
-                  }
+                <ThemedSidebarIcon
+                  icon={Search}
+                  size={ICON_SIZE.sm}
+                  tone={hovered || pressed ? "foreground" : "muted"}
+                  uniProps={sidebarIconColorMapping}
                 />
               )}
             </Pressable>
@@ -1024,6 +1023,7 @@ const styles = StyleSheet.create((theme) => ({
   sidebarContent: {
     flex: 1,
     minHeight: 0,
+    backgroundColor: theme.colors.surfaceSidebar,
   },
   mobileCloseButtonRow: {
     position: "absolute",

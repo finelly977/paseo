@@ -187,7 +187,6 @@ function commitButtonPressableStyle({
   return [
     styles.commitButton,
     canPress && (Boolean(hovered) || pressed) && styles.commitButtonHovered,
-    !canPress && styles.commitButtonDisabled,
   ];
 }
 
@@ -335,6 +334,13 @@ export function SourceControlCommitComposer({
       commitButtonPressableStyle({ hovered, pressed, canPress }),
     [canPress],
   );
+  const commitCaretStyle = useCallback(
+    ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
+      styles.commitCaret,
+      canPress && (hovered || pressed || open) && styles.commitButtonHovered,
+    ],
+    [canPress],
+  );
   const commitPlaceholder = t("workspace.git.panel.commitPlaceholder", { branch: branchName });
   const handleFocus = useCallback(() => {
     setFocused(true);
@@ -364,7 +370,7 @@ export function SourceControlCommitComposer({
       <View
         style={[
           styles.commitInputRow,
-          { minHeight: inputHeight },
+          { height: inputHeight },
           focused && styles.commitInputRowFocused,
         ]}
       >
@@ -381,13 +387,13 @@ export function SourceControlCommitComposer({
           returnKeyType="default"
           accessibilityLabel={commitPlaceholder}
           testID="source-control-commit-message"
-          style={styles.commitInput}
+          style={[styles.commitInput, { height: inputHeight }]}
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
       </View>
       <View style={styles.commitButtonRow}>
-        <View style={styles.commitSplitButton}>
+        <View style={[styles.commitSplitButton, !canPress && styles.commitSplitButtonDisabled]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={buttonLabel}
@@ -413,7 +419,7 @@ export function SourceControlCommitComposer({
                 accessibilityRole="button"
                 accessibilityLabel={t("workspace.git.panel.commitMoreActions")}
                 disabled={isPending || !hasMessage || totalChangeCount === 0}
-                style={styles.commitCaret}
+                style={commitCaretStyle}
                 testID="source-control-commit-caret"
               >
                 <ThemedChevronDown size={14} uniProps={buttonIconColorMapping} />
@@ -561,6 +567,8 @@ const styles = StyleSheet.create((theme) => ({
     lineHeight: 18,
     textAlignVertical: "top",
     color: theme.colors.scmInputForeground,
+    outlineColor: "transparent",
+    outlineWidth: 0,
   },
   commitInputPlaceholder: {
     color: theme.colors.scmInputPlaceholder,
@@ -580,6 +588,10 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "stretch",
     borderRadius: 4,
     overflow: "hidden",
+    backgroundColor: theme.colors.scmButtonBackground,
+  },
+  commitSplitButtonDisabled: {
+    opacity: theme.opacity[50],
   },
   commitButton: {
     flex: 1,
@@ -589,11 +601,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     gap: 6,
     paddingHorizontal: 8,
-    borderTopLeftRadius: 4,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: "transparent",
-    backgroundColor: theme.colors.scmButtonBackground,
+    backgroundColor: "transparent",
   },
   commitCaret: {
     width: 26,
@@ -601,13 +609,10 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     borderLeftWidth: 1,
     borderLeftColor: theme.colors.scmButtonHoverBackground,
-    backgroundColor: theme.colors.scmButtonBackground,
+    backgroundColor: "transparent",
   },
   commitButtonHovered: {
     backgroundColor: theme.colors.scmButtonHoverBackground,
-  },
-  commitButtonDisabled: {
-    opacity: 0.4,
   },
   commitButtonText: {
     color: theme.colors.scmButtonForeground,

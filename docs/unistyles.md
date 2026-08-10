@@ -4,15 +4,15 @@ This app uses [`react-native-unistyles` v3](https://www.unistyl.es/) for theme-a
 
 That model is powerful, but it has sharp edges. Use this note when adding theme-dependent styles.
 
-## STOP — `useUnistyles()` Is Banned
+## STOP - 普通组件禁止使用 `useUnistyles()`
 
-**Do not call `useUnistyles()`. Anywhere. New code MUST NOT add a call; existing call sites are tolerated only because nobody has rewritten them yet and will be converted as they are touched.** The library authors themselves [strongly advise against it](https://www.unistyl.es/v3/references/use-unistyles):
+**普通组件不得调用 `useUnistyles()`。新代码只能使用下方优先级更高的替代方案；现存调用属于逐步清理名单。** Unistyles 官方也明确说明，该 Hook 主要用于迁移，并且每次依赖变化都会触发组件重新渲染。
 
-> We strongly recommend **not using** this hook, as it will re-render your component on every change. This hook was created to simplify the migration process and should only be used when other methods fail.
+当前使用的 Unistyles 3.2.4 会按组件实际读取的字段建立依赖：读取 `theme` 属性会订阅主题，读取断点、安全区、方向或缩放等运行时字段时才订阅对应变化。它不会让所有调用无条件订阅全部运行时变化。
 
-We have hit this gotcha repeatedly in Paseo. The hook subscribes the component to **every** Unistyles runtime change (theme, breakpoint, insets, color scheme, scale) and returns a fresh object reference each call. That means a periodic lockstep re-render of warm subtrees (agent streams, panels, sidebars) even when nothing the user can see has changed — confirmed in profiling, with `theme` as the only changed input every cycle. It also breaks every downstream `useMemo`/`memo` boundary that includes a derived theme value.
+风险仍然很明确：Hook 每次渲染都会创建新的主题和运行时代理，并在依赖变化时通过 React 重新执行当前组件。把它放在对话流、面板、侧栏、虚拟列表或终端等大型常驻组件中，会扩大主题切换和外观设置更新的渲染范围。只有把完整代理或由它生成的新对象继续作为属性传递时，才会进一步破坏下游 `useMemo`/`memo` 边界；不得把这一影响错误描述为无条件击穿所有缓存。
 
-Reviewers MUST reject PRs that introduce a new `useUnistyles()` call. There is no last-resort carveout. If you cannot solve a case with the alternatives below, file an issue and stop — do not paper over it with the hook.
+评审必须拒绝普通组件和热路径中新增的调用。只有本文已经记录的 Reanimated 冲突或无法由 `withUnistyles` 接管的第三方属性，才允许在小型叶子组件中保留例外，并必须用注释写清原因。
 
 Use these alternatives in order:
 
@@ -48,9 +48,9 @@ const ThemedBlur = withUnistyles(BlurView);
 
 (Mind the `> *` child-selector leak documented further down.)
 
-### 4. There is no "last resort"
+### 4. 只保留已记录的小型叶子例外
 
-There is no escape hatch. If none of (1)–(3) fit, the problem is upstream — fix it there or file an issue. The hook is not on the table.
+如果前三种方案均不适用，先确认是否属于本文后续章节记录的 Reanimated 或第三方属性边界。确属例外时，只能让最小叶子组件订阅主题，禁止让对话流、面板、侧栏、虚拟列表或终端控制逻辑承担订阅。其他情况应修复上游组件边界或提交问题，不得直接用 Hook 绕过。
 
 ## How Updates Propagate
 

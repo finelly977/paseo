@@ -1,12 +1,10 @@
-import { useMemo } from "react";
 import { View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet } from "react-native-unistyles";
 import {
   AGENT_LIFECYCLE_STATUSES,
   type AgentLifecycleStatus,
 } from "@getpaseo/protocol/agent-lifecycle";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
-import { getStatusDotColor } from "@/utils/status-dot-color";
 
 export function AgentStatusDot({
   status,
@@ -21,8 +19,6 @@ export function AgentStatusDot({
   pendingPermissionCount?: number;
   showInactive?: boolean;
 }) {
-  const { theme } = useUnistyles();
-
   if (!status) {
     return null;
   }
@@ -36,22 +32,29 @@ export function AgentStatusDot({
     attentionReason: attentionReason ?? null,
     pendingPermissionCount: pendingPermissionCount ?? 0,
   });
-  const color = getStatusDotColor({ theme, bucket, showDoneAsInactive: showInactive });
+  const colorStyle = getStatusDotColorStyle(bucket, showInactive);
 
-  if (!color) {
+  if (!colorStyle) {
     return null;
   }
 
-  return <AgentStatusDotView color={color} />;
-}
-
-function AgentStatusDotView({ color }: { color: string }) {
-  const dotStyle = useMemo(() => [styles.dot, { backgroundColor: color }], [color]);
-  return <View style={dotStyle} />;
+  return <View style={[styles.dot, colorStyle]} />;
 }
 
 function isAgentLifecycleStatus(value: string): value is AgentLifecycleStatus {
   return AGENT_LIFECYCLE_STATUSES.some((status) => status === value);
+}
+
+function getStatusDotColorStyle(
+  bucket: ReturnType<typeof deriveSidebarStateBucket>,
+  showInactive: boolean,
+) {
+  if (bucket === "needs_input") return styles.dotNeedsInput;
+  if (bucket === "failed") return styles.dotFailed;
+  if (bucket === "running") return styles.dotRunning;
+  if (bucket === "attention") return styles.dotAttention;
+  if (bucket === "done" && showInactive) return styles.dotInactive;
+  return null;
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -59,5 +62,20 @@ const styles = StyleSheet.create((theme) => ({
     width: 8,
     height: 8,
     borderRadius: theme.borderRadius.full,
+  },
+  dotNeedsInput: {
+    backgroundColor: theme.colors.palette.amber[500],
+  },
+  dotFailed: {
+    backgroundColor: theme.colors.palette.red[500],
+  },
+  dotRunning: {
+    backgroundColor: theme.colors.palette.blue[500],
+  },
+  dotAttention: {
+    backgroundColor: theme.colors.palette.green[500],
+  },
+  dotInactive: {
+    backgroundColor: theme.colors.border,
   },
 }));
