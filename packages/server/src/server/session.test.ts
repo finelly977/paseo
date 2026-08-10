@@ -33,7 +33,7 @@ import {
   asAgentManager,
   asAgentStorage,
   asDownloadTokenStore,
-  asPushTokenStore,
+  asPushNotifications,
   asChatService,
   asScheduleService,
   asLoopService,
@@ -417,6 +417,7 @@ interface SessionForTestOptions {
   daemonVersion?: SessionOptions["daemonVersion"];
   daemonRuntimeConfig?: SessionOptions["daemonRuntimeConfig"];
   downloadTokenStore?: SessionOptions["downloadTokenStore"];
+  pushNotifications?: SessionOptions["pushNotifications"];
   messages?: unknown[];
   targetedMessages?: Array<{ source: object; message: SessionOutboundMessage }>;
   binaryMessages?: Uint8Array[];
@@ -466,7 +467,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     onBinaryMessage: createBinaryMessageHandler(options.binaryMessages),
     logger,
     downloadTokenStore: options.downloadTokenStore ?? asDownloadTokenStore(),
-    pushTokenStore: asPushTokenStore(),
+    pushNotifications: options.pushNotifications ?? asPushNotifications(),
     paseoHome: options.paseoHome ?? "/tmp/paseo-home",
     agentManager: asAgentManager({
       listAgents: vi.fn(() => []),
@@ -1505,6 +1506,88 @@ describe("project config RPC authorization", () => {
   });
 });
 
+test("push token registration can be revoked by the connected client", async () => {
+  const renewed: string[] = [];
+  const revoked: string[] = [];
+  const messages: unknown[] = [];
+  const session = createSessionForTest({
+    messages,
+    pushNotifications: asPushNotifications({
+      renew: (token: string) => renewed.push(token),
+      revoke: (token: string) => revoked.push(token),
+    }),
+  });
+
+  await session.handleMessage({
+    type: "register_push_token",
+    token: "ExponentPushToken[test-device]",
+  });
+  await session.handleMessage({
+    type: "push.unregister.request",
+    token: "ExponentPushToken[test-device]",
+    requestId: "revoke-1",
+  });
+  await session.handleMessage({
+    type: "client_heartbeat",
+    deviceType: "mobile",
+    focusedAgentId: null,
+    lastActivityAt: "2026-08-10T00:00:00.000Z",
+    appVisible: false,
+  });
+
+  expect(renewed).toEqual(["ExponentPushToken[test-device]"]);
+  expect(revoked).toEqual(["ExponentPushToken[test-device]"]);
+  expect(messages).toEqual([
+    {
+      type: "push.unregister.response",
+      payload: { requestId: "revoke-1" },
+    },
+  ]);
+});
+
+test("push token revocation only acknowledges durable removal", async () => {
+  const renewed: string[] = [];
+  const messages: SessionOutboundMessage[] = [];
+  const session = createSessionForTest({
+    messages,
+    pushNotifications: asPushNotifications({
+      renew: (token: string) => renewed.push(token),
+      revoke: () => {
+        throw new Error("disk full");
+      },
+    }),
+  });
+
+  await session.handleMessage({
+    type: "register_push_token",
+    token: "ExponentPushToken[test-device]",
+  });
+  await session.handleMessage({
+    type: "push.unregister.request",
+    token: "ExponentPushToken[test-device]",
+    requestId: "revoke-failed",
+  });
+  await session.handleMessage({
+    type: "client_heartbeat",
+    deviceType: "mobile",
+    focusedAgentId: null,
+    lastActivityAt: "2026-08-10T00:00:00.000Z",
+    appVisible: false,
+  });
+
+  expect(renewed).toEqual(["ExponentPushToken[test-device]", "ExponentPushToken[test-device]"]);
+  expect(messages.some((message) => message.type === "push.unregister.response")).toBe(false);
+  expect(messages).toContainEqual({
+    type: "rpc_error",
+    payload: {
+      requestId: "revoke-failed",
+      requestType: "push.unregister.request",
+      error: "Request failed: disk full",
+      code: "handler_error",
+    },
+  });
+});
+
 describe("daemon status + pairing RPC", () => {
   const tempDirs: string[] = [];
 
@@ -1768,7 +1851,7 @@ describe("session provider refresh cwd routing", () => {
       requestId: "modes-home",
     });
 
-    expect(getSnapshot).toHaveBeenCalledWith(undefined);
+    expect(getSnapshot).toHaveBeenCalledWith(undefined, { warm: false });
     expect(warmUpSnapshotForCwd).toHaveBeenCalledWith({
       cwd: undefined,
       providers: ["codex"],
@@ -1929,7 +2012,10 @@ describe("session checkout merge handling", () => {
       requestId: "request-1",
     });
 
-    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree");
+    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
+      includeForge: false,
+      reason: "checkout-merge-validation",
+    });
     expect(checkoutGitMocks.getCheckoutStatus).not.toHaveBeenCalled();
     expect(checkoutGitMocks.mergeToBase).toHaveBeenCalledWith(
       "/tmp/request-worktree",
@@ -1941,6 +2027,7 @@ describe("session checkout merge handling", () => {
     );
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/base-worktree", {
       force: true,
+      includeForge: false,
       reason: "merge-to-base",
     });
     expect(github.invalidate).toHaveBeenCalledTimes(1);
@@ -2022,6 +2109,7 @@ describe("session checkout merge handling", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "merge-from-base",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -2136,6 +2224,7 @@ diff --git a/file.txt b/file.txt
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledTimes(1);
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "commit-changes",
     });
     expect(checkoutDiffManager.scheduleRefreshForCwd).toHaveBeenCalledWith("/tmp/request-worktree");
@@ -2636,6 +2725,7 @@ diff --git a/file.txt b/file.txt
 
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "create-pr",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -2728,6 +2818,7 @@ describe("session checkout pull request merge", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenNthCalledWith(2, "/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "merge-pr",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -2864,6 +2955,7 @@ describe("session checkout pull request merge", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenNthCalledWith(2, "/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "merge-pr",
     });
     expect(messages).toContainEqual({
@@ -3004,6 +3096,7 @@ describe("session checkout pull request auto-merge", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenNthCalledWith(2, "/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "enable-pr-auto-merge",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -3078,6 +3171,7 @@ describe("session checkout pull request auto-merge", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenNthCalledWith(2, "/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "disable-pr-auto-merge",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -3327,6 +3421,7 @@ describe("session checkout pull and push handling", () => {
     expect(checkoutGitMocks.pullCurrentBranch).toHaveBeenCalledWith("/tmp/request-worktree");
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "pull",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -3357,6 +3452,7 @@ describe("session checkout pull and push handling", () => {
     expect(checkoutGitMocks.pushCurrentBranch).toHaveBeenCalledWith("/tmp/request-worktree");
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
+      includeForge: false,
       reason: "push",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
@@ -3391,10 +3487,10 @@ describe("session checkout refresh handling", () => {
       requestId: "request-refresh",
     });
 
-    expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/request-worktree" });
+    expect(github.invalidate).not.toHaveBeenCalled();
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/request-worktree", {
       force: true,
-      includeForge: true,
+      includeForge: false,
       reason: "manual-refresh",
     });
     expect(checkoutDiffManager.scheduleRefreshForCwd).toHaveBeenCalledWith("/tmp/request-worktree");
@@ -3458,7 +3554,10 @@ describe("session checkout status handling", () => {
     });
 
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledTimes(1);
-    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/service-worktree");
+    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/service-worktree", {
+      includeForge: false,
+      reason: "checkout-status",
+    });
     expect(checkoutGitMocks.getCheckoutStatus).not.toHaveBeenCalled();
     expect(messages).toContainEqual({
       type: "checkout_status_response",
@@ -3476,6 +3575,8 @@ describe("session checkout status handling", () => {
         hasRemote: true,
         remoteUrl: "https://github.com/getpaseo/paseo.git",
         isPaseoOwnedWorktree: false,
+        stagedFileCount: 0,
+        changes: undefined,
         error: null,
         requestId: "request-status",
       },
@@ -3849,6 +3950,7 @@ describe("session checkout switch branch handling", () => {
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
+      includeForge: false,
       reason: "switch-branch",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/repo" });
@@ -3974,6 +4076,7 @@ describe("session checkout rename branch handling", () => {
     );
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
+      includeForge: false,
       reason: "rename-branch",
     });
     expect(github.invalidate).toHaveBeenCalledWith({ cwd: "/tmp/repo" });
@@ -4165,6 +4268,7 @@ describe("session stash mutation handling", () => {
 
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
+      includeForge: false,
       reason: "stash-push",
     });
     expect(messages).toContainEqual({
@@ -4199,6 +4303,7 @@ describe("session stash mutation handling", () => {
 
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
+      includeForge: false,
       reason: "stash-pop",
     });
     expect(messages).toContainEqual({
@@ -4241,12 +4346,14 @@ describe("session paseo worktree creation handling", () => {
 
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
+      includeForge: false,
       reason: "create-worktree",
     });
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith(
       "/tmp/paseo/worktrees/new-worktree",
       {
         force: true,
+        includeForge: false,
         reason: "create-worktree",
       },
     );
