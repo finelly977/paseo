@@ -1,18 +1,11 @@
 import { useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Platform,
-  Pressable,
-  Text,
-  View,
-  type StyleProp,
-  type TextStyle,
-  type ViewStyle,
-} from "react-native";
+import { Platform, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import { FolderOpen } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { isNative, isWeb } from "@/constants/platform";
 import { MarkdownTextSpan } from "@/components/markdown-text";
+import { MarkdownLinkText } from "@/components/markdown/link-text";
 import { AssistantLinkPressProvider, type AssistantLinkPress } from "./link-press-context";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -126,6 +119,7 @@ export function AssistantMarkdownLink({
       {children}
     </Text>
   );
+  const unwrapForMarkdownCopy = source.sourceType === "inline-code" || source.markup === "linkify";
   const linkTrigger = canOpenInFileManager ? (
     <ContextMenuTrigger
       accessibilityRole="link"
@@ -136,17 +130,18 @@ export function AssistantMarkdownLink({
       {linkText}
     </ContextMenuTrigger>
   ) : (
-    <Pressable
-      accessibilityRole="link"
+    <MarkdownLinkText
+      dataSet={monoSurface ? CODE_SURFACE_DATASET : undefined}
+      style={style}
       onPress={onPress}
-      onHoverIn={handleHoverIn}
-      onHoverOut={handleHoverOut}
+      onHoverIn={onHoverIn}
     >
-      {linkText}
-    </Pressable>
+      {children}
+    </MarkdownLinkText>
   );
   const anchor = (
     <a
+      {...(unwrapForMarkdownCopy ? { "data-paseo-markdown-unwrap": "true" } : {})}
       href={source.href}
       onClickCapture={handleAnchorClickCapture}
       onAuxClickCapture={preventAnchorNavigation}

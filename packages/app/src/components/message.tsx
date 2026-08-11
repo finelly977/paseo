@@ -24,9 +24,6 @@ import {
   useCallback,
   createContext,
   useContext,
-  isValidElement,
-  Children,
-  cloneElement,
 } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { MarkdownIt, type ASTNode, type RenderRules } from "react-native-markdown-display";
@@ -83,6 +80,7 @@ import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+import { colorMarkdownLinkChildren } from "@/components/markdown/link-children";
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
@@ -2075,13 +2073,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           source={getMarkdownLinkSource(node)}
           style={styles.link}
         >
-          {Children.map(children, (child) => {
-            if (!isValidElement(child)) return child;
-            const childProps = child.props as { style?: StyleProp<TextStyle> };
-            return cloneElement(child, {
-              style: [childProps.style, { color: styles.link.color }],
-            } as Partial<{ style: StyleProp<TextStyle> }>);
-          })}
+          {colorMarkdownLinkChildren(children, styles.link.color)}
         </AssistantMarkdownLink>
       ),
       image: (

@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { StyleSheet, UnistylesRuntime } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSessionStore, type ExplorerFile } from "@/stores/session-store";
 import { highlightCode, type HighlightToken } from "@getpaseo/highlight";
@@ -41,6 +40,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { useLiveFile } from "./live-file";
 import { FilePanelBar } from "./bar";
 import { FileEditorModel, type FileEditorFile } from "./editor/model";
+import { FileMarkdownPreview } from "./markdown-preview";
 import { FileEditorView } from "./editor/view";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
@@ -285,10 +285,9 @@ function FilePreviewBody({
           <RNScrollView
             ref={previewScrollRef}
             style={styles.previewContent}
-            contentContainerStyle={styles.previewMarkdownScrollContent}
             showsVerticalScrollIndicator
           >
-            <MarkdownRenderer text={preview.content ?? ""} />
+            <FileMarkdownPreview source={preview.content ?? ""} />
           </RNScrollView>
         </View>
       );
@@ -821,9 +820,6 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   previewCodeScrollContent: {
-    padding: theme.spacing[4],
-  },
-  previewMarkdownScrollContent: {
     padding: theme.spacing[4],
   },
   previewImageScrollContent: {
