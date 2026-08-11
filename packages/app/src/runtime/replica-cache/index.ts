@@ -17,7 +17,7 @@ import type { StreamItem } from "@/types/stream";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 
 const STORAGE_KEY = "@paseo:replica-cache";
-const CACHE_VERSION = 5;
+const CACHE_VERSION = 6;
 const PERSIST_DELAY_MS = 750;
 const MAX_TIMELINE_ITEMS = 50;
 const MAX_CACHE_BYTES = 1024 * 1024;
@@ -36,7 +36,18 @@ const TimelineItemBaseShape = {
 const TodoEntrySchema = z.strictObject({
   text: z.string(),
   completed: z.boolean(),
+  id: z.string().optional(),
+  status: z.enum(["pending", "in_progress", "completed"]).optional(),
+  activeForm: z.string().optional(),
 });
+
+const TaskActivitySchema = z.union([
+  z.strictObject({ type: z.literal("created"), count: z.number().int().nonnegative() }),
+  z.strictObject({
+    type: z.enum(["added", "started", "completed", "reopened"]),
+    task: z.string(),
+  }),
+]);
 
 const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -64,6 +75,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     kind: z.literal("todo_list"),
     provider: AgentProviderSchema,
     items: z.array(TodoEntrySchema),
+    activity: TaskActivitySchema,
   }),
   z.strictObject({
     ...TimelineItemBaseShape,
@@ -282,6 +294,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         kind: item.kind,
         provider: item.provider,
         items: item.items,
+        activity: item.activity,
       };
     case "activity_log":
       return {
@@ -334,6 +347,7 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
         kind: item.kind,
         provider: item.provider,
         items: item.items,
+        activity: item.activity,
       };
     case "activity_log":
       return {

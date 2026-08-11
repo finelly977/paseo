@@ -1128,7 +1128,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             );
 
           case "todo_list":
-            return <TodoListCard items={item.items} />;
+            return <TodoListCard items={item.items} activity={item.activity} />;
 
           case "compaction":
             return (

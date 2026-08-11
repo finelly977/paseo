@@ -7,6 +7,7 @@ import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import {
   handoffCreatedAgentUserMessageToStream,
   type StreamItem,
+  type TodoEntry,
   type UserMessageItem,
 } from "@/types/stream";
 import {
@@ -308,6 +309,55 @@ export interface SessionReplica {
   timeline: SessionReplicaTimeline | null;
 }
 
+export type AgentTimelineState =
+  | { status: "cold" }
+  | { status: "painted"; items: StreamItem[] }
+  | {
+      status: "synced";
+      items: StreamItem[];
+      range: AgentTimelineCursorState | null;
+      older: "available" | "none";
+      newer: "available" | "none";
+    };
+
+export function selectAgentTimelineState(
+  session: SessionState | undefined,
+  agentId: string,
+): AgentTimelineState {
+  if (!session) return { status: "cold" };
+  const items = session.agentStreamTail.get(agentId) ?? [];
+  if (session.agentAuthoritativeHistoryApplied.get(agentId) === true) {
+    return {
+      status: "synced",
+      items,
+      range: session.agentTimelineCursor.get(agentId) ?? null,
+      older: session.agentTimelineHasOlder.get(agentId) === true ? "available" : "none",
+      newer: "none",
+    };
+  }
+  return items.length > 0 ? { status: "painted", items } : { status: "cold" };
+}
+
+function latestTasksFromStream(items: readonly StreamItem[]): TodoEntry[] {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind === "todo_list") return item.items;
+  }
+  return [];
+}
+
+function updateAgentTasks(
+  current: Map<string, TodoEntry[]>,
+  agentId: string,
+  taskSnapshot: TodoEntry[] | undefined,
+): Map<string, TodoEntry[]> {
+  if (taskSnapshot === undefined || equal(current.get(agentId) ?? [], taskSnapshot)) return current;
+  const next = new Map(current);
+  if (taskSnapshot.length > 0) next.set(agentId, taskSnapshot);
+  else next.delete(agentId);
+  return next;
+}
+
 export type WorkspaceRestoreStatus = "restoring" | "failed" | "needs-host-upgrade";
 
 // Per-session state
@@ -336,6 +386,7 @@ export interface SessionState {
   // Stream state (head/tail model)
   agentStreamTail: Map<string, StreamItem[]>;
   agentStreamHead: Map<string, StreamItem[]>;
+  agentTasks: Map<string, TodoEntry[]>;
   agentTimelineCursor: Map<string, AgentTimelineCursorState>;
   agentTimelineHasOlder: Map<string, boolean>;
   agentTimelineOlderFetchInFlight: Map<string, boolean>;
@@ -428,7 +479,11 @@ interface SessionStoreActions {
   setAgentStreamState: (
     serverId: string,
     agentId: string,
-    state: { tail?: StreamItem[]; head?: StreamItem[] },
+    state: {
+      tail?: StreamItem[];
+      head?: StreamItem[];
+      taskSnapshot?: TodoEntry[];
+    },
   ) => void;
   handoffCreatedAgentUserMessage: (
     serverId: string,
@@ -702,6 +757,7 @@ function createInitialSessionState(
     focusedTerminalId: null,
     agentStreamTail: new Map(),
     agentStreamHead: new Map(),
+    agentTasks: new Map(),
     agentTimelineCursor: new Map(),
     agentTimelineHasOlder: new Map(),
     agentTimelineOlderFetchInFlight: new Map(),
@@ -829,6 +885,7 @@ export const useSessionStore = create<SessionStore>()(
           const agentTimelineHasOlder = new Map<string, boolean>();
           const agentAuthoritativeHistoryApplied = new Map<string, boolean>();
           const agentHistorySyncGeneration = new Map<string, number>();
+          const agentTasks = new Map<string, TodoEntry[]>();
           if (timeline) {
             agentStreamTail.set(timeline.agentId, timeline.items);
             agentTimelineHasOlder.set(timeline.agentId, timeline.hasOlder);
@@ -837,6 +894,8 @@ export const useSessionStore = create<SessionStore>()(
             // 否则 after 增量路径会把"最后 50 条记录"（可能只覆盖一个回合的
             // 尾部，不含用户消息边界）当作完整历史，50 轮设置被跳过。
             agentHistorySyncGeneration.set(timeline.agentId, session.historySyncGeneration);
+            const tasks = latestTasksFromStream(timeline.items);
+            if (tasks.length > 0) agentTasks.set(timeline.agentId, tasks);
           }
           const agentLastActivity = new Map(prev.agentLastActivity);
           for (const agent of replica.agents.values()) {
@@ -857,6 +916,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentTimelineHasOlder,
                 agentAuthoritativeHistoryApplied,
                 agentHistorySyncGeneration,
+                agentTasks,
               },
             },
             agentLastActivity,
@@ -1176,7 +1236,10 @@ export const useSessionStore = create<SessionStore>()(
             }
           }
 
-          if (!changedTail && !changedHead) {
+          const agentTasks = updateAgentTasks(session.agentTasks, agentId, state.taskSnapshot);
+          const changedTasks = agentTasks !== session.agentTasks;
+
+          if (!changedTail && !changedHead && !changedTasks) {
             return prev;
           }
 
@@ -1188,6 +1251,7 @@ export const useSessionStore = create<SessionStore>()(
                 ...session,
                 agentStreamTail: nextTail,
                 agentStreamHead: nextHead,
+                agentTasks,
               },
             },
           };

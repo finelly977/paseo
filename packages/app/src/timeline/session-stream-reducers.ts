@@ -2,7 +2,7 @@ import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
 import type { AgentLifecycleStatus } from "@getpaseo/protocol/agent-lifecycle";
 import type { Agent } from "@/stores/session-store";
 import { useSessionStore } from "@/stores/session-store";
-import type { AssistantMessageItem, StreamItem, UserMessageItem } from "@/types/stream";
+import type { AssistantMessageItem, StreamItem, TodoEntry, UserMessageItem } from "@/types/stream";
 import {
   applyStreamEvent,
   flushHeadToTail,
@@ -1064,6 +1064,7 @@ export interface ProcessAgentStreamEventOutput {
   cursorChanged: boolean;
   agent: AgentPatch | null;
   agentChanged: boolean;
+  taskSnapshot?: TodoEntry[];
   sideEffects: AgentStreamReducerSideEffect[];
 }
 
@@ -1269,6 +1270,9 @@ export function processAgentStreamEvent(
     cursorChanged: sequencing.cursorChanged,
     agent: agentPatch,
     agentChanged,
+    ...(sequencing.shouldApplyStreamEvent && event.type === "timeline" && event.item.type === "todo"
+      ? { taskSnapshot: event.item.items }
+      : {}),
     sideEffects: sequencing.sideEffects,
   };
 }
@@ -1285,6 +1289,7 @@ export function processAgentStreamEvents(
   let cursorChanged = false;
   let agentPatch: AgentPatch | null = null;
   let agentChanged = false;
+  let taskSnapshot: TodoEntry[] | undefined;
   const sideEffects: AgentStreamReducerSideEffect[] = [];
 
   for (const reducerEvent of input.events) {
@@ -1304,6 +1309,9 @@ export function processAgentStreamEvents(
     changedTail = changedTail || result.changedTail;
     changedHead = changedHead || result.changedHead;
     sideEffects.push(...result.sideEffects);
+    if (result.taskSnapshot !== undefined) {
+      taskSnapshot = result.taskSnapshot;
+    }
 
     if (result.cursorChanged) {
       cursor = result.cursor ?? undefined;
@@ -1326,6 +1334,7 @@ export function processAgentStreamEvents(
     cursorChanged,
     agent: agentPatch,
     agentChanged,
+    ...(taskSnapshot !== undefined ? { taskSnapshot } : {}),
     sideEffects,
   };
 }
@@ -1408,6 +1417,7 @@ export function createAgentStreamReducerQueue(
 interface StreamStatePatch {
   tail?: StreamItem[];
   head?: StreamItem[];
+  taskSnapshot?: TodoEntry[];
 }
 
 export interface CreateSessionAgentStreamReducerQueueInput {
@@ -1453,10 +1463,11 @@ export function createSessionAgentStreamReducerQueue(
       };
     },
     commit: (agentId, result, events) => {
-      if (result.changedTail || result.changedHead) {
+      if (result.changedTail || result.changedHead || result.taskSnapshot !== undefined) {
         setAgentStreamState(serverId, agentId, {
           ...(result.changedTail ? { tail: result.tail } : {}),
           ...(result.changedHead ? { head: result.head } : {}),
+          ...(result.taskSnapshot !== undefined ? { taskSnapshot: result.taskSnapshot } : {}),
         });
       }
 

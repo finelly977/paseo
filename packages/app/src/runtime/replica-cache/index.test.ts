@@ -274,7 +274,7 @@ describe("ReplicaCache", () => {
       version: number;
       hosts: Array<{ timeline: Record<string, unknown> | null }>;
     };
-    expect(persisted.version).toBe(5);
+    expect(persisted.version).toBe(6);
     expect(Object.keys(persisted.hosts[0]?.timeline ?? {}).sort()).toEqual([
       "agentId",
       "cursor",
@@ -380,7 +380,7 @@ describe("ReplicaCache", () => {
 
     expect(useSessionStore.getState().sessions[SERVER_ID]).toBeUndefined();
     expect(JSON.parse(storage.values.get("@paseo:replica-cache") ?? "null")).toEqual({
-      version: 5,
+      version: 6,
       hosts: [],
     });
   });

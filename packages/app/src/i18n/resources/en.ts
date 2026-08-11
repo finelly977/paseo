@@ -321,6 +321,15 @@ export const en = {
     todo: {
       title: "Tasks",
       empty: "No tasks yet.",
+      tasksProgress: "{{completed}}/{{total}} tasks",
+      tasksProgressCurrent: "{{completed}}/{{total}} tasks · {{task}}",
+      activity: {
+        created: "Created {{count}} tasks",
+        added: "Added",
+        started: "Started",
+        completed: "Completed",
+        reopened: "Reopened",
+      },
     },
     compaction: {
       loading: "Compacting...",

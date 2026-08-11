@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
-import type { StreamItem } from "@/types/stream";
+import type { StreamItem, TodoEntry } from "@/types/stream";
 import {
   DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
   DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
@@ -63,6 +63,25 @@ function conversationItems(prefix: string, count: number): StreamItem[] {
     },
   ]).flat();
 }
+
+describe("智能体任务状态", () => {
+  it("接收实时任务快照并在任务清空后移除状态", () => {
+    initializeTestSession();
+    const tasks: TodoEntry[] = [
+      { id: "task-1", text: "检查变更", status: "in_progress", completed: false },
+    ];
+    const store = useSessionStore.getState();
+    store.setAgentStreamState("test-server", "agent-1", { taskSnapshot: tasks });
+    expect(useSessionStore.getState().sessions["test-server"]?.agentTasks.get("agent-1")).toEqual(
+      tasks,
+    );
+
+    store.setAgentStreamState("test-server", "agent-1", { taskSnapshot: [] });
+    expect(useSessionStore.getState().sessions["test-server"]?.agentTasks.has("agent-1")).toBe(
+      false,
+    );
+  });
+});
 
 describe("对话历史内存预算", () => {
   it("优先保留当前会话并让被裁剪的旧会话下次重新加载", () => {

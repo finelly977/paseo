@@ -1,9 +1,9 @@
 import type { Options as ClaudeAgentOptions } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
+import type { AgentProviderNotice, AgentTaskItem } from "@getpaseo/protocol/agent-types";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
 import type { PaseoToolCatalog } from "./tools/types.js";
 
-export type { AgentProviderNotice };
+export type { AgentProviderNotice, AgentTaskItem };
 
 export type AgentProvider = string;
 
@@ -384,7 +384,7 @@ export type AgentTimelineItem =
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem
-  | { type: "todo"; items: { text: string; completed: boolean }[] }
+  | { type: "todo"; items: AgentTaskItem[] }
   | { type: "error"; message: string }
   | CompactionTimelineItem;
 
