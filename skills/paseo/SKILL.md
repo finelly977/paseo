@@ -37,7 +37,7 @@ paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 
 **`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }`.
 
-Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
+Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. Agent profiles are the preferred source for these values. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
 
 Agent-scoped creation always creates your subagent. Omit `workspaceId` to use your current workspace; pass a workspace returned by `create_workspace` for isolated delegation. Placement never changes parentage.
 
@@ -53,7 +53,20 @@ Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false`
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
-## Provider discovery
+## Agent profiles and provider discovery
+
+**`list_profiles`** — named launch bundles configured by the human. Before choosing how to launch a delegated agent, call this tool and read every profile's `notes`. Pick a named profile the user requested, or the profile whose notes best match the work.
+
+There is no `profile` parameter on `create_agent`. Materialize the selected profile into the call:
+
+- combine `provider` and `model` as the `provider/model` value for `create_agent.provider`
+- copy `modeId` to `settings.modeId`
+- copy `thinkingOptionId` to `settings.thinkingOptionId`
+- copy `featureValues` to `settings.features`
+
+Omit absent values. Do not remember a selected profile or infer drift later; a profile is only launch configuration.
+
+If no profile fits, or no profiles are configured, use the provider discovery tools below rather than guessing. Tell the user when you fall back because no configured profile fits.
 
 **`list_providers`** — compact provider availability and modes.
 
@@ -131,32 +144,4 @@ paseo heartbeat create --cron "*/15 * * * *" "check the build"
 
 Discover with `paseo --help` and `paseo <cmd> --help`.
 
-**If `paseo` isn't on PATH but the desktop app is installed**, the bundled CLI is at:
-
-- macOS: `/Applications/Paseo.app/Contents/Resources/bin/paseo`
-- Linux: `<install-dir>/resources/bin/paseo`
-- Windows: `C:\Program Files\Paseo\resources\bin\paseo.cmd`
-
-The desktop app's first-run hook (`installCli`) symlinks this to `~/.local/bin/paseo` (macOS/Linux) or drops a `.cmd` trampoline (Windows) and adds `~/.local/bin` to PATH via shell rc files. If that didn't take, offer to symlink it — don't do it silently.
-
-## Ops and debugging
-
-Daemon-client architecture: the daemon owns agent lifecycle, state, and the WebSocket API. Tools, CLI, mobile, and desktop apps are all clients.
-
-|                | Default                                                         |
-| -------------- | --------------------------------------------------------------- |
-| Listen address | `127.0.0.1:6767` (override `PASEO_LISTEN`)                      |
-| Home           | `~/.paseo` (override `PASEO_HOME`)                              |
-| Daemon log     | `$PASEO_HOME/daemon.log`                                        |
-| Agent state    | `$PASEO_HOME/agents/<id>.json`                                  |
-| Worktrees      | `$PASEO_HOME/worktrees/` (or `worktrees.root` in `config.json`) |
-| PID file       | `$PASEO_HOME/paseo.pid`                                         |
-| Health         | `GET http://127.0.0.1:6767/api/health`                          |
-
-Debug order:
-
-1. `tail -n 200 ~/.paseo/daemon.log`.
-2. `paseo daemon status` for liveness.
-3. `curl -s localhost:6767/api/health` if the CLI itself is suspect.
-
-**Never restart the daemon without explicit user approval** — it kills every running agent, including, often, the one asking.
+For product questions, setup, logs, version problems, or troubleshooting, use the **paseo-help** skill.
