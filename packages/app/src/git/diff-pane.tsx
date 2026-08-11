@@ -56,6 +56,8 @@ import { SvgXml } from "react-native-svg";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
 import { CommitsSection } from "@/git/commits-section/commits-section";
+import { CommitReviewPane } from "@/git/commit-review-pane";
+import { useGitAi } from "@/git/use-git-ai";
 import { DiffScroll } from "@/components/diff-scroll";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
@@ -124,6 +126,8 @@ import {
   type InlineReviewActions,
 } from "@/review";
 import type { GitAction, GitActions } from "@/git/policy";
+import type { PendingPermission } from "@/types/shared";
+import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -2383,6 +2387,10 @@ function resolveActionHandler(action: GitAction | undefined): (() => void) | und
   return undefined;
 }
 
+function enabledGitAiAction<T>(supported: boolean, action: T): T | undefined {
+  return supported ? action : undefined;
+}
+
 function useDiffTabNavigation({
   serverId,
   workspaceId,
@@ -2530,6 +2538,7 @@ interface ScmPanelHeaderProps {
   workspaceId?: string | null;
   changes: CheckoutScmChanges | null;
   onCommit: (message: string, addAll: boolean) => Promise<boolean>;
+  onGenerateCommitMessage?: () => Promise<string>;
   onRefresh: () => void;
 }
 
@@ -2551,6 +2560,7 @@ function ScmPanelHeader({
   totalChangeCount,
   workspaceId,
   onCommit,
+  onGenerateCommitMessage,
   onRefresh,
 }: ScmPanelHeaderProps) {
   const { t } = useTranslation();
@@ -2607,6 +2617,7 @@ function ScmPanelHeader({
           status={commitStatus}
           gitStatus={status}
           onCommit={onCommit}
+          onGenerateMessage={onGenerateCommitMessage}
           onSync={syncHandler}
           onPublish={publishHandler}
         />
@@ -2615,10 +2626,20 @@ function ScmPanelHeader({
   );
 }
 
-export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
+const EMPTY_PENDING_PERMISSIONS = new Map<string, PendingPermission>();
+
+export function GitDiffPane({ serverId, workspaceId, cwd, onOpenFile }: GitDiffPaneProps) {
   const { t } = useTranslation();
   const toast = useToast();
   const isCompact = useIsCompactFormFactor();
+  const {
+    supported: gitAiSupported,
+    review,
+    generateCommitMessage,
+    startReview,
+    closeReview,
+    toggleReviewCollapsed,
+  } = useGitAi({ serverId, workspaceId, cwd });
   const {
     status,
     isLoading: isStatusLoading,
@@ -2760,6 +2781,43 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
     (path: string) => handleOpenChanges(path),
     [handleOpenChanges],
   );
+  const handleReviewCommit = useCallback(
+    (sha: string) => {
+      void startReview(sha).catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : t("workspace.git.ai.review.startFailed"),
+        );
+      });
+    },
+    [startReview, t, toast],
+  );
+  const handleOpenReviewFile = useCallback(
+    (request: WorkspaceFileOpenRequest) => {
+      if (onOpenFile) {
+        onOpenFile(request.location.path);
+        return;
+      }
+      handleOpenChanges(request.location.path);
+    },
+    [handleOpenChanges, onOpenFile],
+  );
+  const allPendingPermissions = useSessionStore(
+    (state) => state.sessions[serverId]?.pendingPermissions,
+  );
+  const reviewPendingPermissions = useMemo(() => {
+    if (!review?.agent || !allPendingPermissions) {
+      return EMPTY_PENDING_PERMISSIONS;
+    }
+    const filtered = new Map<string, PendingPermission>();
+    for (const [key, permission] of allPendingPermissions) {
+      if (permission.agentId === review.agent.id) {
+        filtered.set(key, permission);
+      }
+    }
+    return filtered.size > 0 ? filtered : EMPTY_PENDING_PERMISSIONS;
+  }, [allPendingPermissions, review?.agent]);
+  const generateCommitMessageAction = enabledGitAiAction(gitAiSupported, generateCommitMessage);
+  const reviewCommitAction = enabledGitAiAction(gitAiSupported, handleReviewCommit);
 
   const gitActionsIcons = useMemo(
     () => ({
@@ -2817,6 +2875,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
   return (
     <View style={styles.container}>
       <ScmPanelHeader
+        key={`${serverId}:${workspaceId ?? ""}:${cwd}`}
         branchLabel={branchLabel}
         changes={changes}
         commitStatus={commitStatus}
@@ -2834,6 +2893,7 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
         totalChangeCount={totalChangeCount}
         workspaceId={workspaceId}
         onCommit={handleCommit}
+        onGenerateCommitMessage={generateCommitMessageAction}
         onRefresh={handleRefresh}
       />
 
@@ -2876,6 +2936,17 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
           remoteUrl={status.remoteUrl ?? null}
           forge={forge}
           onCommitPress={handleCommitPress}
+          onReviewCommit={reviewCommitAction}
+        />
+      ) : null}
+      {review ? (
+        <CommitReviewPane
+          review={review}
+          serverId={serverId}
+          pendingPermissions={reviewPendingPermissions}
+          onToggleCollapsed={toggleReviewCollapsed}
+          onClose={closeReview}
+          onOpenWorkspaceFile={handleOpenReviewFile}
         />
       ) : null}
     </View>

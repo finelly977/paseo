@@ -104,6 +104,8 @@ import type {
   PaseoConfigRevision,
   WorkspaceCreateRequest,
   WorkspaceRecoveryState,
+  GitAiStartCommitReviewResponse,
+  GitAiCloseCommitReviewResponse,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -3828,6 +3830,57 @@ export class DaemonClient {
       throw new Error(payload.error.message);
     }
     return { file: payload.file };
+  }
+
+  async generateGitCommitMessage(cwd: string): Promise<string> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"git.ai.generate_commit_message.response">({
+        message: {
+          type: "git.ai.generate_commit_message.request",
+          cwd,
+        },
+        timeout: 300_000,
+      });
+    if (!payload.success || !payload.message) {
+      throw new Error(payload.error ?? "生成 Git 提交说明失败");
+    }
+    return payload.message;
+  }
+
+  async startGitCommitReview(input: {
+    cwd: string;
+    sha: string;
+    workspaceId?: string;
+  }): Promise<GitAiStartCommitReviewResponse["payload"]> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"git.ai.start_commit_review.response">({
+        message: {
+          type: "git.ai.start_commit_review.request",
+          cwd: input.cwd,
+          sha: input.sha,
+          ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        },
+        timeout: 120_000,
+      });
+    if (!payload.success || !payload.taskId || !payload.agent) {
+      throw new Error(payload.error ?? "启动 Git 提交审查失败");
+    }
+    return payload;
+  }
+
+  async closeGitCommitReview(taskId: string): Promise<GitAiCloseCommitReviewResponse["payload"]> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"git.ai.close_commit_review.response">({
+        message: {
+          type: "git.ai.close_commit_review.request",
+          taskId,
+        },
+        timeout: 120_000,
+      });
+    if (!payload.success) {
+      throw new Error(payload.error ?? "关闭 Git 提交审查失败");
+    }
+    return payload;
   }
 
   async checkoutPrCreate(

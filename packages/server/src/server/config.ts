@@ -521,6 +521,7 @@ export function loadConfig(
     voiceLlmModel: voiceLlm.model,
     agentProviderSettings: extractAgentProviderSettings(providerOverrides),
     metadataGeneration: persisted.agents?.metadataGeneration,
+    gitAi: persisted.agents?.gitAi,
     providerOverrides,
     log: resolveLogConfigFromEnv(env, persisted),
   };

@@ -173,6 +173,53 @@ describe("DaemonConfigStore", () => {
     expect(persisted.agents?.providers?.claude).toEqual({ enabled: false });
   });
 
+  test("移除智能体时清空引用它的 Git AI 配置", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+
+    const store = new DaemonConfigStore(
+      paseoHome,
+      {
+        mcp: { injectIntoAgents: false },
+        browserTools: { enabled: false },
+        providers: { gemini: {}, claude: {} },
+        metadataGeneration: { providers: [] },
+        gitAi: {
+          commitMessage: {
+            provider: "gemini",
+            model: "gemini-pro",
+            modeId: "plan",
+            thinkingOptionId: "high",
+            prompt: "使用简体中文",
+          },
+          commitReview: {
+            provider: "claude",
+            model: "sonnet",
+            modeId: null,
+            thinkingOptionId: "medium",
+            prompt: "检查回归",
+          },
+        },
+        autoArchiveAfterMerge: false,
+        enableTerminalAgentHooks: false,
+        appendSystemPrompt: "",
+      },
+      undefined,
+    );
+
+    const next = store.patch({ removeProviders: ["gemini"] });
+
+    expect(next.gitAi?.commitMessage).toEqual({
+      provider: null,
+      model: null,
+      modeId: null,
+      thinkingOptionId: null,
+      prompt: "使用简体中文",
+    });
+    expect(next.gitAi?.commitReview.provider).toBe("claude");
+    expect(loadPersistedConfig(paseoHome).agents?.gitAi).toEqual(next.gitAi);
+  });
+
   test("patch removes the providers object when the last provider is deleted", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);

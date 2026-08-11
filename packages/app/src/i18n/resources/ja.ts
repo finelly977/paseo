@@ -664,6 +664,34 @@ export const ja: TranslationResources = {
       },
     },
     git: {
+      ai: {
+        commitMessage: {
+          generate: "生成提交说明",
+          failed: "生成提交说明失败",
+        },
+        review: {
+          action: "使用智能体审查提交",
+          title: "提交审查 · {{sha}}",
+          expand: "展开提交审查",
+          collapse: "收起提交审查",
+          close: "关闭并清理提交审查",
+          starting: "正在启动审查智能体...",
+          startFailed: "启动提交审查失败",
+          status: {
+            starting: "正在启动",
+            running: "审查中",
+            completed: "已完成",
+            failed: "失败",
+            closing: "正在关闭",
+          },
+        },
+        errors: {
+          hostDisconnected: "主机未连接",
+          updateHost: "请更新主机后使用 Git 智能体功能",
+          operationInProgress: "另一个 Git 智能体操作仍在处理中",
+          invalidReviewResponse: "主机返回了无效的提交审查结果",
+        },
+      },
       panel: {
         sourceControl: "Git",
         repository: "リポジトリ",
@@ -2144,6 +2172,38 @@ export const ja: TranslationResources = {
         save: "保存",
         emptyState:
           "プロファイルがまだありません。特定のコマンドでターミナルを起動するために追加してください。",
+      },
+      gitAi: {
+        title: "Git 智能体",
+        unconfigured: "尚未配置",
+        defaultOption: "跟随智能体默认值",
+        saving: "正在保存...",
+        fields: {
+          agentModel: "智能体与模型",
+          mode: "模式",
+          thinking: "思考强度",
+          prompt: "任务提示词",
+        },
+        commitMessage: {
+          title: "生成提交说明",
+          editTitle: "配置提交说明生成",
+          promptPlaceholder: "补充提交说明格式、语言或内容规则",
+        },
+        commitReview: {
+          title: "审查提交",
+          editTitle: "配置提交审查",
+          promptPlaceholder: "补充审查重点、严重程度或输出格式规则",
+        },
+        unsupported: {
+          title: "主机版本不支持",
+          description: "请更新主机后配置 Git 智能体功能",
+        },
+        errors: {
+          providerRequired: "请选择智能体和模型",
+          saveFailed: "保存 Git 智能体设置失败",
+          editorClosed: "Git 智能体设置编辑器已关闭",
+          hostDisconnected: "主机未连接，无法保存 Git 智能体设置",
+        },
       },
       daemon: {
         rename: {

@@ -16,9 +16,11 @@ import {
   ChevronRight,
   CloudUpload,
   GitBranch,
+  Sparkles,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { CheckoutGitActionStatus } from "@/git/actions-store";
 import type { GitActions } from "@/git/policy";
 import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
@@ -37,6 +39,7 @@ const ThemedCheck = withUnistyles(Check);
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedChevronRight = withUnistyles(ChevronRight);
 const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedSparkles = withUnistyles(Sparkles);
 
 export interface SourceControlRepositoryHeaderProps {
   repositoryName: string;
@@ -148,6 +151,7 @@ export interface SourceControlCommitComposerProps {
   onCommit: (message: string, addAll: boolean) => Promise<boolean>;
   onSync?: (() => void) | undefined;
   onPublish?: (() => void) | undefined;
+  onGenerateMessage?: (() => Promise<string>) | undefined;
 }
 
 type CommitButtonKind = "commit" | "sync" | "publish";
@@ -190,6 +194,152 @@ function commitButtonPressableStyle({
   ];
 }
 
+function resolveCommitCanPress(input: {
+  isPending: boolean;
+  isGenerating: boolean;
+  buttonKind: CommitButtonKind;
+  hasAhead: boolean;
+  hasBehind: boolean;
+  hasChanges: boolean;
+  hasMessage: boolean;
+  canSync: boolean;
+  canPublish: boolean;
+}): boolean {
+  if (input.isPending || input.isGenerating) {
+    return false;
+  }
+  if (input.buttonKind === "sync") {
+    return input.canSync && (input.hasAhead || input.hasBehind);
+  }
+  if (input.buttonKind === "publish") {
+    return input.canPublish;
+  }
+  return input.hasChanges && input.hasMessage;
+}
+
+function resolveCommitButtonLabel(input: {
+  isPending: boolean;
+  buttonKind: CommitButtonKind;
+  t: TFunction;
+}): string {
+  if (input.isPending) {
+    return input.t("workspace.git.panel.committing");
+  }
+  if (input.buttonKind === "sync") {
+    return input.t("workspace.git.panel.syncChanges");
+  }
+  if (input.buttonKind === "publish") {
+    return input.t("workspace.git.panel.publishBranch");
+  }
+  return input.t("workspace.git.panel.commit");
+}
+
+function CommitButtonIcon({
+  isPending,
+  buttonKind,
+}: {
+  isPending: boolean;
+  buttonKind: CommitButtonKind;
+}) {
+  if (isPending) {
+    return <ThemedActivityIndicator size={12} uniProps={buttonIconColorMapping} />;
+  }
+  if (buttonKind === "sync") {
+    return <ThemedArrowDownUp size={14} uniProps={buttonIconColorMapping} />;
+  }
+  if (buttonKind === "publish") {
+    return <ThemedCloudUpload size={14} uniProps={buttonIconColorMapping} />;
+  }
+  return <ThemedCheck size={14} uniProps={buttonIconColorMapping} />;
+}
+
+function CommitMessageAiButton({
+  available,
+  canGenerate,
+  isGenerating,
+  label,
+  onPress,
+}: {
+  available: boolean;
+  canGenerate: boolean;
+  isGenerating: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  const buttonStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.commitAiButton,
+      !canGenerate && styles.commitAiButtonDisabled,
+      canGenerate && (Boolean(hovered) || pressed) && styles.commitAiButtonActive,
+    ],
+    [canGenerate],
+  );
+  if (!available) {
+    return null;
+  }
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={!canGenerate}
+      hitSlop={4}
+      onPress={onPress}
+      style={buttonStyle}
+      testID="source-control-generate-commit-message"
+    >
+      {isGenerating ? (
+        <ThemedActivityIndicator size={12} uniProps={mutedIconColorMapping} />
+      ) : (
+        <ThemedSparkles size={14} uniProps={mutedIconColorMapping} />
+      )}
+    </Pressable>
+  );
+}
+
+function useCommitMessageGeneration({
+  onGenerateMessage,
+  hasChanges,
+  disabled,
+  failedMessage,
+  onGenerated,
+}: {
+  onGenerateMessage: (() => Promise<string>) | undefined;
+  hasChanges: boolean;
+  disabled: boolean;
+  failedMessage: string;
+  onGenerated: (message: string) => void;
+}) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canGenerate = Boolean(onGenerateMessage && hasChanges && !disabled && !isGenerating);
+  const clearError = useCallback(() => setError(null), []);
+  const generate = useCallback(() => {
+    if (!onGenerateMessage || !hasChanges || disabled || isGenerating) {
+      return;
+    }
+    setIsGenerating(true);
+    setError(null);
+    void onGenerateMessage()
+      .then((generated) => {
+        onGenerated(generated);
+        return generated;
+      })
+      .catch((generationError) => {
+        console.error("[Git AI] 生成提交说明失败", generationError);
+        setError(generationError instanceof Error ? generationError.message : failedMessage);
+      })
+      .finally(() => setIsGenerating(false));
+  }, [disabled, failedMessage, hasChanges, isGenerating, onGenerateMessage, onGenerated]);
+  return {
+    available: onGenerateMessage !== undefined,
+    canGenerate,
+    clearError,
+    error,
+    generate,
+    isGenerating,
+  };
+}
+
 export function SourceControlCommitComposer({
   branchName,
   hasChanges,
@@ -200,6 +350,7 @@ export function SourceControlCommitComposer({
   onCommit,
   onSync,
   onPublish,
+  onGenerateMessage,
 }: SourceControlCommitComposerProps) {
   const { t } = useTranslation();
   const [message, setMessage] = useState("");
@@ -209,6 +360,19 @@ export function SourceControlCommitComposer({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [historyDraft, setHistoryDraft] = useState("");
   const isPending = status === "pending";
+  const handleGeneratedMessage = useCallback((generated: string) => {
+    setMessage(generated);
+    setHistoryIndex(null);
+    setHistoryDraft("");
+  }, []);
+  const generation = useCommitMessageGeneration({
+    onGenerateMessage,
+    hasChanges,
+    disabled: isPending,
+    failedMessage: t("workspace.git.ai.commitMessage.failed"),
+    onGenerated: handleGeneratedMessage,
+  });
+  const clearGenerationError = generation.clearError;
   const isGit = gitStatus?.isGit === true;
   const aheadOfOrigin = isGit ? (gitStatus.aheadOfOrigin ?? 0) : 0;
   const behindOfOrigin = isGit ? (gitStatus.behindOfOrigin ?? 0) : 0;
@@ -218,22 +382,21 @@ export function SourceControlCommitComposer({
   const hasMessage = message.trim().length > 0;
   const buttonKind = resolveButtonKind({ hasChanges, hasRemote, hasAhead, hasBehind, branchName });
 
-  const canPress = useMemo(() => {
-    if (isPending) {
-      return false;
-    }
-    if (buttonKind === "sync") {
-      return onSync !== undefined && (hasAhead || hasBehind);
-    }
-    if (buttonKind === "publish") {
-      return onPublish !== undefined;
-    }
-    return hasChanges && hasMessage;
-  }, [buttonKind, hasAhead, hasBehind, hasChanges, hasMessage, isPending, onPublish, onSync]);
+  const canPress = resolveCommitCanPress({
+    isPending,
+    isGenerating: generation.isGenerating,
+    buttonKind,
+    hasAhead,
+    hasBehind,
+    hasChanges,
+    hasMessage,
+    canSync: onSync !== undefined,
+    canPublish: onPublish !== undefined,
+  });
 
   const submitCommit = useCallback(
     (addAll: boolean) => {
-      if (isPending || !hasChanges || message.trim().length === 0) {
+      if (isPending || generation.isGenerating || !hasChanges || message.trim().length === 0) {
         return;
       }
       const submittedMessage = message.trim();
@@ -256,7 +419,7 @@ export function SourceControlCommitComposer({
           console.error("提交操作失败且未被上层处理", error);
         });
     },
-    [hasChanges, history, isPending, message, onCommit],
+    [generation.isGenerating, hasChanges, history, isPending, message, onCommit],
   );
   const submit = useCallback(() => {
     if (!canPress) {
@@ -348,22 +511,14 @@ export function SourceControlCommitComposer({
   const handleBlur = useCallback(() => {
     setFocused(false);
   }, []);
-
-  let buttonIcon: ReactNode;
-  let buttonLabel: string;
-  if (isPending) {
-    buttonIcon = <ThemedActivityIndicator size={12} uniProps={buttonIconColorMapping} />;
-    buttonLabel = t("workspace.git.panel.committing");
-  } else if (buttonKind === "sync") {
-    buttonIcon = <ThemedArrowDownUp size={14} uniProps={buttonIconColorMapping} />;
-    buttonLabel = t("workspace.git.panel.syncChanges");
-  } else if (buttonKind === "publish") {
-    buttonIcon = <ThemedCloudUpload size={14} uniProps={buttonIconColorMapping} />;
-    buttonLabel = t("workspace.git.panel.publishBranch");
-  } else {
-    buttonIcon = <ThemedCheck size={14} uniProps={buttonIconColorMapping} />;
-    buttonLabel = t("workspace.git.panel.commit");
-  }
+  const handleMessageChange = useCallback(
+    (value: string) => {
+      setMessage(value);
+      clearGenerationError();
+    },
+    [clearGenerationError],
+  );
+  const buttonLabel = resolveCommitButtonLabel({ isPending, buttonKind, t });
 
   return (
     <View style={styles.commitComposer} testID="source-control-commit-composer">
@@ -376,12 +531,12 @@ export function SourceControlCommitComposer({
       >
         <TextInput
           value={message}
-          onChangeText={setMessage}
+          onChangeText={handleMessageChange}
           multiline
           scrollEnabled={inputHeight >= 100}
           onContentSizeChange={handleContentSizeChange}
           onKeyPress={handleInputKeyPress}
-          editable={!isPending}
+          editable={!isPending && !generation.isGenerating}
           placeholder={commitPlaceholder}
           placeholderTextColor={styles.commitInputPlaceholder.color}
           returnKeyType="default"
@@ -391,7 +546,19 @@ export function SourceControlCommitComposer({
           onFocus={handleFocus}
           onBlur={handleBlur}
         />
+        <CommitMessageAiButton
+          available={generation.available}
+          canGenerate={generation.canGenerate}
+          isGenerating={generation.isGenerating}
+          label={t("workspace.git.ai.commitMessage.generate")}
+          onPress={generation.generate}
+        />
       </View>
+      {generation.error ? (
+        <Text style={styles.commitGenerationError} testID="source-control-generation-error">
+          {generation.error}
+        </Text>
+      ) : null}
       <View style={styles.commitButtonRow}>
         <View style={[styles.commitSplitButton, !canPress && styles.commitSplitButtonDisabled]}>
           <Pressable
@@ -402,7 +569,7 @@ export function SourceControlCommitComposer({
             onPress={submit}
             style={commitButtonStyle}
           >
-            {buttonIcon}
+            <CommitButtonIcon isPending={isPending} buttonKind={buttonKind} />
             <Text style={styles.commitButtonText} numberOfLines={1}>
               {buttonLabel}
             </Text>
@@ -418,7 +585,9 @@ export function SourceControlCommitComposer({
               <DropdownMenuTrigger
                 accessibilityRole="button"
                 accessibilityLabel={t("workspace.git.panel.commitMoreActions")}
-                disabled={isPending || !hasMessage || totalChangeCount === 0}
+                disabled={
+                  isPending || generation.isGenerating || !hasMessage || totalChangeCount === 0
+                }
                 style={commitCaretStyle}
                 testID="source-control-commit-caret"
               >
@@ -572,6 +741,27 @@ const styles = StyleSheet.create((theme) => ({
   },
   commitInputPlaceholder: {
     color: theme.colors.scmInputPlaceholder,
+  },
+  commitAiButton: {
+    width: 22,
+    height: 22,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.base,
+  },
+  commitAiButtonActive: {
+    backgroundColor: theme.colors.surface2,
+  },
+  commitAiButtonDisabled: {
+    opacity: theme.opacity[50],
+  },
+  commitGenerationError: {
+    marginHorizontal: 11,
+    marginTop: 3,
+    color: theme.colors.statusDanger,
+    fontSize: 11,
+    lineHeight: 15,
   },
   commitButtonRow: {
     height: 36,

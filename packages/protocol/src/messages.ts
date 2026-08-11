@@ -122,6 +122,58 @@ const MutableMetadataGenerationConfigSchema = z
   })
   .passthrough();
 
+export const DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT = [
+  "使用简体中文生成专业、简洁的 Git 提交说明。",
+  "第一行使用命令式短句概括最重要的实际改动，优先以“新增、修复、优化、重构、调整、移除”等动词开头；不要添加类型前缀、句号、引号或 Markdown，建议不超过 50 个汉字。",
+  "只有在单行无法准确概括时，才在空一行后添加简短正文；正文使用“- ”列出关键变化及必要原因，不要逐文件复述，不要描述分析过程，也不要声称完成了差异中无法确认的测试或效果。",
+].join("\n");
+
+export const DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT = [
+  "以资深代码审查者的标准审查该提交，只报告由该提交引入、能够从代码和上下文中验证的实质问题。",
+  "优先检查行为正确性、数据损坏、安全风险、资源释放、并发竞态、性能退化、跨平台兼容和必要测试缺口；忽略纯格式、命名和个人风格偏好。",
+  "每个问题按严重程度排序，明确给出文件与代码位置、触发条件、实际影响和可执行的修复建议；不要虚构问题。若没有发现需要修改的问题，请直接明确说明。",
+].join("\n");
+
+const GitAiTaskProfileBaseSchema = z
+  .object({
+    provider: z.string().min(1).nullable().default(null),
+    model: z.string().min(1).nullable().default(null),
+    modeId: z.string().min(1).nullable().default(null),
+    thinkingOptionId: z.string().min(1).nullable().default(null),
+  })
+  .passthrough();
+
+export const GitAiTaskProfileSchema = GitAiTaskProfileBaseSchema.extend({
+  prompt: z.string().default(""),
+});
+
+const GitAiCommitMessageProfileSchema = GitAiTaskProfileBaseSchema.extend({
+  prompt: z.string().default(DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT),
+});
+
+const GitAiCommitReviewProfileSchema = GitAiTaskProfileBaseSchema.extend({
+  prompt: z.string().default(DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT),
+});
+
+export const GitAiConfigSchema = z
+  .object({
+    commitMessage: GitAiCommitMessageProfileSchema.default({
+      provider: null,
+      model: null,
+      modeId: null,
+      thinkingOptionId: null,
+      prompt: DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT,
+    }),
+    commitReview: GitAiCommitReviewProfileSchema.default({
+      provider: null,
+      model: null,
+      modeId: null,
+      thinkingOptionId: null,
+      prompt: DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
+    }),
+  })
+  .passthrough();
+
 export const TerminalProfileSchema = z
   .object({
     id: z.string(),
@@ -149,6 +201,7 @@ export const MutableDaemonConfigSchema = z
     browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
     providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
     metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
+    gitAi: GitAiConfigSchema.optional(),
     autoArchiveAfterMerge: z.boolean().default(false),
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
@@ -165,6 +218,14 @@ export const MutableDaemonConfigPatchSchema = z
       .optional(),
     removeProviders: z.array(z.string().min(1)).optional(),
     metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
+    gitAi: z
+      .object({
+        commitMessage: GitAiTaskProfileSchema.partial().optional(),
+        commitReview: GitAiTaskProfileSchema.partial().optional(),
+      })
+      .partial()
+      .passthrough()
+      .optional(),
     autoArchiveAfterMerge: z.boolean().optional(),
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
@@ -175,6 +236,8 @@ export const MutableDaemonConfigPatchSchema = z
 
 export type MutableDaemonConfig = z.infer<typeof MutableDaemonConfigSchema>;
 export type MutableDaemonConfigPatch = z.infer<typeof MutableDaemonConfigPatchSchema>;
+export type GitAiTaskProfile = z.infer<typeof GitAiTaskProfileSchema>;
+export type GitAiConfig = z.infer<typeof GitAiConfigSchema>;
 import type {
   AgentCapabilityFlags,
   AgentModelDefinition,
@@ -1857,6 +1920,28 @@ export const CheckoutCommitFileDiffRequestSchema = z.object({
   requestId: z.string(),
 });
 
+const GitCommitShaSchema = z.string().regex(/^[0-9a-fA-F]{7,64}$/);
+
+export const GitAiGenerateCommitMessageRequestSchema = z.object({
+  type: z.literal("git.ai.generate_commit_message.request"),
+  cwd: z.string(),
+  requestId: z.string(),
+});
+
+export const GitAiStartCommitReviewRequestSchema = z.object({
+  type: z.literal("git.ai.start_commit_review.request"),
+  cwd: z.string(),
+  sha: GitCommitShaSchema,
+  workspaceId: z.string().optional(),
+  requestId: z.string(),
+});
+
+export const GitAiCloseCommitReviewRequestSchema = z.object({
+  type: z.literal("git.ai.close_commit_review.request"),
+  taskId: z.string().min(1),
+  requestId: z.string(),
+});
+
 const GitHubRepoSegmentSchema = z.string().regex(/^[A-Za-z0-9._-]+$/);
 
 const CheckoutCheckDetailsRequestPayloadSchema = z.object({
@@ -2623,6 +2708,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CheckoutGithubSetAutoMergeRequestSchema,
   CheckoutCommitsListRequestSchema,
   CheckoutCommitFileDiffRequestSchema,
+  GitAiGenerateCommitMessageRequestSchema,
+  GitAiStartCommitReviewRequestSchema,
+  GitAiCloseCommitReviewRequestSchema,
   CheckoutForgeGetCheckDetailsRequestSchema,
   CheckoutGithubGetCheckDetailsRequestSchema,
   CheckoutPrStatusRequestSchema,
@@ -2887,6 +2975,8 @@ export const ServerInfoStatusPayloadSchema = z
         checkoutFetch: z.boolean().optional(),
         // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除能力门控。
         checkoutScmOperations: z.boolean().optional(),
+        // COMPAT(gitAi)：v0.2.2 新增，2027-02-10 后移除能力门控。
+        gitAi: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -3293,6 +3383,62 @@ export const AgentStreamMessageSchema = z.object({
     // Present for timeline events. Maps 1:1 to canonical in-memory timeline rows.
     seq: z.number().int().nonnegative().optional(),
     epoch: z.string().optional(),
+  }),
+});
+
+export const GitAiGenerateCommitMessageResponseSchema = z.object({
+  type: z.literal("git.ai.generate_commit_message.response"),
+  payload: z.object({
+    cwd: z.string(),
+    success: z.boolean(),
+    message: z.string().nullable(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const GitAiStartCommitReviewResponseSchema = z.object({
+  type: z.literal("git.ai.start_commit_review.response"),
+  payload: z.object({
+    cwd: z.string(),
+    sha: GitCommitShaSchema,
+    success: z.boolean(),
+    taskId: z.string().nullable(),
+    agent: AgentSnapshotPayloadSchema.nullable(),
+    error: z.string().nullable(),
+    requestId: z.string(),
+  }),
+});
+
+export const GitAiCommitReviewStreamSchema = z.object({
+  type: z.literal("git.ai.commit_review.stream"),
+  payload: z.object({
+    taskId: z.string(),
+    agentId: z.string(),
+    event: AgentStreamEventPayloadSchema,
+    timestamp: z.string(),
+    seq: z.number().int().nonnegative().optional(),
+    epoch: z.string().optional(),
+  }),
+});
+
+export const GitAiCommitReviewStatusSchema = z.object({
+  type: z.literal("git.ai.commit_review.status"),
+  payload: z.object({
+    taskId: z.string(),
+    agentId: z.string(),
+    status: z.enum(["running", "completed", "failed"]),
+    error: z.string().nullable(),
+  }),
+});
+
+export const GitAiCloseCommitReviewResponseSchema = z.object({
+  type: z.literal("git.ai.close_commit_review.response"),
+  payload: z.object({
+    taskId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    requestId: z.string(),
   }),
 });
 
@@ -5379,6 +5525,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceSetupProgressMessageSchema,
   WorkspaceSetupStatusResponseMessageSchema,
   AgentStreamMessageSchema,
+  GitAiGenerateCommitMessageResponseSchema,
+  GitAiStartCommitReviewResponseSchema,
+  GitAiCommitReviewStreamSchema,
+  GitAiCommitReviewStatusSchema,
+  GitAiCloseCommitReviewResponseSchema,
   AgentStatusMessageSchema,
   FetchAgentsResponseMessageSchema,
   FetchAgentHistoryResponseMessageSchema,
@@ -5551,6 +5702,13 @@ export type WorkspaceSetupStatusResponseMessage = z.infer<
   typeof WorkspaceSetupStatusResponseMessageSchema
 >;
 export type AgentStreamMessage = z.infer<typeof AgentStreamMessageSchema>;
+export type GitAiGenerateCommitMessageResponse = z.infer<
+  typeof GitAiGenerateCommitMessageResponseSchema
+>;
+export type GitAiStartCommitReviewResponse = z.infer<typeof GitAiStartCommitReviewResponseSchema>;
+export type GitAiCommitReviewStream = z.infer<typeof GitAiCommitReviewStreamSchema>;
+export type GitAiCommitReviewStatus = z.infer<typeof GitAiCommitReviewStatusSchema>;
+export type GitAiCloseCommitReviewResponse = z.infer<typeof GitAiCloseCommitReviewResponseSchema>;
 export type AgentStatusMessage = z.infer<typeof AgentStatusMessageSchema>;
 export type ProjectCheckoutLitePayload = z.infer<typeof ProjectCheckoutLitePayloadSchema>;
 export type ProjectPlacementPayload = z.infer<typeof ProjectPlacementPayloadSchema>;
@@ -5776,6 +5934,11 @@ export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequ
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
+export type GitAiGenerateCommitMessageRequest = z.infer<
+  typeof GitAiGenerateCommitMessageRequestSchema
+>;
+export type GitAiStartCommitReviewRequest = z.infer<typeof GitAiStartCommitReviewRequestSchema>;
+export type GitAiCloseCommitReviewRequest = z.infer<typeof GitAiCloseCommitReviewRequestSchema>;
 export type CheckoutStatusRequest = z.infer<typeof CheckoutStatusRequestSchema>;
 export type CheckoutStatusResponse = z.infer<typeof CheckoutStatusResponseSchema>;
 export type CheckoutStatusUpdate = z.infer<typeof CheckoutStatusUpdateSchema>;

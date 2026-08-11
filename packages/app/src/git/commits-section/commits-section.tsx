@@ -55,6 +55,7 @@ interface CommitsSectionProps {
   remoteUrl: string | null;
   forge: string;
   onCommitPress: (sha: string, path?: string) => void;
+  onReviewCommit?: (sha: string) => void;
 }
 
 function CommitsSectionSkeleton() {
@@ -88,6 +89,7 @@ function CommitsSectionContent({
   listRef,
   onToggleExpanded,
   onCommitPress,
+  onReviewCommit,
 }: {
   query: Exclude<CheckoutCommitsQueryResult, { status: "unsupported" }>;
   viewModels: CommitGraphViewModel[];
@@ -99,6 +101,7 @@ function CommitsSectionContent({
   listRef: React.RefObject<FlatList<CommitGraphViewModel> | null>;
   onToggleExpanded: (sha: string) => void;
   onCommitPress: (sha: string, path?: string) => void;
+  onReviewCommit?: (sha: string) => void;
 }) {
   const { t } = useTranslation();
   const isFetchingNextPage = query.status === "loaded" && query.isFetchingNextPage;
@@ -114,9 +117,19 @@ function CommitsSectionContent({
         forge={forge}
         onToggleExpanded={onToggleExpanded}
         onOpenCommitDiff={onCommitPress}
+        onReviewCommit={onReviewCommit}
       />
     ),
-    [expandedSha, forge, now, onCommitPress, onToggleExpanded, remoteUrl, selectedSha],
+    [
+      expandedSha,
+      forge,
+      now,
+      onCommitPress,
+      onReviewCommit,
+      onToggleExpanded,
+      remoteUrl,
+      selectedSha,
+    ],
   );
   const renderFooter = useCallback(
     () =>
@@ -189,6 +202,7 @@ export function CommitsSection({
   remoteUrl,
   forge,
   onCommitPress,
+  onReviewCommit,
 }: CommitsSectionProps) {
   const { t } = useTranslation();
   const { height: viewportHeight } = useWindowDimensions();
@@ -406,6 +420,7 @@ export function CommitsSection({
               listRef={listRef}
               onToggleExpanded={handleToggleExpanded}
               onCommitPress={onCommitPress}
+              onReviewCommit={onReviewCommit}
             />
           </View>
         )}

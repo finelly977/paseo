@@ -1528,6 +1528,8 @@ export class VoiceAssistantWebSocketServer {
         checkoutFetch: true,
         // COMPAT(checkoutScmOperations): v0.2.2 新增，2027-02-04 后移除能力门控。
         checkoutScmOperations: true,
+        // COMPAT(gitAi)：v0.2.2 新增，2027-02-10 后移除能力门控。
+        gitAi: true,
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: true,
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.

@@ -100,6 +100,36 @@ function omitMetadataGenerationProvidersFromConfig<
   } as T;
 }
 
+function omitGitAiProvidersFromConfig(
+  config: MutableDaemonConfig,
+  providers: readonly string[],
+): MutableDaemonConfig {
+  if (providers.length === 0) {
+    return config;
+  }
+  if (!config.gitAi) {
+    return config;
+  }
+  const removedProviderIds = new Set(providers);
+  let changed = false;
+  const resetProfile = (profile: NonNullable<MutableDaemonConfig["gitAi"]>["commitMessage"]) => {
+    if (!profile.provider || !removedProviderIds.has(profile.provider)) {
+      return profile;
+    }
+    changed = true;
+    return {
+      ...profile,
+      provider: null,
+      model: null,
+      modeId: null,
+      thinkingOptionId: null,
+    };
+  };
+  const commitMessage = resetProfile(config.gitAi.commitMessage);
+  const commitReview = resetProfile(config.gitAi.commitReview);
+  return changed ? { ...config, gitAi: { ...config.gitAi, commitMessage, commitReview } } : config;
+}
+
 function omitProvidersFromOverrides(
   overrides: Record<string, ProviderOverride> | undefined,
   providers: readonly string[],
@@ -179,8 +209,11 @@ export class DaemonConfigStore {
     const removedProviders = Array.from(new Set(removeProviders));
     const merged = deepMerge(this.current, configPatch);
     const next = MutableDaemonConfigSchema.parse(
-      omitMetadataGenerationProvidersFromConfig(
-        omitProvidersFromConfig(merged, removedProviders),
+      omitGitAiProvidersFromConfig(
+        omitMetadataGenerationProvidersFromConfig(
+          omitProvidersFromConfig(merged, removedProviders),
+          removedProviders,
+        ),
         removedProviders,
       ),
     );
@@ -273,7 +306,10 @@ function mergeMutableConfigIntoPersistedConfig(params: {
     persistedProviderOverrides,
     mutable.providers,
   );
-  const persistedAgents = omitProvidersFromPersistedAgents(persisted.agents);
+  const persistedAgents = {
+    ...omitProvidersFromPersistedAgents(persisted.agents),
+    gitAi: mutable.gitAi,
+  } as PersistedConfig["agents"];
   const persistedMetadataGeneration = {
     providers: metadataGenerationProviders,
   };

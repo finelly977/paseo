@@ -53,6 +53,7 @@ interface CommitRowProps {
   forge: string;
   onToggleExpanded: (sha: string) => void;
   onOpenCommitDiff: (sha: string, path?: string) => void;
+  onReviewCommit?: (sha: string) => void;
 }
 
 const ThemedCloud = withUnistyles(Cloud);
@@ -431,6 +432,7 @@ export const CommitRow = memo(function CommitRow({
   forge,
   onToggleExpanded,
   onOpenCommitDiff,
+  onReviewCommit,
 }: CommitRowProps) {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
@@ -475,6 +477,9 @@ export const CommitRow = memo(function CommitRow({
     },
     [commit.sha, onOpenCommitDiff],
   );
+  const handleReviewCommit = useCallback(() => {
+    onReviewCommit?.(commit.sha);
+  }, [commit.sha, onReviewCommit]);
 
   return (
     <ContextMenu>
@@ -560,6 +565,14 @@ export const CommitRow = memo(function CommitRow({
         />
       ) : null}
       <ContextMenuContent side="left" align="start" minWidth={190}>
+        {onReviewCommit ? (
+          <ContextMenuItem
+            testID={`commit-review-${commit.shortSha}`}
+            onSelect={handleReviewCommit}
+          >
+            {t("workspace.git.ai.review.action")}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem
           testID={`commit-open-diff-${commit.shortSha}`}
           onSelect={handleOpenCommitDiff}

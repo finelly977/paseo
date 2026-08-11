@@ -146,6 +146,7 @@ import { wrapSpokenInput } from "./voice-config.js";
 import { isVoicePermissionAllowed } from "./voice-permission-policy.js";
 import { VoiceSession } from "./session/voice/voice-session.js";
 import { CheckoutSession } from "./session/checkout/checkout-session.js";
+import { GitAiSession } from "./session/git-ai-session.js";
 import {
   createWorkspaceGitObserverService,
   type WorkspaceGitObserverService,
@@ -649,6 +650,7 @@ export class Session {
   private readonly workspaceDirectory: WorkspaceDirectory;
   private readonly voiceSession: VoiceSession;
   private readonly checkoutSession: CheckoutSession;
+  private readonly gitAiSession: GitAiSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
@@ -899,6 +901,13 @@ export class Session {
         })
       : null;
     this.daemonConfigStore = daemonConfigStore;
+    this.gitAiSession = new GitAiSession({
+      host: { emit: (message) => this.emit(message) },
+      agentManager: this.agentManager,
+      workspaceGitService: this.workspaceGitService,
+      readDaemonConfig: () => this.daemonConfigStore.get(),
+      logger: this.sessionLogger,
+    });
     this.terminalManager = terminalManager;
     this.terminalController = new TerminalSessionController({
       terminalManager,
@@ -2064,6 +2073,12 @@ export class Session {
         return this.checkoutSession.handleCommitsListRequest(msg);
       case "checkout.commits.file_diff.request":
         return this.checkoutSession.handleCommitFileDiffRequest(msg);
+      case "git.ai.generate_commit_message.request":
+        return this.gitAiSession.handleGenerateCommitMessageRequest(msg);
+      case "git.ai.start_commit_review.request":
+        return this.gitAiSession.handleStartCommitReviewRequest(msg);
+      case "git.ai.close_commit_review.request":
+        return this.gitAiSession.handleCloseCommitReviewRequest(msg);
       case "validate_branch_request":
         return this.checkoutSession.handleValidateBranchRequest(msg);
       case "branch_suggestions_request":
@@ -6846,6 +6861,12 @@ export class Session {
     await this.voiceSession.cleanup();
 
     this.terminalController.dispose();
+
+    try {
+      await this.gitAiSession.cleanup();
+    } catch (error) {
+      this.sessionLogger.error({ err: error }, "清理 Git AI 会话失败");
+    }
 
     this.checkoutSession.cleanup();
 
