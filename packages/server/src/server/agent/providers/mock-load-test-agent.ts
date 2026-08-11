@@ -156,6 +156,13 @@ function shouldEmitTurnFailure(prompt: AgentPromptInput): boolean {
   return /emit\s+(?:a\s+)?synthetic\s+turn\s+failure/i.test(promptToText(prompt));
 }
 
+function parseSettledAssistantImageMarkdown(prompt: AgentPromptInput): string | null {
+  const match = /^emit settled assistant image markdown:\s*(!\[[^\]\r\n]*\]\(.+\))\s*$/i.exec(
+    promptToText(prompt),
+  );
+  return match?.[1] ?? null;
+}
+
 function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRequest | null {
   const text = promptToText(prompt);
   if (!/emit\s+(?:a\s+)?synthetic\s+questions?/i.test(text)) {
@@ -232,6 +239,28 @@ function promptToText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+function parseUserMessageDelayMs(prompt: AgentPromptInput): number {
+  const match = /delay synthetic user message by (\d+)ms/i.exec(promptToText(prompt));
+  const delayMs = Number(match?.[1] ?? 0);
+  return Number.isSafeInteger(delayMs) ? Math.min(delayMs, 2_000) : 0;
+}
+
+function shouldWithholdUserMessageUntilInterrupt(prompt: AgentPromptInput): boolean {
+  return /withhold synthetic user message until interrupted/i.test(promptToText(prompt));
+}
+
+function shouldEmitUserMessageBeforeTurnAcceptance(prompt: AgentPromptInput): boolean {
+  return /emit synthetic user message before accepting turn/i.test(promptToText(prompt));
+}
+
+function parseAssistantMessagesBeforeUserMessage(prompt: AgentPromptInput): number | null {
+  const match = /emit (\d+) assistant messages before synthetic user message/i.exec(
+    promptToText(prompt),
+  );
+  const count = Number(match?.[1]);
+  return Number.isSafeInteger(count) && count > 0 ? Math.min(count, 500) : null;
 }
 
 function parseLargeAgentStreamPayloadPrompt(
@@ -582,17 +611,44 @@ export class MockLoadTestAgentSession implements AgentSession {
   private pendingPermissions = new Map<string, AgentPermissionRequest>();
   private modeId: string | null;
   private modelId: string | null;
+  private readonly assistantResponse: string | null;
+  private readonly streamingAssistantResponse: string | null;
+  private readonly streamingAssistantIntervalMs: number;
   private readonly rewindError: string | null;
+  private remainingPromptRejections: number;
 
   constructor(options: { config: AgentSessionConfig; sessionId: string; logger?: Logger }) {
     this.id = options.sessionId;
     this.logger = options.logger;
     this.modeId = options.config.modeId ?? MOCK_LOAD_TEST_MODE_ID;
     this.modelId = options.config.model ?? MOCK_LOAD_TEST_DEFAULT_MODEL_ID;
+    this.assistantResponse =
+      typeof options.config.featureValues?.mockAssistantResponse === "string"
+        ? options.config.featureValues.mockAssistantResponse
+        : null;
+    this.streamingAssistantResponse =
+      typeof options.config.featureValues?.mockStreamingAssistantResponse === "string"
+        ? options.config.featureValues.mockStreamingAssistantResponse
+        : null;
+    const requestedStreamingInterval =
+      options.config.featureValues?.mockStreamingAssistantIntervalMs;
+    this.streamingAssistantIntervalMs =
+      typeof requestedStreamingInterval === "number" &&
+      Number.isFinite(requestedStreamingInterval) &&
+      requestedStreamingInterval >= 1
+        ? Math.min(requestedStreamingInterval, 1_000)
+        : MOCK_LOAD_TEST_INTERVAL_MS;
     this.rewindError =
       typeof options.config.featureValues?.mockRewindError === "string"
         ? options.config.featureValues.mockRewindError
         : null;
+    const requestedPromptRejections = options.config.featureValues?.mockPromptRejections;
+    this.remainingPromptRejections =
+      typeof requestedPromptRejections === "number" &&
+      Number.isSafeInteger(requestedPromptRejections) &&
+      requestedPromptRejections > 0
+        ? requestedPromptRejections
+        : 0;
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
@@ -635,8 +691,41 @@ export class MockLoadTestAgentSession implements AgentSession {
       turnStarted: false,
     };
     this.activeTurn = turn;
-    const userMessageId = randomUUID();
-    setTimeout(() => {
+    if (this.remainingPromptRejections > 0) {
+      this.remainingPromptRejections -= 1;
+      this.activeTurn = null;
+      throw new Error("Requested mock prompt rejection");
+    }
+
+    const largePayload = parseLargeAgentStreamPayloadPrompt(prompt);
+    const stress = parseAgentStreamStressPrompt(prompt);
+    const questionPrompt = parseMockQuestionPrompt(prompt);
+    const structuredBranchName = parseStructuredBranchNamePrompt(prompt);
+    const settledAssistantImageMarkdown = parseSettledAssistantImageMarkdown(prompt);
+    const scheduleTurn = () => {
+      if (shouldEmitTurnFailure(prompt)) {
+        this.scheduleFailedTurn(turn);
+      } else if (this.streamingAssistantResponse !== null) {
+        this.scheduleStreamingAssistantTurn(turn, this.streamingAssistantResponse);
+      } else if (this.assistantResponse !== null) {
+        this.scheduleSettledAssistantTurn(turn, this.assistantResponse);
+      } else if (structuredBranchName) {
+        this.scheduleSettledAssistantTurn(turn, JSON.stringify(structuredBranchName));
+      } else if (settledAssistantImageMarkdown) {
+        this.scheduleSettledAssistantTurn(turn, settledAssistantImageMarkdown);
+      } else if (shouldEmitPlanApprovalPrompt(prompt)) {
+        this.schedulePlanApprovalTurn(turn);
+      } else if (questionPrompt) {
+        this.scheduleQuestionPromptTurn(turn, questionPrompt);
+      } else if (largePayload) {
+        this.scheduleLargePayloadTurn(turn, largePayload);
+      } else if (stress) {
+        this.scheduleStressTurn(turn, stress);
+      } else {
+        this.schedule(turn, 0);
+      }
+    };
+    const emitUserMessage = () => {
       if (this.activeTurn?.turnId !== turnId) {
         return;
       }
@@ -647,30 +736,57 @@ export class MockLoadTestAgentSession implements AgentSession {
         item: {
           type: "user_message",
           text: promptToText(prompt),
-          messageId: userMessageId,
+          messageId: randomUUID(),
           ...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
         },
       });
-    }, 0);
-
-    const largePayload = parseLargeAgentStreamPayloadPrompt(prompt);
-    const stress = parseAgentStreamStressPrompt(prompt);
-    const questionPrompt = parseMockQuestionPrompt(prompt);
-    const structuredBranchName = parseStructuredBranchNamePrompt(prompt);
-    if (shouldEmitTurnFailure(prompt)) {
-      this.scheduleFailedTurn(turn);
-    } else if (structuredBranchName) {
-      this.scheduleStructuredJsonTurn(turn, structuredBranchName);
-    } else if (shouldEmitPlanApprovalPrompt(prompt)) {
-      this.schedulePlanApprovalTurn(turn);
-    } else if (questionPrompt) {
-      this.scheduleQuestionPromptTurn(turn, questionPrompt);
-    } else if (largePayload) {
-      this.scheduleLargePayloadTurn(turn, largePayload);
-    } else if (stress) {
-      this.scheduleStressTurn(turn, stress);
-    } else {
-      this.schedule(turn, 0);
+    };
+    if (shouldEmitUserMessageBeforeTurnAcceptance(prompt)) {
+      emitUserMessage();
+      scheduleTurn();
+      return { turnId };
+    }
+    if (shouldWithholdUserMessageUntilInterrupt(prompt)) {
+      return { turnId };
+    }
+    const assistantMessagesBeforeUserMessage = parseAssistantMessagesBeforeUserMessage(prompt);
+    if (assistantMessagesBeforeUserMessage !== null) {
+      turn.timer = setTimeout(async () => {
+        if (this.activeTurn !== turn) {
+          return;
+        }
+        this.emitTurnStarted(turn);
+        for (let index = 0; index < assistantMessagesBeforeUserMessage; index += 1) {
+          this.emitTimeline(turnId, {
+            type: "assistant_message",
+            text: `Synthetic pre-echo message ${index + 1}`,
+            messageId: `${turn.assistantMessageId}-${index + 1}`,
+          });
+          await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+          if (this.activeTurn !== turn) {
+            return;
+          }
+        }
+        emitUserMessage();
+        await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+        if (this.activeTurn !== turn) {
+          return;
+        }
+        this.finishTurnWithText(turn, "Synthetic pre-echo stream complete");
+      }, 0);
+      turn.timer.unref?.();
+      return { turnId };
+    }
+    const userMessageDelayMs = parseUserMessageDelayMs(prompt);
+    const userMessageTimer = setTimeout(() => {
+      emitUserMessage();
+      if (userMessageDelayMs > 0) {
+        scheduleTurn();
+      }
+    }, userMessageDelayMs);
+    userMessageTimer.unref?.();
+    if (userMessageDelayMs === 0) {
+      scheduleTurn();
     }
     return { turnId };
   }
@@ -807,6 +923,18 @@ export class MockLoadTestAgentSession implements AgentSession {
     turn.timer.unref?.();
   }
 
+  private emitTurnStarted(turn: ActiveTurn): void {
+    if (turn.turnStarted) {
+      return;
+    }
+    turn.turnStarted = true;
+    this.emit({
+      type: "turn_started",
+      provider: this.provider,
+      turnId: turn.turnId,
+    });
+  }
+
   private failConfiguredRewind(): void {
     if (this.rewindError) {
       throw new Error(this.rewindError);
@@ -875,14 +1003,40 @@ export class MockLoadTestAgentSession implements AgentSession {
     turn.timer.unref?.();
   }
 
-  private scheduleStructuredJsonTurn(turn: ActiveTurn, result: Record<string, string>): void {
+  private scheduleSettledAssistantTurn(turn: ActiveTurn, finalText: string): void {
     turn.timer = setTimeout(() => {
-      this.emitStructuredJsonTurn(turn, result);
+      this.emitSettledAssistantTurn(turn, finalText);
     }, 0);
     turn.timer.unref?.();
   }
 
-  private emitStructuredJsonTurn(turn: ActiveTurn, result: Record<string, string>): void {
+  private scheduleStreamingAssistantTurn(turn: ActiveTurn, finalText: string): void {
+    const tokens = tokenize(finalText);
+    const emitNext = () => {
+      if (this.activeTurn !== turn) {
+        return;
+      }
+      this.clearTurnTimer(turn);
+      this.emitTurnStarted(turn);
+      const token = tokens.shift();
+      if (token === undefined) {
+        this.finishTurnWithText(turn, finalText);
+        return;
+      }
+      turn.emittedTokens += 1;
+      this.emitTimeline(turn.turnId, {
+        type: "assistant_message",
+        text: token,
+        messageId: turn.assistantMessageId,
+      });
+      turn.timer = setTimeout(emitNext, this.streamingAssistantIntervalMs);
+      turn.timer.unref?.();
+    };
+    turn.timer = setTimeout(emitNext, 0);
+    turn.timer.unref?.();
+  }
+
+  private emitSettledAssistantTurn(turn: ActiveTurn, finalText: string): void {
     if (this.activeTurn !== turn) {
       return;
     }
@@ -894,7 +1048,6 @@ export class MockLoadTestAgentSession implements AgentSession {
       turnId: turn.turnId,
     });
 
-    const finalText = JSON.stringify(result);
     this.emitTimeline(turn.turnId, {
       type: "assistant_message",
       text: finalText,

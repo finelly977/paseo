@@ -715,6 +715,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         layoutStream({
           strategy: streamRenderStrategy,
           agentStatus: context.status,
+          isTurnActive: context.status === "running",
           history: baseRenderModel.history,
           liveHead: baseRenderModel.segments.liveHead,
           timingByAssistantId: baseRenderModel.turnTiming.byAssistantId,
@@ -953,6 +954,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           serverId: resolvedServerId,
           client,
           spacing: layoutItem.assistantSpacing,
+          phase: layoutItem.phase,
         } as const;
         const shouldCollapseImage =
           context.provider === "codex" && isStandaloneMarkdownImage(item.text);

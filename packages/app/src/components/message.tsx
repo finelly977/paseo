@@ -72,6 +72,8 @@ import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
+import { MarkdownFenceBlock } from "@/components/markdown/fence";
+import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
@@ -913,6 +915,7 @@ interface AssistantMessageProps {
   serverId?: string;
   client?: DaemonClient | null;
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
+  phase: MarkdownPhase;
 }
 
 const assistantMarkdownParser = MarkdownIt({ typographer: true, linkify: true });
@@ -1771,6 +1774,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   serverId,
   client,
   spacing = "default",
+  phase,
 }: AssistantMessageProps) {
   const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
 
@@ -1916,10 +1920,11 @@ export const AssistantMessage = memo(function AssistantMessage({
         styles: MarkdownStyles,
         inheritedStyles: TextStyle = {},
       ) => (
-        <HighlightedCodeBlock
+        <MarkdownFenceBlock
           key={node.key}
           code={node.content}
-          language={node.sourceInfo}
+          info={node.sourceInfo}
+          phase={phase}
           inheritedStyles={inheritedStyles}
           textStyle={styles.fence}
         />
@@ -2099,11 +2104,11 @@ export const AssistantMessage = memo(function AssistantMessage({
         );
       },
     };
-  }, [client, fileLinkActions, serverId, workspaceRoot]);
+  }, [client, fileLinkActions, phase, serverId, workspaceRoot]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(message), [message]);
   const keyedBlocks = useMemo(
-    () => blocks.map((block, index) => ({ key: `${index}:${block.slice(0, 32)}`, block })),
+    () => blocks.map((block, index) => ({ key: `block:${index}`, block })),
     [blocks],
   );
 
