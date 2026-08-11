@@ -2351,19 +2351,22 @@ export class AgentManager {
 
       try {
         await this.refreshSessionState(agent);
-      } catch {
-        // Ignore refresh errors - state sync after permission approval is best effort.
+      } catch (error) {
+        this.logger.error({ err: error, agentId, requestId }, "权限响应后刷新智能体会话状态失败");
       }
 
       this.touchUpdatedAt(agent);
       await this.persistSnapshot(agent);
       this.emitState(agent);
 
-      const bufferedResolution = agent.bufferedPermissionResolutions.get(requestId);
-      if (bufferedResolution) {
-        agent.bufferedPermissionResolutions.delete(requestId);
-        this.dispatchStream(agent.id, bufferedResolution, { timestamp: new Date().toISOString() });
-      }
+      const resolution = agent.bufferedPermissionResolutions.get(requestId) ?? {
+        type: "permission_resolved" as const,
+        provider: agent.provider,
+        requestId,
+        resolution: response,
+      };
+      agent.bufferedPermissionResolutions.delete(requestId);
+      this.dispatchStream(agent.id, resolution, { timestamp: new Date().toISOString() });
 
       return result;
     } finally {

@@ -6896,7 +6896,7 @@ test("respondToPermission updates currentModeId after plan approval", async () =
   expect(persisted?.lastModeId).toBe("acceptEdits");
 });
 
-test("respondToPermission refreshes features and runtime info after provider-managed plan approval", async () => {
+test("权限响应后先刷新状态，再补发缺失的权限结束事件", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -6985,6 +6985,20 @@ test("respondToPermission refreshes features and runtime info after provider-man
     input: { plan: "- Implement the feature" },
   });
 
+  const seen: string[] = [];
+  manager.subscribe((event) => {
+    if (event.type === "agent_state" && event.agent.id === snapshot.id) {
+      const planMode = event.agent.features?.find((feature) => feature.id === "plan_mode");
+      seen.push(
+        `state:${event.agent.currentModeId}:${String(planMode?.type === "toggle" ? planMode.value : null)}`,
+      );
+      return;
+    }
+    if (event.type === "agent_stream" && event.event.type === "permission_resolved") {
+      seen.push(`resolved:${event.event.requestId}:${event.event.resolution.behavior}`);
+    }
+  });
+
   await manager.respondToPermission(snapshot.id, "perm-plan-1", {
     behavior: "allow",
     selectedActionId: "implement",
@@ -7006,6 +7020,13 @@ test("respondToPermission refreshes features and runtime info after provider-man
     createFeature({ id: "fast_mode", label: "Fast", value: true }),
     createFeature({ id: "plan_mode", label: "Plan", value: false }),
   ]);
+
+  const refreshedStateIndex = seen.findIndex((entry) => entry === "state:auto:false");
+  const resolvedEntries = seen.filter((entry) => entry === "resolved:perm-plan-1:allow");
+  const resolvedIndex = seen.findIndex((entry) => entry === "resolved:perm-plan-1:allow");
+  expect(refreshedStateIndex).toBeGreaterThanOrEqual(0);
+  expect(resolvedEntries).toHaveLength(1);
+  expect(resolvedIndex).toBeGreaterThan(refreshedStateIndex);
 });
 
 test("respondToPermission emits refreshed state before permission_resolved", async () => {
@@ -7108,8 +7129,10 @@ test("respondToPermission emits refreshed state before permission_resolved", asy
   });
 
   const refreshedStateIndex = seen.findIndex((entry) => entry === "state:acceptEdits:false");
+  const resolvedEntries = seen.filter((entry) => entry === "resolved:perm-order-1");
   const resolvedIndex = seen.findIndex((entry) => entry === "resolved:perm-order-1");
   expect(refreshedStateIndex).toBeGreaterThanOrEqual(0);
+  expect(resolvedEntries).toHaveLength(1);
   expect(resolvedIndex).toBeGreaterThan(refreshedStateIndex);
 });
 

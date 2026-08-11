@@ -679,6 +679,7 @@ export const fr: TranslationResources = {
           expand: "展开提交审查",
           collapse: "收起提交审查",
           close: "关闭并清理提交审查",
+          resize: "调整提交审查窗口大小",
           starting: "正在启动审查智能体...",
           startFailed: "启动提交审查失败",
           status: {
@@ -2219,7 +2220,7 @@ export const fr: TranslationResources = {
         saving: "正在保存...",
         fields: {
           agentModel: "智能体与模型",
-          mode: "模式",
+          mode: "权限",
           thinking: "思考强度",
           prompt: "任务提示词",
         },
