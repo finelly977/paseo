@@ -198,6 +198,35 @@ export const TerminalProfileSchema = z
 
 export type TerminalProfile = z.infer<typeof TerminalProfileSchema>;
 
+/**
+ * A named launch bundle: a provider plus the agent-config values a client would
+ * otherwise set one control at a time. Field names mirror `AgentSessionConfig`
+ * so applying a profile is a copy rather than a translation table.
+ *
+ * There is deliberately no system prompt here. `AgentSessionConfig.systemPrompt`
+ * is creation-only, so a profile carrying one would apply when starting a new
+ * agent and silently do nothing when applied to a running one.
+ */
+export const AgentProfileSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    /** A key into the client's icon registry, not a glyph. Unknown keys draw the default. */
+    icon: z.string().optional(),
+    /** An identity colour name shared with host badges. Unknown values draw unthemed. */
+    color: z.string().optional(),
+    provider: z.string(),
+    model: z.string().optional(),
+    modeId: z.string().optional(),
+    thinkingOptionId: z.string().optional(),
+    featureValues: z.record(z.string(), z.unknown()).optional(),
+    /** Free text, surfaced to orchestrating agents by the `list_profiles` MCP tool. */
+    notes: z.string().optional(),
+  })
+  .passthrough();
+
+export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+
 const MutableBrowserToolsConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -218,6 +247,7 @@ export const MutableDaemonConfigSchema = z
     enableTerminalAgentHooks: z.boolean().default(false),
     appendSystemPrompt: z.string().default(""),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    agentProfiles: z.array(AgentProfileSchema).optional(),
   })
   .passthrough();
 
@@ -242,6 +272,7 @@ export const MutableDaemonConfigPatchSchema = z
     enableTerminalAgentHooks: z.boolean().optional(),
     appendSystemPrompt: z.string().optional(),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
+    agentProfiles: z.array(AgentProfileSchema).optional(),
   })
   .partial()
   .passthrough();
@@ -1567,6 +1598,38 @@ export const SetAgentFeatureResponseMessageSchema = z.object({
   payload: AgentActionResponsePayloadSchema,
 });
 
+/**
+ * Every agent-config value a client can change in one shot. Each field is
+ * optional and an omitted field is left alone; `null` on model and thinking
+ * clears them, matching the single-field RPCs above.
+ */
+export const AgentConfigApplySchema = z.object({
+  modelId: z.string().nullable().optional(),
+  modeId: z.string().optional(),
+  thinkingOptionId: z.string().nullable().optional(),
+  featureValues: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type AgentConfigApply = z.infer<typeof AgentConfigApplySchema>;
+
+/**
+ * Applies a whole config bundle to one agent. The four single-field RPCs above
+ * stay for individual control edits. One request prevents client interruption
+ * and other mutations from interleaving between bundle steps; provider-level
+ * rejection can still leave earlier steps applied.
+ */
+export const AgentConfigApplyRequestMessageSchema = z.object({
+  type: z.literal("agent.config.apply.request"),
+  agentId: z.string(),
+  config: AgentConfigApplySchema,
+  requestId: z.string(),
+});
+
+export const AgentConfigApplyResponseMessageSchema = z.object({
+  type: z.literal("agent.config.apply.response"),
+  payload: AgentActionResponsePayloadSchema,
+});
+
 export const AgentDetachRequestMessageSchema = z.object({
   type: z.literal("agent.detach.request"),
   agentId: z.string(),
@@ -2698,6 +2761,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentModelRequestMessageSchema,
   SetAgentThinkingRequestMessageSchema,
   SetAgentFeatureRequestMessageSchema,
+  AgentConfigApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -3059,6 +3123,21 @@ export const ServerInfoStatusPayloadSchema = z
         conversationHistoryLimit: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。
         workspaceScriptManagement: z.boolean().optional(),
+        // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
+        projectCustomIcon: z.boolean().optional(),
+        // COMPAT(fsEntryOps): added in v0.3.0, remove gate after 2027-02-08.
+        fsEntryOps: z.boolean().optional(),
+        // COMPAT(fsEntryDuplicate): added in v0.3.0, remove gate after 2027-02-09.
+        fsEntryDuplicate: z.boolean().optional(),
+        // COMPAT(checkoutDiscardChanges): added in v0.3.0, remove gate after 2027-02-08.
+        checkoutDiscardChanges: z.boolean().optional(),
+        // COMPAT(agentProfiles): added in v0.3.2, remove gate after 2027-02-11.
+        // An older daemon parses its persisted config strictly, so writing
+        // agentProfiles to one is silently dropped. The client hides the feature
+        // rather than letting a save appear to succeed.
+        agentProfiles: z.boolean().optional(),
+        // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
+        agentConfigApply: z.boolean().optional(),
       })
       .optional(),
   })
@@ -5587,6 +5666,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentModelResponseMessageSchema,
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,
+  AgentConfigApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRemoveResponseSchema,
   AgentRuntimeReleaseResponseSchema,
@@ -5784,6 +5864,7 @@ export type SetAgentModeResponseMessage = z.infer<typeof SetAgentModeResponseMes
 export type SetAgentModelResponseMessage = z.infer<typeof SetAgentModelResponseMessageSchema>;
 export type SetAgentThinkingResponseMessage = z.infer<typeof SetAgentThinkingResponseMessageSchema>;
 export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureResponseMessageSchema>;
+export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
@@ -5944,6 +6025,7 @@ export type SetAgentModeRequestMessage = z.infer<typeof SetAgentModeRequestMessa
 export type SetAgentModelRequestMessage = z.infer<typeof SetAgentModelRequestMessageSchema>;
 export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequestMessageSchema>;
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
+export type AgentConfigApplyRequestMessage = z.infer<typeof AgentConfigApplyRequestMessageSchema>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
 export type GitAiGenerateCommitMessageRequest = z.infer<

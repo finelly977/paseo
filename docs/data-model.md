@@ -187,6 +187,8 @@ Single file, validated with `PersistedConfigSchema`.
     trustedProxies: true | string[], // defaults to ["loopback"]; Express proxy names/CIDRs
     mcp: { enabled: boolean, injectIntoAgents: boolean },
     appendSystemPrompt: string,    // appended to supported provider system/developer prompts
+    terminalProfiles: TerminalProfile[],  // named shell commands; omitted means DEFAULT_TERMINAL_PROFILES
+    agentProfiles: AgentProfile[],        // named agent launch bundles; omitted means none
     cors: { allowedOrigins: string[] },
     relay: { enabled: boolean, endpoint: string, publicEndpoint: string, useTls: boolean, publicUseTls: boolean },
     auth: { password: string }    // bcrypt hash, optional
@@ -234,6 +236,57 @@ Single file, validated with `PersistedConfigSchema`.
 All fields are optional with sensible defaults.
 
 `agents.metadataGeneration.providers` 控制提交说明、拉取请求文本等守护进程元数据任务的结构化生成回退顺序。Paseo 先按配置顺序尝试，再使用动态发现的默认候选，最后在可用时尝试当前选择。新建智能体的工作区标题和初始分支名不使用这条回退链，而是只使用该智能体实际采用的 Provider、模型和思考配置，避免在用户所选智能体之外启动其他 Provider。尚未创建智能体的独立工作区仍使用已配置的元数据生成顺序。
+
+### Profile lists
+
+`terminalProfiles` and `agentProfiles` are both whole-list fields: a config patch replaces the
+array, never merges entries, so a client sends the complete next list on every add, edit, reorder
+and remove. List order is the display order.
+
+Absent and empty mean different things for terminal profiles — omitting the key falls back to
+`DEFAULT_TERMINAL_PROFILES`, while `[]` means the user removed them all. Agent profiles have no
+defaults, so both mean none.
+
+`PersistedConfigSchema` parses strictly, so a daemon that predates a field drops it on write
+rather than storing something it cannot describe. That is why the client gates the agent profiles
+UI on `server_info.features.agentProfiles` instead of letting a save appear to succeed against an
+older daemon.
+
+### Git process limits
+
+Git process limits are global to one daemon. The start-rate limit defaults to `64` processes per
+second, and the concurrency limit defaults to `8`:
+
+```json
+{
+  "daemon": {
+    "git": {
+      "maxProcessesPerSecond": 64,
+      "maxProcessConcurrency": 8
+    }
+  }
+}
+```
+
+`maxProcessesPerSecond` limits Git process starts in any one-second interval. The allowance can
+start as a burst; it does not wait for earlier processes to exit. `maxProcessConcurrency` limits
+the number of Git processes that have started but not exited. Every Git command uses both limits,
+including initial workspace reads, filesystem-triggered refreshes, background checks, and explicit
+requests.
+
+Environment variables override `config.json`:
+
+| Environment variable                 | Setting                  |
+| ------------------------------------ | ------------------------ |
+| `PASEO_GIT_MAX_PROCESSES_PER_SECOND` | `maxProcessesPerSecond`  |
+| `PASEO_GIT_MAX_PROCESS_CONCURRENCY`  | `maxProcessConcurrency`  |
+| `PASEO_GIT_CONCURRENCY`              | Legacy concurrency alias |
+
+`PASEO_GIT_MAX_PROCESS_CONCURRENCY` wins when it and the legacy alias are both set. Restart the
+daemon after changing the file or environment. Run `paseo daemon restart` for a standalone daemon.
+For a desktop-managed daemon, fully quit and reopen Paseo Desktop.
+
+`agents.metadataGeneration.providers` controls the preferred structured-generation fallback order for daemon-side metadata tasks such as commit messages, PR text, branch names, and generated agent titles. Entries are tried first in the configured order, then Paseo falls through to dynamically discovered defaults and finally the current selection when available.
 
 Local speech model ids are intentionally narrow: STT uses `parakeet-tdt-0.6b-v2-int8`, TTS uses `kokoro-en-v0_19`, and turn detection uses the bundled Silero VAD model.
 

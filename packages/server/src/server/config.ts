@@ -419,6 +419,18 @@ function resolveBrowserToolsEnabled(persisted: ReturnType<typeof loadPersistedCo
   return persisted.daemon?.browserTools?.enabled ?? false;
 }
 
+/**
+ * Both profile lists stay `undefined` when absent rather than defaulting to an
+ * empty array: for terminal profiles that is what selects the built-in
+ * defaults, so an empty array has to keep meaning "the user removed them all".
+ */
+function resolveProfileLists(persisted: ReturnType<typeof loadPersistedConfig>) {
+  return {
+    terminalProfiles: persisted.daemon?.terminalProfiles,
+    agentProfiles: persisted.daemon?.agentProfiles,
+  };
+}
+
 function resolveStaticLoadConfigSettings(
   env: NodeJS.ProcessEnv,
   cli: CliConfigOverrides | undefined,
@@ -431,7 +443,7 @@ function resolveStaticLoadConfigSettings(
     browserToolsEnabled: resolveBrowserToolsEnabled(persisted),
     autoArchiveAfterMerge: persisted.daemon?.autoArchiveAfterMerge ?? false,
     appendSystemPrompt: resolveAppendSystemPrompt(persisted),
-    terminalProfiles: persisted.daemon?.terminalProfiles,
+    ...resolveProfileLists(persisted),
     hostnames: mergeHostnames([
       persisted.daemon?.hostnames,
       parseHostnamesEnv(env.PASEO_HOSTNAMES ?? env.PASEO_ALLOWED_HOSTS),
@@ -460,6 +472,7 @@ export function loadConfig(
     autoArchiveAfterMerge,
     appendSystemPrompt,
     terminalProfiles,
+    agentProfiles,
     hostnames,
     trustedProxies,
     appBaseUrl,
@@ -500,6 +513,7 @@ export function loadConfig(
     enableTerminalAgentHooks: persisted.daemon?.enableTerminalAgentHooks ?? false,
     appendSystemPrompt,
     terminalProfiles,
+    agentProfiles,
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
     agentStoragePath: path.join(paseoHome, "agents"),
