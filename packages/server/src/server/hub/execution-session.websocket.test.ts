@@ -126,6 +126,89 @@ test("Hub create forwards worktree and auto-archive through the existing create 
     agentArchivedAt: expect.any(String),
     workspaceArchivedAt: expect.any(String),
   });
+});
+
+test("a sibling workspace keeps an archived execution's worktree directory alive", async () => {
+  const created = await hub.ownedCreateResult("sibling-create");
+  const targetWorkspaceId = created.payload.agent?.workspaceId;
+  const worktreeCwd = hub.latestCreatedCwd()!;
+  await hub.ownedRunningUpdate(created.payload.agentId!);
+  const siblingWorkspaceId = await hub.createSiblingWorkspace(worktreeCwd);
+
+  const response = await hub.archiveExecution("execution-sibling", "archive-sibling");
+
+  expect(response).toMatchObject({ success: true, error: null });
+  expect(targetWorkspaceId).toEqual(expect.any(String));
+  expect(await hub.archivedWorkspaceAt(targetWorkspaceId!)).toEqual(expect.any(String));
+  expect(await hub.archivedWorkspaceAt(siblingWorkspaceId)).toBeNull();
+  expect(await hub.worktreeState(worktreeCwd)).toEqual({ exists: true, listed: true });
+  expect(await hub.ownedAgentArchivedAt(created.payload.agentId!)).toEqual(expect.any(String));
+});
+
+test("archiving a second same-slug execution leaves the first worktree intact", async () => {
+  const hub = await launchRelationship();
+  const worktree = {
+    mode: "branch-off" as const,
+    newBranch: "hub-reused-worktree",
+    base: "main",
+  };
+  hub.beginOwnedCreate("original-worktree-create", "execution-original-worktree", {
+    worktree,
+    prompt: "respond with exactly: original complete",
+  });
+  const original = await hub.ownedCreateResult("original-worktree-create");
+  const worktreeCwd = hub.latestCreatedCwd()!;
+  const originalWorkspaceId = original.payload.agent?.workspaceId;
+  await hub.ownedTurnCompletion(original.payload.agentId!);
+
+  hub.beginOwnedCreate("reused-worktree-create", "execution-reused-worktree", {
+    worktree,
+    prompt: "sleep 30",
+  });
+  const reused = await hub.ownedCreateResult("reused-worktree-create");
+  const secondWorktreeCwd = hub.latestCreatedCwd()!;
+  const reusedWorkspaceId = reused.payload.agent?.workspaceId;
+  await hub.ownedRunningUpdate(reused.payload.agentId!);
+
+  const response = await hub.archiveExecution(
+    "execution-reused-worktree",
+    "archive-reused-worktree",
+  );
+
+  expect(response).toMatchObject({ success: true, error: null });
+  expect(reusedWorkspaceId).toEqual(expect.any(String));
+  expect(reusedWorkspaceId).not.toBe(originalWorkspaceId);
+  expect(hub.pathsReferToSameLocation(reused.payload.agent!.cwd, worktreeCwd)).toBe(false);
+  expect(hub.pathsReferToSameLocation(reused.payload.agent!.cwd, secondWorktreeCwd)).toBe(true);
+  expect(await hub.worktreeState(worktreeCwd)).toEqual({ exists: true, listed: true });
+  expect(await hub.worktreeState(secondWorktreeCwd)).toEqual({ exists: false, listed: false });
+  expect(await hub.agentRemainsAvailable(original.payload.agentId!)).toBe(true);
+  expect(await hub.ownedAgentArchivedAt(reused.payload.agentId!)).toEqual(expect.any(String));
+  expect(await hub.ownedWorkspaceArchivedAt(reused.payload.agentId!)).toEqual(expect.any(String));
+  expect(await hub.ownedWorkspaceArchivedAt(original.payload.agentId!)).toBeNull();
+});
+
+test("Hub resolves persisted execution ownership after daemon restart", async () => {
+  const hub = await launchRelationship();
+  hub.beginOwnedCreate("restart-create", "execution-restart", {
+    worktree: { mode: "branch-off", newBranch: "hub-restart-worktree", base: "main" },
+    prompt: "sleep 30",
+  });
+  const created = await hub.ownedCreateResult("restart-create");
+  const workspaceId = created.payload.agent?.workspaceId;
+  const worktreeCwd = hub.latestCreatedCwd()!;
+  await hub.ownedRunningUpdate(created.payload.agentId!);
+
+  await hub.restartDaemon();
+  await hub.socketDialed();
+  hub.connectLatestSocket();
+  const response = await hub.archiveExecution("execution-restart", "archive-after-restart");
+
+  expect(response).toMatchObject({ success: true, error: null });
+  expect(await hub.ownedAgentArchivedAt(created.payload.agentId!)).toEqual(expect.any(String));
+  expect(workspaceId).toEqual(expect.any(String));
+  expect(await hub.archivedWorkspaceAt(workspaceId!)).toEqual(expect.any(String));
+  expect(await hub.worktreeState(worktreeCwd)).toEqual({ exists: false, listed: false });
 }, 20_000);
 
 test("archive observation closes its first watcher when the second watcher cannot start", async () => {
