@@ -63,6 +63,7 @@ import {
   getAgentStreamEventTurnId,
   type AgentCapabilityFlags,
   type AgentClient,
+  type AgentCreateSessionOptions,
   type AgentFeature,
   type AgentLaunchContext,
   type AgentMetadata,
@@ -394,6 +395,7 @@ interface ACPAgentClientOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  cleanupNativeSession?: (sessionId: string) => Promise<void>;
 }
 
 interface ACPAgentSessionOptions {
@@ -427,6 +429,8 @@ interface ACPAgentSessionOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  persistSession?: boolean;
+  cleanupNativeSession?: (sessionId: string) => Promise<void>;
 }
 
 export interface SpawnedACPProcess {
@@ -729,6 +733,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
   protected readonly terminateProcess: ProcessTerminator;
+  private readonly cleanupNativeSession?: (sessionId: string) => Promise<void>;
 
   constructor(options: ACPAgentClientOptions) {
     this.provider = options.provider;
@@ -755,11 +760,13 @@ export class ACPAgentClient implements AgentClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.cleanupNativeSession = options.cleanupNativeSession;
   }
 
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
+    options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
     this.assertProvider(config);
     const session = new ACPAgentSession(
@@ -787,6 +794,8 @@ export class ACPAgentClient implements AgentClient {
         extensionCommandsParser: this.extensionCommandsParser,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+        persistSession: options?.persistSession,
+        cleanupNativeSession: this.cleanupNativeSession,
       },
     );
     await session.initializeNewSession();
@@ -847,6 +856,7 @@ export class ACPAgentClient implements AgentClient {
     const cwd = options.scope === "global" ? homedir() : options.cwd;
     const timeoutMs = options.timeoutMs ?? ACP_CATALOG_TIMEOUT_MS;
     let probe: UninitializedACPProcess | null = null;
+    let probeSessionId: string | null = null;
     try {
       const catalogProbe = (async () => {
         const initializedProbe = await this.spawnProcess(PROBE_ENV, {
@@ -862,6 +872,7 @@ export class ACPAgentClient implements AgentClient {
             mcpServers: [],
           }),
         );
+        probeSessionId = response.sessionId;
         const transformed = this.transformSessionResponse(response);
         const models = deriveModelDefinitionsFromACP(
           this.provider,
@@ -886,7 +897,7 @@ export class ACPAgentClient implements AgentClient {
       );
     } finally {
       if (probe) {
-        await this.closeProbe(probe);
+        await this.closeProbe(probe, probeSessionId);
       }
     }
   }
@@ -898,6 +909,7 @@ export class ACPAgentClient implements AgentClient {
 
     this.assertProvider(config);
     const probe = await this.spawnProcess(PROBE_ENV);
+    let probeSessionId: string | null = null;
     try {
       const response = await this.runACPRequest(() =>
         probe.connection.newSession({
@@ -905,10 +917,11 @@ export class ACPAgentClient implements AgentClient {
           mcpServers: [],
         }),
       );
+      probeSessionId = response.sessionId;
       const transformed = this.transformSessionResponse(response);
       return deriveFeaturesFromACP(transformed.configOptions, this.configFeatureOptions);
     } finally {
-      await this.closeProbe(probe);
+      await this.closeProbe(probe, probeSessionId);
     }
   }
 
@@ -1101,13 +1114,33 @@ export class ACPAgentClient implements AgentClient {
     };
   }
 
-  protected async closeProbe(probe: UninitializedACPProcess): Promise<void> {
+  protected async closeProbe(
+    probe: UninitializedACPProcess,
+    sessionId: string | null = null,
+  ): Promise<void> {
+    const errors: unknown[] = [];
     try {
-      if (probe.initialize?.agentCapabilities?.sessionCapabilities?.close) {
-        // No active session to close here; ignore capability.
+      if (sessionId && probe.initialize?.agentCapabilities?.sessionCapabilities?.close) {
+        await probe.connection.unstable_closeSession({ sessionId });
       }
+    } catch (error) {
+      errors.push(error);
     } finally {
-      await terminateChildProcess(probe.child, 2_000, this.terminateProcess);
+      try {
+        await terminateChildProcess(probe.child, 2_000, this.terminateProcess);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (sessionId && probe.initialize && this.cleanupNativeSession) {
+      try {
+        await this.cleanupNativeSession(sessionId);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `清理 ACP 探测会话 ${sessionId ?? "（未创建）"} 失败`);
     }
   }
 
@@ -1129,6 +1162,8 @@ export class ACPAgentClient implements AgentClient {
     const phaseTimeoutMs = options.phaseTimeoutMs ?? ACP_DIAGNOSTIC_PHASE_TIMEOUT_MS;
     const cwd = options.cwd ?? homedir();
     let transport: ACPProcessTransport | null = null;
+    let initialize: InitializeResponse | null = null;
+    let probeSessionId: string | null = null;
 
     try {
       const spawnStartedAt = Date.now();
@@ -1154,7 +1189,7 @@ export class ACPAgentClient implements AgentClient {
 
       const initializeStartedAt = Date.now();
       try {
-        await this.initializeTransport(activeTransport, phaseTimeoutMs);
+        initialize = await this.initializeTransport(activeTransport, phaseTimeoutMs);
         rows.push({
           label: "ACP initialize",
           value: `ok (${formatDurationMs(initializeStartedAt)})`,
@@ -1180,6 +1215,7 @@ export class ACPAgentClient implements AgentClient {
           phaseTimeoutMs,
           `ACP session/new timed out after ${phaseTimeoutMs}ms`,
         );
+        probeSessionId = response.sessionId;
         const transformed = this.transformSessionResponse(response);
         const models = deriveModelDefinitionsFromACP(
           this.provider,
@@ -1212,7 +1248,10 @@ export class ACPAgentClient implements AgentClient {
       if (transport) {
         const cleanupStartedAt = Date.now();
         try {
-          await terminateChildProcess(transport.child, 2_000, this.terminateProcess);
+          await this.closeProbe(
+            { ...transport, initialize: initialize ?? undefined },
+            probeSessionId,
+          );
           rows.push({
             label: "ACP cleanup",
             value: `ok (${formatDurationMs(cleanupStartedAt)})`,
@@ -1331,6 +1370,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private replayingHistory = false;
   private bootstrapThreadEventPending = false;
   private readonly terminateProcess: ProcessTerminator;
+  private readonly persistSession: boolean;
+  private readonly cleanupNativeSession?: (sessionId: string) => Promise<void>;
 
   constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
     this.provider = options.provider;
@@ -1363,6 +1404,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.persistSession = options.persistSession ?? true;
+    this.cleanupNativeSession = options.cleanupNativeSession;
   }
 
   get id(): string | null {
@@ -2047,19 +2090,23 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
     this.pendingPermissions.clear();
 
-    if (this.connection && this.sessionId) {
+    const sessionId = this.sessionId;
+    const errors: unknown[] = [];
+    if (this.connection && sessionId) {
       try {
         if (this.activeForegroundTurnId) {
-          await this.connection.cancel({ sessionId: this.sessionId });
+          await this.connection.cancel({ sessionId });
         }
-      } catch {}
+      } catch (error) {
+        errors.push(error);
+      }
 
       try {
         if (this.agentCapabilities?.sessionCapabilities?.close) {
-          await this.connection.unstable_closeSession({ sessionId: this.sessionId });
+          await this.connection.unstable_closeSession({ sessionId });
         }
       } catch (error) {
-        this.logger.debug({ err: error }, "ACP closeSession failed during shutdown");
+        errors.push(error);
       }
     }
 
@@ -2069,17 +2116,45 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         forceTimeoutMs: 2_000,
       }),
     );
-    await Promise.all(terminalTerminations);
+    const terminalResults = await Promise.allSettled(terminalTerminations);
+    for (const result of terminalResults) {
+      if (result.status === "rejected") {
+        errors.push(result.reason);
+      }
+    }
     this.terminalEntries.clear();
 
     if (this.child) {
-      await this.terminateProcess(this.child, { gracefulTimeoutMs: 2_000, forceTimeoutMs: 2_000 });
+      try {
+        await this.terminateProcess(this.child, {
+          gracefulTimeoutMs: 2_000,
+          forceTimeoutMs: 2_000,
+        });
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+
+    try {
+      await this.cleanupDisposableNativeSession(sessionId);
+    } catch (error) {
+      errors.push(error);
     }
 
     this.subscribers.clear();
     this.connection = null;
     this.child = null;
     this.activeForegroundTurnId = null;
+    if (errors.length > 0) {
+      throw new AggregateError(errors, `关闭 ACP 会话 ${sessionId ?? "（未创建）"} 失败`);
+    }
+  }
+
+  private async cleanupDisposableNativeSession(sessionId: string | null): Promise<void> {
+    if (this.persistSession || !sessionId || !this.cleanupNativeSession) {
+      return;
+    }
+    await this.cleanupNativeSession(sessionId);
   }
 
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {

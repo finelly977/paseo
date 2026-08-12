@@ -1,8 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import {
+  generateStructuredAgentResponse,
   getStructuredAgentResponse,
   generateStructuredAgentResponseWithFallback,
+  StructuredAgentCleanupError,
   StructuredAgentFallbackError,
   StructuredAgentResponseError,
   type AgentCaller,
@@ -130,6 +132,121 @@ describe("getStructuredAgentResponse", () => {
   });
 });
 
+describe("generateStructuredAgentResponse", () => {
+  const schema = z.object({ summary: z.string() });
+
+  function createManager(options?: {
+    runError?: Error;
+    closeError?: Error;
+    deleteError?: Error;
+  }): AgentManager & {
+    createAgent: ReturnType<typeof vi.fn>;
+    closeAgent: ReturnType<typeof vi.fn>;
+    deleteAgentState: ReturnType<typeof vi.fn>;
+  } {
+    const createAgent = vi.fn(async () => ({ id: "agent-1" }));
+    const runAgent = vi.fn(async () => {
+      if (options?.runError) {
+        throw options.runError;
+      }
+      return { finalText: '{"summary":"完成"}', timeline: [] };
+    });
+    const closeAgent = vi.fn(async () => {
+      if (options?.closeError) {
+        throw options.closeError;
+      }
+    });
+    const deleteAgentState = vi.fn(async () => {
+      if (options?.deleteError) {
+        throw options.deleteError;
+      }
+    });
+    return {
+      createAgent,
+      runAgent,
+      closeAgent,
+      deleteAgentState,
+    } as unknown as AgentManager & {
+      createAgent: ReturnType<typeof vi.fn>;
+      closeAgent: ReturnType<typeof vi.fn>;
+      deleteAgentState: ReturnType<typeof vi.fn>;
+    };
+  }
+
+  it("成功生成后关闭智能体并删除临时状态", async () => {
+    const manager = createManager();
+
+    await expect(
+      generateStructuredAgentResponse({
+        manager,
+        agentConfig: { provider: "grok", cwd: "E:\\paseo", internal: true },
+        persistSession: false,
+        prompt: "返回摘要",
+        schema,
+      }),
+    ).resolves.toEqual({ summary: "完成" });
+
+    expect(manager.createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "grok", internal: true }),
+      undefined,
+      { persistSession: false, workspaceId: undefined },
+    );
+    expect(manager.closeAgent).toHaveBeenCalledWith("agent-1");
+    expect(manager.deleteAgentState).toHaveBeenCalledWith("agent-1");
+  });
+
+  it("关闭失败后仍删除临时状态并报告清理错误", async () => {
+    const closeError = new Error("原生会话删除失败");
+    const manager = createManager({ closeError });
+
+    let thrown: unknown;
+    try {
+      await generateStructuredAgentResponse({
+        manager,
+        agentConfig: { provider: "grok", cwd: "E:\\paseo", internal: true },
+        persistSession: false,
+        prompt: "返回摘要",
+        schema,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect(thrown).toMatchObject({
+      message: "清理结构化智能体 agent-1 失败",
+      errors: [closeError],
+    });
+    expect(manager.deleteAgentState).toHaveBeenCalledWith("agent-1");
+  });
+
+  it("生成和清理同时失败时保留全部错误", async () => {
+    const generationError = new Error("生成失败");
+    const closeError = new Error("关闭失败");
+    const deleteError = new Error("删除状态失败");
+    const manager = createManager({ runError: generationError, closeError, deleteError });
+
+    let thrown: unknown;
+    try {
+      await generateStructuredAgentResponse({
+        manager,
+        agentConfig: { provider: "grok", cwd: "E:\\paseo", internal: true },
+        persistSession: false,
+        prompt: "返回摘要",
+        schema,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect(thrown).toMatchObject({
+      message: "生成并清理结构化智能体 agent-1 失败",
+      errors: [generationError, closeError, deleteError],
+    });
+  });
+});
+
 describe("generateStructuredAgentResponseWithFallback", () => {
   const schema = z.object({ summary: z.string() });
 
@@ -252,6 +369,35 @@ describe("generateStructuredAgentResponseWithFallback", () => {
       { provider: "codex", model: "gpt-5.4-mini" },
     ]);
     expect(manager.checkedProviders).toEqual(["claude", "codex"]);
+  });
+
+  it("清理失败时停止回退，避免继续创建更多临时智能体", async () => {
+    const manager = createManager([
+      { provider: "grok", available: true, error: null },
+      { provider: "codex", available: true, error: null },
+    ]);
+    const cleanupError = new StructuredAgentCleanupError({
+      agentId: "agent-1",
+      cleanupErrors: [new Error("Grok 原生会话删除失败")],
+      generationOutcome: { ok: true, value: { summary: "已生成" } },
+    });
+    const runner = vi.fn(async () => {
+      throw cleanupError;
+    });
+
+    await expect(
+      generateStructuredAgentResponseWithFallback({
+        manager,
+        cwd: "/tmp/project",
+        prompt: "Return JSON",
+        schema,
+        providers: [{ provider: "grok" }, { provider: "codex" }],
+        runner,
+      }),
+    ).rejects.toBe(cleanupError);
+
+    expect(runner).toHaveBeenCalledOnce();
+    expect(manager.checkedProviders).toEqual(["grok"]);
   });
 
   it("throws a fallback error when all providers are unavailable or fail", async () => {

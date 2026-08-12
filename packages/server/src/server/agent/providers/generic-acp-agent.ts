@@ -16,6 +16,7 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
+import { deleteGrokNativeSession } from "./grok-native-session.js";
 
 export const GenericACPProviderParamsSchema = z
   .object({
@@ -59,6 +60,15 @@ export class GenericACPAgentClient extends ACPAgentClient {
 
   constructor(options: GenericACPAgentClientOptions) {
     const providerParams = parseGenericACPProviderParams(options.providerParams);
+    const cleanupNativeSession =
+      options.providerId === "grok"
+        ? (sessionId: string) =>
+            deleteGrokNativeSession({
+              command: options.command,
+              env: options.env,
+              sessionId,
+            })
+        : undefined;
     super({
       provider: "acp",
       logger: options.logger,
@@ -73,6 +83,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       clientCapabilityMeta: options.clientCapabilityMeta,
       configFeatureOptions: options.configFeatureOptions,
       extensionCommandsParser: options.extensionCommandsParser,
+      ...(cleanupNativeSession ? { cleanupNativeSession } : {}),
     });
 
     this.command = options.command;

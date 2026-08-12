@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import type {
   AgentClient,
+  AgentCreateSessionOptions,
   AgentFeature,
   AgentModelDefinition,
   AgentMode,
@@ -44,6 +45,7 @@ const mockState = vi.hoisted(() => {
     isCommandAvailable: vi.fn(async (_command: string) => false),
     runtimeModels: new Map<string, AgentModelDefinition[]>(),
     cursorListFeaturesConfigs: [] as AgentSessionConfig[],
+    genericAcpCreateOptions: [] as Array<AgentCreateSessionOptions | undefined>,
     reset() {
       this.constructorArgs.claude = [];
       this.constructorArgs.codex = [];
@@ -56,6 +58,7 @@ const mockState = vi.hoisted(() => {
       this.isCommandAvailable.mockImplementation(async (_command: string) => false);
       this.runtimeModels.clear();
       this.cursorListFeaturesConfigs = [];
+      this.genericAcpCreateOptions = [];
     },
   };
 });
@@ -311,7 +314,12 @@ vi.mock("./providers/generic-acp-agent.js", () => ({
       });
     }
 
-    async createSession(): Promise<never> {
+    async createSession(
+      _config: AgentSessionConfig,
+      _launchContext?: unknown,
+      options?: AgentCreateSessionOptions,
+    ): Promise<never> {
+      mockState.genericAcpCreateOptions.push(options);
       throw new Error("not implemented");
     }
 
@@ -637,6 +645,27 @@ test("new provider extending acp uses GenericACPAgentClient", () => {
       providerParams: undefined,
     },
   ]);
+});
+
+test("derived ACP provider forwards native-session persistence intent", async () => {
+  const registry = buildProviderRegistry(logger, {
+    providerOverrides: {
+      grok: {
+        extends: "acp",
+        label: "Grok",
+        command: ["grok", "agent", "stdio"],
+      },
+    },
+  });
+  const client = registry.grok.createClient(logger);
+
+  await expect(
+    client.createSession({ provider: "grok", cwd: "/tmp/grok" }, undefined, {
+      persistSession: false,
+    }),
+  ).rejects.toThrow("not implemented");
+
+  expect(mockState.genericAcpCreateOptions).toEqual([{ persistSession: false }]);
 });
 
 test("ACP provider params can disable MCP support", () => {

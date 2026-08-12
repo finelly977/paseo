@@ -2785,8 +2785,11 @@ describe("ACPAgentSession", () => {
 
 interface ACPCloseInternals {
   child: ChildProcess | null;
-  connection: unknown;
+  connection: {
+    unstable_closeSession?: (input: { sessionId: string }) => Promise<unknown>;
+  } | null;
   sessionId: string | null;
+  agentCapabilities?: { sessionCapabilities?: { close?: Record<string, never> } };
 }
 
 async function startTerminal(
@@ -2851,6 +2854,57 @@ describe("ACPAgentSession close() tree-kill", () => {
 
     expect(terminator.terminated).toContain(child);
     expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  test("close() deletes a non-persistent native session after releasing its runtime", async () => {
+    const terminator = new FakeTerminator();
+    const cleanupNativeSession = vi.fn(async () => undefined);
+    const closeSession = vi.fn(async () => ({}));
+    const child = createProbeChildStub();
+    const session = new ACPAgentSession(
+      { provider: "grok", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "grok",
+        logger: createTestLogger(),
+        defaultCommand: ["grok", "agent", "stdio"],
+        defaultModes: [],
+        capabilities: { supportsStreaming: true, supportsSessionPersistence: true },
+        terminateProcess: terminator.terminate,
+        persistSession: false,
+        cleanupNativeSession,
+      },
+    );
+    const internals = asInternals<ACPCloseInternals>(session);
+    internals.child = child;
+    internals.sessionId = "session-1";
+    internals.connection = { unstable_closeSession: closeSession };
+    internals.agentCapabilities = { sessionCapabilities: { close: {} } };
+
+    await session.close();
+
+    expect(closeSession).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(terminator.terminated).toContain(child);
+    expect(cleanupNativeSession).toHaveBeenCalledWith("session-1");
+  });
+
+  test("close() preserves a durable native session by default", async () => {
+    const cleanupNativeSession = vi.fn(async () => undefined);
+    const session = new ACPAgentSession(
+      { provider: "grok", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "grok",
+        logger: createTestLogger(),
+        defaultCommand: ["grok", "agent", "stdio"],
+        defaultModes: [],
+        capabilities: { supportsStreaming: true, supportsSessionPersistence: true },
+        cleanupNativeSession,
+      },
+    );
+    asInternals<ACPCloseInternals>(session).sessionId = "session-1";
+
+    await session.close();
+
+    expect(cleanupNativeSession).not.toHaveBeenCalled();
   });
 
   test("close() terminates running terminal child processes", async () => {
@@ -3028,6 +3082,115 @@ describe("ACPAgentClient probe cleanup", () => {
     expect(child.stdin.destroyed).toBe(true);
     expect(child.stdout.destroyed).toBe(true);
     expect(child.stderr.destroyed).toBe(true);
+  });
+
+  test("cleans up the native session created by a catalog probe", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const closeSession = vi.fn(async () => ({}));
+    const cleanupNativeSession = vi.fn(async () => undefined);
+
+    class TestACPAgentClient extends ACPAgentClient {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockResolvedValue({
+              sessionId: "probe-session-1",
+              modes: null,
+              models: null,
+              configOptions: [],
+            }),
+            unstable_closeSession: closeSession,
+          },
+          initialize: { agentCapabilities: { sessionCapabilities: { close: {} } } },
+        } as SpawnedACPProcess;
+      }
+    }
+
+    const client = new TestACPAgentClient({
+      provider: "grok",
+      logger: createTestLogger(),
+      defaultCommand: ["grok", "agent", "stdio"],
+      defaultModes: [],
+      terminateProcess: terminator.terminate,
+      cleanupNativeSession,
+    });
+
+    await client.fetchCatalog({ scope: "workspace", cwd: "/tmp/acp-models", force: false });
+
+    expect(closeSession).toHaveBeenCalledWith({ sessionId: "probe-session-1" });
+    expect(cleanupNativeSession).toHaveBeenCalledWith("probe-session-1");
+    expect(terminator.terminated).toContain(child);
+  });
+
+  test("does not delete anything when the probe fails before creating a session", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const cleanupNativeSession = vi.fn(async () => undefined);
+
+    class TestACPAgentClient extends ACPAgentClient {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child,
+          connection: {
+            newSession: vi.fn().mockRejectedValue(new Error("session/new failed")),
+          },
+          initialize: { agentCapabilities: {} },
+        } as SpawnedACPProcess;
+      }
+    }
+
+    const client = new TestACPAgentClient({
+      provider: "grok",
+      logger: createTestLogger(),
+      defaultCommand: ["grok", "agent", "stdio"],
+      defaultModes: [],
+      terminateProcess: terminator.terminate,
+      cleanupNativeSession,
+    });
+
+    await expect(
+      client.fetchCatalog({ scope: "workspace", cwd: "/tmp/acp-models", force: false }),
+    ).rejects.toThrow("session/new failed");
+
+    expect(cleanupNativeSession).not.toHaveBeenCalled();
+    expect(terminator.terminated).toContain(child);
+  });
+
+  test("does not delete a session when initialize times out after session/new responds", async () => {
+    const terminator = new FakeTerminator();
+    const child = createProbeChildStub();
+    const cleanupNativeSession = vi.fn(async () => undefined);
+    const sessionId = "late-session-1";
+    const client = new ACPAgentClient({
+      provider: "grok",
+      logger: createTestLogger(),
+      defaultCommand: ["grok", "agent", "stdio"],
+      defaultModes: [],
+      terminateProcess: terminator.terminate,
+      cleanupNativeSession,
+    });
+
+    await asInternals<{
+      closeProbe: (
+        probe: Omit<SpawnedACPProcess, "initialize"> & {
+          initialize?: SpawnedACPProcess["initialize"];
+        },
+        sessionId: string,
+      ) => Promise<void>;
+    }>(client).closeProbe(
+      {
+        child,
+        connection: {
+          unstable_closeSession: vi.fn(async () => ({})),
+        } as unknown as ClientSideConnection,
+      },
+      sessionId,
+    );
+
+    expect(cleanupNativeSession).not.toHaveBeenCalled();
+    expect(terminator.terminated).toContain(child);
   });
 });
 

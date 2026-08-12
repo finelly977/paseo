@@ -61,6 +61,26 @@ export class StructuredAgentFallbackError extends Error {
   }
 }
 
+export class StructuredAgentCleanupError extends AggregateError {
+  readonly agentId: string;
+  readonly cleanupErrors: readonly unknown[];
+
+  constructor(options: {
+    agentId: string;
+    cleanupErrors: readonly unknown[];
+    generationOutcome: StructuredGenerationOutcome<unknown>;
+  }) {
+    const allErrors = options.generationOutcome.ok
+      ? options.cleanupErrors
+      : [options.generationOutcome.error, ...options.cleanupErrors];
+    const action = options.generationOutcome.ok ? "清理" : "生成并清理";
+    super(allErrors, `${action}结构化智能体 ${options.agentId} 失败`);
+    this.name = "StructuredAgentCleanupError";
+    this.agentId = options.agentId;
+    this.cleanupErrors = options.cleanupErrors;
+  }
+}
+
 export interface StructuredAgentResponseOptions<T> {
   caller: AgentCaller;
   prompt: string;
@@ -104,6 +124,8 @@ interface SchemaValidator<T> {
   jsonSchema: JsonSchema;
   validate: (value: unknown) => { ok: true; value: T } | { ok: false; errors: string[] };
 }
+
+type StructuredGenerationOutcome<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
 function isZodSchema(value: unknown): value is z.ZodType {
   return typeof (value as z.ZodType | undefined)?.safeParse === "function";
@@ -360,6 +382,7 @@ export async function generateStructuredAgentResponse<T>(
     persistSession,
     workspaceId: undefined,
   });
+  let outcome: StructuredGenerationOutcome<T>;
   try {
     const caller: AgentCaller = async (nextPrompt) => {
       const result = await manager.runAgent(agent.id, nextPrompt);
@@ -370,22 +393,50 @@ export async function generateStructuredAgentResponse<T>(
       const lastAssistant = result.timeline.findLast((item) => item.type === "assistant_message");
       return lastAssistant?.text ?? "";
     };
-    return await getStructuredAgentResponse({
-      caller,
-      prompt,
-      schema,
-      maxRetries,
-      schemaName,
-    });
-  } finally {
-    try {
-      await manager.closeAgent(agent.id);
-    } catch {
-      // ignore cleanup errors
-    } finally {
-      await manager.deleteAgentState(agent.id).catch(() => undefined);
-    }
+    outcome = {
+      ok: true,
+      value: await getStructuredAgentResponse({
+        caller,
+        prompt,
+        schema,
+        maxRetries,
+        schemaName,
+      }),
+    };
+  } catch (error) {
+    outcome = { ok: false, error };
   }
+
+  const cleanupErrors: unknown[] = [];
+  try {
+    await manager.closeAgent(agent.id);
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+  try {
+    await manager.deleteAgentState(agent.id);
+  } catch (error) {
+    cleanupErrors.push(error);
+  }
+
+  if (!outcome.ok) {
+    if (cleanupErrors.length > 0) {
+      throw new StructuredAgentCleanupError({
+        agentId: agent.id,
+        cleanupErrors,
+        generationOutcome: outcome,
+      });
+    }
+    throw outcome.error;
+  }
+  if (cleanupErrors.length > 0) {
+    throw new StructuredAgentCleanupError({
+      agentId: agent.id,
+      cleanupErrors,
+      generationOutcome: outcome,
+    });
+  }
+  return outcome.value;
 }
 
 function errorMessage(error: unknown): string {
@@ -467,6 +518,9 @@ export async function generateStructuredAgentResponseWithFallback<T>(
       }
       return result;
     } catch (error) {
+      if (error instanceof StructuredAgentCleanupError) {
+        throw error;
+      }
       attempts.push({
         provider: candidate.provider,
         model: candidate.model ?? null,
