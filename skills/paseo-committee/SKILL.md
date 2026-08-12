@@ -6,9 +6,7 @@ user-invocable: true
 
 # Committee Skill
 
-Two agents from contrasting profiles, fresh context, planning a solution in parallel. They stay alive for review after implementation.
-
-The purpose is to step back, not double down. The committee may propose a completely different approach.
+Two agents from contrasting profiles, fresh context, planning a solution in parallel.
 
 **User's additional context:** $ARGUMENTS
 
@@ -35,12 +33,15 @@ If the user names profiles, use those. If fewer than two suitable profiles are c
   This is analysis only. Do NOT edit, create, or delete any files. Do NOT write code.
   ```
 
-- **Trust the wait.** Do not poll, send hurry-ups, or interrupt. GPT-5.4 can reason 15–30 minutes; Opus does extended thinking. Long waits mean it found something worth thinking about.
-- **You are the middleman.** Drive plan → implement → review without yielding to the user, except for divergences that need their call.
+- **Trust the finish notification.** Do not poll, send hurry-ups, or interrupt. Models can reason for 15–30 minutes. You can go idle and Paseo will notify you.
 
-## Phase 1: Plan
+## Workflow
 
-Write a problem-level prompt:
+1. Write a problem-level prompt
+2. Create both agents in parallel via Paseo with `[Committee] <task>` titles and the same prompt
+3. Wait for both responses
+4. Resolve disagreements by passing their arguments between each other
+5. Keep going until they converge into a response
 
 - High-level goal and acceptance criteria
 - Constraints
