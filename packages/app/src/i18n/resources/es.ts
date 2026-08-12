@@ -2212,6 +2212,10 @@ export const es: TranslationResources = {
         emptyState: "No profiles yet. Add one to launch terminals with a specific command.",
       },
       gitAi: {
+        autoApprovePermissions: {
+          title: "自动批准",
+          hint: "自动批准 OpenCode 的工具权限请求",
+        },
         title: "Git 智能体",
         unconfigured: "尚未配置",
         defaultOption: "跟随智能体默认值",
@@ -2230,7 +2234,7 @@ export const es: TranslationResources = {
         commitReview: {
           title: "审查提交",
           editTitle: "配置提交审查",
-          promptPlaceholder: "补充审查重点、严重程度或输出格式规则",
+          promptPlaceholder: "编辑完整的提交审查提示词",
         },
         unsupported: {
           title: "主机版本不支持",

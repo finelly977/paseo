@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT,
   DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
+  GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
+  LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT,
 } from "@getpaseo/protocol/messages";
 import {
   GitAiSession,
@@ -39,14 +41,37 @@ describe("Git AI 提示词", () => {
     expect(prompt).toContain("不得描述分析过程");
   });
 
-  it("提交审查提示词限定指定提交和只读检查", () => {
+  it("提交审查提示词包含指定提交和用户规则", () => {
+    const prompt = buildGitCommitReviewPrompt({
+      sha: "abc1234",
+      customPrompt: "优先检查并发问题",
+      promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
+    });
+
+    expect(prompt).toContain("abc1234");
+    expect(prompt).toContain("优先检查并发问题");
+    expect(prompt).not.toContain("审查规则：");
+  });
+
+  it("自定义审查提示词不会被服务端追加隐藏规则", () => {
+    const prompt = buildGitCommitReviewPrompt({
+      sha: "abc1234",
+      customPrompt: "只检查接口兼容性，并用表格输出。",
+      promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
+    });
+
+    expect(prompt).toBe("审查目标提交：abc1234\n\n只检查接口兼容性，并用表格输出。");
+    expect(prompt).not.toContain("只读 Git 命令");
+    expect(prompt).not.toContain("按严重程度排序");
+  });
+
+  it("旧版自定义审查提示词保留原有完整执行规则", () => {
     const prompt = buildGitCommitReviewPrompt({
       sha: "abc1234",
       customPrompt: "优先检查并发问题",
     });
 
-    expect(prompt).toContain("abc1234");
-    expect(prompt).toContain("只读 Git 命令");
+    expect(prompt).toContain(LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT);
     expect(prompt).toContain("优先检查并发问题");
   });
 
@@ -84,7 +109,7 @@ describe("Git AI 会话清理", () => {
     const flush = vi.fn(async () => undefined);
     const deleteAgentState = vi.fn(async () => undefined);
     const agentManager = {
-      createAgent: vi.fn(async () => ({ id: "agent-1", provider: "codex" })),
+      createAgent: vi.fn(async () => ({ id: "agent-1", provider: "opencode" })),
       runAgent,
       hasInFlightRun: vi.fn(() => running),
       cancelAgentRun,
@@ -111,10 +136,11 @@ describe("Git AI 会话清理", () => {
         ({
           gitAi: {
             commitMessage: {
-              provider: "codex",
+              provider: "opencode",
               model: null,
-              modeId: null,
+              modeId: "build",
               thinkingOptionId: null,
+              autoApprovePermissions: true,
               prompt: "",
             },
             commitReview: {
@@ -135,6 +161,16 @@ describe("Git AI 会话清理", () => {
       requestId: "request-1",
     });
     await vi.waitFor(() => expect(runAgent).toHaveBeenCalledOnce());
+
+    expect(agentManager.createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "opencode",
+        modeId: "build",
+        featureValues: { auto_accept: true },
+      }),
+      undefined,
+      expect.any(Object),
+    );
 
     await session.cleanup();
     await generation;

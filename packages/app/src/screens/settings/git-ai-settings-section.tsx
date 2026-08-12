@@ -6,6 +6,8 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT,
   DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
+  GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
+  LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT,
   type GitAiTaskProfile,
 } from "@getpaseo/protocol/messages";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
@@ -13,6 +15,7 @@ import { CombinedModelSelector } from "@/components/combined-model-selector";
 import { SettingsTextArea } from "@/components/settings-textarea";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +31,7 @@ import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
 
 type GitAiProfileKey = "commitMessage" | "commitReview";
+const OPENCODE_PROVIDER_ID = "opencode";
 
 const EMPTY_PROFILE = {
   provider: null,
@@ -53,9 +57,27 @@ function withDefaultPrompt(
   profile: GitAiTaskProfile | undefined,
 ): GitAiTaskProfile {
   const resolved = profile ?? { ...EMPTY_PROFILE, prompt: defaultPromptForProfile(profileKey) };
-  return resolved.prompt.trim()
-    ? resolved
-    : { ...resolved, prompt: defaultPromptForProfile(profileKey) };
+  if (!resolved.prompt.trim()) {
+    return {
+      ...resolved,
+      prompt: defaultPromptForProfile(profileKey),
+      ...(profileKey === "commitReview"
+        ? { promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION }
+        : {}),
+    };
+  }
+  if (
+    profileKey === "commitReview" &&
+    (resolved.promptVersion === undefined ||
+      resolved.promptVersion < GIT_AI_COMMIT_REVIEW_PROMPT_VERSION)
+  ) {
+    // COMPAT(gitAiCompleteReviewPrompt)：v0.2.2 将旧版隐藏规则移入编辑框，2027-02-12 后删除。
+    const prompt = resolved.prompt.startsWith(LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT)
+      ? resolved.prompt
+      : `${LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT}\n${resolved.prompt}`;
+    return { ...resolved, prompt, promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION };
+  }
+  return resolved;
 }
 
 function fieldTriggerStyle({
@@ -244,6 +266,10 @@ function GitAiProfileEditor({
         model: modelId || null,
         modeId: entry?.defaultModeId ?? null,
         thinkingOptionId: model?.defaultThinkingOptionId ?? null,
+        autoApprovePermissions:
+          provider === OPENCODE_PROVIDER_ID && current.provider === OPENCODE_PROVIDER_ID
+            ? current.autoApprovePermissions
+            : false,
       }));
       setError(null);
     },
@@ -257,6 +283,9 @@ function GitAiProfileEditor({
   }, []);
   const handleThinkingChange = useCallback((thinkingOptionId: string | null) => {
     setDraft((current) => ({ ...current, thinkingOptionId }));
+  }, []);
+  const handleAutoApprovePermissionsChange = useCallback((autoApprovePermissions: boolean) => {
+    setDraft((current) => ({ ...current, autoApprovePermissions }));
   }, []);
   const handleModelOpen = useCallback(() => {
     refetchModelsIfStale(draft.provider);
@@ -343,6 +372,27 @@ function GitAiProfileEditor({
           defaultLabel={defaultOptionLabel}
           onChange={handleModeChange}
         />
+
+        {draft.provider === OPENCODE_PROVIDER_ID ? (
+          <View style={settingsStyles.card}>
+            <View style={settingsStyles.row}>
+              <View style={settingsStyles.rowContent}>
+                <Text style={settingsStyles.rowTitle}>
+                  {t("settings.host.gitAi.autoApprovePermissions.title")}
+                </Text>
+                <Text style={settingsStyles.rowHint}>
+                  {t("settings.host.gitAi.autoApprovePermissions.hint")}
+                </Text>
+              </View>
+              <Switch
+                value={draft.autoApprovePermissions === true}
+                onValueChange={handleAutoApprovePermissionsChange}
+                accessibilityLabel={t("settings.host.gitAi.autoApprovePermissions.title")}
+                testID="git-ai-opencode-auto-approve"
+              />
+            </View>
+          </View>
+        ) : null}
 
         <GitAiOptionField
           label={t("settings.host.gitAi.fields.thinking")}

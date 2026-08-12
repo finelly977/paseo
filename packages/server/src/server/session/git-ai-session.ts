@@ -4,6 +4,8 @@ import type pino from "pino";
 import {
   DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT,
   DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
+  GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
+  LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT,
   type GitAiCloseCommitReviewRequest,
   type GitAiGenerateCommitMessageRequest,
   type GitAiStartCommitReviewRequest,
@@ -49,15 +51,23 @@ export function buildGitCommitMessagePrompt(input: {
     .join("\n");
 }
 
-export function buildGitCommitReviewPrompt(input: { sha: string; customPrompt: string }): string {
-  const taskPrompt = input.customPrompt.trim() || DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT;
-  return [
-    `审查 Git 提交 ${input.sha}。`,
-    "请在当前工作区中使用只读 Git 命令检查该提交及必要的上下文，不要修改文件。",
-    "重点发现会导致行为错误、数据损坏、安全问题、性能退化或测试缺口的具体问题。",
-    "最终回复先列出问题并按严重程度排序，每个问题给出文件位置、影响与可执行的修复建议；如果没有问题，请明确说明。",
-    `审查规则：\n${taskPrompt}`,
-  ]
+export function buildGitCommitReviewPrompt(input: {
+  sha: string;
+  customPrompt: string;
+  promptVersion?: number;
+}): string {
+  const customPrompt = input.customPrompt.trim();
+  const taskPrompt = customPrompt || DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT;
+  let completePrompt = taskPrompt;
+  const isLegacyPrompt =
+    customPrompt &&
+    (input.promptVersion === undefined ||
+      input.promptVersion < GIT_AI_COMMIT_REVIEW_PROMPT_VERSION);
+  // COMPAT(gitAiCompleteReviewPrompt)：v0.2.2 保留旧配置原有审查约束，2027-02-12 后删除。
+  if (isLegacyPrompt && !taskPrompt.startsWith(LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT)) {
+    completePrompt = `${LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT}\n${taskPrompt}`;
+  }
+  return [`审查目标提交：${input.sha}`, completePrompt]
     .filter((part) => part.length > 0)
     .join("\n\n");
 }
@@ -81,6 +91,9 @@ interface GitCommitMessageTask {
 }
 
 type ConfiguredGitAiTaskProfile = GitAiTaskProfile & { provider: string };
+
+const OPENCODE_PROVIDER_ID = "opencode";
+const OPENCODE_AUTO_ACCEPT_FEATURE_ID = "auto_accept";
 
 export interface GitAiSessionOptions {
   host: GitAiSessionHost;
@@ -123,6 +136,9 @@ function buildAgentConfig(input: {
     ...(profile.model ? { model: profile.model } : {}),
     ...(profile.modeId ? { modeId: profile.modeId } : {}),
     ...(profile.thinkingOptionId ? { thinkingOptionId: profile.thinkingOptionId } : {}),
+    ...(profile.provider === OPENCODE_PROVIDER_ID && profile.autoApprovePermissions === true
+      ? { featureValues: { [OPENCODE_AUTO_ACCEPT_FEATURE_ID]: true } }
+      : {}),
   };
 }
 
@@ -244,7 +260,11 @@ export class GitAiSession {
           requestId: message.requestId,
         },
       });
-      const prompt = buildGitCommitReviewPrompt({ sha: message.sha, customPrompt: profile.prompt });
+      const prompt = buildGitCommitReviewPrompt({
+        sha: message.sha,
+        customPrompt: profile.prompt,
+        promptVersion: profile.promptVersion,
+      });
       queueMicrotask(() => this.runCommitReview(taskId, prompt));
     } catch (error) {
       if (task) {

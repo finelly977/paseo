@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT,
   DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
+  GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
   GitAiConfigSchema,
   MutableDaemonConfigPatchSchema,
   MutableDaemonConfigSchema,
@@ -33,6 +34,7 @@ describe("Git AI 配置协议", () => {
       model: null,
       modeId: null,
       thinkingOptionId: null,
+      promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
       prompt: DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
     });
     expect(parsed.commitReview).not.toBe(parsed.commitMessage);
@@ -53,6 +55,20 @@ describe("Git AI 配置协议", () => {
     });
     expect(parsed.gitAi?.commitReview?.prompt).toBe("检查资源释放");
     expect(parsed.gitAi?.commitMessage).toBeUndefined();
+  });
+
+  it("配置补丁允许为 OpenCode 开启自动批准", () => {
+    const parsed = MutableDaemonConfigPatchSchema.parse({
+      gitAi: { commitReview: { autoApprovePermissions: true } },
+    });
+    expect(parsed.gitAi?.commitReview?.autoApprovePermissions).toBe(true);
+  });
+
+  it("配置补丁允许标记审查提示词版本", () => {
+    const parsed = MutableDaemonConfigPatchSchema.parse({
+      gitAi: { commitReview: { promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION } },
+    });
+    expect(parsed.gitAi?.commitReview?.promptVersion).toBe(GIT_AI_COMMIT_REVIEW_PROMPT_VERSION);
   });
 });
 

@@ -128,7 +128,16 @@ export const DEFAULT_GIT_AI_COMMIT_MESSAGE_PROMPT = [
   "只有在单行无法准确概括时，才在空一行后添加简短正文；正文使用“- ”列出关键变化及必要原因，不要逐文件复述，不要描述分析过程，也不要声称完成了差异中无法确认的测试或效果。",
 ].join("\n");
 
+export const GIT_AI_COMMIT_REVIEW_PROMPT_VERSION = 2;
+
+export const LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT = [
+  "请在当前工作区中使用只读 Git 命令检查该提交及必要的上下文，不要修改文件。",
+  "重点发现会导致行为错误、数据损坏、安全问题、性能退化或测试缺口的具体问题。",
+  "最终回复先列出问题并按严重程度排序，每个问题给出文件位置、影响与可执行的修复建议；如果没有问题，请明确说明。",
+].join("\n");
+
 export const DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT = [
+  LEGACY_GIT_AI_COMMIT_REVIEW_RUNTIME_PROMPT,
   "以资深代码审查者的标准审查该提交，只报告由该提交引入、能够从代码和上下文中验证的实质问题。",
   "优先检查行为正确性、数据损坏、安全风险、资源释放、并发竞态、性能退化、跨平台兼容和必要测试缺口；忽略纯格式、命名和个人风格偏好。",
   "每个问题按严重程度排序，明确给出文件与代码位置、触发条件、实际影响和可执行的修复建议；不要虚构问题。若没有发现需要修改的问题，请直接明确说明。",
@@ -140,6 +149,8 @@ const GitAiTaskProfileBaseSchema = z
     model: z.string().min(1).nullable().default(null),
     modeId: z.string().min(1).nullable().default(null),
     thinkingOptionId: z.string().min(1).nullable().default(null),
+    autoApprovePermissions: z.boolean().optional(),
+    promptVersion: z.number().int().min(1).optional(),
   })
   .passthrough();
 
@@ -169,6 +180,7 @@ export const GitAiConfigSchema = z
       model: null,
       modeId: null,
       thinkingOptionId: null,
+      promptVersion: GIT_AI_COMMIT_REVIEW_PROMPT_VERSION,
       prompt: DEFAULT_GIT_AI_COMMIT_REVIEW_PROMPT,
     }),
   })
