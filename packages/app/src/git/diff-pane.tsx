@@ -56,7 +56,6 @@ import { SvgXml } from "react-native-svg";
 import { getFileIconSvg } from "@/components/material-file-icons";
 import { useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
 import { CommitsSection } from "@/git/commits-section/commits-section";
-import { CommitReviewPane } from "@/git/commit-review-pane";
 import { useGitAi } from "@/git/use-git-ai";
 import { DiffScroll } from "@/components/diff-scroll";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
@@ -126,8 +125,6 @@ import {
   type InlineReviewActions,
 } from "@/review";
 import type { GitAction, GitActions } from "@/git/policy";
-import type { PendingPermission } from "@/types/shared";
-import type { WorkspaceFileOpenRequest } from "@/workspace/file-open";
 
 export type { GitActionId, GitAction, GitActions } from "@/git/policy";
 
@@ -1363,7 +1360,6 @@ interface GitDiffPaneProps {
   workspaceId?: string | null;
   cwd: string;
   enabled?: boolean;
-  onOpenFile?: (path: string) => void;
   onAddToChat?: (path: string) => void;
   /**
    * While true, height-measurement updates are suppressed: resizing the sidebar
@@ -2626,19 +2622,14 @@ function ScmPanelHeader({
   );
 }
 
-const EMPTY_PENDING_PERMISSIONS = new Map<string, PendingPermission>();
-
-export function GitDiffPane({ serverId, workspaceId, cwd, onOpenFile }: GitDiffPaneProps) {
+export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
   const { t } = useTranslation();
   const toast = useToast();
   const isCompact = useIsCompactFormFactor();
   const {
     supported: gitAiSupported,
-    review,
     generateCommitMessage,
     startReview,
-    closeReview,
-    toggleReviewCollapsed,
   } = useGitAi({ serverId, workspaceId, cwd });
   const {
     status,
@@ -2791,31 +2782,6 @@ export function GitDiffPane({ serverId, workspaceId, cwd, onOpenFile }: GitDiffP
     },
     [startReview, t, toast],
   );
-  const handleOpenReviewFile = useCallback(
-    (request: WorkspaceFileOpenRequest) => {
-      if (onOpenFile) {
-        onOpenFile(request.location.path);
-        return;
-      }
-      handleOpenChanges(request.location.path);
-    },
-    [handleOpenChanges, onOpenFile],
-  );
-  const allPendingPermissions = useSessionStore(
-    (state) => state.sessions[serverId]?.pendingPermissions,
-  );
-  const reviewPendingPermissions = useMemo(() => {
-    if (!review?.agent || !allPendingPermissions) {
-      return EMPTY_PENDING_PERMISSIONS;
-    }
-    const filtered = new Map<string, PendingPermission>();
-    for (const [key, permission] of allPendingPermissions) {
-      if (permission.agentId === review.agent.id) {
-        filtered.set(key, permission);
-      }
-    }
-    return filtered.size > 0 ? filtered : EMPTY_PENDING_PERMISSIONS;
-  }, [allPendingPermissions, review?.agent]);
   const generateCommitMessageAction = enabledGitAiAction(gitAiSupported, generateCommitMessage);
   const reviewCommitAction = enabledGitAiAction(gitAiSupported, handleReviewCommit);
 
@@ -2937,16 +2903,6 @@ export function GitDiffPane({ serverId, workspaceId, cwd, onOpenFile }: GitDiffP
           forge={forge}
           onCommitPress={handleCommitPress}
           onReviewCommit={reviewCommitAction}
-        />
-      ) : null}
-      {review ? (
-        <CommitReviewPane
-          review={review}
-          serverId={serverId}
-          pendingPermissions={reviewPendingPermissions}
-          onToggleCollapsed={toggleReviewCollapsed}
-          onClose={closeReview}
-          onOpenWorkspaceFile={handleOpenReviewFile}
         />
       ) : null}
     </View>

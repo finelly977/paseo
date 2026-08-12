@@ -31,10 +31,11 @@ const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMute
 const successIconMapping = (theme: Theme) => ({ color: theme.colors.statusSuccess });
 const dangerIconMapping = (theme: Theme) => ({ color: theme.colors.statusDanger });
 
-const DEFAULT_PANEL_WIDTH = 560;
-const DEFAULT_PANEL_HEIGHT = 520;
-const MIN_PANEL_WIDTH = 360;
-const MIN_PANEL_HEIGHT = 260;
+const DEFAULT_PANEL_WIDTH = 420;
+const DEFAULT_PANEL_HEIGHT = 600;
+const MIN_PANEL_WIDTH = 320;
+const MIN_PANEL_HEIGHT = 240;
+const COLLAPSED_PANEL_WIDTH = 360;
 const COLLAPSED_PANEL_HEIGHT = 34;
 const PANEL_MARGIN = 12;
 
@@ -203,19 +204,25 @@ export function CommitReviewPane({
         hasMeasuredHostRef.current = true;
         panelWidth.value = Math.max(minimumWidth, Math.min(DEFAULT_PANEL_WIDTH, maxWidth));
         panelHeight.value = Math.max(minimumHeight, Math.min(DEFAULT_PANEL_HEIGHT, maxHeight));
-        panelX.value = Math.max(PANEL_MARGIN, nextHostWidth - panelWidth.value - PANEL_MARGIN);
+        const renderedWidth = review.collapsed
+          ? Math.min(COLLAPSED_PANEL_WIDTH, maxWidth)
+          : panelWidth.value;
         const renderedHeight = review.collapsed ? COLLAPSED_PANEL_HEIGHT : panelHeight.value;
+        panelX.value = Math.max(PANEL_MARGIN, nextHostWidth - renderedWidth - PANEL_MARGIN);
         panelY.value = Math.max(PANEL_MARGIN, nextHostHeight - renderedHeight - PANEL_MARGIN);
         return;
       }
 
       panelWidth.value = clampPanelValue(panelWidth.value, minimumWidth, maxWidth);
       panelHeight.value = clampPanelValue(panelHeight.value, minimumHeight, maxHeight);
+      const renderedWidth = review.collapsed
+        ? Math.min(COLLAPSED_PANEL_WIDTH, maxWidth)
+        : panelWidth.value;
       const renderedHeight = review.collapsed ? COLLAPSED_PANEL_HEIGHT : panelHeight.value;
       panelX.value = clampPanelValue(
         panelX.value,
         PANEL_MARGIN,
-        nextHostWidth - panelWidth.value - PANEL_MARGIN,
+        nextHostWidth - renderedWidth - PANEL_MARGIN,
       );
       panelY.value = clampPanelValue(
         panelY.value,
@@ -231,12 +238,26 @@ export function CommitReviewPane({
       return;
     }
     if (review.collapsed) {
+      const collapsedWidth = Math.min(
+        COLLAPSED_PANEL_WIDTH,
+        Math.max(0, hostWidth.value - PANEL_MARGIN * 2),
+      );
+      panelX.value = clampPanelValue(
+        panelX.value,
+        PANEL_MARGIN,
+        hostWidth.value - collapsedWidth - PANEL_MARGIN,
+      );
       panelY.value = clampPanelValue(
         panelY.value + panelHeight.value - COLLAPSED_PANEL_HEIGHT,
         PANEL_MARGIN,
         hostHeight.value - COLLAPSED_PANEL_HEIGHT - PANEL_MARGIN,
       );
     } else {
+      panelX.value = clampPanelValue(
+        panelX.value,
+        PANEL_MARGIN,
+        hostWidth.value - panelWidth.value - PANEL_MARGIN,
+      );
       panelY.value = clampPanelValue(
         panelY.value + COLLAPSED_PANEL_HEIGHT - panelHeight.value,
         PANEL_MARGIN,
@@ -244,7 +265,7 @@ export function CommitReviewPane({
       );
     }
     wasCollapsedRef.current = review.collapsed;
-  }, [hostHeight, panelHeight, panelY, review.collapsed]);
+  }, [hostHeight, hostWidth, panelHeight, panelWidth, panelX, panelY, review.collapsed]);
 
   const dragGesture = useMemo(
     () =>
@@ -255,11 +276,14 @@ export function CommitReviewPane({
           gestureStartY.value = panelY.value;
         })
         .onUpdate((event) => {
+          const renderedWidth = review.collapsed
+            ? Math.min(COLLAPSED_PANEL_WIDTH, Math.max(0, hostWidth.value - PANEL_MARGIN * 2))
+            : panelWidth.value;
           const renderedHeight = review.collapsed ? COLLAPSED_PANEL_HEIGHT : panelHeight.value;
           panelX.value = clampPanelValue(
             gestureStartX.value + event.translationX,
             PANEL_MARGIN,
-            hostWidth.value - panelWidth.value - PANEL_MARGIN,
+            hostWidth.value - renderedWidth - PANEL_MARGIN,
           );
           panelY.value = clampPanelValue(
             gestureStartY.value + event.translationY,
@@ -352,7 +376,9 @@ export function CommitReviewPane({
 
   const panelAnimatedStyle = useAnimatedStyle(
     () => ({
-      width: panelWidth.value,
+      width: review.collapsed
+        ? Math.min(COLLAPSED_PANEL_WIDTH, Math.max(0, hostWidth.value - PANEL_MARGIN * 2))
+        : panelWidth.value,
       height: review.collapsed ? COLLAPSED_PANEL_HEIGHT : panelHeight.value,
       opacity: hostWidth.value > 0 && hostHeight.value > 0 ? 1 : 0,
       transform: [{ translateX: panelX.value }, { translateY: panelY.value }],

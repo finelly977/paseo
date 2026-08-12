@@ -406,7 +406,6 @@ function ExplorerSidebarContent({
             workspaceRoot={workspaceRoot}
             isOpen={isOpen}
             isResizing={isResizing}
-            onOpenFile={onOpenFile}
           />
         )}
         {resolvedTab === "files" && (
@@ -473,10 +472,9 @@ function ChangedFilesPane({
   workspaceRoot,
   isOpen,
   isResizing,
-  onOpenFile,
 }: Pick<
   SidebarContentProps,
-  "serverId" | "workspaceId" | "workspaceRoot" | "isOpen" | "isResizing" | "onOpenFile"
+  "serverId" | "workspaceId" | "workspaceRoot" | "isOpen" | "isResizing"
 >) {
   const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
   return (
@@ -486,7 +484,6 @@ function ChangedFilesPane({
       cwd={workspaceRoot}
       enabled={isOpen}
       suppressHeightSync={isResizing}
-      onOpenFile={onOpenFile}
       onAddToChat={canAddToChat ? addFile : undefined}
     />
   );

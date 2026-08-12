@@ -1,7 +1,8 @@
+import { useMemo, type ComponentProps } from "react";
 import type { StyleProp, TextStyle } from "react-native";
-import { useMemo } from "react";
 import { TextInput, View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { isWeb } from "@/constants/platform";
 import { settingsStyles } from "@/styles/settings";
 
 interface SettingsTextAreaProps {
@@ -13,6 +14,10 @@ interface SettingsTextAreaProps {
   style?: StyleProp<TextStyle>;
 }
 
+const webResizeStyle = isWeb
+  ? ({ resize: "vertical" } as ComponentProps<typeof TextInput>["style"])
+  : undefined;
+
 export function SettingsTextArea({
   accessibilityLabel,
   value,
@@ -22,7 +27,7 @@ export function SettingsTextArea({
   style,
 }: SettingsTextAreaProps) {
   const { theme } = useUnistyles();
-  const inputStyle = useMemo(() => [styles.input, style], [style]);
+  const inputStyle = useMemo(() => [styles.input, webResizeStyle, style], [style]);
 
   return (
     <TextInput

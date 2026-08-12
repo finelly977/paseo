@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { create } from "zustand";
 import type { GitAiCommitReviewStatus, GitAiCommitReviewStream } from "@getpaseo/protocol/messages";
-import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { getHostRuntimeStore, useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import { processAgentStreamEvent } from "@/timeline/session-stream-reducers";
 import type { StreamItem } from "@/types/stream";
@@ -9,6 +10,14 @@ import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 
 type ReviewStatus = "starting" | "running" | "completed" | "failed" | "closing";
 type GitReviewAgent = ReturnType<typeof normalizeAgentSnapshot>;
+type GitReviewClient = NonNullable<ReturnType<typeof useHostRuntimeClient>>;
+
+interface GitCommitReviewStartInput {
+  serverId: string;
+  workspaceId?: string | null;
+  cwd: string;
+  sha: string;
+}
 
 export interface GitCommitReviewState {
   taskId: string | null;
@@ -19,6 +28,12 @@ export interface GitCommitReviewState {
   status: ReviewStatus;
   collapsed: boolean;
   error: string | null;
+}
+
+export interface GitCommitReviewContext {
+  serverId: string;
+  workspaceId?: string | null;
+  cwd: string;
 }
 
 type ReviewAction =
@@ -38,6 +53,14 @@ type ReviewAction =
 type BufferedReviewEvent =
   | { type: "stream"; payload: GitAiCommitReviewStream["payload"] }
   | { type: "status"; payload: GitAiCommitReviewStatus["payload"] };
+
+interface GitCommitReviewStore {
+  review: GitCommitReviewState | null;
+  context: GitCommitReviewContext | null;
+  dispatch: (action: ReviewAction) => void;
+  setContext: (context: GitCommitReviewContext) => void;
+  clear: () => void;
+}
 
 function resolveReviewLifecycle(status: GitAiCommitReviewStatus["payload"]["status"]): {
   reviewStatus: ReviewStatus;
@@ -138,8 +161,238 @@ function reduceReviewState(
   };
 }
 
+export const useGitCommitReviewStore = create<GitCommitReviewStore>((set) => ({
+  review: null,
+  context: null,
+  dispatch: (action) => set((state) => ({ review: reduceReviewState(state.review, action) })),
+  setContext: (context) => set({ context }),
+  clear: () => set({ review: null, context: null }),
+}));
+
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+let activeClient: GitReviewClient | null = null;
+let activeTaskId: string | null = null;
+let starting = false;
+let closeRequested = false;
+let operationToken = 0;
+let eventCleanup: (() => void) | null = null;
+let connectionCleanup: (() => void) | null = null;
+let closeOperation: { taskId: string; promise: Promise<void> } | null = null;
+const bufferedEvents = new Map<string, BufferedReviewEvent[]>();
+
+function unsubscribeActiveClient(): void {
+  eventCleanup?.();
+  connectionCleanup?.();
+  eventCleanup = null;
+  connectionCleanup = null;
+  activeClient = null;
+}
+
+function handleActiveClientDisconnected(client: GitReviewClient): void {
+  if (activeClient !== client) {
+    return;
+  }
+  operationToken += 1;
+  starting = false;
+  closeRequested = false;
+  unsubscribeActiveClient();
+  activeTaskId = null;
+  bufferedEvents.clear();
+  useGitCommitReviewStore.getState().clear();
+}
+
+function subscribeActiveClient(client: NonNullable<typeof activeClient>): boolean {
+  unsubscribeActiveClient();
+  activeClient = client;
+  function applyOrBuffer(event: BufferedReviewEvent): void {
+    if (event.payload.taskId === activeTaskId) {
+      useGitCommitReviewStore.getState().dispatch(event);
+      return;
+    }
+    if (starting) {
+      const queued = bufferedEvents.get(event.payload.taskId) ?? [];
+      queued.push(event);
+      bufferedEvents.set(event.payload.taskId, queued);
+    }
+  }
+  const unsubscribeStream = client.on("git.ai.commit_review.stream", (message) => {
+    applyOrBuffer({ type: "stream", payload: message.payload });
+  });
+  const unsubscribeStatus = client.on("git.ai.commit_review.status", (message) => {
+    applyOrBuffer({ type: "status", payload: message.payload });
+  });
+  let subscriptionReady = false;
+  let disconnectedDuringSubscription = false;
+  const unsubscribeConnection = client.subscribeConnectionStatus((status) => {
+    if (status.status === "disconnected" || status.status === "disposed") {
+      if (!subscriptionReady) {
+        disconnectedDuringSubscription = true;
+        return;
+      }
+      handleActiveClientDisconnected(client);
+    }
+  });
+  eventCleanup = () => {
+    unsubscribeStream();
+    unsubscribeStatus();
+  };
+  connectionCleanup = unsubscribeConnection;
+  subscriptionReady = true;
+  if (disconnectedDuringSubscription) {
+    handleActiveClientDisconnected(client);
+    return false;
+  }
+  return true;
+}
+
+async function closeActiveGitCommitReview(): Promise<void> {
+  const taskId = activeTaskId;
+  if (!taskId || !activeClient) {
+    activeTaskId = null;
+    bufferedEvents.clear();
+    unsubscribeActiveClient();
+    useGitCommitReviewStore.getState().clear();
+    return;
+  }
+  if (closeOperation?.taskId === taskId) {
+    await closeOperation.promise;
+    return;
+  }
+  const client = activeClient;
+  useGitCommitReviewStore.getState().dispatch({ type: "closing" });
+  const promise = (async () => {
+    try {
+      await client.closeGitCommitReview(taskId);
+    } catch (error) {
+      if (activeTaskId === taskId && activeClient === client) {
+        useGitCommitReviewStore
+          .getState()
+          .dispatch({ type: "close_failed", error: toErrorMessage(error) });
+      }
+      throw error;
+    }
+    bufferedEvents.delete(taskId);
+    if (activeTaskId === taskId && activeClient === client) {
+      activeTaskId = null;
+      unsubscribeActiveClient();
+      useGitCommitReviewStore.getState().clear();
+    }
+  })();
+  closeOperation = { taskId, promise };
+  try {
+    await promise;
+  } finally {
+    if (closeOperation?.promise === promise) {
+      closeOperation = null;
+    }
+  }
+}
+
+export async function closeGitCommitReview(): Promise<void> {
+  if (starting) {
+    closeRequested = true;
+    useGitCommitReviewStore.getState().dispatch({ type: "closing" });
+    return;
+  }
+  await closeActiveGitCommitReview();
+}
+
+export function toggleGitCommitReviewCollapsed(): void {
+  useGitCommitReviewStore.getState().dispatch({ type: "toggle_collapsed" });
+}
+
+export async function startGitCommitReview(
+  input: GitCommitReviewStartInput,
+  messages: {
+    hostDisconnected: string;
+    invalidReviewResponse: string;
+  } = {
+    hostDisconnected: "Host is not connected",
+    invalidReviewResponse: "Host returned an invalid commit review response",
+  },
+): Promise<void> {
+  const client = getHostRuntimeStore().getClient(input.serverId);
+  if (!client) {
+    throw new Error(messages.hostDisconnected);
+  }
+  const token = ++operationToken;
+  if (activeTaskId || starting) {
+    await closeGitCommitReview();
+  }
+  if (token !== operationToken) {
+    return;
+  }
+  starting = true;
+  closeRequested = false;
+  const context: GitCommitReviewContext = {
+    serverId: input.serverId,
+    workspaceId: input.workspaceId,
+    cwd: input.cwd,
+  };
+  useGitCommitReviewStore.getState().setContext(context);
+  useGitCommitReviewStore.getState().dispatch({ type: "start", sha: input.sha });
+  if (!subscribeActiveClient(client)) {
+    if (token === operationToken) {
+      useGitCommitReviewStore.getState().dispatch({
+        type: "close_failed",
+        error: messages.hostDisconnected,
+      });
+    }
+    throw new Error(messages.hostDisconnected);
+  }
+  bufferedEvents.clear();
+  try {
+    const response = await client.startGitCommitReview({
+      cwd: input.cwd,
+      sha: input.sha,
+      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    });
+    if (token !== operationToken) {
+      if (response.taskId) {
+        await client.closeGitCommitReview(response.taskId);
+      }
+      return;
+    }
+    if (!response.taskId || !response.agent) {
+      if (response.taskId) {
+        await client.closeGitCommitReview(response.taskId);
+      }
+      throw new Error(messages.invalidReviewResponse);
+    }
+    activeTaskId = response.taskId;
+    starting = false;
+    useGitCommitReviewStore.getState().dispatch({
+      type: "ready",
+      taskId: response.taskId,
+      agent: normalizeAgentSnapshot(response.agent, input.serverId),
+    });
+    const queued = bufferedEvents.get(response.taskId) ?? [];
+    bufferedEvents.clear();
+    for (const event of queued) {
+      useGitCommitReviewStore.getState().dispatch(event);
+    }
+    if (closeRequested) {
+      await closeGitCommitReview();
+    }
+  } catch (error) {
+    starting = false;
+    if (token === operationToken) {
+      bufferedEvents.clear();
+      unsubscribeActiveClient();
+      useGitCommitReviewStore
+        .getState()
+        .dispatch({ type: "close_failed", error: toErrorMessage(error) });
+    }
+    throw error;
+  } finally {
+    if (token === operationToken) {
+      starting = false;
+      closeRequested = false;
+    }
+  }
 }
 
 export function useGitAi({
@@ -156,86 +409,6 @@ export function useGitAi({
   const supported = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.gitAi === true,
   );
-  const [review, dispatch] = useReducer(reduceReviewState, null);
-  const activeTaskIdRef = useRef<string | null>(null);
-  const startingRef = useRef(false);
-  const operationBusyRef = useRef(false);
-  const operationTokenRef = useRef(0);
-  const closeRequestedRef = useRef(false);
-  const bufferedEventsRef = useRef(new Map<string, BufferedReviewEvent[]>());
-
-  useEffect(() => {
-    if (!client) {
-      return;
-    }
-    const applyOrBuffer = (event: BufferedReviewEvent) => {
-      if (event.payload.taskId === activeTaskIdRef.current) {
-        dispatch(event);
-        return;
-      }
-      if (!startingRef.current) {
-        return;
-      }
-      const buffered = bufferedEventsRef.current.get(event.payload.taskId) ?? [];
-      buffered.push(event);
-      bufferedEventsRef.current.set(event.payload.taskId, buffered);
-    };
-    const unsubscribeStream = client.on("git.ai.commit_review.stream", (message) => {
-      applyOrBuffer({ type: "stream", payload: message.payload });
-    });
-    const unsubscribeStatus = client.on("git.ai.commit_review.status", (message) => {
-      applyOrBuffer({ type: "status", payload: message.payload });
-    });
-    return () => {
-      unsubscribeStream();
-      unsubscribeStatus();
-    };
-  }, [client]);
-
-  useEffect(
-    () => () => {
-      operationTokenRef.current += 1;
-      operationBusyRef.current = false;
-      closeRequestedRef.current = false;
-      const taskId = activeTaskIdRef.current;
-      startingRef.current = false;
-      bufferedEventsRef.current.clear();
-      dispatch({ type: "clear" });
-      if (!client || !taskId) {
-        return;
-      }
-      activeTaskIdRef.current = null;
-      void client.closeGitCommitReview(taskId).catch((error) => {
-        console.error("[Git AI] 卸载面板时清理提交审查失败", error);
-      });
-    },
-    [client, cwd, workspaceId],
-  );
-
-  const closeActiveTask = useCallback(
-    async (taskId: string) => {
-      if (!client) {
-        throw new Error(t("workspace.git.ai.errors.hostDisconnected"));
-      }
-      dispatch({ type: "closing" });
-      try {
-        await client.closeGitCommitReview(taskId);
-      } catch (error) {
-        const message = toErrorMessage(error);
-        if (activeTaskIdRef.current === taskId) {
-          dispatch({ type: "close_failed", error: message });
-        }
-        throw error;
-      }
-      bufferedEventsRef.current.delete(taskId);
-      if (activeTaskIdRef.current === taskId) {
-        activeTaskIdRef.current = null;
-        dispatch({ type: "clear" });
-      }
-    },
-    [client, t],
-  );
-
   const startReview = useCallback(
     async (sha: string) => {
       if (!client) {
@@ -244,95 +417,16 @@ export function useGitAi({
       if (!supported) {
         throw new Error(t("workspace.git.ai.errors.updateHost"));
       }
-      if (operationBusyRef.current) {
-        throw new Error(t("workspace.git.ai.errors.operationInProgress"));
-      }
-      operationBusyRef.current = true;
-      closeRequestedRef.current = false;
-      const operationToken = operationTokenRef.current + 1;
-      operationTokenRef.current = operationToken;
-      try {
-        const activeTaskId = activeTaskIdRef.current;
-        if (activeTaskId) {
-          await closeActiveTask(activeTaskId);
-        }
-
-        dispatch({ type: "start", sha });
-        startingRef.current = true;
-        bufferedEventsRef.current.clear();
-        const response = await client.startGitCommitReview({
-          cwd,
-          sha,
-          ...(workspaceId ? { workspaceId } : {}),
-        });
-        if (!response.taskId || !response.agent) {
-          throw new Error(t("workspace.git.ai.errors.invalidReviewResponse"));
-        }
-        const taskId = response.taskId;
-        if (operationTokenRef.current !== operationToken) {
-          await client.closeGitCommitReview(taskId);
-          return;
-        }
-        activeTaskIdRef.current = taskId;
-        startingRef.current = false;
-        dispatch({
-          type: "ready",
-          taskId,
-          agent: normalizeAgentSnapshot(response.agent, serverId),
-        });
-        const buffered = bufferedEventsRef.current.get(taskId) ?? [];
-        bufferedEventsRef.current.clear();
-        for (const event of buffered) {
-          dispatch(event);
-        }
-        if (closeRequestedRef.current) {
-          await closeActiveTask(taskId);
-        }
-      } catch (error) {
-        startingRef.current = false;
-        if (operationTokenRef.current === operationToken && !activeTaskIdRef.current) {
-          dispatch({ type: "close_failed", error: toErrorMessage(error) });
-        }
-        throw error;
-      } finally {
-        if (operationTokenRef.current === operationToken) {
-          operationBusyRef.current = false;
-          closeRequestedRef.current = false;
-        }
-      }
+      await startGitCommitReview(
+        { serverId, workspaceId, cwd, sha },
+        {
+          hostDisconnected: t("workspace.git.ai.errors.hostDisconnected"),
+          invalidReviewResponse: t("workspace.git.ai.errors.invalidReviewResponse"),
+        },
+      );
     },
-    [client, closeActiveTask, cwd, serverId, supported, t, workspaceId],
+    [client, cwd, serverId, supported, t, workspaceId],
   );
-
-  const closeReview = useCallback(async () => {
-    if (operationBusyRef.current && startingRef.current) {
-      closeRequestedRef.current = true;
-      dispatch({ type: "closing" });
-      return;
-    }
-    const taskId = activeTaskIdRef.current;
-    if (!taskId) {
-      dispatch({ type: "clear" });
-      return;
-    }
-    if (operationBusyRef.current) {
-      return;
-    }
-    const operationToken = operationTokenRef.current + 1;
-    operationTokenRef.current = operationToken;
-    operationBusyRef.current = true;
-    try {
-      await closeActiveTask(taskId);
-    } finally {
-      if (operationTokenRef.current === operationToken) {
-        operationBusyRef.current = false;
-      }
-    }
-  }, [closeActiveTask]);
-
-  const toggleReviewCollapsed = useCallback(() => {
-    dispatch({ type: "toggle_collapsed" });
-  }, []);
 
   const generateCommitMessage = useCallback(async () => {
     if (!client) {
@@ -346,10 +440,7 @@ export function useGitAi({
 
   return {
     supported,
-    review,
     generateCommitMessage,
     startReview,
-    closeReview,
-    toggleReviewCollapsed,
   };
 }
