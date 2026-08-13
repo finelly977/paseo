@@ -2564,7 +2564,6 @@ function ScmPanelHeader({
       <SourceControlRepositoryHeader
         repositoryName={repositoryName}
         gitActions={gitActions}
-        changeCount={changes ? totalChangeCount : null}
         isRefreshing={isRefreshing}
         refreshSupported={refreshSupported}
         onRefresh={onRefresh}

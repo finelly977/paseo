@@ -44,7 +44,6 @@ const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedSparkles = withUnistyles(Sparkles);
 
 export interface SourceControlRepositoryHeaderProps {
-  changeCount?: number | null;
   repositoryName: string;
   gitActions: GitActions;
   isRefreshing: boolean;
@@ -54,7 +53,6 @@ export interface SourceControlRepositoryHeaderProps {
 }
 
 export function SourceControlRepositoryHeader({
-  changeCount,
   repositoryName,
   gitActions,
   isRefreshing,
@@ -63,7 +61,6 @@ export function SourceControlRepositoryHeader({
   children,
 }: SourceControlRepositoryHeaderProps) {
   const { t } = useTranslation();
-  const sourceControlTitle = t("workspace.git.panel.sourceControl");
   return (
     <View style={styles.repositorySection} testID="source-control-repository">
       <View style={styles.repositoryRow}>
@@ -74,17 +71,6 @@ export function SourceControlRepositoryHeader({
           </Text>
         </View>
         <View style={styles.repositoryBranch}>{children}</View>
-        <View style={styles.repositoryStatus} testID="source-control-changes-heading">
-          <Text style={styles.sectionTitle}>{sourceControlTitle}</Text>
-          {changeCount !== undefined && changeCount !== null ? (
-            <View
-              style={styles.countBadge}
-              accessibilityLabel={`${sourceControlTitle}: ${changeCount}`}
-            >
-              <Text style={styles.countText}>{changeCount}</Text>
-            </View>
-          ) : null}
-        </View>
         {refreshSupported ? (
           <Pressable
             accessibilityRole="button"
@@ -700,12 +686,6 @@ const styles = StyleSheet.create((theme) => ({
   repositoryBranch: {
     maxWidth: "36%",
     minWidth: 0,
-  },
-  repositoryStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    flexShrink: 0,
   },
   repositoryRefreshAction: {
     width: 20,
