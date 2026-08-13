@@ -8,6 +8,7 @@ import {
   clickReloadProjectSettings,
   clickRetryProjectSettingsSave,
   clickSaveProjectSettings,
+  commitPaseoConfig,
   corruptPaseoConfig,
   editWorktreeSetup,
   expectEmptyScriptList,
@@ -15,18 +16,21 @@ import {
   expectHostPickerHidden,
   expectNoEditableTarget,
   expectNoProjectSettingsError,
+  expectNoUncommittedSetupWarning,
   expectProjectSettingsError,
   expectProjectSettingsFormHidden,
   expectProjectSettingsFormVisible,
   expectSaveButtonDisabled,
   expectScriptRowCount,
   expectWriteFailedCalloutActions,
+  expectUncommittedSetupWarning,
   installDaemonConnectionGate,
   installReadTransportFailure,
   navigateToProjectSettings,
   openProjectSettings,
   openProjects,
   removeProjectScript,
+  returnToProjectsList,
   restorePaseoConfig,
   unblockPaseoConfigWrites,
 } from "./helpers/project-settings";
@@ -199,9 +203,16 @@ test.describe("Projects settings", () => {
   test("user edits worktree setup from the projects page", async ({ page, editableProject }) => {
     await openProjects(page);
     await openProjectSettings(page, editableProject.name);
+    await expectNoUncommittedSetupWarning(page);
     await editWorktreeSetup(page, updatedSetup);
     await clickSaveProjectSettings(page);
     await expectProjectConfigSaved(editableProject);
+    await expectUncommittedSetupWarning(page);
+
+    commitPaseoConfig(editableProject.path);
+    await returnToProjectsList(page);
+    await openProjectSettings(page, editableProject.name);
+    await expectNoUncommittedSetupWarning(page);
   });
 
   test("user edits worktree setup on a non-GitHub remote project", async ({
@@ -346,5 +357,7 @@ test.describe("Projects settings — error UX", () => {
 
     await expectScriptRowCount(page, 0);
     await expectEmptyScriptList(page);
+    await clickSaveProjectSettings(page);
+    await expectNoUncommittedSetupWarning(page);
   });
 });

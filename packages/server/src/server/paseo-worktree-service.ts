@@ -13,7 +13,7 @@ import {
 import {
   mapWorkspaceRelativeCwdToWorktree,
   rollbackCreatedPaseoWorktree,
-  copySourcePaseoConfigFile,
+  seedPaseoConfigFile,
   validateBranchSlug,
   type WorktreeConfig,
 } from "../utils/worktree.js";
@@ -77,7 +77,7 @@ export async function createPaseoWorktree(
     }
 
     if (createdWorktree.created) {
-      await copySourcePaseoConfigFile({
+      await seedPaseoConfigFile({
         sourceCwd: workspaceCwdPlan.inputCwd,
         targetCwd: workspaceCwd,
       });
