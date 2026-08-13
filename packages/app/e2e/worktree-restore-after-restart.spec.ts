@@ -64,7 +64,7 @@ test.describe("Worktree restore after daemon restart", () => {
           label: "restart daemon",
           nowIso,
         }),
-        preferences: buildCreateAgentPreferences(serverId),
+        preferences: buildCreateAgentPreferences(),
       },
     );
   }

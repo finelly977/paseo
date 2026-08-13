@@ -7,6 +7,7 @@ import path from "node:path";
 import net from "node:net";
 import { test, expect, type Page } from "@playwright/test";
 import { buildHostWorkspaceRoute, decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
+import type { FormPreferences } from "@/create-agent-preferences/preferences";
 import { buildSeededHost } from "./helpers/daemon-registry";
 import { loadDaemonClientConstructor } from "./helpers/daemon-client-loader";
 import { createNodeWebSocketFactory, type NodeWebSocketFactory } from "./helpers/node-ws-factory";
@@ -343,12 +344,14 @@ async function seedBrowserForDaemon(page: Page, input: { serverId: string; port:
     {
       daemon: host,
       preferences: {
-        serverId: input.serverId,
         provider: "codex",
         providerPreferences: {
-          codex: { model: "gpt-5.4-mini", thinkingOptionId: "low" },
+          codex: {
+            model: "gpt-5.4-mini",
+            thinkingByModel: { "gpt-5.4-mini": "low" },
+          },
         },
-      },
+      } satisfies FormPreferences,
     },
   );
 }

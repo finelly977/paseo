@@ -1,3 +1,4 @@
+import { z } from "zod";
 export interface BrowserRecord {
   browserId: string;
   url: string;
@@ -16,6 +17,21 @@ export interface BrowserIndexState {
   browsersById: Record<string, BrowserRecord>;
 }
 
+const BrowserRecordSchema = z.strictObject({
+  browserId: z.string(),
+  url: z.string(),
+  title: z.string(),
+  isLoading: z.boolean(),
+  canGoBack: z.boolean(),
+  canGoForward: z.boolean(),
+  faviconUrl: z.string().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.number(),
+});
+
+export const BrowserIndexStateSchema: z.ZodType<BrowserIndexState> = z.strictObject({
+  browsersById: z.record(z.string(), BrowserRecordSchema),
+});
 export function trimNonEmpty(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
     return null;

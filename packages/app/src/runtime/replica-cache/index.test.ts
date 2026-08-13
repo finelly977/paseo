@@ -24,6 +24,10 @@ class MemoryStorage implements ReplicaCacheStorage {
     this.writes += 1;
     this.values.set(key, value);
   }
+
+  async removeItem(key: string): Promise<void> {
+    this.values.delete(key);
+  }
 }
 
 function workspace(
@@ -87,6 +91,22 @@ function message(id: string, text: string): StreamItem {
     text,
     timestamp: new Date("2026-07-18T08:02:00.000Z"),
     timelineCursor: { epoch: "epoch-1", seq: 12 },
+  };
+}
+
+function userMessage(input: {
+  id: string;
+  clientMessageId: string;
+  text: string;
+  timelineCursor?: { epoch: string; seq: number };
+}): StreamItem {
+  return {
+    kind: "user_message",
+    id: input.id,
+    clientMessageId: input.clientMessageId,
+    text: input.text,
+    timestamp: new Date("2026-07-18T08:01:00.000Z"),
+    ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
   };
 }
 
@@ -250,6 +270,46 @@ describe("ReplicaCache", () => {
     expect(Array.from(session?.projects.keys() ?? [])).toEqual(["project-2"]);
     expect(Array.from(timelines?.keys() ?? [])).toEqual(["agent-2"]);
     expect(timelines?.get("agent-2")).toEqual(secondTimeline.slice(-50));
+    const persisted = JSON.parse(storage.values.get("@paseo:replica-cache") ?? "null") as {
+      version: number;
+      hosts: Array<{ timeline: Record<string, unknown> | null }>;
+    };
+    expect(persisted.version).toBe(5);
+    expect(Object.keys(persisted.hosts[0]?.timeline ?? {}).sort()).toEqual([
+      "agentId",
+      "cursor",
+      "hasOlder",
+      "items",
+    ]);
+  });
+
+  it("persists reconciled rows without caching unreconciled local presentations", async () => {
+    const storage = new MemoryStorage();
+    const cache = new ReplicaCache(storage);
+    cache.setHosts([SERVER_ID]);
+    seedSession();
+    const unreconciled = userMessage({
+      id: "client-pending",
+      clientMessageId: "client-pending",
+      text: "Pending",
+    });
+    const reconciled = userMessage({
+      id: "provider-sent",
+      clientMessageId: "client-sent",
+      timelineCursor: { epoch: "epoch-1", seq: 11 },
+      text: "Sent",
+    });
+    useSessionStore
+      .getState()
+      .setAgentStreamTail(SERVER_ID, new Map([["agent-1", [unreconciled, reconciled]]]));
+
+    await cache.flush();
+    useSessionStore.getState().clearSession(SERVER_ID);
+    await cache.restore();
+
+    expect(useSessionStore.getState().sessions[SERVER_ID]?.agentStreamTail.get("agent-1")).toEqual([
+      reconciled,
+    ]);
   });
 
   it("evicts the least recently written host when the cache exceeds its byte budget", async () => {
@@ -285,6 +345,43 @@ describe("ReplicaCache", () => {
 
     await cache.restore();
 
+    expect(storage.values.has("@paseo:replica-cache")).toBe(false);
     expect(useSessionStore.getState().sessions[SERVER_ID]).toBeUndefined();
+  });
+
+  it("rejects and clears version 4 cache data before overwriting it on flush", async () => {
+    const storage = new MemoryStorage();
+    storage.values.set(
+      "@paseo:replica-cache",
+      JSON.stringify({
+        version: 4,
+        hosts: [
+          {
+            serverId: SERVER_ID,
+            agents: [],
+            workspaces: [],
+            emptyProjects: [],
+            timeline: {
+              agentId: "agent-1",
+              items: [],
+              cursor: { epoch: "poisoned", startSeq: 1, endSeq: 100 },
+              hasOlder: false,
+            },
+          },
+        ],
+      }),
+    );
+    const cache = new ReplicaCache(storage);
+    cache.setHosts([SERVER_ID]);
+
+    await cache.restore();
+    expect(storage.values.has("@paseo:replica-cache")).toBe(false);
+    await cache.flush();
+
+    expect(useSessionStore.getState().sessions[SERVER_ID]).toBeUndefined();
+    expect(JSON.parse(storage.values.get("@paseo:replica-cache") ?? "null")).toEqual({
+      version: 5,
+      hosts: [],
+    });
   });
 });

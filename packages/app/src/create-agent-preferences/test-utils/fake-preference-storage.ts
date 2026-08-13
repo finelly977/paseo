@@ -61,5 +61,5 @@ export class FakeCreateAgentPreferenceStorage implements CreateAgentPreferenceSt
 }
 
 function clone<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  return structuredClone(value);
 }
