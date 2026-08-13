@@ -15,7 +15,6 @@ import { estimateWrappedCharsPerLine } from "@/git/diff-wrap-estimate";
 import {
   View,
   Text,
-  ActivityIndicator,
   Pressable,
   FlatList,
   type LayoutChangeEvent,
@@ -83,7 +82,6 @@ import { useGitActions } from "@/git/use-actions";
 import {
   SourceControlCommitComposer,
   SourceControlRepositoryHeader,
-  SourceControlSectionHeader,
 } from "@/git/source-control-panel";
 import {
   buildForgeSignInCommand,
@@ -1383,7 +1381,6 @@ const ThemedPilcrow = withUnistyles(Pilcrow);
 const ThemedWrapText = withUnistyles(WrapText);
 const ThemedListChevronsDownUp = withUnistyles(ListChevronsDownUp);
 const ThemedListChevronsUpDown = withUnistyles(ListChevronsUpDown);
-const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
 const ThemedDownload = withUnistyles(Download);
 const ThemedUpload = withUnistyles(Upload);
@@ -2559,20 +2556,19 @@ function ScmPanelHeader({
   onGenerateCommitMessage,
   onRefresh,
 }: ScmPanelHeaderProps) {
-  const { t } = useTranslation();
-  const headerActionStyle = useCallback(
-    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
-      styles.scmHeaderAction,
-      (Boolean(hovered) || pressed) && styles.scmHeaderActionActive,
-    ],
-    [],
-  );
   if (!status?.isGit) {
     return null;
   }
   return (
     <>
-      <SourceControlRepositoryHeader repositoryName={repositoryName} gitActions={gitActions}>
+      <SourceControlRepositoryHeader
+        repositoryName={repositoryName}
+        gitActions={gitActions}
+        changeCount={changes ? totalChangeCount : null}
+        isRefreshing={isRefreshing}
+        refreshSupported={refreshSupported}
+        onRefresh={onRefresh}
+      >
         <BranchSwitcher
           currentBranchName={currentBranchName}
           serverId={serverId}
@@ -2582,28 +2578,6 @@ function ScmPanelHeader({
           testID="changes-branch-switcher"
         />
       </SourceControlRepositoryHeader>
-      <SourceControlSectionHeader
-        title={t("workspace.git.panel.sourceControl")}
-        count={changes ? totalChangeCount : null}
-        testID="source-control-changes-heading"
-      >
-        {refreshSupported ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("workspace.git.diff.refresh")}
-            disabled={isRefreshing}
-            onPress={onRefresh}
-            style={headerActionStyle}
-            testID="source-control-refresh"
-          >
-            {isRefreshing ? (
-              <ThemedActivityIndicator size={12} uniProps={foregroundMutedIconColorMapping} />
-            ) : (
-              <ThemedRotateCw size={14} uniProps={foregroundMutedIconColorMapping} />
-            )}
-          </Pressable>
-        ) : null}
-      </SourceControlSectionHeader>
       {scmOperationsSupported && changes ? (
         <SourceControlCommitComposer
           branchName={branchLabel}
@@ -3024,16 +2998,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     color: theme.colors.destructive,
     textAlign: "center",
-  },
-  scmHeaderAction: {
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 3,
-  },
-  scmHeaderActionActive: {
-    backgroundColor: theme.colors.surface2,
   },
   diffContainer: {
     flex: 1,

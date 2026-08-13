@@ -16,6 +16,7 @@ import {
   ChevronRight,
   CloudUpload,
   GitBranch,
+  RotateCw,
   Sparkles,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const ThemedGitBranch = withUnistyles(GitBranch);
+const ThemedRotateCw = withUnistyles(RotateCw);
 const ThemedArrowDownUp = withUnistyles(ArrowDownUp);
 const ThemedCloudUpload = withUnistyles(CloudUpload);
 const ThemedCheck = withUnistyles(Check);
@@ -42,22 +44,28 @@ const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedSparkles = withUnistyles(Sparkles);
 
 export interface SourceControlRepositoryHeaderProps {
+  changeCount?: number | null;
   repositoryName: string;
   gitActions: GitActions;
+  isRefreshing: boolean;
+  refreshSupported: boolean;
+  onRefresh: () => void;
   children: ReactNode;
 }
 
 export function SourceControlRepositoryHeader({
+  changeCount,
   repositoryName,
   gitActions,
+  isRefreshing,
+  refreshSupported,
+  onRefresh,
   children,
 }: SourceControlRepositoryHeaderProps) {
   const { t } = useTranslation();
+  const sourceControlTitle = t("workspace.git.panel.sourceControl");
   return (
     <View style={styles.repositorySection} testID="source-control-repository">
-      <View style={styles.sectionHeading}>
-        <Text style={styles.sectionTitle}>{t("workspace.git.panel.repository")}</Text>
-      </View>
       <View style={styles.repositoryRow}>
         <View style={styles.repositoryIdentity}>
           <ThemedGitBranch size={14} uniProps={mutedIconColorMapping} />
@@ -66,6 +74,33 @@ export function SourceControlRepositoryHeader({
           </Text>
         </View>
         <View style={styles.repositoryBranch}>{children}</View>
+        <View style={styles.repositoryStatus} testID="source-control-changes-heading">
+          <Text style={styles.sectionTitle}>{sourceControlTitle}</Text>
+          {changeCount !== undefined && changeCount !== null ? (
+            <View
+              style={styles.countBadge}
+              accessibilityLabel={`${sourceControlTitle}: ${changeCount}`}
+            >
+              <Text style={styles.countText}>{changeCount}</Text>
+            </View>
+          ) : null}
+        </View>
+        {refreshSupported ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("workspace.git.diff.refresh")}
+            disabled={isRefreshing}
+            onPress={onRefresh}
+            style={repositoryRefreshActionStyle}
+            testID="source-control-refresh"
+          >
+            {isRefreshing ? (
+              <ThemedActivityIndicator size={12} uniProps={mutedIconColorMapping} />
+            ) : (
+              <ThemedRotateCw size={14} uniProps={mutedIconColorMapping} />
+            )}
+          </Pressable>
+        ) : null}
         <View style={styles.repositoryActions}>
           <GitActionsSplitButton gitActions={gitActions} hideLabels />
         </View>
@@ -86,6 +121,16 @@ export interface SourceControlSectionHeaderProps {
 
 function headingTitlePressableStyle({ pressed }: PressableStateCallbackType) {
   return [styles.changesHeadingTitle, pressed && styles.changesHeadingTitlePressed];
+}
+
+function repositoryRefreshActionStyle({
+  hovered = false,
+  pressed,
+}: PressableStateCallbackType & { hovered?: boolean }) {
+  return [
+    styles.repositoryRefreshAction,
+    (Boolean(hovered) || pressed) && styles.repositoryRefreshActionActive,
+  ];
 }
 
 export function SourceControlSectionHeader({
@@ -628,12 +673,6 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: theme.borderWidth[1],
     borderBottomColor: theme.colors.border,
   },
-  sectionHeading: {
-    height: 22,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing[2],
-  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: theme.fontWeight.normal,
@@ -659,8 +698,25 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
   },
   repositoryBranch: {
-    maxWidth: "42%",
+    maxWidth: "36%",
     minWidth: 0,
+  },
+  repositoryStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    flexShrink: 0,
+  },
+  repositoryRefreshAction: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 3,
+    flexShrink: 0,
+  },
+  repositoryRefreshActionActive: {
+    backgroundColor: theme.colors.surface2,
   },
   repositoryActions: {
     flexDirection: "row",
