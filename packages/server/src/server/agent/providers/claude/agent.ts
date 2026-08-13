@@ -3051,15 +3051,7 @@ class ClaudeAgentSession implements AgentSession {
     const env = createProviderEnv({
       baseEnv: process.env,
       runtimeSettings: this.runtimeSettings,
-      overlays: [
-        extraClaudeOptions?.env,
-        {
-          // Increase MCP timeouts for long-running tool calls (10 minutes)
-          MCP_TIMEOUT: "600000",
-          MCP_TOOL_TIMEOUT: "600000",
-        },
-        this.launchEnv,
-      ],
+      overlays: [extraClaudeOptions?.env, this.launchEnv],
     });
     env.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
     return env;
