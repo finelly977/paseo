@@ -184,8 +184,8 @@ export const ar: TranslationResources = {
       untitled: "رسالة بلا عنوان",
     },
     completedTurn: {
-      expand: "تم طي {{count}} من عناصر العملية",
-      collapse: "طي العملية الوسيطة",
+      expand: "الخطوات الوسيطة",
+      collapse: "إخفاء الخطوات الوسيطة",
     },
     permission: {
       plan: "يخطط",

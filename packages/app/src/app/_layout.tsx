@@ -20,7 +20,7 @@ import { AppState, useWindowDimensions, View } from "react-native";
 import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { CommandCenter, CommandCenterRootActions } from "@/command-center/command-center";
 import { CommandCenterProvider } from "@/command-center/provider";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
@@ -99,11 +99,12 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { getDaemonStartService } from "@/runtime/daemon-start-service";
-import { applyAppearance } from "@/screens/settings/appearance/apply-appearance";
+import { applyAppearanceSettings } from "@/screens/settings/appearance/apply-appearance-settings";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { flushDraftPersistStorage } from "@/stores/draft-store";
-import { THEME_TO_UNISTYLES, type ThemeName } from "@/styles/theme";
+import type { ThemeName } from "@/styles/theme";
 import { installWebScrollbarStyles } from "@/styles/install-web-scrollbar-styles";
+import { WebScrollbarThemeSync } from "@/styles/web-scrollbar-theme-sync";
 import type { HostProfile } from "@/types/host-connection";
 import { toggleDesktopSidebarsWithCheckoutIntent } from "@/utils/desktop-sidebar-toggle";
 import {
@@ -626,23 +627,11 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
   const { settings, isLoading: settingsLoading } = useAppSettings();
   const { upsertConnectionFromOfferUrl } = useHostMutations();
 
-  // Apply theme setting on mount and when it changes
+  // 先更新所有主题的外观内容，再选择固定主题或启用自动主题。
   useEffect(() => {
     if (settingsLoading) return;
-    if (settings.theme === "auto") {
-      UnistylesRuntime.setAdaptiveThemes(true);
-    } else {
-      UnistylesRuntime.setAdaptiveThemes(false);
-      UnistylesRuntime.setTheme(THEME_TO_UNISTYLES[settings.theme]);
-    }
-  }, [settingsLoading, settings.theme]);
-
-  // Apply font / size / syntax appearance settings on mount and when they change.
-  // Sibling to the theme effect above; order is irrelevant because both patch all
-  // six registered theme keys, so the active key is always current.
-  useEffect(() => {
-    if (settingsLoading) return;
-    applyAppearance({
+    applyAppearanceSettings({
+      theme: settings.theme,
       uiFontFamily: settings.uiFontFamily,
       monoFontFamily: settings.monoFontFamily,
       uiFontSize: settings.uiFontSize,
@@ -651,6 +640,7 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
     });
   }, [
     settingsLoading,
+    settings.theme,
     settings.uiFontFamily,
     settings.monoFontFamily,
     settings.uiFontSize,
@@ -1000,6 +990,7 @@ export default function RootLayout() {
     <QueryProvider>
       <I18nProvider>
         <RootErrorBoundary>
+          <WebScrollbarThemeSync />
           <RootAppTree />
         </RootErrorBoundary>
       </I18nProvider>

@@ -184,8 +184,8 @@ export const ru: TranslationResources = {
       untitled: "Сообщение без названия",
     },
     completedTurn: {
-      expand: "Промежуточные шаги свернуты: {{count}}",
-      collapse: "Свернуть промежуточные шаги",
+      expand: "Промежуточные шаги",
+      collapse: "Скрыть промежуточные шаги",
     },
     permission: {
       plan: "План",

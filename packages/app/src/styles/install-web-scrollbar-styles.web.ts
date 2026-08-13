@@ -1,11 +1,13 @@
 import {
   WEB_SCROLLBAR_SIZE_PX,
   webScrollbarColor,
+  webScrollbarHandleCssValue,
   webScrollbarThumbColor,
   WEB_SCROLLBAR_WIDTH,
 } from "@/styles/web-scrollbar";
 
 const STYLE_ID = "paseo-web-scrollbar-styles";
+const handleColor = webScrollbarHandleCssValue();
 
 export function installWebScrollbarStyles(): () => void {
   const existingStyle = document.getElementById(STYLE_ID);
@@ -15,7 +17,7 @@ export function installWebScrollbarStyles(): () => void {
   style.id = STYLE_ID;
   style.textContent = `
 * {
-  scrollbar-color: ${webScrollbarColor("var(--colors-scrollbar-handle)")};
+  scrollbar-color: ${webScrollbarColor(handleColor)};
   scrollbar-width: ${WEB_SCROLLBAR_WIDTH};
 }
 
@@ -47,7 +49,7 @@ export function installWebScrollbarStyles(): () => void {
 *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: ${webScrollbarThumbColor("var(--colors-scrollbar-handle)")};
+  background: ${webScrollbarThumbColor(handleColor)};
   background-clip: content-box;
 }
 `;

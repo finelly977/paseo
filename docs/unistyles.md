@@ -332,11 +332,15 @@ If we ever need to avoid the transition entirely, store at least the theme prefe
 
 Appearance settings (UI/mono font family, font sizes, syntax-highlight theme) are applied by patching every registered theme at runtime with `UnistylesRuntime.updateTheme(name, updater)` — not by threading preference reads through components. `applyAppearance` in `packages/app/src/screens/settings/appearance/apply-appearance.ts` runs from a `ProvidersWrapper` effect on settings load/change and loops all six theme keys, returning `{ ...theme, fontFamily, fontSize, lineHeight, colors.syntax }`.
 
-This works without `useUnistyles()` because every consumer already reads these tokens through `StyleSheet.create((theme) => …)` (or the `withUnistyles`/`uniProps` path for the markdown renderer), so patching the theme repaints tracked views through the native ShadowRegistry with no React re-render.
+This works without `useUnistyles()` because every consumer already reads these tokens through `StyleSheet.create((theme) => …)` (or the `withUnistyles`/`uniProps` path for the markdown renderer), so patching the theme repaints tracked views through the ShadowRegistry with no React re-render.
+
+网页端必须配置 `CSSVars: false`。Unistyles 3.2.4 的 CSS 变量模式只会把字符串主题值转换为变量，字号、行高等数字仍固化在生成的 CSS 类中；同时该模式会让已挂载节点停止监听主题变化。运行时修改字号后，旧节点因此会继续显示旧值，直到悬停或其他状态触发节点重新生成样式。关闭 CSS 变量模式后，主题补丁会统一重算已挂载节点，颜色、字体和字号不会混用新旧值。外观设置属于低频操作，这里的完整样式刷新是正确性所需的明确成本。
+
+不要在手写网页 CSS 中引用 Unistyles 自动生成的 `--colors-*` 变量，因为 `CSSVars: false` 时这些变量不存在。全局滚动条使用 Paseo 自有的 `--paseo-scrollbar-handle`，由 `WebScrollbarThemeSync` 这个小型 `withUnistyles` 叶子同步当前主题颜色；静态样式同时提供暗色回退值，确保首次同步前也不会显示浏览器的白色原生轨道。
 
 Gotchas:
 
-- **Patch all themes, not just the active one.** The active theme can change and adaptive mode can flip light/dark; patching every key keeps the active key current and makes ordering vs `setTheme`/`setAdaptiveThemes` irrelevant. The effect depends on the settings values (not on `theme`), so it cannot loop.
+- **更新全部主题，而不只更新当前主题。** 当前主题可能切换，自动主题也可能随系统在亮色和暗色之间变化；更新全部主题可确保每个可选主题都持有最新外观。初始化和设置变更统一先执行 `applyAppearance`，再调用 `setTheme` 或 `setAdaptiveThemes`，避免新激活主题短暂显示旧字号。副作用只依赖外观设置值，不依赖 Unistyles 当前主题，因此不会形成循环。
 - **Narrow the discriminated union before spreading.** `updateTheme`'s updater returns the theme union; spreading the union widens `colorScheme` to `"light" | "dark"`, which is assignable to neither concrete member. Branch on `t.colorScheme` so each branch spreads a single narrowed theme type (no `as`).
 - **`lineHeight.diff` is the code/diff line-height axis** — it is coupled to the code-font-size control (≈ `codeFontSize * 1.5`). Do NOT use it for prose. Markdown body line-height scales with the UI ramp (`Math.round(theme.fontSize.base * 1.4)`); routing prose through `lineHeight.diff` clips text at small code sizes.
 - **High-churn draft values** (live-while-typing in the appearance preview) bypass the theme: apply them as inline styles marked with `inlineUnistylesStyle` so per-keystroke values don't grow the `#unistyles-web` CSS registry.

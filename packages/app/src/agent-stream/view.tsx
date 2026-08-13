@@ -102,6 +102,10 @@ import {
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
+import {
+  isStandaloneMarkdownHorizontalRule,
+  splitMarkdownBlocks,
+} from "@/utils/split-markdown-blocks";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import { ConversationHistoryIndex } from "./history-index";
 import {
@@ -281,7 +285,8 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
-const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 36;
+const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 37;
+const COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE = 24;
 const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -289,7 +294,7 @@ const ThemedProcessToggleChevron = withUnistyles(ChevronDown);
 
 interface CompletedTurnProcessToggleModel {
   turnId: string;
-  itemCount: number;
+  isFollowedByDivider: boolean;
 }
 
 function CompletedTurnProcessToggle({
@@ -303,36 +308,39 @@ function CompletedTurnProcessToggle({
 }) {
   const { t } = useTranslation();
   const handlePress = useCallback(() => onToggle(model.turnId), [model.turnId, onToggle]);
-  const pressableStyle = useCallback(
-    ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
-      stylesheet.completedTurnProcessToggle,
-      Boolean(hovered) && stylesheet.completedTurnProcessToggleHovered,
-      pressed && stylesheet.completedTurnProcessTogglePressed,
-    ],
-    [],
-  );
   const iconStyle = useMemo(
     () => [stylesheet.completedTurnProcessToggleIcon, expanded && stylesheet.processToggleExpanded],
     [expanded],
   );
   const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
+  const accessibilityLabel = expanded
+    ? t("agentStream.completedTurn.collapse")
+    : t("agentStream.completedTurn.expand");
+  const rowStyle = useMemo(
+    () => [
+      stylesheet.completedTurnProcessToggleRow,
+      !expanded &&
+        model.isFollowedByDivider &&
+        stylesheet.completedTurnProcessToggleRowBeforeDivider,
+    ],
+    [expanded, model.isFollowedByDivider],
+  );
 
   return (
-    <View style={stylesheet.completedTurnProcessToggleRow}>
+    <View style={rowStyle}>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         accessibilityState={accessibilityState}
         onPress={handlePress}
-        style={pressableStyle}
+        style={stylesheet.completedTurnProcessToggle}
       >
-        <View style={iconStyle}>
-          <ThemedProcessToggleChevron size={14} uniProps={processToggleIconColorMapping} />
-        </View>
         <Text style={stylesheet.completedTurnProcessToggleText}>
-          {expanded
-            ? t("agentStream.completedTurn.collapse")
-            : t("agentStream.completedTurn.expand", { count: model.itemCount })}
+          {t("agentStream.completedTurn.expand")}
         </Text>
+        <View style={iconStyle}>
+          <ThemedProcessToggleChevron size={12} uniProps={processToggleIconColorMapping} />
+        </View>
       </Pressable>
     </View>
   );
@@ -742,9 +750,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
         const toggleItemId = host.processItemIds.at(-1);
         if (toggleItemId) {
+          const finalAssistant = host.items.find((item) => item.id === host.itemId);
+          const firstFinalBlock =
+            finalAssistant?.kind === "assistant_message"
+              ? splitMarkdownBlocks(finalAssistant.text)[0]
+              : undefined;
           toggleByItemId.set(toggleItemId, {
             turnId: host.itemId,
-            itemCount: host.processItemIds.length,
+            isFollowedByDivider:
+              firstFinalBlock !== undefined && isStandaloneMarkdownHorizontalRule(firstFinalBlock),
           });
         }
       }
@@ -1342,7 +1356,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }
       for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
         if (!expandedCompletedTurnIds.has(toggle.turnId)) {
-          heights.set(itemId, COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE);
+          heights.set(
+            itemId,
+            toggle.isFollowedByDivider
+              ? COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE
+              : COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE,
+          );
         }
       }
       return heights;
@@ -1891,24 +1910,26 @@ const stylesheet = StyleSheet.create((theme) => ({
     maxWidth: MAX_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
+    paddingBottom: theme.spacing[2],
     marginBottom: theme.spacing[2],
+    borderBottomWidth: theme.borderWidth[1],
+    borderBottomColor: theme.colors.border,
+  },
+  completedTurnProcessToggleRowBeforeDivider: {
+    paddingBottom: 0,
+    marginBottom: theme.spacing[1],
+    borderBottomWidth: 0,
   },
   completedTurnProcessToggle: {
-    minHeight: 28,
+    minHeight: 20,
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[1],
-    borderRadius: theme.borderRadius.sm,
-  },
-  completedTurnProcessToggleHovered: {
-    backgroundColor: theme.colors.surface1,
-  },
-  completedTurnProcessTogglePressed: {
-    opacity: 0.72,
+    gap: theme.spacing[2],
   },
   completedTurnProcessToggleIcon: {
+    width: 12,
+    height: 12,
     alignItems: "center",
     justifyContent: "center",
     transform: [{ rotate: "-90deg" }],
@@ -1919,7 +1940,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   completedTurnProcessToggleText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   invertedWrapper: {
     transform: [{ scaleY: -1 }],

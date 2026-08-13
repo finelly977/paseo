@@ -578,6 +578,8 @@ function TabChip({
   const tabChipStyle = useCallback(
     () => [
       styles.tab,
+      isActive && styles.tabActive,
+      hovered && !isActive && styles.tabHovered,
       isWeb && isDragging && ({ cursor: "grabbing" } as object),
       {
         minWidth: resolvedTabWidth,
@@ -585,7 +587,7 @@ function TabChip({
         maxWidth: resolvedTabWidth,
       },
     ],
-    [isDragging, resolvedTabWidth],
+    [hovered, isActive, isDragging, resolvedTabWidth],
   );
 
   const handleTabHoverIn = useCallback(() => {
@@ -630,10 +632,6 @@ function TabChip({
   );
 
   const tabAccessibilityState = useMemo(() => ({ selected: isActive }), [isActive]);
-  const tabFocusIndicatorStyle = useMemo(
-    () => [styles.tabFocusIndicator, !isFocused && styles.tabFocusIndicatorUnfocused],
-    [isFocused],
-  );
   const tabLabelSkeletonStyle = useMemo(
     () => [
       styles.tabLabelSkeleton,
@@ -645,9 +643,10 @@ function TabChip({
     () => [
       styles.tabLabel,
       isHighlighted && styles.tabLabelActive,
+      isActive && isFocused && styles.tabLabelFocused,
       showTrailingAffordance && styles.tabLabelWithCloseButton,
     ],
-    [isHighlighted, showTrailingAffordance],
+    [isActive, isFocused, isHighlighted, showTrailingAffordance],
   );
 
   return (
@@ -671,7 +670,7 @@ function TabChip({
               accessibilityState={tabAccessibilityState}
               aria-selected={isActive}
             >
-              {isActive && <View style={tabFocusIndicatorStyle} />}
+              {isActive ? <View style={styles.tabActiveSeam} /> : null}
               <TabHandleContent
                 presentation={presentation}
                 isHighlighted={isHighlighted}
@@ -1226,7 +1225,7 @@ const styles = StyleSheet.create((theme) => ({
     height: WORKSPACE_SECONDARY_HEADER_HEIGHT,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: theme.colors.surfaceSidebar,
     flexDirection: "row",
     alignItems: "center",
     overflow: "visible",
@@ -1272,6 +1271,12 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
     userSelect: "none",
   },
+  tabHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  tabActive: {
+    backgroundColor: theme.colors.surfaceWorkspace,
+  },
   tabSlot: {
     position: "relative",
     overflow: "visible",
@@ -1287,16 +1292,14 @@ const styles = StyleSheet.create((theme) => ({
   tabIcon: {
     flexShrink: 0,
   },
-  tabFocusIndicator: {
+  tabActiveSeam: {
     position: "absolute",
-    top: 0,
+    bottom: -1,
     left: 0,
     right: 0,
-    height: 2,
-    backgroundColor: theme.colors.accent,
-  },
-  tabFocusIndicatorUnfocused: {
-    backgroundColor: theme.colors.borderAccent,
+    height: 1,
+    backgroundColor: theme.colors.surfaceWorkspace,
+    zIndex: 1,
   },
   tabDropIndicator: {
     position: "absolute",
@@ -1340,6 +1343,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   tabLabelActive: {
     color: theme.colors.foreground,
+  },
+  tabLabelFocused: {
+    fontWeight: theme.fontWeight.medium,
   },
   tabCloseButton: {
     width: 18,

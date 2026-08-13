@@ -186,8 +186,8 @@ export const fr: TranslationResources = {
       untitled: "Message sans titre",
     },
     completedTurn: {
-      expand: "{{count}} éléments de processus repliés",
-      collapse: "Replier le processus intermédiaire",
+      expand: "Étapes intermédiaires",
+      collapse: "Masquer les étapes intermédiaires",
     },
     permission: {
       plan: "Plan",

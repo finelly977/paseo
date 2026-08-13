@@ -184,8 +184,8 @@ export const ja: TranslationResources = {
       untitled: "無題のメッセージ",
     },
     completedTurn: {
-      expand: "{{count}}件の途中経過を折りたたみ済み",
-      collapse: "途中経過を折りたたむ",
+      expand: "途中経過",
+      collapse: "途中経過を隠す",
     },
     permission: {
       plan: "プラン",

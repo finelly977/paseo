@@ -182,8 +182,8 @@ export const en = {
       untitled: "Untitled message",
     },
     completedTurn: {
-      expand: "{{count}} process items collapsed",
-      collapse: "Collapse intermediate process",
+      expand: "Intermediate steps",
+      collapse: "Hide intermediate steps",
     },
     permission: {
       plan: "Plan",

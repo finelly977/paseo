@@ -184,8 +184,8 @@ export const ptBR: TranslationResources = {
       untitled: "Mensagem sem título",
     },
     completedTurn: {
-      expand: "{{count}} itens do processo recolhidos",
-      collapse: "Recolher processo intermediário",
+      expand: "Etapas intermediárias",
+      collapse: "Ocultar etapas intermediárias",
     },
     permission: {
       plan: "Plano",
