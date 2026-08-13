@@ -315,6 +315,9 @@ function mergeCanonicalUserWithLocalPresentation(
     ...(canonical.clientMessageId ? { clientMessageId: canonical.clientMessageId } : {}),
     text: local.text,
     timestamp: local.timestamp,
+    ...(canonical.providerImages && canonical.providerImages.length > 0
+      ? { providerImages: canonical.providerImages }
+      : {}),
     ...(local.images && local.images.length > 0 ? { images: local.images } : {}),
     ...(local.attachments && local.attachments.length > 0
       ? { attachments: local.attachments }

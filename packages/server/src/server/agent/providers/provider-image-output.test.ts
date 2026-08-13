@@ -1,6 +1,7 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import {
   isProviderImageMarkdown,
@@ -90,7 +91,27 @@ describe("isProviderImageMarkdown", () => {
 });
 
 describe("materializeProviderImage", () => {
-  test("recreates the private temp directory if the cached directory is removed", () => {
+  const originalPaseoHome = process.env.PASEO_HOME;
+  let testHome: string | null = null;
+
+  beforeEach(() => {
+    testHome = mkdtempSync(path.join(os.tmpdir(), "paseo-provider-image-"));
+    process.env.PASEO_HOME = testHome;
+  });
+
+  afterEach(() => {
+    if (originalPaseoHome === undefined) {
+      delete process.env.PASEO_HOME;
+    } else {
+      process.env.PASEO_HOME = originalPaseoHome;
+    }
+    if (testHome) {
+      rmSync(testHome, { recursive: true, force: true });
+      testHome = null;
+    }
+  });
+
+  test("recreates the private persistent directory if it is removed", () => {
     const first = materializeProviderImage({
       data: "YWJjMTIz",
       mimeType: "image/png",
@@ -107,6 +128,7 @@ describe("materializeProviderImage", () => {
     const secondDir = path.dirname(second.path);
 
     try {
+      expect(secondDir).toBe(path.join(testHome!, "paseo-attachments"));
       expect(existsSync(second.path)).toBe(true);
     } finally {
       rmSync(secondDir, { recursive: true, force: true });

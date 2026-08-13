@@ -111,7 +111,10 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { AttachmentLightbox } from "@/components/attachment-lightbox";
-import { resolveProviderUserImage } from "@/attachments/provider-user-image";
+import {
+  mergeResolvedProviderUserImages,
+  resolveProviderUserImage,
+} from "@/attachments/provider-user-image";
 import { useSessionStore } from "@/stores/session-store";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { isWeb, isNative } from "@/constants/platform";
@@ -561,17 +564,10 @@ export const UserMessage = memo(function UserMessage({
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
   const restoredProviderImages = useResolvedProviderUserImages(providerImages);
-  const allImages = useMemo(() => {
-    const merged = [...images];
-    const imageIds = new Set(images.map((image) => image.id));
-    for (const image of restoredProviderImages.images) {
-      if (!imageIds.has(image.id)) {
-        imageIds.add(image.id);
-        merged.push(image);
-      }
-    }
-    return merged;
-  }, [images, restoredProviderImages.images]);
+  const allImages = useMemo(
+    () => mergeResolvedProviderUserImages(images, restoredProviderImages.images),
+    [images, restoredProviderImages.images],
+  );
   useEffect(() => {
     if (restoredProviderImages.images.length === 0 || !serverId || !agentId || !messageId) {
       return;
@@ -585,14 +581,9 @@ export const UserMessage = memo(function UserMessage({
       );
       const item = current[index];
       if (index < 0 || !item || item.kind !== "user_message") return streams;
-      const imageIds = new Set(item.images?.map((image) => image.id) ?? []);
       const nextItem = {
         ...item,
-        images: [
-          ...(item.images ?? []),
-          ...restoredProviderImages.images.filter((image) => !imageIds.has(image.id)),
-        ],
-        providerImages: undefined,
+        images: mergeResolvedProviderUserImages(item.images ?? [], restoredProviderImages.images),
       };
       const nextItems = [...current];
       nextItems[index] = nextItem;

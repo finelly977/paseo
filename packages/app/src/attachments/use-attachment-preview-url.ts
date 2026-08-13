@@ -14,6 +14,7 @@ export function useAttachmentPreviewUrl(
   const storageType = attachment?.storageType;
   const storageKey = attachment?.storageKey;
   const mimeType = attachment?.mimeType;
+  const createdAt = attachment?.createdAt;
 
   useEffect(() => {
     let disposed = false;
@@ -57,7 +58,7 @@ export function useAttachmentPreviewUrl(
         url: currentUrl,
       });
     };
-  }, [id, storageType, storageKey, mimeType]);
+  }, [id, storageType, storageKey, mimeType, createdAt]);
 
   return url;
 }

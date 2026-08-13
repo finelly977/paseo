@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import * as fsSync from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import type { AgentTimelineItem } from "../agent-sdk-types.js";
+import { resolvePaseoHome } from "../../paseo-home.js";
 
 export interface ProviderImageOutput {
   path?: string | null;
@@ -18,7 +18,6 @@ export interface MaterializedProviderImage {
 }
 
 const PROVIDER_IMAGE_ATTACHMENT_DIR = "paseo-attachments";
-const PROVIDER_IMAGE_ATTACHMENT_DIR_PREFIX = `${PROVIDER_IMAGE_ATTACHMENT_DIR}-`;
 const PRIVATE_ATTACHMENT_DIR_MODE = 0o700;
 const MATERIALIZED_IMAGE_FILE_MODE = 0o600;
 
@@ -32,24 +31,24 @@ function canReuseMaterializedImageAttachmentDir(dir: string): boolean {
     }
     fsSync.chmodSync(dir, PRIVATE_ATTACHMENT_DIR_MODE);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
   }
 }
 
 function getMaterializedImageAttachmentDir(): string {
-  if (
-    materializedImageAttachmentDir &&
-    canReuseMaterializedImageAttachmentDir(materializedImageAttachmentDir)
-  ) {
-    return materializedImageAttachmentDir;
+  const expectedDir = path.join(resolvePaseoHome(), PROVIDER_IMAGE_ATTACHMENT_DIR);
+  if (materializedImageAttachmentDir !== expectedDir) {
+    materializedImageAttachmentDir = expectedDir;
   }
-
-  materializedImageAttachmentDir = fsSync.mkdtempSync(
-    path.join(os.tmpdir(), PROVIDER_IMAGE_ATTACHMENT_DIR_PREFIX),
-  );
-  fsSync.chmodSync(materializedImageAttachmentDir, PRIVATE_ATTACHMENT_DIR_MODE);
-  return materializedImageAttachmentDir;
+  if (!canReuseMaterializedImageAttachmentDir(expectedDir)) {
+    fsSync.mkdirSync(expectedDir, { recursive: true, mode: PRIVATE_ATTACHMENT_DIR_MODE });
+    fsSync.chmodSync(expectedDir, PRIVATE_ATTACHMENT_DIR_MODE);
+  }
+  return expectedDir;
 }
 
 function getImageExtension(mimeType: string): string {
@@ -81,9 +80,8 @@ function normalizeImageData(mimeType: string, data: string): { mimeType: string;
   return { mimeType, data };
 }
 
-// Filenames are a content hash of the bytes so re-materializing the same image
-// within a process reuses the existing temp file instead of leaking a fresh one
-// for repeated image blocks or history replay.
+// Filenames are a content hash of the bytes so repeated history replay reuses
+// the stable provider source file instead of creating a new attachment copy.
 export function materializeProviderImage(image: {
   data: string;
   mimeType: string | null;

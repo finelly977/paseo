@@ -399,6 +399,63 @@ describe("processTimelineResponse", () => {
     expect(repeated.tail.filter((item) => item.kind === "user_message")).toEqual(userMessages);
   });
 
+  it("retains the canonical provider source beside a cached history image", () => {
+    const cachedImage = {
+      id: "provider_preview_cached",
+      mimeType: "image/png",
+      storageType: "desktop-file" as const,
+      storageKey: "C:/desktop-attachments/provider_preview_cached.png",
+      createdAt: 1000,
+    };
+    const cachedHistory: StreamItem = {
+      kind: "user_message",
+      id: "history-user",
+      text: "Review this screenshot",
+      timestamp: new Date(1000),
+      images: [cachedImage],
+    };
+
+    const result = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail: [cachedHistory],
+      payload: {
+        ...baseTimelineInput.payload,
+        reset: true,
+        startCursor: { seq: 1 },
+        endCursor: { seq: 1 },
+        entries: [
+          {
+            ...makeTimelineEntry(1, "Review this screenshot", "user_message"),
+            item: {
+              type: "user_message",
+              text: "Review this screenshot",
+              messageId: "history-user",
+              images: [
+                {
+                  path: "C:/paseo-attachments/source.png",
+                  mimeType: "image/png",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.tail).toEqual([
+      expect.objectContaining({
+        kind: "user_message",
+        images: [cachedImage],
+        providerImages: [
+          {
+            path: "C:/paseo-attachments/source.png",
+            mimeType: "image/png",
+          },
+        ],
+      }),
+    ]);
+  });
+
   it("keeps an unmatched optimistic user message during tail replacement", () => {
     const optimistic = makeOptimisticUserMessage("still sending", "optimistic-unmatched");
 
