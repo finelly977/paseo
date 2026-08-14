@@ -568,8 +568,6 @@ export function SourceControlCommitComposer({
           onContentSizeChange={handleContentSizeChange}
           onKeyPress={handleInputKeyPress}
           editable={!isPending && !generation.isGenerating}
-          placeholder={commitPlaceholder}
-          placeholderTextColor={styles.commitInputPlaceholder.color}
           returnKeyType="default"
           accessibilityLabel={commitPlaceholder}
           testID="source-control-commit-message"
@@ -774,9 +772,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.scmInputForeground,
     outlineColor: "transparent",
     outlineWidth: 0,
-  },
-  commitInputPlaceholder: {
-    color: theme.colors.scmInputPlaceholder,
   },
   commitAiButton: {
     width: 22,

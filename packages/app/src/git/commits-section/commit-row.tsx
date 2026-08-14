@@ -40,6 +40,7 @@ import { buildForgeCommitUrl } from "@/git/forge-url";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
+import { renderCommitMessageText } from "@/git/commit-message-text";
 import { CommitGraphNode, CommitGraphPlaceholder } from "./commit-graph-node";
 import type { CommitGraphViewModel } from "./graph-model";
 
@@ -213,7 +214,7 @@ function CommitTooltip({
   const { t } = useTranslation();
   const toast = useToast();
   const { commit } = viewModel;
-  const message = commit.message?.trim() || commit.subject;
+  const message = renderCommitMessageText(commit.message?.trim() || commit.subject);
   const forgePresentation = getForgePresentation(forge);
   const commitUrl = buildForgeCommitUrl(forge, { remoteUrl, sha: commit.sha });
   const handleCopySha = useCallback(
@@ -246,7 +247,7 @@ function CommitTooltip({
       side="left"
       align="center"
       offset={8}
-      maxWidth={440}
+      maxWidth={640}
       style={styles.tooltipSurface}
     >
       <View style={styles.tooltip} testID={`commit-tooltip-${commit.shortSha}`}>
@@ -304,6 +305,7 @@ function CommitTooltip({
                         reference.kind === "branch" && styles.tooltipReferenceTextBranch,
                         reference.kind === "tag" && styles.referenceTextTag,
                       ]}
+                      numberOfLines={1}
                     >
                       {reference.name}
                     </Text>
@@ -729,8 +731,6 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.shadow.sm,
   },
   tooltip: {
-    minWidth: 320,
-    maxWidth: 420,
     overflow: "hidden",
   },
   tooltipHeaderSection: {
@@ -748,20 +748,21 @@ const styles = StyleSheet.create((theme) => ({
     gap: 4,
   },
   tooltipAuthor: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.scmGraphLinkForeground,
   },
   tooltipMessage: {
     marginTop: 4,
-    fontSize: 13,
-    lineHeight: 18,
+    maxWidth: 420,
+    fontSize: 12,
+    lineHeight: 16,
     color: theme.colors.popoverForeground,
   },
   tooltipMetadata: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     color: theme.colors.foregroundMuted,
   },
   tooltipSeparator: {
@@ -774,8 +775,8 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   tooltipStatsText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     color: theme.colors.popoverForeground,
   },
   tooltipAdditions: {
@@ -786,12 +787,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   tooltipReferences: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 4,
   },
   tooltipReference: {
     minHeight: 18,
-    maxWidth: 180,
     paddingHorizontal: 5,
     flexDirection: "row",
     alignItems: "center",
@@ -803,8 +802,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   tooltipReferenceText: {
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 12,
+    lineHeight: 14,
   },
   tooltipReferenceTextBranch: {
     color: theme.colors.scmGraphCurrentRefForeground,
@@ -819,8 +818,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   tooltipSha: {
     flexShrink: 1,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     fontFamily: theme.fontFamily.mono,
     color: theme.colors.scmGraphLinkForeground,
   },
@@ -836,8 +835,8 @@ const styles = StyleSheet.create((theme) => ({
     gap: 4,
   },
   tooltipOpenLinkText: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 16,
     color: theme.colors.scmGraphLinkForeground,
   },
 }));
