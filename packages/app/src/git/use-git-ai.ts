@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { create } from "zustand";
 import type { GitAiCommitReviewStatus, GitAiCommitReviewStream } from "@getpaseo/protocol/messages";
+import { i18n } from "@/i18n/i18next";
 import { getHostRuntimeStore, useHostRuntimeClient } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import { processAgentStreamEvent } from "@/timeline/session-stream-reducers";
@@ -310,8 +311,8 @@ export async function startGitCommitReview(
     hostDisconnected: string;
     invalidReviewResponse: string;
   } = {
-    hostDisconnected: "Host is not connected",
-    invalidReviewResponse: "Host returned an invalid commit review response",
+    hostDisconnected: i18n.t("workspace.git.ai.errors.hostDisconnected"),
+    invalidReviewResponse: i18n.t("workspace.git.ai.errors.invalidReviewResponse"),
   },
 ): Promise<void> {
   const client = getHostRuntimeStore().getClient(input.serverId);
