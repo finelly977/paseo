@@ -60,6 +60,7 @@ import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache"
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
 import { useSettings } from "@/hooks/use-settings";
+import { getSendingClientMessageIds } from "@/composer/submission/model";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -255,9 +256,7 @@ type WorkspaceSetupProgressPayload = Extract<
 
 type SessionStoreActions = ReturnType<typeof useSessionStore.getState>;
 type SetInitializingAgents = SessionStoreActions["setInitializingAgents"];
-type SetAgentStreamTail = SessionStoreActions["setAgentStreamTail"];
-type SetAgentStreamHead = SessionStoreActions["setAgentStreamHead"];
-type ClearAgentStreamHead = SessionStoreActions["clearAgentStreamHead"];
+type SetAgentStreamState = SessionStoreActions["setAgentStreamState"];
 type SetAgentTimelineCursor = SessionStoreActions["setAgentTimelineCursor"];
 type MarkAgentHistorySynchronized = SessionStoreActions["markAgentHistorySynchronized"];
 type SetAgentAuthoritativeHistoryApplied =
@@ -300,9 +299,7 @@ function applyTimelineStreamPatches(input: {
   serverId: string;
   currentTail: StreamItem[];
   currentHead: StreamItem[];
-  setAgentStreamTail: SetAgentStreamTail;
-  setAgentStreamHead: SetAgentStreamHead;
-  clearAgentStreamHead: ClearAgentStreamHead;
+  setAgentStreamState: SetAgentStreamState;
   setAgentTimelineCursor: SetAgentTimelineCursor;
 }): void {
   const {
@@ -311,30 +308,22 @@ function applyTimelineStreamPatches(input: {
     serverId,
     currentTail,
     currentHead,
-    setAgentStreamTail,
-    setAgentStreamHead,
-    clearAgentStreamHead,
+    setAgentStreamState,
     setAgentTimelineCursor,
   } = input;
 
-  if (result.tail !== currentTail) {
-    setAgentStreamTail(serverId, (prev) => {
-      const next = new Map(prev);
-      next.set(agentId, result.tail);
-      return next;
+  if (
+    result.tail !== currentTail ||
+    result.head !== currentHead ||
+    result.acknowledgedClientMessageIds.length > 0
+  ) {
+    setAgentStreamState(serverId, agentId, {
+      ...(result.tail !== currentTail ? { tail: result.tail } : {}),
+      ...(result.head !== currentHead ? { head: result.head } : {}),
+      ...(result.acknowledgedClientMessageIds.length > 0
+        ? { acknowledgedClientMessageIds: result.acknowledgedClientMessageIds }
+        : {}),
     });
-  }
-
-  if (result.head !== currentHead) {
-    if (result.head.length === 0) {
-      clearAgentStreamHead(serverId, agentId);
-    } else {
-      setAgentStreamHead(serverId, (prev) => {
-        const next = new Map(prev);
-        next.set(agentId, result.head);
-        return next;
-      });
-    }
   }
 
   if (result.cursorChanged) {
@@ -458,10 +447,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
   // Zustand store actions
   const setIsPlayingAudio = useSessionStore((state) => state.setIsPlayingAudio);
-  const setAgentStreamTail = useSessionStore((state) => state.setAgentStreamTail);
-  const setAgentStreamHead = useSessionStore((state) => state.setAgentStreamHead);
   const setAgentStreamState = useSessionStore((state) => state.setAgentStreamState);
-  const clearAgentStreamHead = useSessionStore((state) => state.clearAgentStreamHead);
   const setAgentTimelineCursor = useSessionStore((state) => state.setAgentTimelineCursor);
   const setAgentTimelineHasOlder = useSessionStore((state) => state.setAgentTimelineHasOlder);
   const setAgentConversationIndex = useSessionStore((state) => state.setAgentConversationIndex);
@@ -706,6 +692,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       const currentCursor = session?.agentTimelineCursor.get(agentId);
       const currentTail = session?.agentStreamTail.get(agentId) ?? [];
       const currentHead = session?.agentStreamHead.get(agentId) ?? [];
+      const sendingClientMessageIds = getSendingClientMessageIds(
+        session?.messageSubmissions.get(agentId),
+      );
 
       if (payload.conversationIndex) {
         setAgentConversationIndex(serverId, agentId, payload.conversationIndex);
@@ -729,6 +718,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         isInitializing,
         hasActiveInitDeferred,
         initRequestDirection: activeInitDeferred?.requestDirection ?? "tail",
+        sendingClientMessageIds,
       });
 
       if (result.error) {
@@ -748,9 +738,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         serverId,
         currentTail,
         currentHead,
-        setAgentStreamTail,
-        setAgentStreamHead,
-        clearAgentStreamHead,
+        setAgentStreamState,
         setAgentTimelineCursor,
       });
 
@@ -773,14 +761,12 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       enforceConversationHistoryMemory();
     },
     [
-      clearAgentStreamHead,
       enforceConversationHistoryMemory,
       markAgentHistorySynchronized,
       recoverTimelineGap,
       serverId,
       setAgentAuthoritativeHistoryApplied,
-      setAgentStreamHead,
-      setAgentStreamTail,
+      setAgentStreamState,
       setAgentTimelineCursor,
       setAgentTimelineHasOlder,
       setAgentConversationIndex,
@@ -1143,10 +1129,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     queryClient,
     serverId,
     setIsPlayingAudio,
-    setAgentStreamTail,
-    setAgentStreamHead,
     setAgentStreamState,
-    clearAgentStreamHead,
     setAgentTimelineCursor,
     setInitializingAgents,
     setAgents,

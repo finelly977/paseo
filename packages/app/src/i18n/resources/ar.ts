@@ -82,6 +82,7 @@ export const ar: TranslationResources = {
       interruptAgent: "عامل المقاطعة",
       queueMessage: "رسالة قائمة الانتظار",
       sendAndInterrupt: "إرسال ومقاطعة",
+      sendAndSteer: "إرسال وتوجيه",
       sendMessage: "أرسل رسالة",
       queue: "طابور",
       send: "يرسل",
@@ -1831,10 +1832,13 @@ export const ar: TranslationResources = {
         descriptions: {
           interrupt:
             "عند تشغيل الوكيل، يوقف Enter التشغيل. Command/Ctrl+Enter يضيف إلى قائمة الانتظار.",
+          steer:
+            "عند تشغيل الوكيل، يوجّه Enter الجولة النشطة. يضيف Command/Ctrl+Enter إلى قائمة الانتظار.",
           queue: "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار. Command/Ctrl+Enter يرسل.",
         },
         options: {
           interrupt: "مقاطعة",
+          steer: "توجيه",
           queue: "طابور",
         },
       },

@@ -16,7 +16,7 @@ import {
   type ProjectDescriptor,
   type WorkspaceDescriptor,
 } from "@/stores/session-store";
-import type { StreamItem } from "@/types/stream";
+import { isUnreconciledLocalUserMessage, type StreamItem } from "@/types/stream";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 
 const STORAGE_KEY = "@paseo:replica-cache";
@@ -33,6 +33,8 @@ const TimelinePositionSchema = z.strictObject({
 const TimelineItemBaseShape = {
   id: z.string(),
   timelineCursor: TimelinePositionSchema.optional(),
+  // COMPAT(active-turn-membership): absent on caches written before turn membership.
+  turnId: z.string().optional(),
   timestamp: IsoDateSchema,
 };
 
@@ -57,6 +59,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("user_message"),
     clientMessageId: z.string().optional(),
+    messageId: z.string().optional(),
     text: z.string(),
   }),
   z.strictObject({
@@ -267,6 +270,7 @@ function timelineBase(item: StreamItem) {
   return {
     id: item.id,
     ...(timelineCursor ? { timelineCursor } : {}),
+    ...(item.turnId ? { turnId: item.turnId } : {}),
     timestamp: item.timestamp.toISOString(),
   };
 }
@@ -279,6 +283,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
+        ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
       };
     case "assistant_message":
@@ -324,6 +329,7 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
   const base = {
     id: item.id,
     ...(item.timelineCursor ? { timelineCursor: item.timelineCursor } : {}),
+    ...(item.turnId ? { turnId: item.turnId } : {}),
     timestamp: new Date(item.timestamp),
   };
   switch (item.kind) {
@@ -332,6 +338,7 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
         ...base,
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
+        ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
       };
     case "assistant_message":
@@ -492,12 +499,6 @@ function replicaInputsEqual(left: ReplicaInput, right: ReplicaInput): boolean {
         left.timelineCursor.startSeq === right.timelineCursor.startSeq &&
         left.timelineCursor.endSeq === right.timelineCursor.endSeq))
   );
-}
-
-function isUnreconciledLocalUserMessage(
-  item: Extract<StreamItem, { kind: "user_message" }>,
-): boolean {
-  return item.clientMessageId !== undefined && item.id === item.clientMessageId;
 }
 
 function selectReplicaInput(session: SessionState, agentId: string | null): ReplicaInput {

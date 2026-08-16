@@ -245,6 +245,7 @@ function buildDraftAgentSnapshot(input: {
     id: tabId,
     provider,
     status: "running",
+    activeTurn: null,
     createdAt: now,
     updatedAt: now,
     lastUserMessageAt: now,

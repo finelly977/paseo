@@ -13,6 +13,7 @@ export interface ForegroundTurnWaiter {
 export interface PendingForegroundRun {
   token: string;
   kind: "foreground";
+  stagedEvents: AgentStreamEvent[];
   turnId: string | null;
   started: boolean;
   settled: boolean;
@@ -259,13 +260,19 @@ export class ForegroundTurnStream {
 }
 
 function createPendingForegroundRun(): PendingForegroundRun {
-  return createTrackedRun({ kind: "foreground", turnId: null, started: false });
+  return createTrackedRun({
+    kind: "foreground",
+    turnId: null,
+    started: false,
+    stagedEvents: [],
+  });
 }
 
 function createTrackedRun(input: {
   kind: "foreground";
   turnId: null;
   started: false;
+  stagedEvents: AgentStreamEvent[];
 }): PendingForegroundRun;
 function createTrackedRun(input: {
   kind: "autonomous";
@@ -274,7 +281,12 @@ function createTrackedRun(input: {
 }): AutonomousAgentRun;
 function createTrackedRun(
   input:
-    | { kind: "foreground"; turnId: null; started: false }
+    | {
+        kind: "foreground";
+        turnId: null;
+        started: false;
+        stagedEvents: AgentStreamEvent[];
+      }
     | { kind: "autonomous"; turnId: string | null; started: true },
 ): TrackedAgentRun {
   let resolveSettled!: () => void;

@@ -7,6 +7,7 @@ import {
   appendOptimisticUserMessageToStream,
   buildOptimisticUserMessage,
   clearOptimisticUserMessages,
+  createUserMessage,
   handoffCreatedAgentUserMessageToStream,
   hydrateStreamState,
   mergeToolCallDetail,
@@ -14,12 +15,187 @@ import {
   type AgentToolCallItem,
   type StreamItem,
   isAgentToolCallItem,
+  upsertUserMessage,
 } from "./stream";
 import type { AgentProvider, ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
 import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display";
 
 type CanonicalToolStatus = "running" | "completed" | "failed" | "canceled";
+
+describe("user message identity", () => {
+  it("replaces provisional optimistic turn membership with canonical membership", () => {
+    const optimistic = createUserMessage({
+      clientMessageId: "hello-client",
+      text: "hello",
+      timestamp: new Date("2026-08-15T10:00:00Z"),
+      turnId: "turn-a",
+    });
+
+    const result = applyStreamEvent({
+      tail: [optimistic],
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "codex",
+        turnId: "turn-b",
+        item: {
+          type: "user_message",
+          text: "hello",
+          clientMessageId: "hello-client",
+          messageId: "provider-hello",
+        },
+      },
+      timestamp: new Date("2026-08-15T10:00:01Z"),
+    });
+
+    expect(result.tail).toHaveLength(1);
+    expect(result.tail[0]).toEqual(
+      expect.objectContaining({
+        kind: "user_message",
+        clientMessageId: "hello-client",
+        messageId: "provider-hello",
+        turnId: "turn-b",
+      }),
+    );
+  });
+
+  it("clears provisional optimistic turn membership for a legacy canonical row", () => {
+    const optimistic = createUserMessage({
+      clientMessageId: "hello-client",
+      text: "hello",
+      timestamp: new Date("2026-08-15T10:00:00Z"),
+      turnId: "turn-a",
+    });
+
+    const result = applyStreamEvent({
+      tail: [optimistic],
+      head: [],
+      event: {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "user_message",
+          text: "hello",
+          clientMessageId: "hello-client",
+          messageId: "provider-hello",
+        },
+      },
+      timestamp: new Date("2026-08-15T10:00:01Z"),
+    });
+
+    expect(result.tail).toHaveLength(1);
+    expect(result.tail[0]).toEqual(
+      expect.objectContaining({
+        kind: "user_message",
+        clientMessageId: "hello-client",
+        messageId: "provider-hello",
+      }),
+    );
+    expect(result.tail[0]).not.toHaveProperty("turnId");
+  });
+
+  it("adds provider identity without replacing local presentation", () => {
+    const timestamp = new Date("2026-07-26T10:00:00.000Z");
+    const local = createUserMessage({
+      clientMessageId: "client-1",
+      text: "local text",
+      timestamp,
+      images: [
+        {
+          id: "image-1",
+          mimeType: "image/png",
+          storageType: "web-indexeddb",
+          storageKey: "image-1.png",
+          createdAt: timestamp.getTime(),
+        },
+      ],
+      attachments: [{ type: "text", mimeType: "text/plain", text: "attachment" }],
+    });
+    const canonical = createUserMessage({
+      id: "provider-1",
+      messageId: "provider-1",
+      clientMessageId: "client-1",
+      text: "provider text",
+      timestamp: new Date("2026-07-26T10:00:01.000Z"),
+    });
+
+    const first = upsertUserMessage([local], canonical);
+    const second = upsertUserMessage(first, canonical);
+
+    expect(first).toEqual([
+      {
+        ...local,
+        messageId: "provider-1",
+        clientMessageId: "client-1",
+      },
+    ]);
+    expect(first[0]).toBe(second[0]);
+  });
+
+  it("keeps local presentation when a later canonical row omits provider identity", () => {
+    const timestamp = new Date("2026-07-27T10:00:00.000Z");
+    const local = createUserMessage({
+      clientMessageId: "client-1",
+      messageId: "provider-1",
+      text: "local text",
+      timestamp,
+      images: [
+        {
+          id: "image-1",
+          mimeType: "image/png",
+          storageType: "web-indexeddb",
+          storageKey: "image-1.png",
+          createdAt: timestamp.getTime(),
+        },
+      ],
+      attachments: [{ type: "text", mimeType: "text/plain", text: "local attachment" }],
+    });
+    const canonicalWithoutProviderIdentity = createUserMessage({
+      id: "canonical-page-row",
+      clientMessageId: "client-1",
+      text: "provider-shaped text",
+      timestamp: new Date("2026-07-27T10:00:01.000Z"),
+    });
+
+    const result = upsertUserMessage([local], canonicalWithoutProviderIdentity);
+
+    expect(result).toEqual([local]);
+  });
+
+  it("matches a submitted message against a legacy canonical row that has no client identity", () => {
+    // Daemons before v0.2.0 do not echo clientMessageId. During agent creation the
+    // legacy canonical row can land before the local submission is handed off, so the
+    // submitted row arrives as `incoming` and must still match by text.
+    const timestamp = new Date("2026-07-27T11:00:00.000Z");
+    const legacyCanonical = createUserMessage({
+      id: "provider-1",
+      messageId: "provider-1",
+      text: "review this",
+      timestamp,
+    });
+    const submitted = createUserMessage({
+      clientMessageId: "client-1",
+      text: "review this",
+      timestamp: new Date("2026-07-27T11:00:01.000Z"),
+      attachments: [{ type: "text", mimeType: "text/plain", text: "attachment" }],
+    });
+
+    const result = handoffCreatedAgentUserMessageToStream({
+      tail: [legacyCanonical],
+      head: [],
+      message: submitted,
+    });
+
+    expect(result.tail).toEqual([
+      {
+        ...submitted,
+        id: "client-1",
+        messageId: "provider-1",
+      },
+    ]);
+  });
+});
 
 function assistantTimeline(
   text: string,
@@ -1517,7 +1693,9 @@ describe("turn lifecycle events", () => {
     assert.deepStrictEqual(handedOff.tail, [
       {
         kind: "user_message",
-        id: "provider-user",
+        id: "client-user",
+        clientMessageId: "client-user",
+        messageId: "provider-user",
         text: optimistic.text,
         timestamp: optimistic.timestamp,
         images: optimistic.images,
@@ -1543,7 +1721,7 @@ describe("turn lifecycle events", () => {
     );
     assert.deepStrictEqual(
       afterNextUser.filter((item) => item.kind === "user_message").map((item) => item.id),
-      ["provider-user", "provider-next-user"],
+      ["client-user", "provider-next-user"],
     );
   });
 
@@ -1677,6 +1855,7 @@ describe("turn lifecycle events", () => {
         kind: "user_message",
         id: "provider-owned-submitted",
         clientMessageId: submittedPrompt.id,
+        messageId: "provider-owned-submitted",
         text: submittedPrompt.text,
         timestamp: submittedPrompt.timestamp,
       },

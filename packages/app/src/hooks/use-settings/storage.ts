@@ -1,4 +1,5 @@
 import { isSyntaxThemeId, type SyntaxThemeId } from "@getpaseo/highlight";
+import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { QueryClient } from "@tanstack/react-query";
 import type { DesktopSettings } from "@/desktop/settings/desktop-settings";
 import { parseAppLanguage, type AppLanguage } from "@/i18n/locales";
@@ -18,7 +19,7 @@ export const APP_SETTINGS_KEY = "@paseo:app-settings";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 const LEGACY_SETTINGS_KEY = "@paseo:settings";
 
-export type SendBehavior = "interrupt" | "queue";
+export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
 export type ServiceUrlBehavior = "ask" | "in-app" | "external";
 export type WorkspaceTitleSource = "title" | "branch";
@@ -117,7 +118,7 @@ const StoredAppSettingsSchema = z.strictObject({
   language: z
     .enum(["system", "ar", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-CN"])
     .optional(),
-  sendBehavior: z.enum(["interrupt", "queue"]).optional(),
+  sendBehavior: z.enum(["interrupt", "steer", "queue"]).optional(),
   serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).optional(),
   terminalScrollbackLines: z.union([z.number(), z.string()]).optional(),
   uiFontFamily: z.string().optional(),
@@ -339,7 +340,11 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   if (language !== null) {
     result.language = language;
   }
-  if (stored.sendBehavior === "interrupt" || stored.sendBehavior === "queue") {
+  if (
+    stored.sendBehavior === "interrupt" ||
+    stored.sendBehavior === "steer" ||
+    stored.sendBehavior === "queue"
+  ) {
     result.sendBehavior = stored.sendBehavior;
   }
   if (

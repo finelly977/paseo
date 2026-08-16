@@ -7,6 +7,7 @@ import type {
   WorkspaceComposerAttachment,
 } from "@/attachments/types";
 import type { StreamItem } from "@/types/stream";
+import { appendSubmittedUserMessage, removeSubmittedUserMessage } from "@/types/stream";
 import {
   cancelComposerAgent,
   dispatchComposerAgentMessage,
@@ -20,12 +21,12 @@ import {
   sendQueuedComposerMessageNow,
   toggleGithubAttachment,
   toggleGithubAttachmentFromPicker,
-  type AgentStreamWriter,
   type AttachmentPersister,
   type ComposerCancelClient,
   type ComposerSendClient,
   type QueueWriter,
   type QueuedComposerMessage,
+  type MessageSubmissionWriter,
 } from "./actions";
 
 const imageMetadata: AttachmentMetadata = {
@@ -162,6 +163,7 @@ interface FakeSendCall {
   text: string;
   options: {
     messageId: string;
+    activeTurnBehavior?: "interrupt" | "steer";
     images: Array<{ data: string; mimeType: string }>;
     attachments: AgentAttachment[];
   };
@@ -183,7 +185,7 @@ function createFakeSendClient(
   };
 }
 
-interface FakeStream extends AgentStreamWriter {
+interface FakeStream extends MessageSubmissionWriter {
   head: Map<string, StreamItem[]>;
   tail: Map<string, StreamItem[]>;
 }
@@ -192,13 +194,31 @@ function createFakeStream(initialHead: Map<string, StreamItem[]> = new Map()): F
   const fake: FakeStream = {
     head: new Map(initialHead),
     tail: new Map(),
-    getTail: (agentId) => fake.tail.get(agentId),
-    getHead: (agentId) => fake.head.get(agentId),
-    setHead: (updater) => {
-      fake.head = updater(fake.head);
+    begin: (agentId, message) => {
+      const currentTail = fake.tail.get(agentId) ?? [];
+      const currentHead = fake.head.get(agentId) ?? [];
+      const next = appendSubmittedUserMessage({
+        tail: currentTail,
+        head: currentHead,
+        message,
+      });
+      if (next.tail.length > 0) fake.tail.set(agentId, next.tail);
+      else fake.tail.delete(agentId);
+      if (next.head.length > 0) fake.head.set(agentId, next.head);
+      else fake.head.delete(agentId);
     },
-    setTail: (updater) => {
-      fake.tail = updater(fake.tail);
+    accept: () => undefined,
+    reject: (agentId, clientMessageId) => {
+      const next = removeSubmittedUserMessage({
+        tail: fake.tail.get(agentId) ?? [],
+        head: fake.head.get(agentId) ?? [],
+        clientMessageId,
+      });
+      if (next.tail.length > 0) fake.tail.set(agentId, next.tail);
+      else fake.tail.delete(agentId);
+      if (next.head.length > 0) fake.head.set(agentId, next.head);
+      else fake.head.delete(agentId);
+      return "rejected";
     },
   };
   return fake;
@@ -337,7 +357,51 @@ describe("pickAndPersistImages", () => {
 });
 
 describe("dispatchComposerAgentMessage", () => {
-  it("removes the optimistic prompt when the host rejects it", async () => {
+  it("forwards the configured active-turn intent without provider capability checks", async () => {
+    const client = createFakeSendClient();
+    const stream = createFakeStream();
+
+    await dispatchComposerAgentMessage({
+      client,
+      agentId: "agent",
+      text: "steer this turn",
+      attachments: [],
+      encodeImages: async () => [],
+      submission: stream,
+      activeTurnBehavior: "steer",
+    });
+
+    expect(client.calls[0]?.options.activeTurnBehavior).toBe("steer");
+  });
+
+  it("stamps only a steer optimistic row with the daemon active turn ID", async () => {
+    const client = createFakeSendClient();
+    const stream = createFakeStream();
+    await dispatchComposerAgentMessage({
+      client,
+      agentId: "agent",
+      text: "hello",
+      attachments: [],
+      encodeImages: async () => [],
+      submission: stream,
+      activeTurnBehavior: "steer",
+      activeTurnId: "turn-1",
+    });
+    expect(stream.tail.get("agent")?.[0]).toMatchObject({ turnId: "turn-1" });
+    const legacy = createFakeStream();
+    await dispatchComposerAgentMessage({
+      client,
+      agentId: "legacy",
+      text: "hello",
+      attachments: [],
+      encodeImages: async () => [],
+      submission: legacy,
+      activeTurnBehavior: "steer",
+    });
+    expect(legacy.tail.get("legacy")?.[0]?.turnId).toBeUndefined();
+  });
+
+  it("removes the submitted prompt when the host rejects it", async () => {
     const rejection = new Error("Host rejected prompt");
     const client = createFakeSendClient({ rejection });
     const stream = createFakeStream();
@@ -349,12 +413,74 @@ describe("dispatchComposerAgentMessage", () => {
         text: "rejected prompt",
         attachments: [],
         encodeImages: passthroughEncodeImages,
-        stream,
+        submission: stream,
       }),
     ).rejects.toBe(rejection);
 
     expect(stream.head.get("agent")).toBeUndefined();
     expect(stream.tail.get("agent") ?? []).toEqual([]);
+  });
+
+  it("rolls back an already-running force send when its RPC fails", async () => {
+    const stream = createFakeStream();
+    const transportError = new Error("Force send failed while the prior turn was running");
+    const client = createFakeSendClient({ rejection: transportError });
+
+    await expect(
+      dispatchComposerAgentMessage({
+        client,
+        agentId: "agent",
+        text: "force send",
+        attachments: [],
+        encodeImages: passthroughEncodeImages,
+        submission: stream,
+      }),
+    ).rejects.toBe(transportError);
+
+    expect(stream.tail.get("agent") ?? []).toEqual([]);
+  });
+
+  it("does not swallow a transport error when submission state is missing", async () => {
+    const transportError = new Error("Connection lost with unknown submission state");
+    const client = createFakeSendClient({ rejection: transportError });
+    const submission: MessageSubmissionWriter = {
+      begin: () => {},
+      accept: () => {},
+      reject: () => "unknown",
+    };
+
+    await expect(
+      dispatchComposerAgentMessage({
+        client,
+        agentId: "agent",
+        text: "unknown state",
+        attachments: [],
+        encodeImages: passthroughEncodeImages,
+        submission,
+      }),
+    ).rejects.toBe(transportError);
+  });
+
+  it("surfaces an ambiguous failure even when a concurrent canonical echo was observed", async () => {
+    const transportError = new Error("Connection lost after delivery may have occurred");
+    const client = createFakeSendClient({ rejection: transportError });
+    const submission: MessageSubmissionWriter = {
+      begin: () => {},
+      accept: () => {},
+      reject: () => "accepted",
+    };
+
+    await expect(
+      dispatchComposerAgentMessage({
+        client,
+        agentId: "agent",
+        text: "ambiguous steer",
+        attachments: [],
+        encodeImages: passthroughEncodeImages,
+        submission,
+        activeTurnBehavior: "steer",
+      }),
+    ).rejects.toBe(transportError);
   });
 
   it("sends text + image data + structured attachments and appends user_message to the tail when head is empty", async () => {
@@ -371,7 +497,7 @@ describe("dispatchComposerAgentMessage", () => {
         { kind: "github_pr", item: prItem },
       ],
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(client.calls).toHaveLength(1);
@@ -402,7 +528,7 @@ describe("dispatchComposerAgentMessage", () => {
     expect(userMessage.images).toEqual([image]);
     expect(userMessage.attachments).toEqual(call.options.attachments);
     expect(userMessage.id).toBe(call.options.messageId);
-    expect(userMessage.optimistic).toBe(true);
+    expect(userMessage.optimistic).toBeUndefined();
   });
 
   it("can send legacy GitHub attachment payloads for old daemons", async () => {
@@ -416,7 +542,7 @@ describe("dispatchComposerAgentMessage", () => {
       attachments: [{ kind: "forge_change_request", item: prItem }],
       attachmentSubmitFormat: "legacy-github",
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(client.calls[0].options.attachments).toEqual([
@@ -449,7 +575,7 @@ describe("dispatchComposerAgentMessage", () => {
       text: "next message",
       attachments: [],
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(stream.head.get("agent")).toHaveLength(2);
@@ -466,7 +592,7 @@ describe("dispatchComposerAgentMessage", () => {
       text: "plain message",
       attachments: [],
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(client.calls[0]?.options).toMatchObject({
@@ -486,7 +612,7 @@ describe("dispatchComposerAgentMessage", () => {
       text: "review this",
       attachments: [review],
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(client.calls[0]?.options.attachments).toEqual([review.attachment]);
@@ -504,7 +630,7 @@ describe("dispatchComposerAgentMessage", () => {
       text: "inspect element",
       attachments: [browserElement],
       encodeImages: passthroughEncodeImages,
-      stream,
+      submission: stream,
     });
 
     expect(client.calls[0]?.options.attachments).toEqual([

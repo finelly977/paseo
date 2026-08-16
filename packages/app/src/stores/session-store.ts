@@ -5,11 +5,21 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ViewedTimelineUiBridge } from "@/timeline/viewed-timeline-sync";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import {
+  appendSubmittedUserMessage,
   handoffCreatedAgentUserMessageToStream,
+  removeSubmittedUserMessage,
   type StreamItem,
   type TodoEntry,
   type UserMessageItem,
 } from "@/types/stream";
+import {
+  acceptMessageSubmission,
+  beginMessageSubmission,
+  observeMessageSubmissionCanonical,
+  rejectMessageSubmission,
+  type MessageSubmissionRecord,
+  type MessageSubmissionRejectionOutcome,
+} from "@/composer/submission/model";
 import {
   allocateConversationHistoryBudget,
   countConversationTurns,
@@ -65,6 +75,7 @@ export interface Agent {
   id: string;
   provider: AgentProvider;
   status: AgentLifecycleStatus;
+  activeTurn: { turnId: string | null; startedAt: Date | null } | null;
   createdAt: Date;
   updatedAt: Date;
   lastUserMessageAt: Date | null;
@@ -387,6 +398,7 @@ export interface SessionState {
   agentStreamTail: Map<string, StreamItem[]>;
   agentStreamHead: Map<string, StreamItem[]>;
   agentTasks: Map<string, TodoEntry[]>;
+  messageSubmissions: Map<string, MessageSubmissionRecord[]>;
   agentTimelineCursor: Map<string, AgentTimelineCursorState>;
   agentTimelineHasOlder: Map<string, boolean>;
   agentTimelineOlderFetchInFlight: Map<string, boolean>;
@@ -483,8 +495,24 @@ interface SessionStoreActions {
       tail?: StreamItem[];
       head?: StreamItem[];
       taskSnapshot?: TodoEntry[];
+      acknowledgedClientMessageIds?: readonly string[];
     },
   ) => void;
+  beginAgentMessageSubmission: (
+    serverId: string,
+    agentId: string,
+    message: UserMessageItem,
+  ) => void;
+  acceptAgentMessageSubmission: (
+    serverId: string,
+    agentId: string,
+    clientMessageId: string,
+  ) => void;
+  rejectAgentMessageSubmission: (
+    serverId: string,
+    agentId: string,
+    clientMessageId: string,
+  ) => MessageSubmissionRejectionOutcome;
   handoffCreatedAgentUserMessage: (
     serverId: string,
     agentId: string,
@@ -758,6 +786,7 @@ function createInitialSessionState(
     agentStreamTail: new Map(),
     agentStreamHead: new Map(),
     agentTasks: new Map(),
+    messageSubmissions: new Map(),
     agentTimelineCursor: new Map(),
     agentTimelineHasOlder: new Map(),
     agentTimelineOlderFetchInFlight: new Map(),
@@ -1238,9 +1267,25 @@ export const useSessionStore = create<SessionStore>()(
 
           const agentTasks = updateAgentTasks(session.agentTasks, agentId, state.taskSnapshot);
           const changedTasks = agentTasks !== session.agentTasks;
+          const currentSubmissions = session.messageSubmissions.get(agentId) ?? [];
+          const observedSubmissions = observeMessageSubmissionCanonical(
+            currentSubmissions,
+            state.acknowledgedClientMessageIds ?? [],
+          );
+          const changedSubmissions = observedSubmissions !== currentSubmissions;
 
-          if (!changedTail && !changedHead && !changedTasks) {
+          if (!changedTail && !changedHead && !changedTasks && !changedSubmissions) {
             return prev;
+          }
+
+          let messageSubmissions = session.messageSubmissions;
+          if (changedSubmissions) {
+            messageSubmissions = new Map(session.messageSubmissions);
+            if (observedSubmissions.length > 0) {
+              messageSubmissions.set(agentId, observedSubmissions);
+            } else {
+              messageSubmissions.delete(agentId);
+            }
           }
 
           return {
@@ -1252,10 +1297,122 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamTail: nextTail,
                 agentStreamHead: nextHead,
                 agentTasks,
+                messageSubmissions,
               },
             },
           };
         });
+      },
+
+      beginAgentMessageSubmission: (serverId, agentId, message) => {
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session) return prev;
+          if (!message.clientMessageId) {
+            throw new Error("开始消息提交时必须提供客户端消息标识");
+          }
+          const currentTail = session.agentStreamTail.get(agentId) ?? [];
+          const currentHead = session.agentStreamHead.get(agentId) ?? [];
+          const stream = appendSubmittedUserMessage({
+            tail: currentTail,
+            head: currentHead,
+            message,
+          });
+          const submissions = beginMessageSubmission(
+            session.messageSubmissions.get(agentId) ?? [],
+            { clientMessageId: message.clientMessageId },
+          );
+          const messageSubmissions = new Map(session.messageSubmissions);
+          messageSubmissions.set(agentId, submissions);
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: {
+                ...session,
+                agentStreamTail:
+                  stream.tail === currentTail
+                    ? session.agentStreamTail
+                    : new Map(session.agentStreamTail).set(agentId, stream.tail),
+                agentStreamHead:
+                  stream.head === currentHead
+                    ? session.agentStreamHead
+                    : new Map(session.agentStreamHead).set(agentId, stream.head),
+                messageSubmissions,
+              },
+            },
+          };
+        });
+      },
+
+      acceptAgentMessageSubmission: (serverId, agentId, clientMessageId) => {
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session) return prev;
+          const currentSubmissions = session.messageSubmissions.get(agentId) ?? [];
+          const submissions = acceptMessageSubmission(currentSubmissions, clientMessageId);
+          if (submissions === currentSubmissions) return prev;
+          const messageSubmissions = new Map(session.messageSubmissions);
+          if (submissions.length > 0) {
+            messageSubmissions.set(agentId, submissions);
+          } else {
+            messageSubmissions.delete(agentId);
+          }
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: { ...session, messageSubmissions },
+            },
+          };
+        });
+      },
+
+      rejectAgentMessageSubmission: (serverId, agentId, clientMessageId) => {
+        let outcome: MessageSubmissionRejectionOutcome = "unknown";
+        set((prev) => {
+          const session = prev.sessions[serverId];
+          if (!session) return prev;
+          const currentTail = session.agentStreamTail.get(agentId) ?? [];
+          const currentHead = session.agentStreamHead.get(agentId) ?? [];
+          const currentSubmissions = session.messageSubmissions.get(agentId) ?? [];
+          const result = rejectMessageSubmission(currentSubmissions, clientMessageId);
+          outcome = result.outcome;
+          if (outcome === "unknown") return prev;
+          const stream =
+            outcome === "rejected"
+              ? removeSubmittedUserMessage({
+                  tail: currentTail,
+                  head: currentHead,
+                  clientMessageId,
+                })
+              : { tail: currentTail, head: currentHead };
+          const messageSubmissions = new Map(session.messageSubmissions);
+          if (result.submissions.length > 0) {
+            messageSubmissions.set(agentId, result.submissions);
+          } else {
+            messageSubmissions.delete(agentId);
+          }
+          return {
+            ...prev,
+            sessions: {
+              ...prev.sessions,
+              [serverId]: {
+                ...session,
+                agentStreamTail:
+                  stream.tail === currentTail
+                    ? session.agentStreamTail
+                    : new Map(session.agentStreamTail).set(agentId, stream.tail),
+                agentStreamHead:
+                  stream.head === currentHead
+                    ? session.agentStreamHead
+                    : new Map(session.agentStreamHead).set(agentId, stream.head),
+                messageSubmissions,
+              },
+            },
+          };
+        });
+        return outcome;
       },
 
       handoffCreatedAgentUserMessage: (serverId, agentId, message) => {

@@ -34,6 +34,7 @@ function makeAgent(input: Partial<Agent> & Pick<Agent, "id">): Agent {
     labels: {},
     archivedAt: null,
     ...overrides,
+    activeTurn: overrides.activeTurn ?? null,
   };
 }
 

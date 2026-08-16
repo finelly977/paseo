@@ -221,12 +221,49 @@ describe("ReplicaCache", () => {
     expect(Array.from(session?.projects.keys() ?? [])).toEqual(["project-1"]);
     expect(session?.agents.get("agent-1")?.updatedAt).toBeInstanceOf(Date);
     expect(session?.workspaces.get("workspace-1")?.statusEnteredAt).toBeInstanceOf(Date);
+
     expect(session?.agentStreamTail.get("agent-1")).toEqual([message("message-1", "Cached")]);
-    // 副本只是连接前的陈旧展示：不声称权威历史，也不恢复光标，
-    // 连接后重新按配置的对话轮数权威加载。
+    // 副本只用于连接前展示，不声明自己是权威历史；连接后仍按设置重新加载。
     expect(session?.agentAuthoritativeHistoryApplied.has("agent-1")).toBe(false);
     expect(session?.agentTimelineCursor.has("agent-1")).toBe(false);
     expect(session?.agentTimelineHasOlder.get("agent-1")).toBe(true);
+  });
+
+  it("restores canonical turn membership without downgrading tagged rows", async () => {
+    const storage = new MemoryStorage();
+    const writer = new ReplicaCache(storage);
+    writer.setHosts([SERVER_ID]);
+    seedSession();
+    const initial: StreamItem = {
+      kind: "user_message",
+      id: "initial",
+      text: "initial",
+      timestamp: new Date(1),
+      turnId: "turn-1",
+    };
+    const hello: StreamItem = {
+      kind: "user_message",
+      id: "hello",
+      text: "hello",
+      timestamp: new Date(2),
+      turnId: "turn-1",
+      clientMessageId: "hello-client",
+      messageId: "hello-client",
+    };
+    useSessionStore
+      .getState()
+      .setAgentStreamTail(
+        SERVER_ID,
+        new Map([["agent-1", [initial, message("assistant", "done"), hello]]]),
+      );
+    await writer.flush();
+    useSessionStore.getState().clearSession(SERVER_ID);
+    const reader = new ReplicaCache(storage);
+    reader.setHosts([SERVER_ID]);
+    await reader.restore();
+    const tail =
+      useSessionStore.getState().sessions[SERVER_ID]?.agentStreamTail.get("agent-1") ?? [];
+    expect(tail.find((item) => item.id === "hello")?.turnId).toBe("turn-1");
   });
 
   it("persists only the focused agent view with a short timeline tail", async () => {

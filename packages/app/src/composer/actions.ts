@@ -1,4 +1,5 @@
 import type { ForgeSearchItem } from "@getpaseo/protocol/messages";
+import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -12,13 +13,8 @@ import {
   splitComposerAttachmentsForSubmit,
   type ComposerAttachmentSubmitFormat,
 } from "@/composer/attachments/submit";
-import {
-  appendOptimisticUserMessageToStream,
-  buildOptimisticUserMessage,
-  generateMessageId,
-  type StreamItem,
-  type UserMessageItem,
-} from "@/types/stream";
+import { createUserMessage, generateMessageId, type UserMessageItem } from "@/types/stream";
+import type { MessageSubmissionRejectionOutcome } from "@/composer/submission/model";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
 import { i18n } from "@/i18n/i18next";
 
@@ -48,6 +44,7 @@ export interface ComposerSendClient {
     text: string,
     options: {
       messageId: string;
+      activeTurnBehavior?: ActiveTurnBehavior;
       images: Array<{ data: string; mimeType: string }>;
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
     },
@@ -70,11 +67,10 @@ export interface ComposerCancelClient {
   cancelAgent: (agentId: string) => Promise<void> | void;
 }
 
-export interface AgentStreamWriter {
-  getTail: (agentId: string) => StreamItem[] | undefined;
-  getHead: (agentId: string) => StreamItem[] | undefined;
-  setHead: (updater: (prev: Map<string, StreamItem[]>) => Map<string, StreamItem[]>) => void;
-  setTail: (updater: (prev: Map<string, StreamItem[]>) => Map<string, StreamItem[]>) => void;
+export interface MessageSubmissionWriter {
+  begin: (agentId: string, message: UserMessageItem) => void;
+  accept: (agentId: string, clientMessageId: string) => void;
+  reject: (agentId: string, clientMessageId: string) => MessageSubmissionRejectionOutcome;
 }
 
 export interface QueueWriter {
@@ -169,7 +165,9 @@ export interface DispatchComposerAgentMessageInput {
   encodeImages: (
     images: AttachmentMetadata[],
   ) => Promise<Array<{ data: string; mimeType: string }> | undefined>;
-  stream: AgentStreamWriter;
+  submission: MessageSubmissionWriter;
+  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnId?: string;
 }
 
 export async function dispatchComposerAgentMessage(
@@ -178,58 +176,31 @@ export async function dispatchComposerAgentMessage(
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments, {
     format: input.attachmentSubmitFormat,
   });
-  const messageId = generateMessageId();
-  const userMessage = buildOptimisticUserMessage({
-    id: messageId,
+  const clientMessageId = generateMessageId();
+  const userMessage = createUserMessage({
+    clientMessageId,
     text: input.text,
     timestamp: new Date(),
     images: wirePayload.images,
     attachments: wirePayload.attachments,
+    ...(input.activeTurnBehavior === "steer" && input.activeTurnId
+      ? { turnId: input.activeTurnId }
+      : {}),
   });
-  const rollbackOptimisticMessage = appendUserMessageToStream(
-    input.agentId,
-    userMessage,
-    input.stream,
-  );
+  input.submission.begin(input.agentId, userMessage);
   try {
     const imagesData = await input.encodeImages(wirePayload.images);
     await input.client.sendAgentMessage(input.agentId, input.text, {
-      messageId,
+      messageId: clientMessageId,
+      ...(input.activeTurnBehavior ? { activeTurnBehavior: input.activeTurnBehavior } : {}),
       images: imagesData ?? [],
       attachments: wirePayload.attachments,
     });
+    input.submission.accept(input.agentId, clientMessageId);
   } catch (error) {
-    rollbackOptimisticMessage();
+    input.submission.reject(input.agentId, clientMessageId);
     throw error;
   }
-}
-
-function appendUserMessageToStream(
-  agentId: string,
-  userMessage: UserMessageItem,
-  stream: AgentStreamWriter,
-): () => void {
-  const result = appendOptimisticUserMessageToStream({
-    tail: stream.getTail(agentId) ?? [],
-    head: stream.getHead(agentId) ?? [],
-    message: userMessage,
-    placement: "active-head",
-  });
-  const write = result.changedHead ? stream.setHead : stream.setTail;
-  const items = result.changedHead ? result.head : result.tail;
-  write((prev) => new Map(prev).set(agentId, items));
-
-  return () => {
-    write((prev) => {
-      const current = prev.get(agentId);
-      if (!current) return prev;
-      const nextItems = current.filter(
-        (item) => item.id !== userMessage.id || item.kind !== "user_message" || !item.optimistic,
-      );
-      if (nextItems.length === current.length) return prev;
-      return new Map(prev).set(agentId, nextItems);
-    });
-  };
 }
 
 export interface QueueComposerMessageInput {
