@@ -1,6 +1,10 @@
 import type { Logger } from "pino";
 
-import type { AgentPromptInput, AgentRunOptions } from "./agent-sdk-types.js";
+import type {
+  AgentPermissionRequest,
+  AgentPromptInput,
+  AgentRunOptions,
+} from "./agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
@@ -254,15 +258,41 @@ interface FinishNotificationBodyInput {
   title: string;
   reason: "finished" | "errored" | "needs permission";
   lastAssistantMessage: string | null;
+  permissionRequest?: AgentPermissionRequest;
 }
 
 function formatFinishNotificationBody(params: FinishNotificationBodyInput): string {
-  const statusLine = `Agent ${params.childAgentId} (${params.title}) ${params.reason}.`;
-  const lastAssistantMessage = params.lastAssistantMessage?.trim();
-  if (!lastAssistantMessage) {
-    return statusLine;
+  const reasonLabels: Record<FinishNotificationBodyInput["reason"], string> = {
+    finished: "已完成",
+    errored: "出错",
+    "needs permission": "需要权限",
+  };
+  const statusLine = `智能体 ${params.childAgentId}（${params.title}）${reasonLabels[params.reason]}。`;
+  const sections = [statusLine];
+  if (params.reason === "needs permission" && params.permissionRequest) {
+    sections.push(
+      "请使用下面的 `agentId` 和 `requestId` 调用 `respond_to_permission`。",
+      `<permission-request>\n${JSON.stringify(
+        {
+          agentId: params.childAgentId,
+          requestId: params.permissionRequest.id,
+          request: params.permissionRequest,
+        },
+        null,
+        2,
+      )}\n</permission-request>`,
+    );
   }
-  return `${statusLine}\n\n<agent-response>\n${lastAssistantMessage}\n</agent-response>`;
+  const lastAssistantMessage = params.lastAssistantMessage?.trim();
+  if (lastAssistantMessage) {
+    sections.push(`<agent-response>\n${lastAssistantMessage}\n</agent-response>`);
+  }
+  return sections.join("\n\n");
+}
+
+interface NotifySafelyOptions {
+  terminal?: boolean;
+  permissionRequest?: AgentPermissionRequest;
 }
 
 export function setupFinishNotification(params: SetupFinishNotificationParams): void {
@@ -275,16 +305,21 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
     logger,
   } = params;
   let hasSeenRunning = false;
-  let fired = false;
+  let stopped = false;
+  const notifiedPermissionRequestIds = new Set<string>();
   let unsubscribe: (() => void) | null = null;
+  let notificationQueue = Promise.resolve();
 
-  async function notify(reason: "finished" | "errored" | "needs permission"): Promise<void> {
-    if (fired) {
-      return;
-    }
-    fired = true;
+  function stop(): void {
+    if (stopped) return;
+    stopped = true;
     unsubscribe?.();
+  }
 
+  async function notify(
+    reason: "finished" | "errored" | "needs permission",
+    permissionRequest?: AgentPermissionRequest,
+  ): Promise<void> {
     const callerRecord = await agentStorage.get(callerAgentId);
     if (callerRecord?.archivedAt) {
       return;
@@ -301,6 +336,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
       title,
       reason,
       lastAssistantMessage,
+      permissionRequest,
     });
 
     await sendPromptToAgent({
@@ -313,24 +349,35 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
     });
   }
 
-  function notifySafely(reason: "finished" | "errored" | "needs permission"): void {
-    void notify(reason).catch((error) => {
-      logger.error(
-        { err: error, childAgentId, callerAgentId, reason },
-        "Failed to notify caller agent",
-      );
-    });
+  function notifySafely(
+    reason: "finished" | "errored" | "needs permission",
+    options: NotifySafelyOptions = {},
+  ): void {
+    if (stopped) return;
+    if (options.terminal ?? true) stop();
+    notificationQueue = notificationQueue
+      .then(() => notify(reason, options.permissionRequest))
+      .catch((error) => {
+        logger.error({ err: error, childAgentId, callerAgentId, reason }, "通知调用方智能体失败");
+      });
   }
 
   unsubscribe = agentManager.subscribe(
     (event) => {
-      if (fired) {
+      if (stopped) {
         return;
       }
 
       if (event.type === "agent_state") {
+        for (const requestId of notifiedPermissionRequestIds) {
+          if (!event.agent.pendingPermissions.has(requestId)) {
+            notifiedPermissionRequestIds.delete(requestId);
+          }
+        }
         if (event.agent.lifecycle === "running") {
-          hasSeenRunning = true;
+          if (event.agent.pendingPermissions.size === 0) {
+            hasSeenRunning = true;
+          }
           return;
         }
         if (event.agent.lifecycle === "error") {
@@ -342,15 +389,32 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
           return;
         }
         if (event.agent.lifecycle === "closed") {
-          fired = true;
-          unsubscribe?.();
+          stop();
           return;
         }
         return;
       }
 
       if (event.event.type === "permission_requested") {
-        notifySafely("needs permission");
+        // 权限暂停只是中间检查点。清除此前观察到的运行状态，避免后续启动期间的空闲状态
+        // 被误判为最终完成。
+        hasSeenRunning = false;
+        if (!notifiedPermissionRequestIds.has(event.event.request.id)) {
+          notifiedPermissionRequestIds.add(event.event.request.id);
+          notifySafely("needs permission", {
+            terminal: false,
+            permissionRequest: event.event.request,
+          });
+        }
+        return;
+      }
+
+      if (event.event.type === "permission_resolved") {
+        notifiedPermissionRequestIds.delete(event.event.requestId);
+        const childAgent = agentManager.getAgent(childAgentId);
+        if (childAgent?.pendingPermissions.size === 0) {
+          hasSeenRunning = childAgent.lifecycle === "running";
+        }
       }
     },
     { agentId: childAgentId, replayState: false },
@@ -363,7 +427,7 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
   // transitioning to "running").
   const childSnapshot = agentManager.getAgent(childAgentId);
   if (!childSnapshot || childSnapshot.lifecycle === "closed") {
-    unsubscribe();
+    stop();
     return;
   }
   if (childSnapshot.lifecycle === "running") {

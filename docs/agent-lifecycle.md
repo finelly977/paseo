@@ -37,6 +37,13 @@ runtime.
 子智能体或同级会话。共享提供方服务继续遵循原有引用计数，只在最后一个使用它的会话释放后
 退出。之后再次发送消息时，会恢复同一个原生会话和时间线。
 
+提供方运行时仍可能因崩溃、内存不足或主机休眠而自行退出。驻留在进程内的工作也会随之终止：
+Claude Code 的后台 Bash、`Monitor` 和工作流都运行在 CLI 进程中，原本用于唤醒智能体的完成
+通知也不会再到达。运行时在回合中退出时，读取事件流的逻辑会报告错误；但运行时在回合之间
+退出时原先没有观察者，智能体会继续显示为健康的 `idle` 状态，后台工作却已经丢失。现在会把
+这种退出报告为回合失败，让智能体进入 `error` 状态并写入时间线。目前只有 Claude 提供方实现
+了该行为，其他提供方仍只在回合正在执行时报告运行时退出。
+
 ### Cancellation
 
 Cancellation changes lifecycle state only after the provider acknowledges the interrupt or emits a terminal turn event. If the interrupt is rejected or times out, the agent remains `running` with its active foreground turn intact. Follow-up actions such as replacement, reload, rewind, and Stop must report that failure instead of accepting work they cannot perform. Synthesizing a local cancellation without provider acknowledgment creates a split-brain session: Paseo accepts a new prompt while the provider still owns the previous foreground turn.
@@ -53,6 +60,9 @@ Runtime ownership is resolved from explicit workspace ID and caller context, nev
 Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the `paseo.parent-agent-id` label only: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
 `notifyOnFinish` defaults to `true` for agent-scoped creation and background prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` only for truly fire-and-forget agents or prompts.
+权限请求只是通知检查点，不会结束订阅。权限响应后，如果子智能体完成、出错或再次请求权限，
+调用方仍会收到后续通知。权限通知包含规范化请求、子智能体标识和请求标识，调用方无需额外
+读取智能体状态即可检查并响应。
 
 ## Provider-managed child agents
 

@@ -2915,6 +2915,9 @@ class ClaudeAgentSession implements AgentSession {
       this.input = null;
       this.queryPumpPromise = null;
       this.queryRestartNeeded = false;
+      // 结束输入会有意回收进程，先解除引用，避免将正常退出报告为崩溃。
+      const retiredChild = this.childProcess;
+      this.childProcess = null;
       oldInput?.end();
       oldQuery.close?.();
       try {
@@ -2922,17 +2925,17 @@ class ClaudeAgentSession implements AgentSession {
       } catch {
         /* ignore */
       }
-      // Tree-kill the old process tree now that the SDK has cleaned up.
-      // If we skip this, MCP children of the previous claude process can
-      // survive as orphans when the session spawns a replacement query.
-      if (this.childProcess) {
-        await terminateWithTreeKill(this.childProcess, {
+      // SDK 清理完成后终止旧进程树；否则旧 Claude 进程的 MCP 子进程可能在替换查询后成为孤儿。
+      if (retiredChild) {
+        await terminateWithTreeKill(retiredChild, {
           gracefulTimeoutMs: 2_000,
           forceTimeoutMs: 2_000,
-        }).catch(() => {
-          /* process may already be dead */
+        }).catch((error) => {
+          this.logger.warn(
+            { err: error, agentId: this.agentId, reason: "retire-old-process" },
+            "终止 Claude 旧进程失败，进程可能已经退出",
+          );
         });
-        this.childProcess = null;
       }
     }
 
@@ -2955,6 +2958,7 @@ class ClaudeAgentSession implements AgentSession {
         queryFactory: this.queryFactory,
         onChildProcess: (child) => {
           this.childProcess = child;
+          child.once("exit", (code, signal) => this.handleRuntimeExit(child, code, signal));
         },
       },
     );
@@ -3439,6 +3443,36 @@ class ClaudeAgentSession implements AgentSession {
     }
   }
 
+  // 后台 Bash、Monitor 和工作流都运行在 Claude Code 进程内。进程在回合中退出时查询泵会报告，
+  // 但在回合之间退出时没有其他观察者，智能体会错误地保持空闲，后续唤醒事件也不会到达。
+  private handleRuntimeExit(
+    child: ChildProcess,
+    code: number | null,
+    signal: NodeJS.Signals | null,
+  ): void {
+    if (this.closed || this.childProcess !== child) {
+      return;
+    }
+    this.childProcess = null;
+    this.logger.warn(
+      { agentId: this.agentId, pid: child.pid, code, signal },
+      "Claude 运行时意外退出",
+    );
+    if (this.activeForegroundTurnId || this.autonomousTurn) {
+      // 查询泵即将抛出异常，并会等待标准错误输出后报告真实原因；此处提前报告会只留下退出码，
+      // 并解除 this.query，使查询泵无法识别自己的流。
+      return;
+    }
+    // 清除已失效的句柄，让下一次写入重新启动进程，而不是永久使用已失效的传输通道。
+    this.query = null;
+    this.input = null;
+    this.dispatchEvents([
+      this.buildTurnFailedEvent(
+        `Claude 运行时意外停止（${signal ? `信号 ${signal}` : `退出码 ${code ?? "未知"}`}）。它运行中的后台 Shell、监视器或其他任务也已随之终止。`,
+      ),
+    ]);
+  }
+
   private startQueryPump(): void {
     if (this.closed || this.queryPumpPromise) {
       return;
@@ -3694,11 +3728,26 @@ class ClaudeAgentSession implements AgentSession {
     );
 
     this.failActiveTurns(staleResumeError);
+    // 结束输入会有意回收进程，先解除引用，避免将正常退出报告为崩溃。
+    const retiredChild = this.childProcess;
+    this.childProcess = null;
     this.input?.end();
     await this.awaitWithTimeout(
       activeQuery.return?.(),
       "query pump return on missing resumed conversation",
     );
+    // 与重启路径相同，需要终止进程树，否则已回收 Claude 进程的 MCP 子进程会继续残留。
+    if (retiredChild) {
+      await terminateWithTreeKill(retiredChild, {
+        gracefulTimeoutMs: 2_000,
+        forceTimeoutMs: 2_000,
+      }).catch((error) => {
+        this.logger.warn(
+          { err: error, agentId: this.agentId, reason: "missing-resumed-conversation" },
+          "回收缺失会话的 Claude 进程失败",
+        );
+      });
+    }
     if (this.query === activeQuery) {
       this.query = null;
       this.input = null;

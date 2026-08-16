@@ -37,7 +37,7 @@ import {
 } from "./providers/diagnostic-utils.js";
 import type { MutableDaemonConfig } from "../daemon-config-store.js";
 
-const DEFAULT_REFRESH_TIMEOUT_MS = 60_000;
+const DEFAULT_REFRESH_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 120_000;
 const DEFAULT_PROVIDER_REFRESH_CONCURRENCY = 2;
 const REFRESH_TIMEOUT_ENV_VAR = "PASEO_PROVIDER_REFRESH_TIMEOUT_MS";

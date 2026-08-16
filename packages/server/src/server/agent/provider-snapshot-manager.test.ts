@@ -42,6 +42,12 @@ const TEST_CAPABILITIES = {
 } as const;
 const TEST_REFRESH_TIMEOUT_MS = 120_000;
 
+function waitUntilAborted(signal?: AbortSignal): Promise<boolean> {
+  return new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
+
 // Builds an AgentClient that can be injected via the public extraClients option.
 // extraClients is the only injection surface the manager exposes for tests.
 function createExtraClient(
@@ -461,6 +467,40 @@ describe("ProviderSnapshotManager public surface", () => {
     } finally {
       manager.destroy();
       vi.unstubAllEnvs();
+    }
+  });
+
+  test("默认允许提供方目录刷新等待两分钟", async () => {
+    vi.useFakeTimers();
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        claude: { enabled: false },
+        copilot: { enabled: false },
+        opencode: { enabled: false },
+        pi: { enabled: false },
+      },
+      extraClients: {
+        codex: createExtraClient("codex", { isAvailable: waitUntilAborted }),
+      },
+    });
+
+    try {
+      const entryPromise = manager.getProvider({
+        cwd: "/tmp/project",
+        provider: "codex",
+        wait: true,
+      });
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      await expect(entryPromise).resolves.toMatchObject({
+        status: "error",
+        error: expect.stringContaining("after 120000ms"),
+      });
+    } finally {
+      manager.destroy();
+      vi.useRealTimers();
     }
   });
 
