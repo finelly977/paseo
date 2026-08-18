@@ -14,10 +14,11 @@ import {
 } from "@/timeline/conversation-history-policy";
 import { z } from "zod";
 import { readValidatedJson } from "@/storage/validated-storage";
+import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
+import { migrateAppSettings } from "./migrations";
 
-export const APP_SETTINGS_KEY = "@paseo:app-settings";
+export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
-const LEGACY_SETTINGS_KEY = "@paseo:settings";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
 export type ReleaseChannel = "stable" | "beta";
@@ -155,7 +156,7 @@ type StoredAppSettings = z.infer<typeof StoredAppSettingsSchema>;
 export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   theme: "auto",
   language: "system",
-  sendBehavior: "interrupt",
+  sendBehavior: "steer",
   serviceUrlBehavior: "ask",
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
@@ -223,31 +224,48 @@ export async function saveAppSettings(input: {
 
 export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<AppSettings> {
   try {
-    const stored = await readValidatedJson(deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema);
-    if (stored) {
-      return normalizeAppSettings(stored);
+    const read = await readAppSettings(deps);
+    if (read.needsWrite) {
+      await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(read.settings));
     }
-
-    const legacyStored = await readValidatedJson(
-      deps.storage,
-      LEGACY_SETTINGS_KEY,
-      LegacyRendererSettingsSchema,
-    );
-    if (legacyStored) {
-      const next = {
-        ...DEFAULT_CLIENT_SETTINGS,
-        ...pickAppSettingsFromLegacy(legacyStored),
-      } satisfies AppSettings;
-      await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
-      return next;
-    }
-
-    await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(DEFAULT_CLIENT_SETTINGS));
-    return DEFAULT_CLIENT_SETTINGS;
+    return await migrateAppSettings(read.settings, deps.storage);
   } catch (error) {
     console.error("[AppSettings] Failed to load settings:", error);
     throw error;
   }
+}
+
+/**
+ * Reads whichever of the settings blobs exists, without migrating. `needsWrite` covers the reads
+ * that produce settings the stored blob does not already spell out.
+ */
+async function readAppSettings(
+  deps: SettingsDeps,
+): Promise<{ settings: AppSettings; needsWrite: boolean }> {
+  const stored = await readValidatedJson(deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema);
+  if (stored) {
+    return {
+      settings: normalizeAppSettings(stored),
+      needsWrite: false,
+    };
+  }
+
+  const legacyStored = await readValidatedJson(
+    deps.storage,
+    LEGACY_SETTINGS_KEY,
+    LegacyRendererSettingsSchema,
+  );
+  if (legacyStored) {
+    return {
+      settings: {
+        ...DEFAULT_CLIENT_SETTINGS,
+        ...pickAppSettingsFromLegacy(legacyStored),
+      } satisfies AppSettings,
+      needsWrite: true,
+    };
+  }
+
+  return { settings: DEFAULT_CLIENT_SETTINGS, needsWrite: true };
 }
 
 export async function loadSettingsFromStorage(deps: SettingsDeps): Promise<Settings> {
