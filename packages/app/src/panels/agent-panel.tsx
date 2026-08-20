@@ -20,6 +20,7 @@ import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
+import { Button } from "@/components/ui/button";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { SidebarCallout } from "@/components/sidebar-callout";
@@ -191,8 +192,9 @@ function renderChatAgentNonReadyView(args: {
   viewState: AgentScreenViewState;
   effectiveAgent: AgentScreenAgent | null;
   t: TFunction;
+  onRetryLoad: () => void;
 }): React.ReactElement | null {
-  const { viewState, effectiveAgent, t } = args;
+  const { viewState, effectiveAgent, t, onRetryLoad } = args;
   if (viewState.tag === "not_found") {
     return (
       <View style={styles.container} testID="agent-not-found">
@@ -208,6 +210,16 @@ function renderChatAgentNonReadyView(args: {
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{t("agentPanel.states.failedToLoad")}</Text>
           <Text style={styles.statusText}>{viewState.message}</Text>
+          <View style={styles.errorAction}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={onRetryLoad}
+              testID="agent-load-error-retry"
+            >
+              {t("common.actions.retry")}
+            </Button>
+          </View>
         </View>
       </View>
     );
@@ -591,6 +603,7 @@ function AgentPanelBody({
   );
   const [lookupState, setLookupState] = useState<AgentLookupState>({ tag: "idle" });
   const lookupAttemptTokenRef = useRef(0);
+  const retryAgentLookup = useCallback(() => setLookupState({ tag: "idle" }), []);
   const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
   const resolvePendingAgent = useWorkspaceLayoutStore((state) => state.resolvePendingAgent);
 
@@ -615,7 +628,11 @@ function AgentPanelBody({
     if (!client || !isConnected || !hasSession) {
       return;
     }
-    if (lookupState.tag === "loading" || lookupState.tag === "not_found") {
+    if (
+      lookupState.tag === "loading" ||
+      lookupState.tag === "not_found" ||
+      lookupState.tag === "error"
+    ) {
       return;
     }
 
@@ -688,6 +705,16 @@ function AgentPanelBody({
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{t("agentPanel.states.failedToLoad")}</Text>
           <Text style={styles.statusText}>{lookupState.message}</Text>
+          <View style={styles.errorAction}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onPress={retryAgentLookup}
+              testID="agent-load-error-retry"
+            >
+              {t("common.actions.retry")}
+            </Button>
+          </View>
         </View>
       </View>
     );
@@ -1063,10 +1090,17 @@ function ChatAgentContent({
     [animatedKeyboardStyle],
   );
 
+  const retryAgentLoad = useCallback(() => setMissingAgentState({ kind: "idle" }), []);
+  const retryTimelineSync = useCallback(() => {
+    if (!agentId || !viewedTimelineSync) return;
+    viewedTimelineSync.retryVisibleAgentTimeline(agentId);
+  }, [agentId, viewedTimelineSync]);
+
   const nonReadyView = renderChatAgentNonReadyView({
     viewState,
     effectiveAgent,
     t,
+    onRetryLoad: retryAgentLoad,
   });
   if (nonReadyView) return nonReadyView;
   invariant(agentId, "agent id is defined when agent content is ready");
@@ -1078,6 +1112,10 @@ function ChatAgentContent({
     viewState.sync.status === "catching_up" &&
     viewState.sync.ui === "overlay";
   const showHistorySyncError = viewState.tag === "ready" && viewState.sync.status === "sync_error";
+  const isRetryingHistorySync =
+    viewState.tag === "ready" &&
+    viewState.sync.status === "sync_error" &&
+    viewState.sync.isRetrying;
 
   return (
     <ChatAgentReadyContent
@@ -1098,6 +1136,8 @@ function ChatAgentContent({
       handleMessageSent={handleMessageSent}
       showHistorySyncOverlay={showHistorySyncOverlay}
       showHistorySyncError={showHistorySyncError}
+      isRetryingHistorySync={isRetryingHistorySync}
+      retryTimelineSync={retryTimelineSync}
       cwd={agentCwd}
       onAttentionInputFocus={attentionController.clearOnInputFocus}
       onAttentionPromptSend={attentionController.clearOnPromptSend}
@@ -1124,6 +1164,8 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   handleMessageSent,
   showHistorySyncOverlay,
   showHistorySyncError,
+  isRetryingHistorySync,
+  retryTimelineSync,
   cwd,
   onAttentionInputFocus,
   onAttentionPromptSend,
@@ -1146,6 +1188,8 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   handleMessageSent: () => void;
   showHistorySyncOverlay: boolean;
   showHistorySyncError: boolean;
+  isRetryingHistorySync: boolean;
+  retryTimelineSync: () => void;
   cwd: string;
   onAttentionInputFocus: () => void;
   onAttentionPromptSend: () => void;
@@ -1244,6 +1288,16 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
             <SidebarCallout
               title={t("agentPanel.states.timelineSyncFailed")}
               variant="error"
+              actions={[
+                {
+                  label: isRetryingHistorySync
+                    ? t("agentPanel.states.timelineSyncRetrying")
+                    : t("common.actions.retry"),
+                  onPress: retryTimelineSync,
+                  disabled: isRetryingHistorySync,
+                  testID: "agent-timeline-sync-retry",
+                },
+              ]}
               testID="agent-timeline-sync-error"
             />
           ) : null}
@@ -1728,6 +1782,9 @@ const styles = StyleSheet.create((theme) => ({
     textAlign: "center",
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
+  },
+  errorAction: {
+    marginTop: theme.spacing[4],
   },
   offlineTitle: {
     fontSize: theme.fontSize.base,

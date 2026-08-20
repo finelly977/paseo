@@ -316,6 +316,22 @@ describe("deriveAgentScreenViewState", () => {
     expect(ready.agent.id).toBe("agent-1");
   });
 
+  it("marks a user-requested timeline retry as retrying", () => {
+    const memory = createBaseMemory({
+      hasRenderedReady: true,
+      lastReadyAgent: createAgent("agent-1"),
+    });
+    const input: AgentScreenMachineInput = {
+      ...createBaseInput(),
+      visibilityCatchUpStatus: "retrying",
+    };
+
+    const result = deriveAgentScreenViewState({ input, memory });
+    const ready = expectReadyState(result.state);
+
+    expect(ready.sync).toEqual({ status: "sync_error", isRetrying: true });
+  });
+
   it("returns blocking error before first paint when refresh fails", () => {
     const memory = createBaseMemory();
     const input: AgentScreenMachineInput = {
