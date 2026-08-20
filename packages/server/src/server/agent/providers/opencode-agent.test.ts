@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
-import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client";
+import type { Event as OpenCodeEvent, OpencodeClient } from "@opencode-ai/sdk/v2/client";
+import type { OpenCodeEventSource } from "./opencode/event-consumer.js";
 import {
   __openCodeInternals,
   OpenCodeAgentClient,
@@ -34,6 +35,26 @@ function tmpCwd(): string {
 }
 
 const TEST_MODEL = "opencode/big-pickle";
+
+function createDirectEventSource(client: OpencodeClient): OpenCodeEventSource {
+  const listeners = new Set<(input: never) => void>();
+  const abort = new AbortController();
+  void client.global
+    .event({ signal: abort.signal, sseMaxRetryAttempts: 0 })
+    .then(async ({ stream }) => {
+      for await (const event of stream) {
+        for (const listener of listeners) listener(event as never);
+      }
+      return undefined;
+    });
+  return {
+    ready: async () => undefined,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
 
 interface TurnResult {
   events: AgentStreamEvent[];
@@ -1109,7 +1130,7 @@ describe("OpenCode adapter normalization", () => {
         sessionId: "session-1",
         messageRoles: new Map(),
         accumulatedUsage: usage,
-        streamedPartKeys: new Set(),
+        materializedParts: new Map(),
         emittedStructuredMessageIds: new Set(),
         partTypes: new Map(),
         modelContextWindowsByModelKey: new Map([["openai/gpt-5", 400_000]]),
@@ -1331,6 +1352,8 @@ describe("OpenCode adapter startTurn error handling", () => {
       fakeClient,
       "ses_unit_test",
       createTestLogger(),
+      new Map(),
+      createDirectEventSource(fakeClient),
     );
 
     const turn = await collectTurnEvents(streamSession(session, "hello"));
@@ -1431,13 +1454,15 @@ describe("OpenCode adapter startTurn error handling", () => {
       fakeClient,
       "ses_unit_test",
       createTestLogger(),
+      new Map(),
+      createDirectEventSource(fakeClient),
     );
 
     const turn = await collectTurnEvents(streamSession(session, "hello"));
 
     expect(fakeClient.global.event).toHaveBeenCalledWith({
       signal: expect.any(AbortSignal),
-      sseMaxRetryAttempts: 3,
+      sseMaxRetryAttempts: 0,
     });
     expect(fakeClient.event.subscribe).not.toHaveBeenCalled();
     expect(turn.turnCompleted).toBe(true);
@@ -1513,6 +1538,8 @@ describe("OpenCode adapter startTurn error handling", () => {
       fakeClient,
       "ses_unit_test",
       createTestLogger(),
+      new Map(),
+      createDirectEventSource(fakeClient),
     );
 
     const events: AgentStreamEvent[] = [];
@@ -1554,6 +1581,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       createTestLogger(),
       new Map(),
       undefined,
+      undefined,
       false,
     );
 
@@ -1586,26 +1614,13 @@ describe("OpenCode adapter startTurn error handling", () => {
     expect(fakeClient.session.delete).not.toHaveBeenCalled();
   });
 
-  test("waits for the OpenCode event stream to finish after close aborts it", async () => {
-    const streamAborted = createTestDeferred<void>();
-    const finishStreamCleanup = createTestDeferred<void>();
+  test("unsubscribes from the shared event source without closing it", async () => {
+    const unsubscribe = vi.fn();
+    const events = {
+      ready: async () => undefined,
+      subscribe: vi.fn(() => unsubscribe),
+    };
     const fakeClient = {
-      global: {
-        event: vi.fn().mockImplementation(async ({ signal }: { signal: AbortSignal }) => ({
-          stream: {
-            [Symbol.asyncIterator]: () => ({
-              next: async () => {
-                if (!signal.aborted) {
-                  await waitForAbort(signal);
-                }
-                streamAborted.resolve();
-                await finishStreamCleanup.promise;
-                return { done: true, value: undefined };
-              },
-            }),
-          },
-        })),
-      },
       session: {
         abort: vi.fn().mockResolvedValue({ error: null }),
         update: vi.fn().mockResolvedValue({ error: null }),
@@ -1616,20 +1631,13 @@ describe("OpenCode adapter startTurn error handling", () => {
       fakeClient,
       "ses_unit_test",
       createTestLogger(),
+      new Map(),
+      events,
     );
-    let closeSettled = false;
+    await session.close();
 
-    const closePromise = session.close().then(() => {
-      closeSettled = true;
-      return undefined;
-    });
-    await streamAborted.promise;
-    await new Promise<void>((resolve) => setImmediate(resolve));
-
-    expect(closeSettled).toBe(false);
-
-    finishStreamCleanup.resolve();
-    await closePromise;
+    expect(events.subscribe).toHaveBeenCalledOnce();
+    expect(unsubscribe).toHaveBeenCalledOnce();
   });
 
   test("streamHistory preserves OpenCode replay timestamps from message and part times", async () => {
@@ -2617,6 +2625,9 @@ describe("OpenCode adapter startTurn error handling", () => {
     vi.useFakeTimers();
     const { parent: session, openCode } = await createParentSession("ses_unit_test");
     openCode.sessionPromptAsyncEvents = [];
+    openCode.sessionStatusResponse = {
+      data: { ses_unit_test: { type: "busy" } },
+    };
 
     try {
       await session.startTurn("first");
@@ -2635,35 +2646,13 @@ describe("OpenCode adapter startTurn error handling", () => {
   });
 
   test("keeps waiting for the stop terminal when the reconnect status probe fails", async () => {
-    const firstStreamEnd = createTestDeferred<void>();
     const settleAbort = createTestDeferred<void>();
-    const releaseTerminal = createTestDeferred<void>();
-    let subscriptionCount = 0;
+    const statusAttempted = createTestDeferred<void>();
     const { parent: session, openCode } = await createParentSession(
       "ses_stop_status_probe_failure",
       (client) => {
-        client.globalEventImplementation = async (options) => {
-          subscriptionCount += 1;
-          const signal = (options as { signal: AbortSignal }).signal;
-          return {
-            stream: {
-              async *[Symbol.asyncIterator]() {
-                yield { type: "server.connected", properties: {} };
-                if (subscriptionCount === 1) {
-                  await firstStreamEnd.promise;
-                  return;
-                }
-                await releaseTerminal.promise;
-                yield {
-                  type: "session.idle",
-                  properties: { sessionID: "ses_stop_status_probe_failure" },
-                };
-                await waitForAbort(signal);
-              },
-            },
-          };
-        };
         client.sessionStatusImplementation = async () => {
+          statusAttempted.resolve();
           throw new Error("provider status unavailable");
         };
       },
@@ -2678,26 +2667,29 @@ describe("OpenCode adapter startTurn error handling", () => {
       await session.startTurn("first");
       const interrupt = session.interrupt();
       const replacement = session.startTurn("second");
-      firstStreamEnd.resolve();
-      await vi.waitFor(() => expect(openCode.calls.sessionStatus).toHaveLength(1));
+      const replacementResult = expect(replacement).resolves.toEqual({
+        turnId: "opencode-turn-1",
+      });
+      await statusAttempted.promise;
 
       settleAbort.resolve();
       await interrupt;
       await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(openCode.calls.globalEvent).toHaveLength(2);
       expect(openCode.calls.sessionStatus).toHaveLength(1);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(1);
 
-      releaseTerminal.resolve();
-      await expect(replacement).resolves.toEqual({ turnId: "opencode-turn-1" });
+      openCode.emitEvent({
+        type: "session.idle",
+        properties: { sessionID: "ses_stop_status_probe_failure" },
+      });
+      await replacementResult;
       expect(openCode.calls.sessionPromptAsync).toHaveLength(2);
-      expect(openCode.calls.globalEvent).toHaveLength(2);
     } finally {
       settleAbort.resolve();
-      releaseTerminal.resolve();
       await session.close();
     }
-  }, 15_000);
+  });
 
   test("does not reconnect the stop observer while closing", async () => {
     const firstStreamEnd = createTestDeferred<void>();
@@ -2736,7 +2728,7 @@ describe("OpenCode adapter startTurn error handling", () => {
       await session.close();
 
       await expect(replacement).rejects.toThrow("OpenCode session is closed");
-      expect(openCode.calls.globalEvent).toHaveLength(1);
+      expect(openCode.calls.globalEvent).toHaveLength(0);
     } finally {
       for (const signal of streamSignals) {
         if (!signal.aborted) {
@@ -3925,12 +3917,15 @@ describe("OpenCode provider subagent contract", () => {
       fakeClient,
       "ses_parent",
       createTestLogger(),
+      new Map(),
+      createDirectEventSource(fakeClient),
     );
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
 
     releaseChildEvent.resolve();
     await childConsumed.promise;
+    await vi.waitFor(() => expect(events.length).toBeGreaterThan(1));
     await session.close();
 
     expect(events).toContainEqual({
@@ -4043,10 +4038,10 @@ describe("OpenCode provider subagent contract", () => {
     await session.close();
 
     expect(openCodeClient.calls.sessionChildren).toEqual([
-      { path: { id: "ses_parent" } },
-      { path: { id: "ses_child_a" } },
-      { path: { id: "ses_child_b" } },
-      { path: { id: "ses_grandchild_a" } },
+      { sessionID: "ses_parent", directory: "/workspace/repo" },
+      { sessionID: "ses_child_a", directory: "/workspace/repo" },
+      { sessionID: "ses_child_b", directory: "/workspace/repo" },
+      { sessionID: "ses_grandchild_a", directory: "/workspace/repo" },
     ]);
     expect(events).toEqual([
       {
@@ -4510,7 +4505,7 @@ function createOpenCodeTranslationState(sessionId: string): OpenCodeEventTransla
     cwd: "/workspace/repo",
     messageRoles: new Map(),
     accumulatedUsage: {},
-    streamedPartKeys: new Set(),
+    materializedParts: new Map(),
     emittedStructuredMessageIds: new Set(),
     compactionSummaryMessageIds: new Set(),
     emittedCompactionPartIds: new Set(),

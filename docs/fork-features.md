@@ -385,19 +385,7 @@
 - `packages/app/src/stores/sidebar-view-store.ts`
 - `packages/app/src/stores/session-store-hooks/`
 
-### 19. OpenCode 事件流断线自动重连
-
-- 守护进程订阅共享 OpenCode server 事件流时启用 SDK 自动重连（最多 3 次，退避 3 秒/6 秒/12 秒），不再在流断开时立即判定所有前台回合失败。
-- 所有智能体共享同一个 OpenCode server，一次断线（例如主机睡眠唤醒后的本地 TCP 重置、OpenCode server 短暂重启）会同时中断所有运行中的回合；上游零重试策略会把这种瞬时断连误判为回合失败并终止智能体。
-- SDK 按 SSE 的 Last-Event-ID 续传重连，不丢事件；重试耗尽后流仍断开（OpenCode server 真正退出）才按原有逻辑结束回合。
-- 回合取消（abort）路径不受影响：主动停止仍即时生效，不会被重连延迟阻塞。
-
-主要涉及：
-
-- `packages/server/src/server/agent/providers/opencode-agent.ts`
-- `packages/server/src/server/agent/providers/opencode-agent.test.ts`
-
-### 20. 会话自动命名沿用当前智能体
+### 19. 会话自动命名沿用当前智能体
 
 - 新建会话的工作区标题和初始分支名只使用该会话实际创建成功的 Provider、模型与思考配置，不再优先启动 Haiku 等默认元数据候选，也不会读取此前处于焦点的旧会话配置。
 - 目录会话在创建成功后直接使用新会话快照；现代工作树会话在创建工作树时显式携带本次请求的智能体配置，带创建后续步骤的工作树会话则延后到智能体创建成功后再启动命名，确保自定义 Provider、模型和思考配置都与正文会话一致。
