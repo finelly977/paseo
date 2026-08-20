@@ -1287,6 +1287,13 @@ export class AgentManager {
     const launchContext = await this.buildLaunchContext(agentId, client, storedConfig.cwd);
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
 
+    // Codex app-server 的持久化线程只允许一个活动写入者。启动新的 app-server
+    // 前先释放旧运行时，避免 thread/resume 与旧进程退出竞争而触发活动写入者错误。
+    const releasedCodexRuntime = provider === "codex" && handle !== null;
+    if (releasedCodexRuntime) {
+      await this.closeAgent(agentId);
+    }
+
     const session = handle
       ? await client.resumeSession(handle, providerLaunchConfig, launchContext)
       : await client.createSession(providerLaunchConfig, launchContext);
@@ -1295,11 +1302,13 @@ export class AgentManager {
     try {
       this.assertAcceptingAgentRegistrations();
 
-      const closedExisting = this.prepareAgentForClosure(existing, "agent reloaded");
-      try {
-        await this.persistSnapshot(closedExisting);
-      } finally {
-        await this.closeReloadedSession(existing.session, agentId);
+      if (!releasedCodexRuntime) {
+        const closedExisting = this.prepareAgentForClosure(existing, "agent reloaded");
+        try {
+          await this.persistSnapshot(closedExisting);
+        } finally {
+          await this.closeReloadedSession(existing.session, agentId);
+        }
       }
 
       if (rehydrateFromDisk) {
