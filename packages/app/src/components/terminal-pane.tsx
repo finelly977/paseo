@@ -204,6 +204,7 @@ export function TerminalPane({
 
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const isTerminalPresented = isWorkspaceFocused && isPaneFocused;
   const supportsTerminalRestoreModes = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-restore-modes"] === true,
   );
@@ -228,6 +229,8 @@ export function TerminalPane({
   const [resizeRequestToken, setResizeRequestToken] = useState(0);
   const emulatorRef = useRef<TerminalEmulatorHandle>(null);
   const terminalIdRef = useRef<string>(terminalId);
+  const terminalPresentedRef = useRef(isTerminalPresented);
+  terminalPresentedRef.current = isTerminalPresented;
   const inputModeRef = useRef<TerminalInputModeState>({
     kittyKeyboardFlags: 0,
     win32InputMode: false,
@@ -290,7 +293,7 @@ export function TerminalPane({
 
   useEffect(() => {
     const canRequest = canRequestFocusClaim({
-      isWorkspaceFocused,
+      isWorkspaceFocused: isTerminalPresented,
       isAppActivelyVisible,
       isClientReady: client !== null,
       isConnected,
@@ -310,7 +313,7 @@ export function TerminalPane({
     isAppActivelyVisible,
     isConnected,
     isPaneFocused,
-    isWorkspaceFocused,
+    isTerminalPresented,
     rendererReadyStreamKey,
     requestTerminalReflow,
     scopeKey,
@@ -416,7 +419,8 @@ export function TerminalPane({
 
     const controller = new TerminalStreamController({
       client,
-      getPreferredSize: () => lastSentTerminalSizeRef.current,
+      getPreferredSize: () =>
+        terminalPresentedRef.current ? lastSentTerminalSizeRef.current : null,
       onOutput: ({ terminalId: outputTerminalId, data }) => {
         if (!isWorkspaceFocused || terminalIdRef.current !== outputTerminalId) {
           return;
@@ -440,7 +444,7 @@ export function TerminalPane({
       getRestoreOptions: () => {
         return resolveTerminalRestoreOptions({
           supportsTerminalRestoreModes,
-          size: measuredTerminalSizeRef.current,
+          size: terminalPresentedRef.current ? measuredTerminalSizeRef.current : null,
         });
       },
       onStatusChange: handleStreamControllerStatus,
@@ -661,7 +665,7 @@ export function TerminalPane({
       }
       let sent = false;
       const canSend = canRequestFocusClaim({
-        isWorkspaceFocused,
+        isWorkspaceFocused: isTerminalPresented,
         isAppActivelyVisible,
         isClientReady: client !== null,
         isConnected,
@@ -791,7 +795,7 @@ export function TerminalPane({
     onOpenFileExplorer();
   }, [swipeGesturesEnabled, onOpenFileExplorer]);
   const showLoadingOverlay = shouldShowTerminalLoadingOverlay({
-    isWorkspaceFocused,
+    isWorkspaceFocused: isTerminalPresented,
     hasStreamError: Boolean(streamError),
     isAttaching,
     rendererReadyStreamKey,

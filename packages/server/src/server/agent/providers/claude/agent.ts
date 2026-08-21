@@ -2493,7 +2493,7 @@ class ClaudeAgentSession implements AgentSession {
     this.autonomousTurn = null;
     this.cancelCurrentTurn = null;
     this.turnState = "idle";
-    this.sidechainTracker.clear();
+    this.sidechainTracker.resetSession();
     this.liveBackgroundTaskIds = new Set();
     this.input?.end();
     this.query?.close?.();
@@ -3940,6 +3940,10 @@ class ClaudeAgentSession implements AgentSession {
     }
     if (message.subtype === "background_tasks_changed") {
       this.replaceLiveBackgroundTasks(message.tasks);
+      return;
+    }
+    if (message.subtype === "task_started") {
+      events.push(...this.sidechainTracker.observeTaskStarted(message));
       return;
     }
     if (message.subtype === "task_notification") {

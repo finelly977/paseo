@@ -350,7 +350,7 @@ export interface SpeechService {
   getReadiness: () => SpeechReadinessSnapshot;
   onReadinessChange: (listener: (snapshot: SpeechReadinessSnapshot) => void) => () => void;
   start: () => void;
-  stop: () => void;
+  stop: () => Promise<void>;
   ready: Promise<void>;
 }
 
@@ -394,6 +394,8 @@ export function createSpeechService(params: {
 
   let missingLocalModelIds: LocalSpeechModelId[] = [];
   let backgroundDownloadInProgress = false;
+  let backgroundDownloadAbortController: AbortController | null = null;
+  let backgroundDownloadPromise: Promise<void> | null = null;
   let backgroundDownloadError: string | null = null;
   let stopped = false;
   let monitorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -609,26 +611,34 @@ export function createSpeechService(params: {
       "Starting background download for missing local speech models",
     );
 
-    void (async () => {
+    const abortController = new AbortController();
+    backgroundDownloadAbortController = abortController;
+    backgroundDownloadPromise = (async () => {
       try {
         await ensureLocalSpeechModels({
           modelsDir,
           modelIds,
           logger,
+          signal: abortController.signal,
         });
         await runReconcile();
         backgroundDownloadError = null;
       } catch (error) {
-        backgroundDownloadError = error instanceof Error ? error.message : String(error);
-        publishReadinessIfChanged();
-        logger.error(
-          {
-            err: error,
-            modelIds,
-          },
-          "Background local speech model download failed",
-        );
+        if (stopped && abortController.signal.aborted) {
+          logger.info({ err: error, modelIds }, "守护进程停止时已取消本地语音模型下载");
+        } else {
+          backgroundDownloadError = error instanceof Error ? error.message : String(error);
+          publishReadinessIfChanged();
+          logger.error(
+            {
+              err: error,
+              modelIds,
+            },
+            "Background local speech model download failed",
+          );
+        }
       } finally {
+        backgroundDownloadAbortController = null;
         backgroundDownloadInProgress = false;
         await refreshMissingLocalModels().catch((error) => {
           logger.warn({ err: error }, "Failed to refresh local speech model status after download");
@@ -699,13 +709,16 @@ export function createSpeechService(params: {
     })();
   };
 
-  const stop = (): void => {
+  const stop = async (): Promise<void> => {
     stopped = true;
     if (monitorTimeout) {
       clearTimeout(monitorTimeout);
       monitorTimeout = null;
     }
     localCleanup();
+    backgroundDownloadAbortController?.abort();
+    await backgroundDownloadPromise;
+    backgroundDownloadPromise = null;
   };
 
   return {

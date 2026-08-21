@@ -12,6 +12,7 @@ export interface EnsureSherpaOnnxModelOptions {
   modelsDir: string;
   modelId: SherpaOnnxModelId;
   logger: pino.Logger;
+  signal?: AbortSignal;
 }
 
 export function getSherpaOnnxModelDir(modelsDir: string, modelId: SherpaOnnxModelId): string {
@@ -29,8 +30,9 @@ async function hasRequiredFiles(modelDir: string, requiredFiles: string[]): Prom
           return true;
         }
         return s.isFile() && s.size > 0;
-      } catch {
-        return false;
+      } catch (error) {
+        if (isMissingFileError(error)) return false;
+        throw error;
       }
     }),
   );
@@ -40,11 +42,17 @@ async function hasRequiredFiles(modelDir: string, requiredFiles: string[]): Prom
 interface DownloadToFileOptions {
   url: string;
   outputPath: string;
+  logger: pino.Logger;
+  signal?: AbortSignal;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 async function downloadToFile(options: DownloadToFileOptions): Promise<void> {
   const { url, outputPath } = options;
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: options.signal });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   }
@@ -60,20 +68,27 @@ async function downloadToFile(options: DownloadToFileOptions): Promise<void> {
   const nodeStream = Readable.fromWeb(res.body as any);
 
   try {
-    await pipeline(nodeStream, createWriteStream(tmpPath));
+    await pipeline(nodeStream, createWriteStream(tmpPath), { signal: options.signal });
     await rename(tmpPath, outputPath);
   } catch (error) {
-    await rm(tmpPath, { force: true }).catch(() => undefined);
+    await rm(tmpPath, { force: true }).catch((cleanupError) => {
+      options.logger.warn({ err: cleanupError, tmpPath }, "下载失败后清理本地语音模型临时文件失败");
+    });
     throw error;
   }
 }
 
-async function extractTarArchive(archivePath: string, destDir: string): Promise<void> {
+async function extractTarArchive(
+  archivePath: string,
+  destDir: string,
+  signal?: AbortSignal,
+): Promise<void> {
   await mkdir(destDir, { recursive: true });
 
   await new Promise<void>((resolve, reject) => {
     const child = spawnProcess("tar", ["xf", archivePath, "-C", destDir], {
       stdio: "inherit",
+      signal,
     });
     child.on("error", reject);
     child.on("exit", (code) => {
@@ -87,8 +102,9 @@ async function isNonEmptyFile(filePath: string): Promise<boolean> {
   try {
     const s = await stat(filePath);
     return s.isFile() && s.size > 0;
-  } catch {
-    return false;
+  } catch (error) {
+    if (isMissingFileError(error)) return false;
+    throw error;
   }
 }
 
@@ -119,6 +135,8 @@ export async function ensureSherpaOnnxModel(
       await downloadToFile({
         url: spec.archiveUrl,
         outputPath: archivePath,
+        logger,
+        signal: options.signal,
       });
     }
 
@@ -130,7 +148,7 @@ export async function ensureSherpaOnnxModel(
       },
       "Extracting model archive",
     );
-    await extractTarArchive(archivePath, options.modelsDir);
+    await extractTarArchive(archivePath, options.modelsDir, options.signal);
 
     logger.info(
       {
@@ -154,14 +172,18 @@ export async function ensureSherpaOnnxModel(
     );
     try {
       await rm(archivePath, { force: true });
-    } catch {
-      // ignore
+    } catch (error) {
+      logger.warn({ err: error, archivePath }, "清理本地语音模型压缩包失败");
     }
 
     logger.info({ modelDir }, "Model download completed");
     return modelDir;
   } catch (error) {
-    logger.error({ err: error }, "Model download failed");
+    if (options.signal?.aborted) {
+      logger.info({ err: error }, "本地语音模型下载已取消");
+    } else {
+      logger.error({ err: error }, "Model download failed");
+    }
     throw error;
   }
 }
@@ -170,6 +192,7 @@ export async function ensureSherpaOnnxModels(options: {
   modelsDir: string;
   modelIds: SherpaOnnxModelId[];
   logger: pino.Logger;
+  signal?: AbortSignal;
 }): Promise<Record<SherpaOnnxModelId, string>> {
   const uniq = Array.from(new Set(options.modelIds));
   const entries: Array<[SherpaOnnxModelId, string]> = await Promise.all(
@@ -178,6 +201,7 @@ export async function ensureSherpaOnnxModels(options: {
         modelsDir: options.modelsDir,
         modelId: id,
         logger: options.logger,
+        signal: options.signal,
       });
       return [id, modelPath] as [SherpaOnnxModelId, string];
     }),
