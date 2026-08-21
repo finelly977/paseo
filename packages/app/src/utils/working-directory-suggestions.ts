@@ -1,4 +1,4 @@
-import { scoreMatch } from "./score-match";
+import { scorePathMatch } from "@getpaseo/protocol/search/path-match";
 
 export interface BuildWorkingDirectorySuggestionsInput {
   recommendedPaths: string[];
@@ -19,9 +19,7 @@ export function buildWorkingDirectorySuggestions(
     recommendedPathMatchesQuery(path, query),
   );
 
-  // The request owner correlates these results with the current query. The
-  // daemon owns filesystem query parsing, filtering, and ranking; doing it
-  // again here creates a second search implementation that can disagree.
+  // 守护进程已经排好服务端结果；推荐路径使用同一匹配规则，但保留原有推荐顺序。
   return uniquePaths([...matchingRecommended, ...input.serverPaths]);
 }
 
@@ -45,12 +43,8 @@ function recommendedPathMatchesQuery(path: string, query: string): boolean {
   if (["~", "~/"].includes(normalizedQuery)) {
     return true;
   }
-  if (normalizedQuery.includes("/") || normalizedQuery.startsWith("~")) {
-    return false;
-  }
 
-  const basename = candidate.split("/").at(-1) ?? "";
-  return candidate.includes(normalizedQuery) || scoreMatch(normalizedQuery, basename) !== null;
+  return scorePathMatch(normalizedQuery, candidate) !== null;
 }
 
 function normalizePath(value: string): string {
