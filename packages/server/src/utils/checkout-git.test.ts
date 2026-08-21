@@ -27,6 +27,7 @@ import {
   getCurrentBranch,
   getCheckoutDiff,
   getCheckoutShortstat,
+  getCheckoutWorktreeState,
   getPullRequestStatus,
   getCheckoutStatus,
   checkoutResolvedBranch,
@@ -510,6 +511,23 @@ describe("checkout git utilities", () => {
       .toString()
       .trim();
     expect(message).toBe("update file");
+  });
+
+  it("returns complete staged and unstaged state for a worktree refresh", async () => {
+    writeFileSync(join(repoDir, "file.txt"), "updated\n");
+    writeFileSync(join(repoDir, "staged.txt"), "staged\n");
+    execFileSync("git", ["add", "staged.txt"], { cwd: repoDir });
+
+    await expect(getCheckoutWorktreeState(repoDir, {})).resolves.toEqual({
+      isDirty: true,
+      stagedFileCount: 1,
+      changes: {
+        conflicts: [],
+        staged: [{ path: "staged.txt", status: "added" }],
+        unstaged: [{ path: "file.txt", status: "modified" }],
+      },
+      diffStat: null,
+    });
   });
 
   it("reads the origin URL once when collecting facts for an origin-tracking branch", async () => {

@@ -794,6 +794,8 @@ export interface CheckoutRefDerivedState {
 
 export interface CheckoutWorktreeState {
   isDirty: boolean;
+  stagedFileCount: number;
+  changes: CheckoutScmChanges;
   diffStat: CheckoutShortstat | null;
 }
 
@@ -2290,10 +2292,20 @@ export async function getCheckoutWorktreeState(
 ): Promise<CheckoutWorktreeState> {
   const status = await getCheckoutStatus(cwd, context);
   if (!status.isGit) {
-    return { isDirty: false, diffStat: null };
+    return {
+      isDirty: false,
+      stagedFileCount: 0,
+      changes: { staged: [], unstaged: [], conflicts: [] },
+      diffStat: null,
+    };
   }
   const diffStat = await getCheckoutShortstat(cwd, context, { force: true });
-  return { isDirty: status.isDirty, diffStat };
+  return {
+    isDirty: status.isDirty,
+    stagedFileCount: status.stagedFileCount,
+    changes: status.changes,
+    diffStat,
+  };
 }
 
 // Workspace history stays complete; base history is bounded context until the

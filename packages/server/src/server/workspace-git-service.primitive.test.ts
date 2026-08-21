@@ -91,8 +91,11 @@ function createCheckoutStatus(
     mainRepoRoot: null,
     currentBranch: "main",
     isDirty: false,
+    stagedFileCount: 0,
+    changes: { staged: [], unstaged: [], conflicts: [] },
     baseRef: "main",
     aheadBehind: { ahead: 0, behind: 0 },
+    upstreamRef: null,
     aheadOfOrigin: 0,
     behindOfOrigin: 0,
     hasRemote: true,
@@ -169,8 +172,11 @@ function createBaseSnapshot(cwd: string): WorkspaceGitRuntimeSnapshot {
       remoteUrl: "https://github.com/acme/repo.git",
       isPaseoOwnedWorktree: false,
       isDirty: false,
+      stagedFileCount: 0,
+      changes: { staged: [], unstaged: [], conflicts: [] },
       baseRef: "main",
       aheadBehind: { ahead: 0, behind: 0 },
+      upstreamRef: null,
       aheadOfOrigin: 0,
       behindOfOrigin: 0,
       hasRemote: true,
@@ -396,6 +402,8 @@ function buildServiceDeps(options?: CreateServiceOptions) {
       }
       return {
         isDirty: status.isDirty,
+        stagedFileCount: status.stagedFileCount,
+        changes: status.changes,
         diffStat: await deps.getCheckoutShortstat(),
       };
     });

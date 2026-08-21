@@ -2374,7 +2374,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     );
 
     if (target.debounceTimer) {
-      clearTimeout(target.debounceTimer);
+      return;
     }
 
     target.debounceTimer = setTimeout(() => {
@@ -2932,6 +2932,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     target.latestGit = {
       ...latestGit,
       isDirty: worktree.isDirty,
+      stagedFileCount: worktree.stagedFileCount,
+      changes: worktree.changes,
       diffStat: worktree.diffStat,
     };
     const loadedAtMs = this.deps.now().getTime();

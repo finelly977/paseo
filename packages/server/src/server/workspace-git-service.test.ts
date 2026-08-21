@@ -44,8 +44,11 @@ function createSnapshot(
       remoteUrl: "https://github.com/acme/repo.git",
       isPaseoOwnedWorktree: false,
       isDirty: false,
+      stagedFileCount: 0,
+      changes: { staged: [], unstaged: [], conflicts: [] },
       baseRef: "main",
       aheadBehind: { ahead: 0, behind: 0 },
+      upstreamRef: null,
       aheadOfOrigin: 0,
       behindOfOrigin: 0,
       hasRemote: true,
@@ -134,8 +137,11 @@ function createCheckoutStatus(
     mainRepoRoot: null,
     currentBranch: "main",
     isDirty: false,
+    stagedFileCount: 0,
+    changes: { staged: [], unstaged: [], conflicts: [] },
     baseRef: "main",
     aheadBehind: { ahead: 0, behind: 0 },
+    upstreamRef: null,
     aheadOfOrigin: 0,
     behindOfOrigin: 0,
     hasRemote: true,
@@ -313,6 +319,8 @@ function createService(options?: CreateServiceTestOptions) {
       }
       return {
         isDirty: status.isDirty,
+        stagedFileCount: status.stagedFileCount,
+        changes: status.changes,
         diffStat: await deps.getCheckoutShortstat(),
       };
     });
@@ -1356,7 +1364,7 @@ describe("WorkspaceGitServiceImpl", () => {
     service.dispose();
   });
 
-  test("working tree changes force a fresh diff stat for workspace subscribers", async () => {
+  test("working tree changes refresh the complete file status for workspace subscribers", async () => {
     const watchCallbacks: Array<{
       path: string;
       callback: (error: Error | null, events: Array<{ path: string; type: "update" }>) => void;
@@ -1369,6 +1377,12 @@ describe("WorkspaceGitServiceImpl", () => {
     );
     const getCheckoutWorktreeState = vi.fn(async () => ({
       isDirty: true,
+      stagedFileCount: 1,
+      changes: {
+        conflicts: [],
+        staged: [{ path: "src/staged.ts", status: "modified" as const }],
+        unstaged: [{ path: "src/created.ts", status: "untracked" as const }],
+      },
       diffStat: { additions: 8, deletions: 3 },
     }));
     const backgroundFetch = createDeferred<void>();
@@ -1403,11 +1417,62 @@ describe("WorkspaceGitServiceImpl", () => {
     );
     expect(workspaceListener).toHaveBeenCalledWith(
       createSnapshot(REPO_CWD, {
-        git: { isDirty: true, diffStat: { additions: 8, deletions: 3 } },
+        git: {
+          isDirty: true,
+          stagedFileCount: 1,
+          changes: {
+            conflicts: [],
+            staged: [{ path: "src/staged.ts", status: "modified" }],
+            unstaged: [{ path: "src/created.ts", status: "untracked" }],
+          },
+          diffStat: { additions: 8, deletions: 3 },
+        },
       }),
     );
 
     diffSubscription.unsubscribe();
+    workspaceSubscription.unsubscribe();
+    service.dispose();
+  });
+
+  test("continuous working tree events cannot postpone the pending refresh", async () => {
+    const watchCallbacks: Array<{
+      path: string;
+      callback: (error: Error | null, events: Array<{ path: string; type: "update" }>) => void;
+    }> = [];
+    const subscribe = vi.fn(
+      async (watchPath: string, callback: (typeof watchCallbacks)[number]["callback"]) => {
+        watchCallbacks.push({ path: watchPath, callback });
+        return createAsyncSubscription();
+      },
+    );
+    const getCheckoutWorktreeState = vi.fn(async () => ({
+      isDirty: true,
+      stagedFileCount: 0,
+      changes: {
+        conflicts: [],
+        staged: [],
+        unstaged: [{ path: "src/latest.ts", status: "modified" as const }],
+      },
+      diffStat: { additions: 2, deletions: 0 },
+    }));
+    const service = createService({ getCheckoutWorktreeState, subscribe });
+    const workspaceSubscription = service.registerWorkspace({ cwd: REPO_CWD }, vi.fn());
+
+    await vi.waitFor(() => {
+      expect(service.getMetrics().repositoryWorkspaceLinkCount).toBe(1);
+    });
+    const repoRootWatch = watchCallbacks.find((entry) => entry.path === REPO_CWD);
+    expect(repoRootWatch).toBeDefined();
+
+    repoRootWatch?.callback(null, [{ path: join(REPO_CWD, "src", "first.ts"), type: "update" }]);
+    await vi.advanceTimersByTimeAsync(900);
+    repoRootWatch?.callback(null, [{ path: join(REPO_CWD, "src", "latest.ts"), type: "update" }]);
+    await vi.advanceTimersByTimeAsync(100);
+    await flushPromises();
+
+    expect(getCheckoutWorktreeState).toHaveBeenCalledTimes(1);
+
     workspaceSubscription.unsubscribe();
     service.dispose();
   });
