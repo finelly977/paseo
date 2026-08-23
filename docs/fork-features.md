@@ -401,3 +401,13 @@
 - `packages/server/src/server/session.ts`
 - `packages/server/src/server/agent/agent-response-loop.ts`
 - `packages/server/src/server/agent/providers/grok-native-session.ts`
+
+### 20. 定时任务在运行中会话中优先追加
+
+- 指向已有会话的定时任务不会因为目标当前正在运行而直接失败，而是进入与用户发送、系统通知和自主运行相同的回合准入流程。
+- 支持原生追加的提供方会把定时要求写入当前回合；不支持时才沿用守护进程已有的中断并重新启动路径，避免丢失定时要求。
+
+主要涉及：
+
+- `packages/server/src/server/schedule/service.ts`
+- `packages/server/src/server/agent/agent-prompt.ts`
