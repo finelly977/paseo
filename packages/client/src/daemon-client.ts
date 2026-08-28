@@ -891,6 +891,7 @@ interface CorrelatedResponseIdentity {
 interface PendingBinaryFileRead {
   cwd: string;
   path: string;
+  maxBytes?: number;
 }
 
 interface BinaryFileTransferState extends PendingBinaryFileRead {
@@ -1129,7 +1130,16 @@ export class DaemonClient {
   private terminalDirectorySubscriptions = new Map<string, { cwd: string; workspaceId?: string }>();
   private fileSubscriptions = new Map<
     string,
-    { cwd: string; path: string; onUpdate: (version: FileVersion) => void }
+    {
+      cwd: string;
+      path: string;
+      onUpdate: (version: FileVersion) => void;
+      onError: (error: Error) => void;
+    }
+  >();
+  private directorySubscriptions = new Map<
+    string,
+    { cwd: string; onUpdate: () => void; onError: (error: Error) => void }
   >();
   private readonly terminalStreams = new TerminalStreamRouter();
   private pendingBinaryFileReads = new Map<string, PendingBinaryFileRead>();
@@ -1412,6 +1422,7 @@ export class DaemonClient {
     this.rejectPingProbe(new Error("Daemon client closed"));
     this.terminalStreams.clearSlots();
     this.fileSubscriptions.clear();
+    this.directorySubscriptions.clear();
     this.lastServerInfoMessage = null;
     if (this.runtimeMetricsInterval) {
       clearInterval(this.runtimeMetricsInterval);
@@ -2390,7 +2401,46 @@ export class DaemonClient {
         responseType: "fs.file.subscribe.response",
       })
         .then((payload) => subscription.onUpdate(payload.initial))
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          const subscriptionError =
+            error instanceof Error ? error : new Error("重新订阅文件变化失败");
+          this.logger.error(
+            {
+              err: subscriptionError,
+              cwd: subscription.cwd,
+              path: subscription.path,
+              subscriptionId,
+            },
+            "重新订阅文件变化失败",
+          );
+          subscription.onError(subscriptionError);
+        });
+    }
+  }
+
+  private resubscribeDirectorySubscriptions(): void {
+    for (const [subscriptionId, subscription] of this.directorySubscriptions) {
+      void this.sendCorrelatedSessionRequest({
+        message: {
+          type: "fs.directory.subscribe.request",
+          cwd: subscription.cwd,
+          subscriptionId,
+        },
+        responseType: "fs.directory.subscribe.response",
+      })
+        .then((payload) => {
+          if (payload.status === "error") throw new Error(payload.error);
+          return null;
+        })
+        .catch((error: unknown) => {
+          const subscriptionError =
+            error instanceof Error ? error : new Error("重新订阅工作区目录失败");
+          this.logger.error(
+            { err: subscriptionError, cwd: subscription.cwd, subscriptionId },
+            "重新订阅工作区目录失败",
+          );
+          subscription.onError(subscriptionError);
+        });
     }
   }
 
@@ -4347,6 +4397,7 @@ export class DaemonClient {
     mode: "list" | "file",
     requestId?: string,
     acceptBinary = false,
+    maxBytes?: number,
   ): Promise<FileExplorerPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId,
@@ -4356,6 +4407,7 @@ export class DaemonClient {
         path,
         mode,
         ...(acceptBinary ? { acceptBinary: true } : {}),
+        ...(maxBytes ? { maxBytes } : {}),
       },
       responseType: "file_explorer_response",
     });
@@ -4376,11 +4428,23 @@ export class DaemonClient {
     return payload.directory;
   }
 
-  async readFile(cwd: string, path: string, requestId?: string): Promise<FileReadResult> {
+  async readFile(
+    cwd: string,
+    path: string,
+    requestId?: string,
+    maxBytes?: number,
+  ): Promise<FileReadResult> {
     const resolvedRequestId = this.createRequestId(requestId);
-    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path });
+    this.pendingBinaryFileReads.set(resolvedRequestId, { cwd, path, maxBytes });
     try {
-      const payload = await this.requestFileExplorer(cwd, path, "file", resolvedRequestId, true);
+      const payload = await this.requestFileExplorer(
+        cwd,
+        path,
+        "file",
+        resolvedRequestId,
+        true,
+        maxBytes,
+      );
       if (payload.error) {
         throw new Error(payload.error);
       }
@@ -4402,9 +4466,10 @@ export class DaemonClient {
   async subscribeFile(
     input: { cwd: string; path: string },
     onUpdate: (version: FileVersion) => void,
-  ): Promise<{ initial: FileVersion; unsubscribe: () => void }> {
+    onError: (error: Error) => void,
+  ): Promise<{ initial: FileVersion; unsubscribe: () => Promise<void> }> {
     const subscriptionId = this.createRequestId();
-    this.fileSubscriptions.set(subscriptionId, { ...input, onUpdate });
+    this.fileSubscriptions.set(subscriptionId, { ...input, onUpdate, onError });
     try {
       const payload = await this.sendCorrelatedSessionRequest({
         message: {
@@ -4417,16 +4482,49 @@ export class DaemonClient {
       });
       return {
         initial: payload.initial,
-        unsubscribe: () => {
+        unsubscribe: async () => {
           if (!this.fileSubscriptions.delete(subscriptionId)) return;
-          void this.sendCorrelatedSessionRequest({
+          await this.sendCorrelatedSessionRequest({
             message: { type: "fs.file.unsubscribe.request", subscriptionId },
             responseType: "fs.file.unsubscribe.response",
-          }).catch(() => undefined);
+          });
         },
       };
     } catch (error) {
       this.fileSubscriptions.delete(subscriptionId);
+      throw error;
+    }
+  }
+
+  async subscribeWorkspaceDirectory(
+    input: { cwd: string },
+    onUpdate: () => void,
+    onError: (error: Error) => void,
+  ): Promise<{ unsubscribe: () => Promise<void> }> {
+    const subscriptionId = this.createRequestId();
+    this.directorySubscriptions.set(subscriptionId, { ...input, onUpdate, onError });
+    try {
+      const payload = await this.sendCorrelatedSessionRequest({
+        message: {
+          type: "fs.directory.subscribe.request",
+          cwd: input.cwd,
+          subscriptionId,
+        },
+        responseType: "fs.directory.subscribe.response",
+      });
+      if (payload.status === "error") throw new Error(payload.error);
+      return {
+        unsubscribe: async () => {
+          if (!this.directorySubscriptions.delete(subscriptionId)) return;
+          const unsubscribePayload = await this.sendCorrelatedSessionRequest({
+            message: { type: "fs.directory.unsubscribe.request", subscriptionId },
+            responseType: "fs.directory.unsubscribe.response",
+          });
+          if (unsubscribePayload.status === "error") throw new Error(unsubscribePayload.error);
+        },
+      };
+    } catch (error) {
+      this.directorySubscriptions.delete(subscriptionId);
       throw error;
     }
   }
@@ -5706,7 +5804,30 @@ export class DaemonClient {
     }
 
     if (frame.opcode === FileTransferOpcode.FileChunk) {
+      // COMPAT(fileReadByteBudget)：v0.2.2 新增，守护进程最低版本达到 v0.2.2 后于 2027-02-23 移除。
+      // 旧守护进程会忽略 maxBytes 并继续传输，因此必须在客户端累积数据前丢弃。
+      if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
+        return;
+      }
       transfer.chunks.push(frame.payload);
+      return;
+    }
+
+    // COMPAT(fileReadByteBudget)：v0.2.2 新增，守护进程最低版本达到 v0.2.2 后于 2027-02-23 移除。
+    if (transfer.maxBytes && transfer.size > transfer.maxBytes) {
+      this.activeBinaryFileTransfers.delete(frame.requestId);
+      this.handleSessionMessage({
+        type: "file_explorer_response",
+        payload: {
+          cwd: transfer.cwd,
+          path: transfer.path,
+          mode: "file",
+          directory: null,
+          file: null,
+          error: "文件过大，无法显示",
+          requestId: frame.requestId,
+        },
+      });
       return;
     }
 
@@ -5900,6 +6021,7 @@ export class DaemonClient {
           this.resubscribeCheckoutDiffSubscriptions();
           this.resubscribeTerminalDirectorySubscriptions();
           this.resubscribeFileSubscriptions();
+          this.resubscribeDirectorySubscriptions();
           this.flushPendingSendQueue();
           this.resolveConnect();
         }
@@ -5914,6 +6036,26 @@ export class DaemonClient {
       this.fileSubscriptions
         .get(consumerMessage.payload.subscriptionId)
         ?.onUpdate(consumerMessage.payload.version);
+    }
+
+    if (consumerMessage.type === "fs.directory.update") {
+      const subscription = this.directorySubscriptions.get(consumerMessage.payload.subscriptionId);
+      if (subscription) {
+        if (consumerMessage.payload.status === "changed") {
+          subscription.onUpdate();
+        } else {
+          const error = new Error(consumerMessage.payload.error);
+          this.logger.error(
+            {
+              err: error,
+              cwd: subscription.cwd,
+              subscriptionId: consumerMessage.payload.subscriptionId,
+            },
+            "工作区目录观察失败",
+          );
+          subscription.onError(error);
+        }
+      }
     }
 
     if (this.rawMessageListeners.size > 0) {

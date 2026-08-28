@@ -54,9 +54,7 @@ export async function createWorktreeCore(
   const requestedWorktreeSlug = input.worktreeSlug
     ? normalizeWorktreeSlug(input.worktreeSlug)
     : undefined;
-  const requestedBranchName = input.branchName
-    ? validateWorktreeSlug(input.branchName.trim())
-    : undefined;
+  const requestedBranchName = input.branchName?.trim();
 
   let intentInput: ResolveWorktreeCreationIntentInput;
   if (input.action === "checkout") {

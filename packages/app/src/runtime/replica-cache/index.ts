@@ -21,7 +21,7 @@ import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 
 const STORAGE_KEY = "@paseo:replica-cache";
 const CACHE_VERSION = 6;
-const PERSIST_DELAY_MS = 750;
+const PERSIST_AFTER_USER_INACTIVITY_MS = 5_000;
 const MAX_TIMELINE_ITEMS = 50;
 const MAX_CACHE_BYTES = 1024 * 1024;
 const IsoDateSchema = z.iso.datetime();
@@ -620,19 +620,22 @@ export class ReplicaCache {
     let raw: string | null;
     try {
       raw = await this.storage.getItem(STORAGE_KEY);
-    } catch {
+    } catch (error) {
+      console.error("读取本地会话副本失败", error);
       return;
     }
     if (!raw) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
-    } catch {
+    } catch (error) {
+      console.error("解析本地会话副本失败", error);
       await this.clearInvalidCache();
       return;
     }
     const cache = StoredCacheSchema.safeParse(parsed);
     if (!cache.success) {
+      console.error("校验本地会话副本失败", cache.error);
       await this.clearInvalidCache();
       return;
     }
@@ -646,6 +649,7 @@ export class ReplicaCache {
     }
     const bounded = this.buildBoundedPayload();
     if (!bounded) {
+      console.error("本地会话副本无法序列化", new Error("本地会话副本结构不合法"));
       await this.clearInvalidCache();
       this.storedHosts.clear();
       return;
@@ -663,17 +667,19 @@ export class ReplicaCache {
     }
   }
 
+  recordUserActivity(): void {
+    if (!this.persistTimer) return;
+    clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+    this.schedulePersist();
+  }
+
   start(): void {
     if (this.unsubscribe) return;
     const changedBeforeSubscription = this.captureSessions();
-    this.unsubscribe = useSessionStore.subscribe((state) => {
+    this.unsubscribe = useSessionStore.subscribe(() => {
       if (this.activeServerIds.size === 0) return;
-      let changed = false;
-      for (const serverId of this.activeServerIds) {
-        const session = state.sessions[serverId];
-        if (session && this.captureHost(serverId, session)) changed = true;
-      }
-      if (changed) this.schedulePersist();
+      this.schedulePersist();
     });
     if (changedBeforeSubscription || this.needsPersist) this.schedulePersist();
   }
@@ -700,22 +706,31 @@ export class ReplicaCache {
   }
 
   async flush(): Promise<void> {
+    await this.persist(false);
+  }
+
+  private async flushPending(): Promise<void> {
+    await this.persist(true);
+  }
+
+  private async persist(skipUnchanged: boolean): Promise<void> {
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
-    this.captureSessions();
+    const changed = this.captureSessions();
+    if (skipUnchanged && !changed && !this.needsPersist) return;
     const bounded = this.buildBoundedPayload();
     this.needsPersist = false;
     if (!bounded) {
       await this.clearInvalidCache();
       return;
     }
-    const write = this.writeQueue
-      .catch(() => undefined)
-      .then(() => this.storage.setItem(STORAGE_KEY, bounded.payload));
-    this.writeQueue = write;
-    await write.catch(() => undefined);
+    const write = this.writeQueue.then(() => this.storage.setItem(STORAGE_KEY, bounded.payload));
+    this.writeQueue = write.catch((error) => {
+      console.error("保存本地会话副本失败", error);
+    });
+    await write;
   }
 
   private captureSessions(): boolean {
@@ -763,14 +778,18 @@ export class ReplicaCache {
       version: CACHE_VERSION,
       hosts: Array.from(this.storedHosts.values()),
     });
-    return cache.success ? JSON.stringify(cache.data) : null;
+    if (!cache.success) {
+      console.error("校验本地会话副本失败", cache.error);
+      return null;
+    }
+    return JSON.stringify(cache.data);
   }
 
   private async clearInvalidCache(): Promise<void> {
     try {
       await this.storage.removeItem(STORAGE_KEY);
-    } catch {
-      // A storage failure must not turn invalid cached data into application state.
+    } catch (error) {
+      console.error("清理无效的本地会话副本失败", error);
     }
   }
 
@@ -778,7 +797,9 @@ export class ReplicaCache {
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
-      void this.flush();
-    }, PERSIST_DELAY_MS);
+      void this.flushPending().catch((error) => {
+        console.error("延迟保存本地会话副本失败", error);
+      });
+    }, PERSIST_AFTER_USER_INACTIVITY_MS);
   }
 }

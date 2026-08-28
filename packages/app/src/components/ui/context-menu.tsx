@@ -521,6 +521,7 @@ export function ContextMenuContent({
     return (
       <ContextMenuContext.Provider value={context}>
         <IsolatedBottomSheetModal
+          contextBridge={null}
           ref={bottomSheetRef}
           index={0}
           snapPoints={sheetSnapPoints}

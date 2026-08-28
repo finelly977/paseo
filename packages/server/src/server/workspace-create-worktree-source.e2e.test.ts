@@ -58,9 +58,15 @@ test("workspace.create worktree source forwards action=checkout + refName into t
     // on feature/existing-branch is the observable proof both fields forwarded.
     expect(result.workspace?.gitRuntime?.currentBranch).toBe("feature/existing-branch");
   } finally {
-    await client.close().catch(() => undefined);
-    await daemon.close();
-    rmSync(tempRoot, { recursive: true, force: true });
+    try {
+      await client.close();
+    } finally {
+      try {
+        await daemon.close();
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
   }
 }, 180000);
 
@@ -90,9 +96,55 @@ test("workspace.create keeps a branch-off name separate from its worktree slug",
     expect(result.workspace?.gitRuntime?.currentBranch).toBe("feature/auth");
     expect(path.basename(result.workspace?.workspaceDirectory ?? "")).toBe("feature-auth");
   } finally {
-    await client.close().catch(() => undefined);
-    await daemon.close();
-    rmSync(tempRoot, { recursive: true, force: true });
+    try {
+      await client.close();
+    } finally {
+      try {
+        await daemon.close();
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
+  }
+}, 180000);
+
+test("workspace.create accepts a Git-valid branch-off name outside Paseo slug syntax", async () => {
+  const daemon = await createTestPaseoDaemon();
+  const { repoDir, tempRoot } = createGitRepoWithBranch();
+  const client = new DaemonClient({
+    url: `ws://127.0.0.1:${daemon.port}/ws`,
+    appVersion: "0.1.82",
+  });
+
+  try {
+    await client.connect();
+
+    const result = await client.createWorkspace({
+      source: {
+        kind: "worktree",
+        cwd: repoDir,
+        action: "branch-off",
+        branchName: "ABC-123_Fix-Broken-Model-Relationships_Author_Name",
+        worktreeSlug: "git-valid-branch-name",
+        baseBranch: "main",
+      },
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.workspace?.gitRuntime?.currentBranch).toBe(
+      "ABC-123_Fix-Broken-Model-Relationships_Author_Name",
+    );
+    expect(path.basename(result.workspace?.workspaceDirectory ?? "")).toBe("git-valid-branch-name");
+  } finally {
+    try {
+      await client.close();
+    } finally {
+      try {
+        await daemon.close();
+      } finally {
+        rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
   }
 }, 180000);
 

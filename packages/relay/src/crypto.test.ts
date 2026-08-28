@@ -12,6 +12,17 @@ function decryptText(sharedKey: Uint8Array, ciphertext: ArrayBuffer): string {
   return new TextDecoder().decode(decrypt(sharedKey, ciphertext));
 }
 
+function bytesFromHex(hex: string): Uint8Array {
+  if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(hex)) {
+    throw new Error("十六进制测试数据无效");
+  }
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
 describe("crypto", () => {
   describe("generateKeyPair", () => {
     it("generates a valid keypair", () => {
@@ -35,6 +46,22 @@ describe("crypto", () => {
       // Re-export should match
       const reExported = exportPublicKey(imported);
       expect(reExported).toBe(exported);
+    });
+
+    it.each([
+      ["malformed", "!".repeat(43) + "="],
+      ["noncanonical", `${"A".repeat(42)}B=`],
+    ])("rejects %s base64", (_description, encoded) => {
+      expect(importPublicKey.bind(null, encoded)).toThrowError("公钥编码无效");
+    });
+
+    it.each([
+      ["short", new Uint8Array(31)],
+      ["oversized", new Uint8Array(33)],
+    ])("rejects a %s decoded key", (_description, key) => {
+      expect(importPublicKey.bind(null, Buffer.from(key).toString("base64"))).toThrowError(
+        "公钥长度无效（应为 32 字节）",
+      );
     });
   });
 
@@ -62,6 +89,34 @@ describe("crypto", () => {
       const decrypted = decryptText(clientSharedKey, encrypted);
 
       expect(decrypted).toBe(testMessage);
+    });
+
+    // 不支持的对端公钥。
+    it.each([
+      ["unsupported key 1", "00".repeat(32)],
+      ["unsupported key 2", `01${"00".repeat(31)}`],
+      ["unsupported key 3", "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"],
+      ["unsupported key 4", "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"],
+      ["unsupported key 5", `ec${"ff".repeat(30)}7f`],
+      ["unsupported key 6", `ed${"ff".repeat(30)}7f`],
+      ["unsupported key 7", `ee${"ff".repeat(30)}7f`],
+    ])("rejects the %s peer public key", (_description, publicKeyHex) => {
+      const { secretKey } = generateKeyPair();
+
+      expect(deriveSharedKey.bind(null, secretKey, bytesFromHex(publicKeyHex))).toThrowError(
+        "对端公钥无效",
+      );
+    });
+
+    it.each([
+      ["short", new Uint8Array(31)],
+      ["oversized", new Uint8Array(33)],
+    ])("rejects a %s peer public key", (_description, publicKey) => {
+      const { secretKey } = generateKeyPair();
+
+      expect(deriveSharedKey.bind(null, secretKey, publicKey)).toThrowError(
+        "对端公钥长度无效（应为 32 字节）",
+      );
     });
   });
 

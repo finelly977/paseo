@@ -737,6 +737,7 @@ export function CommandCenter() {
   if (showBottomSheet) {
     return (
       <IsolatedBottomSheetModal
+        contextBridge={null}
         ref={sheetRef}
         snapPoints={COMMAND_CENTER_SNAP_POINTS}
         index={0}

@@ -372,6 +372,7 @@
 - 每个工作区在未展开时默认显示 5 个会话，用户可以在“设置 → 通用”中把数量调整为 1–100；展开后仍显示该工作区的全部会话。
 - 工作区支持按加入 Paseo 的先后、名称和自定义顺序排列，默认沿用加入 Paseo 的先后。切换到名称排序时禁用拖动，拖动加入时间顺序中的工作区后自动进入自定义顺序。
 - 工作区首次被 Paseo 发现的顺序和手工拖动顺序分别持久化；未手工排序的工作区内部会话始终按最近活动时间从新到旧动态排列，新会话直接出现在顶部。拖动会话后持久化该工作区的自定义顺序，之后发现的新会话仍插入顶部并保留已知会话的手工相对顺序。
+- 侧栏“显示偏好”可以多选项目范围，空选择表示显示全部项目；项目暂时被主机筛选隐藏或所在主机尚未连接时，保存的项目选择不会被删除，也不会把侧栏错误清空，项目重新出现后会自动恢复筛选。项目分组、状态分组和固定会话统一遵循该范围，且不会覆盖工作区与会话的自定义顺序。
 - 左侧桌面侧栏采用紧凑父子层级，工作区父行约 32 像素、会话行约 30 像素并缩短组间空白；移动端继续保留原有触控高度。
 - Windows、macOS 和 Linux 桌面端支持从系统文件管理器把一个或多个本地文件夹拖入左侧会话区，并通过本机 Host 注册为工作区；单个文件、不可读取路径、未连接本机 Host 和目录添加失败都会显示明确错误，不会静默忽略。
 
@@ -379,6 +380,7 @@
 
 - `packages/app/src/components/sidebar-workspace-list.tsx`
 - `packages/app/src/components/sidebar/sidebar-display-preferences-menu.tsx`
+- `packages/app/src/components/sidebar/sidebar-project-filter.ts`
 - `packages/app/src/components/sidebar/sidebar-project-drop-zone.web.tsx`
 - `packages/app/src/hooks/use-settings/storage.ts`
 - `packages/app/src/stores/sidebar-order-store.ts`
@@ -411,3 +413,20 @@
 
 - `packages/server/src/server/schedule/service.ts`
 - `packages/server/src/server/agent/agent-prompt.ts`
+
+### 21. 右侧文件面板实时跟随工作区变化
+
+- 打开右侧文件面板时只为当前工作区根目录建立一次递归观察；新增、修改、删除和重命名产生的连续事件在 150 毫秒内合并，随后重新读取根目录和当前仍展开的目录，不为每个子目录分别建立观察器，也不使用轮询。
+- 刷新会先读取父目录再读取可见的展开子目录；已经删除或重命名的旧路径不会继续请求，其展开记忆及下级路径会一并移除。关闭隐藏文件时不会为隐藏目录执行无用读取，文件大小和修改时间也会随外部编辑更新。
+- 客户端断线重连后使用原订阅标识恢复目录观察；关闭面板、切换工作区和释放连接时会取消订阅，服务端等待递归观察器完成所有扫描、待发事件和原生句柄释放后再确认。观察启动或运行失败会返回明确错误并记录完整异常，不会静默退回轮询。
+- 已打开文件的正文继续使用独立的单文件变化订阅；其断线重订阅和取消失败不再被静默忽略。旧守护进程未声明目录观察能力时保留原有手动刷新，不发送其无法识别的新请求。
+
+主要涉及：
+
+- `packages/app/src/components/file-explorer-pane.tsx`
+- `packages/app/src/file-explorer/refresh.ts`
+- `packages/app/src/file-pane/live-file.ts`
+- `packages/client/src/daemon-client.ts`
+- `packages/protocol/src/messages.ts`
+- `packages/server/src/server/session/files/workspace-files-session.ts`
+- `packages/server/src/server/file-observer/`

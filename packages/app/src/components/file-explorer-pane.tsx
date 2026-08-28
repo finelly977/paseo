@@ -38,6 +38,7 @@ import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stor
 import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { isHiddenExplorerPath } from "@/file-explorer/visibility";
+import { refreshExplorerDirectories } from "@/file-explorer/refresh";
 import {
   flattenExplorerTree,
   reconcileRestoredExpandedPaths,
@@ -237,6 +238,11 @@ export function FileExplorerPane({
     [normalizedWorkspaceRoot, workspaceId],
   );
   const hasWorkspaceScope = Boolean(workspaceStateKey && normalizedWorkspaceRoot);
+  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const supportsDirectoryObservation = useSessionStore(
+    (state) =>
+      state.sessions[serverId]?.serverInfo?.features?.workspaceDirectoryObservation === true,
+  );
   const explorerState = useSessionStore((state) =>
     workspaceStateKey && state.sessions[serverId]
       ? state.sessions[serverId]?.fileExplorer.get(workspaceStateKey)
@@ -423,15 +429,100 @@ export function FileExplorerPane({
     workspaceStateKey,
   ]);
 
-  const refreshExplorer = useCallback(
-    () =>
-      refreshExplorerDirectories({
-        hasWorkspaceScope,
-        expandedPaths,
-        requestDirectoryListing,
-      }),
-    [expandedPaths, hasWorkspaceScope, requestDirectoryListing],
-  );
+  const refreshExplorer = useCallback(async () => {
+    if (!hasWorkspaceScope) return null;
+    const shouldShowHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
+    const { missingPaths } = await refreshExplorerDirectories({
+      expandedPaths,
+      showHiddenFiles: shouldShowHiddenFiles,
+      requestDirectoryListing: (path) =>
+        requestDirectoryListing(path, {
+          recordHistory: false,
+          setCurrentPath: false,
+        }),
+    });
+    if (workspaceStateKey && missingPaths.length > 0) {
+      setExpandedPathsForWorkspace(workspaceStateKey, (currentPaths) =>
+        currentPaths.filter((path) => !isMissingExplorerPath(path, missingPaths)),
+      );
+    }
+    return null;
+  }, [
+    expandedPaths,
+    hasWorkspaceScope,
+    requestDirectoryListing,
+    setExpandedPathsForWorkspace,
+    workspaceStateKey,
+  ]);
+  const latestRefreshExplorerRef = useRef(refreshExplorer);
+  const observedRefreshInFlightRef = useRef<Promise<void> | null>(null);
+  const observedRefreshPendingRef = useRef(false);
+
+  useEffect(() => {
+    latestRefreshExplorerRef.current = refreshExplorer;
+  }, [refreshExplorer]);
+
+  const queueObservedRefresh = useCallback(() => {
+    observedRefreshPendingRef.current = true;
+    if (observedRefreshInFlightRef.current) return;
+    const refreshUntilCurrent = async () => {
+      while (observedRefreshPendingRef.current) {
+        observedRefreshPendingRef.current = false;
+        try {
+          await latestRefreshExplorerRef.current();
+        } catch (refreshError) {
+          console.error("自动刷新工作区文件列表失败", refreshError);
+        }
+      }
+    };
+    const refreshPromise = refreshUntilCurrent().finally(() => {
+      observedRefreshInFlightRef.current = null;
+    });
+    observedRefreshInFlightRef.current = refreshPromise;
+  }, []);
+
+  useEffect(() => {
+    if (!client || !hasWorkspaceScope || !supportsDirectoryObservation) return;
+    let disposed = false;
+    let unsubscribe: (() => Promise<void>) | null = null;
+    void client
+      .subscribeWorkspaceDirectory(
+        { cwd: normalizedWorkspaceRoot },
+        () => {
+          if (!disposed) queueObservedRefresh();
+        },
+        (observationError) => console.error("工作区文件列表实时更新已中断", observationError),
+      )
+      .then((subscription) => {
+        if (disposed) {
+          void subscription.unsubscribe().catch((unsubscribeError: unknown) => {
+            console.error("取消工作区目录订阅失败", unsubscribeError);
+          });
+          return null;
+        }
+        unsubscribe = subscription.unsubscribe;
+        return null;
+      })
+      .catch((subscribeError: unknown) => {
+        console.error("订阅工作区文件列表变化失败", subscribeError);
+      });
+
+    return () => {
+      disposed = true;
+      observedRefreshPendingRef.current = false;
+      if (unsubscribe) {
+        void unsubscribe().catch((unsubscribeError: unknown) => {
+          console.error("取消工作区目录订阅失败", unsubscribeError);
+        });
+      }
+    };
+  }, [
+    client,
+    hasWorkspaceScope,
+    normalizedWorkspaceRoot,
+    queueObservedRefresh,
+    supportsDirectoryObservation,
+  ]);
   const { refetch: refetchExplorer, isFetching: isRefreshFetching } = useQuery({
     queryKey: ["fileExplorerRefresh", serverId, workspaceStateKey],
     queryFn: refreshExplorer,
@@ -902,39 +993,6 @@ async function initializeExplorer({
   );
 }
 
-async function refreshExplorerDirectories({
-  hasWorkspaceScope,
-  expandedPaths,
-  requestDirectoryListing,
-}: {
-  hasWorkspaceScope: boolean;
-  expandedPaths: Set<string>;
-  requestDirectoryListing: (
-    path: string,
-    opts?: { recordHistory?: boolean; setCurrentPath?: boolean },
-  ) => Promise<ExplorerDirectory | null>;
-}): Promise<null> {
-  if (!hasWorkspaceScope) {
-    return null;
-  }
-  const showHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
-  const directoryPaths = Array.from(expandedPaths).filter(
-    (path) => showHiddenFiles || !isHiddenExplorerPath(path),
-  );
-  if (!directoryPaths.includes(".")) {
-    directoryPaths.unshift(".");
-  }
-  await Promise.all(
-    directoryPaths.map((path) =>
-      requestDirectoryListing(path, {
-        recordHistory: false,
-        setCurrentPath: false,
-      }),
-    ),
-  );
-  return null;
-}
-
 function getErrorRecoveryPath(state: AgentFileExplorerState | undefined): string {
   if (!state) {
     return ".";
@@ -948,6 +1006,13 @@ function getErrorRecoveryPath(state: AgentFileExplorerState | undefined): string
     return ".";
   }
   return candidate;
+}
+
+function isMissingExplorerPath(path: string, missingPaths: readonly string[]): boolean {
+  for (const missingPath of missingPaths) {
+    if (path === missingPath || path.startsWith(`${missingPath}/`)) return true;
+  }
+  return false;
 }
 
 const styles = StyleSheet.create((theme) => ({

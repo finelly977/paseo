@@ -96,14 +96,7 @@ archived workspace. History navigation must not infer workspace lifecycle from `
 or mutate either lifecycle. The workspace route asks the daemon for authoritative recovery state;
 only the route's explicit Unarchive or Restore action changes the archived workspace.
 
-History navigation preserves the selected agent as an explicit recovery target. If both that agent
-and its workspace are archived, the workspace recovery action restores the workspace and unarchives
-the selected agent as one user action. Other archived agents in the restored workspace remain
-recoverable from History. Opening one pins its tab and renders the archived-agent callout. Authoritative
-timeline catch-up may load provider history with a runtime-only `history` resume purpose, which must
-leave both Paseo's `archivedAt` and the provider's native archive state unchanged. **Unarchive** remains
-the only transition back to an interactive runtime: it runs the provider's native unarchive hook
-(including Codex `thread/unarchive`) before the normal agent resume and timeline hydration flow.
+历史导航会把用户选中的智能体保留为明确的恢复目标。如果智能体和工作区都已归档，工作区恢复操作会在一次用户操作中同时恢复工作区并取消归档该智能体；同一工作区内其他已归档智能体仍留在历史记录中等待单独恢复。打开其中一个智能体会固定其标签并显示已归档提示。权威时间线追赶可以用仅限运行时的 `history` 用途加载提供方历史，但不得改变 Paseo 的 `archivedAt` 或提供方原生归档状态。只有“取消归档”可以重新进入可交互运行时：它会先执行提供方原生取消归档钩子（Codex 使用 `thread/unarchive`），再执行正常的智能体恢复和时间线加载。提供方会话可能在 Paseo 之外被归档，而 Paseo 智能体仍保持活动；交互式恢复会通过原生取消归档钩子修复这种状态偏差，历史只读恢复不会修改它。
 
 Provider session connection owns every process it spawns until the session is registered with
 `AgentManager`. If initialization, persisted-session resume, or initial history hydration fails,

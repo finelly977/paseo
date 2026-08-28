@@ -41,7 +41,21 @@ describe("sidebar view store", () => {
       groupMode: "project",
       projectSortMode: "added",
       hostFilters: [],
+      projectFilters: [],
     });
+  });
+
+  it("支持同时筛选多个项目并恢复全部项目", () => {
+    const store = useSidebarViewStore.getState();
+    store.toggleProjectFilter("project-a");
+    store.toggleProjectFilter("project-b");
+    expect(useSidebarViewStore.getState().projectFilters).toEqual(["project-a", "project-b"]);
+
+    store.toggleProjectFilter("project-a");
+    expect(useSidebarViewStore.getState().projectFilters).toEqual(["project-b"]);
+
+    store.clearProjectFilters();
+    expect(useSidebarViewStore.getState().projectFilters).toEqual([]);
   });
 
   it("toggles multiple hosts into and out of the filter", () => {
@@ -92,6 +106,7 @@ describe("sidebar view store", () => {
       groupMode: "status",
       projectSortMode: "added",
       hostFilters: [],
+      projectFilters: [],
     });
   });
 
@@ -105,6 +120,7 @@ describe("sidebar view store", () => {
       groupMode: "status",
       projectSortMode: "added",
       hostFilters: ["host-a"],
+      projectFilters: [],
     });
   });
 
@@ -118,6 +134,22 @@ describe("sidebar view store", () => {
       groupMode: "status",
       projectSortMode: "added",
       hostFilters: ["host-a", "host-b"],
+      projectFilters: [],
+    });
+  });
+
+  it("迁移时保留项目筛选", () => {
+    expect(
+      migrateSidebarViewState({
+        groupMode: "project",
+        hostFilters: [],
+        projectFilters: ["project-a", "project-b"],
+      }),
+    ).toEqual({
+      groupMode: "project",
+      projectSortMode: "added",
+      hostFilters: [],
+      projectFilters: ["project-a", "project-b"],
     });
   });
 
@@ -132,6 +164,7 @@ describe("sidebar view store", () => {
       groupMode: "project",
       projectSortMode: "custom",
       hostFilters: [],
+      projectFilters: [],
     });
   });
 

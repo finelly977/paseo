@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  DirectorySubscribeRequestSchema,
+  DirectorySubscribeResponseSchema,
+  DirectoryUnsubscribeRequestSchema,
+  DirectoryUnsubscribeResponseSchema,
+  DirectoryUpdateSchema,
   FileSubscribeRequestSchema,
   FileSubscribeResponseSchema,
   FileUnsubscribeRequestSchema,
@@ -11,13 +16,57 @@ import {
 
 describe("workspace file editing messages", () => {
   test("keeps the capability optional for older server info payloads", () => {
+    const features = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "server-1",
+      features: {},
+    }).features;
+    expect(features?.workspaceFileEditing).toBeUndefined();
+    expect(features?.workspaceDirectoryObservation).toBeUndefined();
+  });
+
+  test("parses workspace directory observation messages", () => {
     expect(
-      ServerInfoStatusPayloadSchema.parse({
-        status: "server_info",
-        serverId: "server-1",
-        features: {},
-      }).features?.workspaceFileEditing,
-    ).toBeUndefined();
+      DirectorySubscribeRequestSchema.parse({
+        type: "fs.directory.subscribe.request",
+        cwd: "/workspace",
+        subscriptionId: "directory-1",
+        requestId: "request-1",
+      }).cwd,
+    ).toBe("/workspace");
+    expect(
+      DirectorySubscribeResponseSchema.parse({
+        type: "fs.directory.subscribe.response",
+        payload: {
+          status: "subscribed",
+          subscriptionId: "directory-1",
+          requestId: "request-1",
+        },
+      }).payload.status,
+    ).toBe("subscribed");
+    expect(
+      DirectoryUpdateSchema.parse({
+        type: "fs.directory.update",
+        payload: { status: "changed", subscriptionId: "directory-1" },
+      }).payload.status,
+    ).toBe("changed");
+    expect(
+      DirectoryUnsubscribeRequestSchema.parse({
+        type: "fs.directory.unsubscribe.request",
+        subscriptionId: "directory-1",
+        requestId: "request-2",
+      }).subscriptionId,
+    ).toBe("directory-1");
+    expect(
+      DirectoryUnsubscribeResponseSchema.parse({
+        type: "fs.directory.unsubscribe.response",
+        payload: {
+          status: "unsubscribed",
+          subscriptionId: "directory-1",
+          requestId: "request-2",
+        },
+      }).payload.status,
+    ).toBe("unsubscribed");
   });
 
   test("parses subscribe, unsubscribe, and version update messages", () => {

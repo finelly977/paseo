@@ -679,6 +679,7 @@ export function AdaptiveModalSheet({
 
     return (
       <IsolatedBottomSheetModal
+        contextBridge={null}
         ref={sheetRef}
         snapPoints={resolvedSnapPoints}
         index={0}

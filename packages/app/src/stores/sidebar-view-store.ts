@@ -9,17 +9,21 @@ export type SidebarProjectSortMode = "added" | "name" | "custom";
 
 const SIDEBAR_VIEW_STORAGE_KEY = "sidebar-view";
 const LEGACY_SIDEBAR_GROUP_MODE_STORAGE_KEY = "sidebar-group-mode";
-const SIDEBAR_VIEW_STORE_VERSION = 3;
+const SIDEBAR_VIEW_STORE_VERSION = 4;
 
 interface SidebarViewStoreState {
   groupMode: SidebarGroupMode;
   projectSortMode: SidebarProjectSortMode;
   // Empty means "all hosts". A non-empty list pins the sidebar to those hosts.
   hostFilters: string[];
+  // 空数组表示显示全部项目；非空数组是项目视图键的允许列表。
+  projectFilters: string[];
   setGroupMode: (mode: SidebarGroupMode) => void;
   setProjectSortMode: (mode: SidebarProjectSortMode) => void;
   toggleHostFilter: (serverId: string) => void;
   clearHostFilters: () => void;
+  toggleProjectFilter: (projectKey: string) => void;
+  clearProjectFilters: () => void;
   reconcileHostFilters: (serverIds: readonly string[]) => void;
 }
 
@@ -27,6 +31,7 @@ interface SidebarViewPersistedState {
   groupMode: SidebarGroupMode;
   projectSortMode: SidebarProjectSortMode;
   hostFilters: string[];
+  projectFilters: string[];
 }
 
 const SidebarGroupModeSchema = z.enum(["project", "status"]);
@@ -34,6 +39,7 @@ const SidebarViewPersistedStateSchema = z.strictObject({
   groupMode: SidebarGroupModeSchema.optional(),
   projectSortMode: z.enum(["added", "name", "custom"]).optional(),
   hostFilters: z.array(z.string()).optional(),
+  projectFilters: z.array(z.string()).optional(),
   hostFilter: z.string().nullable().optional(),
   groupModeByServerId: z.record(z.string(), SidebarGroupModeSchema).optional(),
 });
@@ -67,19 +73,30 @@ function readHostFilters(persistedState: SidebarViewStorageState): string[] {
 export function migrateSidebarViewState(persistedState: unknown): SidebarViewPersistedState {
   const result = SidebarViewPersistedStateSchema.safeParse(persistedState);
   if (!result.success) {
-    return { groupMode: "project", projectSortMode: "added", hostFilters: [] };
+    return {
+      groupMode: "project",
+      projectSortMode: "added",
+      hostFilters: [],
+      projectFilters: [],
+    };
   }
   const state = result.data;
 
   const legacyGroupMode = readLegacyGroupMode(state);
   if (legacyGroupMode) {
-    return { groupMode: legacyGroupMode, projectSortMode: "added", hostFilters: [] };
+    return {
+      groupMode: legacyGroupMode,
+      projectSortMode: "added",
+      hostFilters: [],
+      projectFilters: [],
+    };
   }
 
   return {
     groupMode: state.groupMode ?? "project",
     projectSortMode: state.projectSortMode ?? "added",
     hostFilters: readHostFilters(state),
+    projectFilters: state.projectFilters ?? [],
   };
 }
 
@@ -105,6 +122,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
       groupMode: "project",
       projectSortMode: "added",
       hostFilters: [],
+      projectFilters: [],
       setGroupMode: (mode) => set({ groupMode: mode }),
       setProjectSortMode: (mode) => set({ projectSortMode: mode }),
       toggleHostFilter: (serverId) =>
@@ -114,6 +132,13 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
             : [...state.hostFilters, serverId],
         })),
       clearHostFilters: () => set({ hostFilters: [] }),
+      toggleProjectFilter: (projectKey) =>
+        set((state) => ({
+          projectFilters: state.projectFilters.includes(projectKey)
+            ? state.projectFilters.filter((key) => key !== projectKey)
+            : [...state.projectFilters, projectKey],
+        })),
+      clearProjectFilters: () => set({ projectFilters: [] }),
       reconcileHostFilters: (serverIds) =>
         set((state) => {
           if (state.hostFilters.length === 0) {
@@ -138,6 +163,7 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
         groupMode: state.groupMode,
         projectSortMode: state.projectSortMode,
         hostFilters: state.hostFilters,
+        projectFilters: state.projectFilters,
       }),
       migrate: migrateSidebarViewState,
     },

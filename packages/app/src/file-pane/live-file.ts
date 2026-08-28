@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { DaemonClient, FileReadResult } from "@getpaseo/client/internal/daemon-client";
 import type { FileVersion } from "@getpaseo/protocol/messages";
 import { useFetchQuery } from "@/data/query";
+import { isWeb } from "@/constants/platform";
+import { SOURCE_PRESENTATION_BUDGETS } from "./source/presentation";
 
 export function useLiveFile(input: {
   client: DaemonClient | null;
@@ -30,31 +32,44 @@ export function useLiveFile(input: {
       return;
     }
     let disposed = false;
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribe: (() => Promise<void>) | null = null;
     setSubscriptionReady(false);
     void (async () => {
       try {
-        const subscription = await client.subscribeFile({ cwd, path }, (next) => {
-          if (disposed) return;
-          latestVersion.current = next;
-          setVersion(next);
-          void queryClient.invalidateQueries({ queryKey });
-        });
+        const subscription = await client.subscribeFile(
+          { cwd, path },
+          (next) => {
+            if (disposed) return;
+            latestVersion.current = next;
+            setVersion(next);
+            void queryClient.invalidateQueries({ queryKey });
+          },
+          (error) => console.error("文件实时变化订阅中断", error),
+        );
         if (disposed) {
-          subscription.unsubscribe();
+          try {
+            await subscription.unsubscribe();
+          } catch (error) {
+            console.error("取消文件实时变化订阅失败", error);
+          }
           return;
         }
         unsubscribe = subscription.unsubscribe;
         latestVersion.current = subscription.initial;
         setVersion(subscription.initial);
         setSubscriptionReady(true);
-      } catch {
+      } catch (error) {
+        console.error("订阅文件实时变化失败", error);
         if (!disposed) setSubscriptionReady(true);
       }
     })();
     return () => {
       disposed = true;
-      unsubscribe?.();
+      if (unsubscribe) {
+        void unsubscribe().catch((error: unknown) => {
+          console.error("取消文件实时变化订阅失败", error);
+        });
+      }
     };
   }, [
     input.client,
@@ -72,7 +87,12 @@ export function useLiveFile(input: {
     enabled: input.enabled && Boolean(input.client && input.cwd && input.path) && subscriptionReady,
     queryFn: async (): Promise<FileReadResult> => {
       if (!input.client || !input.cwd || !input.path) throw new Error("File unavailable.");
-      return input.client.readFile(input.cwd, input.path);
+      return input.client.readFile(
+        input.cwd,
+        input.path,
+        undefined,
+        SOURCE_PRESENTATION_BUDGETS[isWeb ? "web" : "native"].plain,
+      );
     },
     dataShape: "value",
     staleTimeMs: 5_000,

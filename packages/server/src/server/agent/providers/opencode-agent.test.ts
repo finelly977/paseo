@@ -25,6 +25,10 @@ import type {
   AgentTimelineItem,
 } from "../agent-sdk-types.js";
 
+// 这里故意使用独立字面量而不是生产常量；否则生产等待预算被意外缩短时，
+// 测试也会跟着缩短，无法发现回归。
+const EXPECTED_STARTUP_BUDGET_MS = 30_000;
+
 function tmpCwd(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "opencode-agent-test-"));
   try {
@@ -303,6 +307,80 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     expect(openCode.calls.sessionUpdate).toEqual([]);
     rmSync(cwd, { recursive: true, force: true });
   }, 60_000);
+
+  test("creates a session when session.create needs more than ten seconds", async () => {
+    vi.useFakeTimers();
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const openCode = new TestOpenCodeClient();
+    const slowCreate = createTestDeferred<void>();
+    openCode.sessionCreateImplementation = async () => {
+      await slowCreate.promise;
+      return { data: { id: "session-1" } };
+    };
+    runtime.enqueueClient(openCode);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+
+    try {
+      const creation = client.createSession(buildConfig(cwd));
+      let settled = false;
+      const markSettled = () => {
+        settled = true;
+      };
+      void creation.then(markSettled, markSettled);
+
+      // CPU 繁忙时，单目录冷启动实测会明显超过十秒，旧预算会直接误判失败。
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(settled).toBe(false);
+
+      slowCreate.resolve();
+      const session = await creation;
+      expect(session.provider).toBe("opencode");
+      expect(openCode.calls.sessionCreate).toHaveLength(1);
+      await session.close();
+    } finally {
+      vi.useRealTimers();
+      slowCreate.resolve();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("bounds session.create at the server startup budget", async () => {
+    vi.useFakeTimers();
+    const cwd = tmpCwd();
+    const runtime = new TestOpenCodeHarness();
+    const openCode = new TestOpenCodeClient();
+    openCode.sessionCreateImplementation = () => new Promise<never>(() => undefined);
+    runtime.enqueueClient(openCode);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+
+    try {
+      const creation = client.createSession(buildConfig(cwd));
+      const rejection = expect(creation).rejects.toThrow("OpenCode 创建会话超过");
+      let settled = false;
+      const markSettled = () => {
+        settled = true;
+      };
+      void creation.then(markSettled, markSettled);
+
+      await vi.advanceTimersByTimeAsync(EXPECTED_STARTUP_BUDGET_MS - 1);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(settled).toBe(true);
+      expect(runtime.acquisitions.at(-1)?.releaseCount).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 
   test("archives and unarchives the durable native session through client hooks", async () => {
     const cwd = tmpCwd();
@@ -2019,6 +2097,167 @@ describe("OpenCode adapter startTurn error handling", () => {
     }
   });
 
+  test("uses OpenCode native steer admission and reconciles the user echo", async () => {
+    const { parent: session, openCode } = await createParentSession("ses_native_steer");
+    openCode.sessionPromptAsyncEvents = [];
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const { turnId } = await session.startTurn("first");
+    const result = await session.steerActiveTurn?.("steer this turn", {
+      expectedTurnId: turnId,
+      clientMessageId: "client-steer-1",
+    });
+
+    expect(result).toEqual({ status: "accepted" });
+    expect(openCode.calls.sessionPromptAsync).toHaveLength(2);
+    const request = openCode.calls.sessionPromptAsync[1] as {
+      sessionID: string;
+      messageID: string;
+      parts: Array<{ type: string; text?: string }>;
+    };
+    expect(request).toMatchObject({
+      sessionID: "ses_native_steer",
+    });
+    expect(request.messageID).toMatch(/^msg_/);
+    expect(request.parts).toEqual([{ type: "text", text: "steer this turn" }]);
+
+    openCode.emitEvent({
+      type: "message.updated",
+      properties: {
+        info: { id: request.messageID, sessionID: "ses_native_steer", role: "user" },
+      },
+    });
+    await vi.waitFor(() => {
+      let found;
+      for (const e of events) {
+        if (
+          e.type === "timeline" &&
+          e.item.type === "user_message" &&
+          e.item.text === "steer this turn" &&
+          e.item.messageId === request.messageID &&
+          e.item.clientMessageId === "client-steer-1"
+        ) {
+          found = e;
+          break;
+        }
+      }
+      expect(found).toBeDefined();
+    });
+
+    await session.close();
+  });
+
+  test("clears permissions blocking an accepted human steer", async () => {
+    const { parent: session, openCode } = await createParentSession("ses_steer_permission");
+    openCode.sessionPromptAsyncEvents = [];
+    const { turnId } = await session.startTurn("first");
+    openCode.emitEvent({
+      type: "permission.asked",
+      properties: {
+        id: "permission-steer",
+        sessionID: "ses_steer_permission",
+        permission: "bash",
+        patterns: ["echo blocked"],
+        metadata: { command: "echo blocked", cwd: "/workspace/repo" },
+      },
+    });
+    await vi.waitFor(() => expect(session.getPendingPermissions()).toHaveLength(1));
+
+    await expect(
+      session.steerActiveTurn?.("change course", {
+        expectedTurnId: turnId,
+        clearPendingPermissions: true,
+      }),
+    ).resolves.toEqual({ status: "accepted" });
+
+    expect(openCode.calls.permissionReply).toContainEqual(
+      expect.objectContaining({ requestID: "permission-steer", reply: "reject" }),
+    );
+    expect(session.getPendingPermissions()).toHaveLength(0);
+    await session.close();
+  });
+
+  test("keeps multiple native steers correlated in admission order", async () => {
+    const { parent: session, openCode } = await createParentSession("ses_native_steer_fifo");
+    openCode.sessionPromptAsyncEvents = [];
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const { turnId } = await session.startTurn("first");
+    await session.steerActiveTurn?.("steer one", {
+      expectedTurnId: turnId,
+      clientMessageId: "client-steer-1",
+    });
+    await session.steerActiveTurn?.("steer two", {
+      expectedTurnId: turnId,
+      clientMessageId: "client-steer-2",
+    });
+
+    const requests = openCode.calls.sessionPromptAsync.slice(1) as Array<{ messageID: string }>;
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      openCode.emitEvent({
+        type: "message.updated",
+        properties: {
+          info: { id: request.messageID, sessionID: "ses_native_steer_fifo", role: "user" },
+        },
+      });
+    }
+    const userMessageTexts = () => {
+      const texts: string[] = [];
+      for (const e of events) {
+        if (e.type === "timeline" && e.item.type === "user_message") texts.push(e.item.text);
+      }
+      return texts;
+    };
+    await vi.waitFor(() => expect(userMessageTexts()).toEqual(["steer one", "steer two"]));
+
+    await session.close();
+  });
+
+  test("falls back only for a definitive native steer rejection", async () => {
+    const { parent: session, openCode } = await createParentSession("ses_native_steer_404");
+    openCode.sessionPromptAsyncEvents = [];
+    let promptCount = 0;
+    openCode.sessionPromptAsyncImplementation = async () => {
+      promptCount += 1;
+      if (promptCount === 1) return { data: {}, error: undefined };
+      return { error: new Error("missing"), response: { status: 404 } };
+    };
+    const { turnId } = await session.startTurn("first");
+
+    await expect(
+      session.steerActiveTurn?.("steer", {
+        expectedTurnId: turnId,
+        clientMessageId: "client-steer",
+      }),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    await session.close();
+  });
+
+  test("surfaces an ambiguous native steer failure", async () => {
+    const { parent: session, openCode } = await createParentSession("ses_native_steer_error");
+    openCode.sessionPromptAsyncEvents = [];
+    let promptCount = 0;
+    openCode.sessionPromptAsyncImplementation = async () => {
+      promptCount += 1;
+      if (promptCount === 1) return { data: {}, error: undefined };
+      throw new Error("connection lost");
+    };
+    const { turnId } = await session.startTurn("first");
+
+    await expect(
+      session.steerActiveTurn?.("steer", {
+        expectedTurnId: turnId,
+        clientMessageId: "client-steer",
+      }),
+    ).rejects.toThrow("connection lost");
+
+    await session.close();
+  });
+
   test("waits for the stop abort and provider idle before starting the next prompt", async () => {
     const { parent: session, openCode } = await createParentSession("ses_unit_test");
     const retryStarted = createTestDeferred<void>();
@@ -2737,6 +2976,74 @@ describe("OpenCode adapter startTurn error handling", () => {
           );
         }
       }
+    }
+  });
+  test("事件流在十秒后才就绪时仍会发送提示", async () => {
+    vi.useFakeTimers();
+    const openCode = new TestOpenCodeClient();
+    openCode.sessionPromptAsyncEvents = [];
+    const streamReady = createTestDeferred<void>();
+    const session = new __openCodeInternals.OpenCodeAgentSession(
+      { provider: "opencode", cwd: "/workspace/repo" },
+      openCode.asSdkClient(),
+      "ses_readiness_slow_stream",
+      createTestLogger(),
+      new Map(),
+      {
+        ready: () => streamReady.promise,
+        subscribe: () => () => undefined,
+      },
+    );
+    try {
+      const dispatch = session.startTurn("wait for a slow transport");
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(0);
+
+      streamReady.resolve();
+      await dispatch;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      streamReady.resolve();
+      await session.close();
+    }
+  });
+
+  test("事件流等待会在服务端启动预算到期后失败", async () => {
+    vi.useFakeTimers();
+    const openCode = new TestOpenCodeClient();
+    const session = new __openCodeInternals.OpenCodeAgentSession(
+      { provider: "opencode", cwd: "/workspace/repo" },
+      openCode.asSdkClient(),
+      "ses_readiness_timeout",
+      createTestLogger(),
+      new Map(),
+      {
+        ready: () => new Promise<void>(() => undefined),
+        subscribe: () => () => undefined,
+      },
+    );
+    try {
+      const dispatch = session.startTurn("wait for transport");
+      const rejection = expect(dispatch).rejects.toThrow("OpenCode 事件流首条记录等待超时");
+      let settled = false;
+      const markSettled = () => {
+        settled = true;
+      };
+      void dispatch.then(markSettled, markSettled);
+
+      await vi.advanceTimersByTimeAsync(EXPECTED_STARTUP_BUDGET_MS - 1);
+      expect(settled).toBe(false);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await rejection;
+      expect(settled).toBe(true);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+      await session.close();
     }
   });
 });

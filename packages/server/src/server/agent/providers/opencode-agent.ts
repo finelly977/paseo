@@ -51,6 +51,8 @@ import {
   type ResolveAgentCreateConfigResult,
   type McpServerConfig,
   type ProviderCatalog,
+  type SteerActiveTurnOptions,
+  type SteerResult,
   type ToolCallDetail,
   type ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
@@ -70,6 +72,7 @@ import { execCommand } from "../../../utils/spawn.js";
 import { mapOpencodeToolCall } from "./opencode/tool-call-mapper.js";
 import {
   OpenCodeServerManager,
+  OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
   type OpenCodeServerManagerLike,
 } from "./opencode/server-manager.js";
 import {
@@ -988,6 +991,12 @@ function buildOpenCodeUserTimelineText(prompt: AgentPromptInput): string {
     .join("\n");
 }
 
+function isOpenCodeDefinitiveSteerRejection(error: unknown, status?: number): boolean {
+  if (status === 404) return true;
+  const message = toDiagnosticErrorMessage(error).toLowerCase();
+  return /session\s+(?:is\s+)?(?:not found|inactive|not active|not running)/.test(message);
+}
+
 async function collectOpenCodeImportableSessionsFromSdk(
   client: Pick<OpencodeClient, "experimental">,
   options?: ListImportableSessionsOptions,
@@ -1359,10 +1368,12 @@ export class OpenCodeAgentClient implements AgentClient {
     });
 
     try {
+      // 首次为目录创建会话属于 OpenCode 冷启动的一部分，必须共用服务启动预算，
+      // 避免在机器繁忙时被更短的局部上限误判失败。
       const response = await withTimeout(
         client.session.create({ directory: openCodeConfig.cwd }),
-        10_000,
-        "OpenCode session.create timed out after 10s",
+        OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
+        `OpenCode 创建会话超过 ${Math.round(OPENCODE_SERVER_STARTUP_TIMEOUT_MS / 1000)} 秒仍未完成`,
       );
 
       if (response.error) {
@@ -1771,6 +1782,7 @@ export interface OpenCodeEventTranslationState {
   messageRoles: Map<string, OpenCodeMessageRole>;
   pendingUserMessageText?: string | null;
   pendingClientMessageId?: string | null;
+  pendingSteerSubmissions?: OpenCodePendingSteerSubmission[];
   emittedUserMessageIds?: Set<string>;
   accumulatedUsage: AgentUsage;
   sessionTotalCostUsd?: number;
@@ -1792,6 +1804,12 @@ export interface OpenCodeEventTranslationState {
     messageId: string;
     kind: "text" | "reasoning";
   }) => void;
+}
+
+interface OpenCodePendingSteerSubmission {
+  providerMessageId: string;
+  text: string;
+  clientMessageId: string | null;
 }
 
 interface OpenCodeTraceData {
@@ -2436,11 +2454,19 @@ function appendOpenCodeUserMessageUpdated(
   state: OpenCodeEventTranslationState,
   events: AgentStreamEvent[],
 ): void {
-  const text = state.pendingUserMessageText;
+  const pendingSteerIndex = state.pendingSteerSubmissions?.findIndex(
+    (submission) => submission.providerMessageId === info.id,
+  );
+  const pendingSteer =
+    pendingSteerIndex !== undefined && pendingSteerIndex >= 0
+      ? state.pendingSteerSubmissions?.splice(pendingSteerIndex, 1)[0]
+      : undefined;
+  const text = pendingSteer?.text ?? state.pendingUserMessageText;
   if (!text || text.trim().length === 0 || state.emittedUserMessageIds?.has(info.id)) {
     return;
   }
   state.emittedUserMessageIds?.add(info.id);
+  const clientMessageId = pendingSteer?.clientMessageId ?? state.pendingClientMessageId;
   events.push({
     type: "timeline",
     provider: "opencode",
@@ -2448,7 +2474,7 @@ function appendOpenCodeUserMessageUpdated(
       type: "user_message",
       text,
       messageId: info.id,
-      ...(state.pendingClientMessageId ? { clientMessageId: state.pendingClientMessageId } : {}),
+      ...(clientMessageId ? { clientMessageId } : {}),
     },
   });
 }
@@ -3013,6 +3039,7 @@ class OpenCodeAgentSession implements AgentSession {
   private messageRoles = new Map<string, OpenCodeMessageRole>();
   private pendingUserMessageText: string | null = null;
   private pendingClientMessageId: string | null = null;
+  private pendingSteerSubmissions: OpenCodePendingSteerSubmission[] = [];
   private emittedUserMessageIds = new Set<string>();
   private materializedParts = new Map<
     string,
@@ -3212,6 +3239,93 @@ class OpenCodeAgentSession implements AgentSession {
     }
   }
 
+  async steerActiveTurn(
+    prompt: AgentPromptInput,
+    options: SteerActiveTurnOptions,
+  ): Promise<SteerResult> {
+    if (this.closed || this.activeForegroundTurnId !== options.expectedTurnId) {
+      return { status: "unavailable" };
+    }
+    if (await this.resolveSlashCommandInvocation(prompt)) {
+      return { status: "unavailable" };
+    }
+    if (this.activeForegroundTurnId !== options.expectedTurnId) {
+      return { status: "unavailable" };
+    }
+
+    const promptId = createOpenCodeMessageId();
+    const pending: OpenCodePendingSteerSubmission = {
+      providerMessageId: promptId,
+      text: buildOpenCodeUserTimelineText(prompt),
+      clientMessageId: options.clientMessageId ?? null,
+    };
+    this.pendingSteerSubmissions.push(pending);
+
+    const parts = buildOpenCodePromptParts(prompt);
+    const systemPrompt = composeSystemPromptParts(
+      this.config.systemPrompt,
+      this.config.daemonAppendSystemPrompt,
+    );
+    const model = this.parseModel(this.config.model);
+    const effectiveMode = resolveOpenCodeRuntimeAgentId(this.currentMode);
+    const effectiveVariant = this.config.thinkingOptionId ?? undefined;
+
+    try {
+      const response = await this.client.session.promptAsync({
+        sessionID: this.sessionId,
+        directory: this.config.cwd,
+        messageID: promptId,
+        parts,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        ...(model ? { model } : {}),
+        ...(effectiveMode ? { agent: effectiveMode } : {}),
+        ...(effectiveVariant ? { variant: effectiveVariant } : {}),
+      });
+      if (response.error) {
+        if (
+          isOpenCodeDefinitiveSteerRejection(
+            response.error,
+            (response as unknown as { response?: { status?: number } }).response?.status,
+          )
+        ) {
+          this.removePendingSteerSubmission(promptId);
+          return { status: "unavailable" };
+        }
+        throw new Error(`OpenCode 运行中追加请求失败：${toDiagnosticErrorMessage(response.error)}`);
+      }
+      if (options.clearPendingPermissions) {
+        await this.clearPendingPermissionsForSteer();
+      }
+      return { status: "accepted" };
+    } catch (error) {
+      if (isOpenCodeDefinitiveSteerRejection(error)) {
+        this.removePendingSteerSubmission(promptId);
+        return { status: "unavailable" };
+      }
+      throw error;
+    }
+  }
+
+  private removePendingSteerSubmission(providerMessageId: string): void {
+    const index = this.pendingSteerSubmissions.findIndex(
+      (submission) => submission.providerMessageId === providerMessageId,
+    );
+    if (index >= 0) {
+      this.pendingSteerSubmissions.splice(index, 1);
+    }
+  }
+
+  private async clearPendingPermissionsForSteer(): Promise<void> {
+    const requestIds = Array.from(this.pendingPermissions.keys());
+    for (const requestId of requestIds) {
+      if (!this.pendingPermissions.has(requestId)) continue;
+      await this.respondToPermission(requestId, {
+        behavior: "deny",
+        message: "用户没有批准，而是回复了一条消息；该消息会紧接着送达。",
+      });
+    }
+  }
+
   async revertBoth(input: { messageId: string }): Promise<void> {
     await revertOpenCodeConversationAndFiles({
       client: this.client,
@@ -3368,7 +3482,13 @@ class OpenCodeAgentSession implements AgentSession {
     const effectiveMode = resolveOpenCodeRuntimeAgentId(this.currentMode);
 
     try {
-      await withTimeout(this.events.ready(), 10_000, "OpenCode event stream first record");
+      // 事件流必须等 OpenCode 完成启动后才能产生首条记录，因此这里与服务端启动共用
+      // 同一份等待预算，避免插件较多或冷启动较慢时被更短的外层等待误判为失败。
+      await withTimeout(
+        this.events.ready(),
+        OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
+        "OpenCode 事件流首条记录等待超时",
+      );
     } catch (error) {
       if (this.abortController === turnAbortController) {
         this.abortController = null;
@@ -4129,6 +4249,7 @@ class OpenCodeAgentSession implements AgentSession {
     this.runningToolCalls.clear();
     this.subAgentsByCallId.clear();
     this.subAgentCallIdByChildSessionId.clear();
+    this.pendingSteerSubmissions = [];
     this.pendingUserMessageText = null;
     this.pendingClientMessageId = null;
     this.activeDispatchMessageId = null;
@@ -4158,6 +4279,7 @@ class OpenCodeAgentSession implements AgentSession {
     }
     this.pendingUserMessageText = null;
     this.pendingClientMessageId = null;
+    this.pendingSteerSubmissions = [];
     this.turnState = { status: "idle" };
     this.abortController = null;
     this.notifySubscribers(event, turnId);
@@ -4188,6 +4310,7 @@ class OpenCodeAgentSession implements AgentSession {
     }
     this.pendingUserMessageText = null;
     this.pendingClientMessageId = null;
+    this.pendingSteerSubmissions = [];
     this.abortController = null;
     return abort;
   }
@@ -4646,6 +4769,7 @@ class OpenCodeAgentSession implements AgentSession {
       messageRoles: this.messageRoles,
       pendingUserMessageText: this.pendingUserMessageText,
       pendingClientMessageId: this.pendingClientMessageId,
+      pendingSteerSubmissions: this.pendingSteerSubmissions,
       emittedUserMessageIds: this.emittedUserMessageIds,
       accumulatedUsage: this.accumulatedUsage,
       sessionTotalCostUsd: this.sessionTotalCostUsd,

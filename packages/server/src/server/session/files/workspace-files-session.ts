@@ -7,6 +7,8 @@ import {
 } from "@getpaseo/protocol/binary-frames/index";
 import type {
   FileDownloadTokenRequest,
+  DirectorySubscribeRequest,
+  DirectoryUnsubscribeRequest,
   FileExplorerRequest,
   FileUploadRequest,
   FileSubscribeRequest,
@@ -24,8 +26,24 @@ import {
   streamExplorerFile,
   writeExplorerFile,
 } from "../../file-explorer/service.js";
-import { workspaceFileObserver, type FileObserver } from "../../file-explorer/observer.js";
+import {
+  workspaceFileObserver,
+  type FileObserver as WorkspaceFileObserver,
+} from "../../file-explorer/observer.js";
+import {
+  createFileObserver,
+  type FileObserver as WorkspaceDirectoryObserver,
+  type FileObserverSubscription,
+} from "../../file-observer/index.js";
 import { getProjectIcon } from "../../../utils/project-icon.js";
+
+const DIRECTORY_UPDATE_DEBOUNCE_MS = 150;
+
+interface DirectorySubscription {
+  token: object;
+  subscription: FileObserverSubscription;
+  cancelPendingUpdate(): void;
+}
 
 /**
  * What a workspace file-access request reaches outside its own domain: the
@@ -44,7 +62,8 @@ export interface WorkspaceFilesSessionOptions {
   downloadTokenStore: DownloadTokenStore;
   paseoHome: string;
   logger: pino.Logger;
-  fileObserver?: FileObserver;
+  fileObserver?: WorkspaceFileObserver;
+  directoryObserver?: WorkspaceDirectoryObserver;
 }
 
 /**
@@ -59,8 +78,10 @@ export class WorkspaceFilesSession {
   private readonly downloadTokenStore: DownloadTokenStore;
   private readonly logger: pino.Logger;
   private readonly fileUploads: FileUploadStore;
-  private readonly fileObserver: FileObserver;
+  private readonly fileObserver: WorkspaceFileObserver;
+  private readonly directoryObserver: WorkspaceDirectoryObserver;
   private readonly fileSubscriptions = new Map<string, () => void>();
+  private readonly directorySubscriptions = new Map<string, DirectorySubscription>();
 
   constructor(options: WorkspaceFilesSessionOptions) {
     this.host = options.host;
@@ -68,6 +89,7 @@ export class WorkspaceFilesSession {
     this.logger = options.logger;
     this.fileUploads = new FileUploadStore({ paseoHome: options.paseoHome });
     this.fileObserver = options.fileObserver ?? workspaceFileObserver;
+    this.directoryObserver = options.directoryObserver ?? createFileObserver();
   }
 
   async handleFileSubscribeRequest(request: FileSubscribeRequest): Promise<void> {
@@ -117,6 +139,119 @@ export class WorkspaceFilesSession {
     });
   }
 
+  async handleDirectorySubscribeRequest(request: DirectorySubscribeRequest): Promise<void> {
+    const cwd = request.cwd.trim();
+    if (!cwd) {
+      this.host.emit({
+        type: "fs.directory.subscribe.response",
+        payload: {
+          status: "error",
+          subscriptionId: request.subscriptionId,
+          error: "工作区目录不能为空",
+          requestId: request.requestId,
+        },
+      });
+      return;
+    }
+
+    const token = {};
+    let updateTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelPendingUpdate = () => {
+      if (!updateTimer) return;
+      clearTimeout(updateTimer);
+      updateTimer = null;
+    };
+
+    try {
+      await this.releaseDirectorySubscription(request.subscriptionId);
+      const subscription = await this.directoryObserver.subscribe(cwd, (error, events) => {
+        const activeSubscription = this.directorySubscriptions.get(request.subscriptionId);
+        if (activeSubscription?.token !== token) return;
+        if (error) {
+          cancelPendingUpdate();
+          this.logger.error(
+            { err: error, cwd, subscriptionId: request.subscriptionId },
+            "工作区目录观察失败",
+          );
+          this.host.emit({
+            type: "fs.directory.update",
+            payload: {
+              status: "error",
+              subscriptionId: request.subscriptionId,
+              error: getErrorMessage(error),
+            },
+          });
+          return;
+        }
+        if (events.length === 0 || updateTimer) return;
+        updateTimer = setTimeout(() => {
+          updateTimer = null;
+          if (this.directorySubscriptions.get(request.subscriptionId)?.token !== token) return;
+          this.host.emit({
+            type: "fs.directory.update",
+            payload: { status: "changed", subscriptionId: request.subscriptionId },
+          });
+        }, DIRECTORY_UPDATE_DEBOUNCE_MS);
+      });
+      this.directorySubscriptions.set(request.subscriptionId, {
+        token,
+        subscription,
+        cancelPendingUpdate,
+      });
+      this.host.emit({
+        type: "fs.directory.subscribe.response",
+        payload: {
+          status: "subscribed",
+          subscriptionId: request.subscriptionId,
+          requestId: request.requestId,
+        },
+      });
+    } catch (error) {
+      cancelPendingUpdate();
+      this.logger.error(
+        { err: error, cwd, subscriptionId: request.subscriptionId },
+        "订阅工作区目录失败",
+      );
+      this.host.emit({
+        type: "fs.directory.subscribe.response",
+        payload: {
+          status: "error",
+          subscriptionId: request.subscriptionId,
+          error: getErrorMessage(error),
+          requestId: request.requestId,
+        },
+      });
+    }
+  }
+
+  async handleDirectoryUnsubscribeRequest(request: DirectoryUnsubscribeRequest): Promise<void> {
+    try {
+      await this.releaseDirectorySubscription(request.subscriptionId);
+      this.host.emit({
+        type: "fs.directory.unsubscribe.response",
+        payload: {
+          status: "unsubscribed",
+          subscriptionId: request.subscriptionId,
+          requestId: request.requestId,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, subscriptionId: request.subscriptionId },
+        "取消工作区目录订阅失败",
+      );
+      this.host.emit({
+        type: "fs.directory.unsubscribe.response",
+        payload: {
+          status: "error",
+          subscriptionId: request.subscriptionId,
+          error: getErrorMessage(error),
+          requestId: request.requestId,
+        },
+      });
+    }
+  }
+
   async handleFileWriteRequest(request: FileWriteRequest): Promise<void> {
     const result = await writeExplorerFile({
       root: request.cwd,
@@ -131,9 +266,22 @@ export class WorkspaceFilesSession {
     });
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
     for (const unsubscribe of this.fileSubscriptions.values()) unsubscribe();
     this.fileSubscriptions.clear();
+    for (const subscription of this.directorySubscriptions.values()) {
+      subscription.cancelPendingUpdate();
+    }
+    this.directorySubscriptions.clear();
+    await this.directoryObserver.close();
+  }
+
+  private async releaseDirectorySubscription(subscriptionId: string): Promise<void> {
+    const subscription = this.directorySubscriptions.get(subscriptionId);
+    if (!subscription) return;
+    this.directorySubscriptions.delete(subscriptionId);
+    subscription.cancelPendingUpdate();
+    await subscription.subscription.unsubscribe();
   }
 
   async handleFileExplorerRequest(request: FileExplorerRequest, source?: object): Promise<void> {
@@ -181,6 +329,12 @@ export class WorkspaceFilesSession {
           source,
         );
       } else {
+        if (request.maxBytes) {
+          const file = await getDownloadableFileInfo({ root: cwd, relativePath: requestedPath });
+          if (file.size > request.maxBytes) {
+            throw new Error("文件过大，无法显示");
+          }
+        }
         if (request.acceptBinary && this.host.hasBinaryChannel()) {
           await streamExplorerFile({ root: cwd, relativePath: requestedPath }, async (file) => {
             await this.host.emitBinary(

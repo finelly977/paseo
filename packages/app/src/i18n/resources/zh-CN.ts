@@ -1040,6 +1040,10 @@ export const zhCN: TranslationResources = {
       status: "状态",
       filter: "筛选",
       allHosts: "全部 Host",
+      projectFilter: {
+        label: "项目",
+        all: "所有项目",
+      },
       workspaceTitle: "工作区标题",
       title: "标题",
       branchName: "分支名称",
@@ -1638,6 +1642,7 @@ export const zhCN: TranslationResources = {
       loading: "正在加载文件...",
       noPreview: "没有可用预览",
       binaryPreviewUnavailable: "二进制预览不可用",
+      tooLargeToDisplay: "此文件过大，无法显示",
       failedToLoad: "加载文件失败",
       failedToLoadPreview: "加载文件预览失败",
       editor: {

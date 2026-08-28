@@ -202,9 +202,14 @@ export interface AgentRunOptions {
   clientMessageId?: string;
 }
 
+export interface AgentSteerOptions extends AgentRunOptions {
+  /** 拒绝阻塞本次追加的权限申请；提供方接受追加后必须履行该契约。 */
+  clearPendingPermissions?: boolean;
+}
+
 export type SteerResult = { status: "accepted" } | { status: "unavailable" };
 
-export interface SteerActiveTurnOptions extends AgentRunOptions {
+export interface SteerActiveTurnOptions extends AgentSteerOptions {
   expectedTurnId: string;
 }
 

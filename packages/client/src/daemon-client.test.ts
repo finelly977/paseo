@@ -1734,6 +1734,111 @@ test("listDirectory sends a list file explorer request and returns directory ent
   });
 });
 
+test("工作区目录订阅在断线重连后恢复并可完整取消", async () => {
+  vi.useFakeTimers();
+  const logger = createMockLogger();
+  const first = createMockTransport();
+  const second = createMockTransport();
+  const transports = [first, second];
+  let transportIndex = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: true, baseDelayMs: 5, maxDelayMs: 5 },
+    transportFactory: () => {
+      const transport = transports[Math.min(transportIndex, transports.length - 1)];
+      transportIndex += 1;
+      return transport.transport;
+    },
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  first.triggerOpen();
+  await connectPromise;
+  const onUpdate = vi.fn();
+  const onError = vi.fn();
+  const subscribePromise = client.subscribeWorkspaceDirectory(
+    { cwd: "/tmp/project" },
+    onUpdate,
+    onError,
+  );
+  const firstRequest = parseSentFrame(first.sent[0]);
+  const subscriptionId = z.string().parse(firstRequest.subscriptionId);
+  const firstRequestId = z.string().parse(firstRequest.requestId);
+  expect(firstRequest).toEqual({
+    type: "fs.directory.subscribe.request",
+    cwd: "/tmp/project",
+    subscriptionId,
+    requestId: firstRequestId,
+  });
+  first.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.directory.subscribe.response",
+      payload: {
+        status: "subscribed",
+        subscriptionId,
+        requestId: firstRequestId,
+      },
+    }),
+  );
+  const subscription = await subscribePromise;
+
+  first.triggerClose({ code: 1006, reason: "测试断线" });
+  await vi.advanceTimersByTimeAsync(5);
+  second.triggerOpen();
+  const secondRequest = parseSentFrame(second.sent[0]);
+  const secondRequestId = z.string().parse(secondRequest.requestId);
+  expect(secondRequest).toEqual({
+    type: "fs.directory.subscribe.request",
+    cwd: "/tmp/project",
+    subscriptionId,
+    requestId: secondRequestId,
+  });
+  second.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.directory.subscribe.response",
+      payload: {
+        status: "subscribed",
+        subscriptionId,
+        requestId: secondRequestId,
+      },
+    }),
+  );
+  second.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.directory.update",
+      payload: { status: "changed", subscriptionId },
+    }),
+  );
+  expect(onUpdate).toHaveBeenCalledTimes(1);
+  expect(onError).not.toHaveBeenCalled();
+
+  const unsubscribePromise = subscription.unsubscribe();
+  const unsubscribeRequest = parseSentFrame(second.sent[1]);
+  const unsubscribeRequestId = z.string().parse(unsubscribeRequest.requestId);
+  expect(unsubscribeRequest).toEqual({
+    type: "fs.directory.unsubscribe.request",
+    subscriptionId,
+    requestId: unsubscribeRequestId,
+  });
+  second.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.directory.unsubscribe.response",
+      payload: { status: "unsubscribed", subscriptionId, requestId: unsubscribeRequestId },
+    }),
+  );
+  await unsubscribePromise;
+  second.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.directory.update",
+      payload: { status: "changed", subscriptionId },
+    }),
+  );
+  expect(onUpdate).toHaveBeenCalledTimes(1);
+});
+
 test("readFile hides legacy base64 behind bytes", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
@@ -1865,6 +1970,61 @@ test("readFile resolves from binary file frames when the daemon supports them", 
     modifiedAt: "2026-05-02T00:00:00.000Z",
   });
   expect(new TextDecoder().decode(result.bytes)).toBe("hello");
+});
+
+test("readFile drops an old daemon's over-budget binary chunks and reports the refusal", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_file_budget_compat",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const responsePromise = client.readFile("/tmp/project", "large.txt", "req-budget", 10);
+  expect(JSON.parse(assertStr(mock.sent[0]))).toEqual({
+    type: "session",
+    message: {
+      type: "file_explorer_request",
+      cwd: "/tmp/project",
+      path: "large.txt",
+      mode: "file",
+      acceptBinary: true,
+      maxBytes: 10,
+      requestId: "req-budget",
+    },
+  });
+
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileBegin,
+      requestId: "req-budget",
+      metadata: {
+        mime: "text/plain",
+        size: 100,
+        encoding: "utf-8",
+        modifiedAt: "2026-05-02T00:00:00.000Z",
+      },
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({
+      opcode: FileTransferOpcode.FileChunk,
+      requestId: "req-budget",
+      payload: new Uint8Array(100),
+    }),
+  );
+  mock.triggerMessage(
+    encodeFileTransferFrame({ opcode: FileTransferOpcode.FileEnd, requestId: "req-budget" }),
+  );
+
+  await expect(responsePromise).rejects.toThrow("文件过大，无法显示");
 });
 
 test("uploadFile sends metadata request and file bytes as binary chunks", async () => {

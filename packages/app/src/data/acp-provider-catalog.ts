@@ -262,6 +262,15 @@ const CATALOG_DATA = [
     command: ["kimi", "acp"],
   },
   {
+    id: "minimax-code",
+    title: "MiniMax Code",
+    description: "MiniMax 的终端编程智能体",
+    version: "0.1.2",
+    iconId: "minimax-code",
+    installLink: "https://agent.minimax.io",
+    command: ["npx", "-y", "@minimax-ai/code@0.1.2", "acp"],
+  },
+  {
     id: "minion-code",
     title: "Minion Code",
     description:

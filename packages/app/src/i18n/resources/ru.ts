@@ -1070,6 +1070,10 @@ export const ru: TranslationResources = {
       status: "Статус",
       filter: "Фильтр",
       allHosts: "Все хосты",
+      projectFilter: {
+        label: "Проект",
+        all: "Все проекты",
+      },
       workspaceTitle: "Название рабочего пространства",
       title: "Название",
       branchName: "Имя ветки",
@@ -1691,6 +1695,7 @@ export const ru: TranslationResources = {
       loading: "Загрузка файла...",
       noPreview: "Предварительный просмотр недоступен",
       binaryPreviewUnavailable: "Предварительный просмотр двоичного файла недоступен.",
+      tooLargeToDisplay: "Этот файл слишком велик для отображения",
       failedToLoad: "Не удалось загрузить файл",
       failedToLoadPreview: "Не удалось загрузить предварительный просмотр файла.",
       editor: {

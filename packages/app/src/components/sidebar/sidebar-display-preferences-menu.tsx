@@ -20,6 +20,7 @@ import {
   type SidebarGroupMode,
   type SidebarProjectSortMode,
 } from "@/stores/sidebar-view-store";
+import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 
 const ThemedSettings2 = withUnistyles(Settings2);
 const filterColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -51,10 +52,14 @@ export function SidebarDisplayPreferencesMenu() {
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const projectSortMode = useSidebarViewStore((state) => state.projectSortMode);
   const hostFilters = useSidebarViewStore((state) => state.hostFilters);
+  const projectFilters = useSidebarViewStore((state) => state.projectFilters);
   const setGroupMode = useSidebarViewStore((state) => state.setGroupMode);
   const setProjectSortMode = useSidebarViewStore((state) => state.setProjectSortMode);
   const toggleHostFilter = useSidebarViewStore((state) => state.toggleHostFilter);
   const clearHostFilters = useSidebarViewStore((state) => state.clearHostFilters);
+  const toggleProjectFilter = useSidebarViewStore((state) => state.toggleProjectFilter);
+  const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
+  const { allProjects, resolvedProjectFilters } = useSidebarModel();
   const hosts = useHosts();
   const {
     settings: { workspaceTitleSource },
@@ -91,6 +96,8 @@ export function SidebarDisplayPreferencesMenu() {
 
   const showHostFilter = hosts.length > 1;
   const allHostsSelected = hostFilters.length === 0;
+  const showProjectFilter = allProjects.length > 1 || projectFilters.length > 0;
+  const allProjectsSelected = resolvedProjectFilters.length === 0;
 
   return (
     <DropdownMenu>
@@ -161,6 +168,33 @@ export function SidebarDisplayPreferencesMenu() {
             ))}
           </>
         ) : null}
+        {showProjectFilter ? (
+          <>
+            <DropdownMenuSeparator />
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuHeaderLabel}>
+                {t("sidebar.displayPreferences.projectFilter.label")}
+              </Text>
+            </View>
+            <DropdownMenuItem
+              testID="sidebar-project-filter-all"
+              selected={allProjectsSelected}
+              closeOnSelect={false}
+              onSelect={clearProjectFilters}
+            >
+              {t("sidebar.displayPreferences.projectFilter.all")}
+            </DropdownMenuItem>
+            {allProjects.map((project) => (
+              <ProjectFilterItem
+                key={project.projectKey}
+                projectKey={project.projectKey}
+                label={project.projectName}
+                selected={resolvedProjectFilters.includes(project.projectKey)}
+                onToggle={toggleProjectFilter}
+              />
+            ))}
+          </>
+        ) : null}
         <DropdownMenuSeparator />
         <View style={styles.menuHeader}>
           <Text style={styles.menuHeaderLabel}>
@@ -179,6 +213,32 @@ export function SidebarDisplayPreferencesMenu() {
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function ProjectFilterItem({
+  projectKey,
+  label,
+  selected,
+  onToggle,
+}: {
+  projectKey: string;
+  label: string;
+  selected: boolean;
+  onToggle: (projectKey: string) => void;
+}) {
+  const handleSelect = useCallback(() => onToggle(projectKey), [onToggle, projectKey]);
+  return (
+    <DropdownMenuItem
+      testID={`sidebar-project-filter-${projectKey}`}
+      selected={selected}
+      closeOnSelect={false}
+      onSelect={handleSelect}
+    >
+      <Text style={styles.optionLabel} numberOfLines={1}>
+        {label}
+      </Text>
+    </DropdownMenuItem>
   );
 }
 

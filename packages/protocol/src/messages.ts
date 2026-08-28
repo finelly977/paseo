@@ -2433,6 +2433,7 @@ export const FileExplorerRequestSchema = z.object({
   mode: z.enum(["list", "file"]),
   requestId: z.string(),
   acceptBinary: z.boolean().optional(),
+  maxBytes: z.number().int().positive().optional(),
 });
 
 export const FileVersionSchema = z.discriminatedUnion("status", [
@@ -2467,6 +2468,19 @@ export const FileSubscribeRequestSchema = z.object({
 
 export const FileUnsubscribeRequestSchema = z.object({
   type: z.literal("fs.file.unsubscribe.request"),
+  subscriptionId: z.string(),
+  requestId: z.string(),
+});
+
+export const DirectorySubscribeRequestSchema = z.object({
+  type: z.literal("fs.directory.subscribe.request"),
+  cwd: z.string(),
+  subscriptionId: z.string(),
+  requestId: z.string(),
+});
+
+export const DirectoryUnsubscribeRequestSchema = z.object({
+  type: z.literal("fs.directory.unsubscribe.request"),
   subscriptionId: z.string(),
   requestId: z.string(),
 });
@@ -2848,6 +2862,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   FileExplorerRequestSchema,
   FileSubscribeRequestSchema,
   FileUnsubscribeRequestSchema,
+  DirectorySubscribeRequestSchema,
+  DirectoryUnsubscribeRequestSchema,
   FileWriteRequestSchema,
   ProjectIconRequestSchema,
   FileDownloadTokenRequestSchema,
@@ -3100,6 +3116,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRecovery: z.boolean().optional(),
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: z.boolean().optional(),
+        // COMPAT(workspaceDirectoryObservation)：v0.2.2 新增，2027-02-23 后移除能力门控。
+        workspaceDirectoryObservation: z.boolean().optional(),
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.
         providerUsageList: z.boolean().optional(),
         // COMPAT(agentDetach): added in v0.1.98, remove gate after 2026-12-19 once daemon floor >= v0.1.98.
@@ -5203,6 +5221,55 @@ export const FileUpdateSchema = z.object({
   }),
 });
 
+export const DirectorySubscribeResponseSchema = z.object({
+  type: z.literal("fs.directory.subscribe.response"),
+  payload: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("subscribed"),
+      subscriptionId: z.string(),
+      requestId: z.string(),
+    }),
+    z.object({
+      status: z.literal("error"),
+      subscriptionId: z.string(),
+      error: z.string(),
+      requestId: z.string(),
+    }),
+  ]),
+});
+
+export const DirectoryUnsubscribeResponseSchema = z.object({
+  type: z.literal("fs.directory.unsubscribe.response"),
+  payload: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("unsubscribed"),
+      subscriptionId: z.string(),
+      requestId: z.string(),
+    }),
+    z.object({
+      status: z.literal("error"),
+      subscriptionId: z.string(),
+      error: z.string(),
+      requestId: z.string(),
+    }),
+  ]),
+});
+
+export const DirectoryUpdateSchema = z.object({
+  type: z.literal("fs.directory.update"),
+  payload: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("changed"),
+      subscriptionId: z.string(),
+    }),
+    z.object({
+      status: z.literal("error"),
+      subscriptionId: z.string(),
+      error: z.string(),
+    }),
+  ]),
+});
+
 const ProjectIconSchema = z.object({
   data: z.string(),
   mimeType: z.string(),
@@ -5771,6 +5838,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileUnsubscribeResponseSchema,
   FileWriteResponseSchema,
   FileUpdateSchema,
+  DirectorySubscribeResponseSchema,
+  DirectoryUnsubscribeResponseSchema,
+  DirectoryUpdateSchema,
   ProjectIconResponseSchema,
   FileDownloadTokenResponseSchema,
   FileUploadResponseSchema,
@@ -6218,6 +6288,11 @@ export type FileWriteRequest = z.infer<typeof FileWriteRequestSchema>;
 export type FileWriteResponse = z.infer<typeof FileWriteResponseSchema>;
 export type FileWriteResult = z.infer<typeof FileWriteResultSchema>;
 export type FileUpdate = z.infer<typeof FileUpdateSchema>;
+export type DirectorySubscribeRequest = z.infer<typeof DirectorySubscribeRequestSchema>;
+export type DirectorySubscribeResponse = z.infer<typeof DirectorySubscribeResponseSchema>;
+export type DirectoryUnsubscribeRequest = z.infer<typeof DirectoryUnsubscribeRequestSchema>;
+export type DirectoryUnsubscribeResponse = z.infer<typeof DirectoryUnsubscribeResponseSchema>;
+export type DirectoryUpdate = z.infer<typeof DirectoryUpdateSchema>;
 export type ProjectIconRequest = z.infer<typeof ProjectIconRequestSchema>;
 export type ProjectIconResponse = z.infer<typeof ProjectIconResponseSchema>;
 export type ProjectIcon = z.infer<typeof ProjectIconSchema>;

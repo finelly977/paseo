@@ -1083,6 +1083,10 @@ export const es: TranslationResources = {
       status: "Estado",
       filter: "Filtro",
       allHosts: "Todos los hosts",
+      projectFilter: {
+        label: "Proyecto",
+        all: "Todos los proyectos",
+      },
       workspaceTitle: "Título del espacio de trabajo",
       title: "Título",
       branchName: "Nombre de la rama",
@@ -1704,6 +1708,7 @@ export const es: TranslationResources = {
       loading: "Cargando archivo...",
       noPreview: "No hay vista previa disponible",
       binaryPreviewUnavailable: "Vista previa binaria no disponible",
+      tooLargeToDisplay: "Este archivo es demasiado grande para mostrarlo",
       failedToLoad: "No se pudo cargar el archivo",
       failedToLoadPreview: "No se pudo cargar la vista previa del archivo",
       editor: {

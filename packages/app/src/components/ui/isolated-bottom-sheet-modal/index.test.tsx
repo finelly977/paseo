@@ -49,8 +49,8 @@ describe("IsolatedBottomSheetModal presentation", () => {
     act(() => {
       root.render(
         <>
-          <IsolatedBottomSheetModal>Settings</IsolatedBottomSheetModal>
-          <IsolatedBottomSheetModal>Diagnostic</IsolatedBottomSheetModal>
+          <IsolatedBottomSheetModal contextBridge={null}>Settings</IsolatedBottomSheetModal>
+          <IsolatedBottomSheetModal contextBridge={null}>Diagnostic</IsolatedBottomSheetModal>
         </>,
       );
     });
@@ -65,7 +65,9 @@ describe("IsolatedBottomSheetModal presentation", () => {
   it("only replaces when the callsite asks for replacement", () => {
     act(() => {
       root.render(
-        <IsolatedBottomSheetModal presentation="replace">Selector</IsolatedBottomSheetModal>,
+        <IsolatedBottomSheetModal contextBridge={null} presentation="replace">
+          Selector
+        </IsolatedBottomSheetModal>,
       );
     });
 

@@ -2205,6 +2205,10 @@ export class Session {
       case "fs.file.unsubscribe.request":
         this.workspaceFilesSession.handleFileUnsubscribeRequest(msg);
         return undefined;
+      case "fs.directory.subscribe.request":
+        return this.workspaceFilesSession.handleDirectorySubscribeRequest(msg);
+      case "fs.directory.unsubscribe.request":
+        return this.workspaceFilesSession.handleDirectoryUnsubscribeRequest(msg);
       case "fs.file.write.request":
         return this.workspaceFilesSession.handleFileWriteRequest(msg);
       case "project_icon_request":
@@ -3144,6 +3148,8 @@ export class Session {
         prompt,
         messageId,
         runOptions,
+        // 用户输入或语音消息会回答当前阻塞智能体的权限申请。
+        clearPendingPermissions: true,
         logger: this.sessionLogger,
       });
       return { ok: true };
@@ -6632,6 +6638,7 @@ export class Session {
           prompt,
           messageId: msg.messageId,
           activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt",
+          clearPendingPermissions: true,
           logger: this.sessionLogger,
         });
       } catch (error) {
@@ -6906,7 +6913,7 @@ export class Session {
     this.checkoutSession.cleanup();
 
     this.workspaceGitObserver.dispose();
-    this.workspaceFilesSession.dispose();
+    await this.workspaceFilesSession.dispose();
   }
 }
 

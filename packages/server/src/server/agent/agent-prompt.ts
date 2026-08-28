@@ -27,6 +27,8 @@ export interface StartAgentRunOptions {
   replaceRunning?: boolean;
   activeTurnBehavior?: ActiveTurnBehavior;
   runOptions?: AgentRunOptions;
+  /** 要求提供方拒绝阻塞本次运行中追加的权限申请。 */
+  clearPendingPermissions?: boolean;
 }
 
 export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started";
@@ -47,7 +49,10 @@ async function steerOrReplaceActiveRun(
   if (options?.activeTurnBehavior !== "steer") {
     return null;
   }
-  const result = await agentManager.steerOrReplaceActiveTurn(agentId, prompt, options.runOptions);
+  const steerOptions = options.clearPendingPermissions
+    ? { ...options.runOptions, clearPendingPermissions: true }
+    : options.runOptions;
+  const result = await agentManager.steerOrReplaceActiveTurn(agentId, prompt, steerOptions);
   if (result.status === "steered") {
     return { disposition: "steered" };
   }
@@ -193,6 +198,8 @@ export interface SendPromptToAgentParams {
    * schedule fires, notify-on-finish).
    */
   unarchive?: boolean;
+  /** 参见 {@link StartAgentRunOptions.clearPendingPermissions}。 */
+  clearPendingPermissions?: boolean;
   logger: Logger;
 }
 
@@ -205,14 +212,29 @@ export interface StartCreatedAgentInitialPromptParams {
   logger: Logger;
 }
 
-const AGENT_RUN_START_TIMEOUT_MS = 15_000;
+/**
+ * 消息派发后等待回合进入“已启动”的外层上限。
+ * 该上限包裹提供方启动过程，必须大于最慢提供方自己的启动预算；否则会提前终止仍在合法启动中的提供方。
+ * 当前 OpenCode 最多使用 30 秒启动服务并在同一预算内创建会话，因此这里保留明显余量。
+ * 此模块与提供方无关，故意不直接依赖某个提供方的内部常量。
+ */
+const AGENT_RUN_START_TIMEOUT_MS = 60_000;
 
 export async function waitForAgentRunStartWithTimeout(
   agentManager: AgentManager,
   agentId: string,
 ): Promise<void> {
+  const provider = agentManager.getAgent(agentId)?.provider ?? "未知提供方";
   const startAbort = new AbortController();
-  const startTimeout = setTimeout(() => startAbort.abort("timeout"), AGENT_RUN_START_TIMEOUT_MS);
+  const startTimeout = setTimeout(
+    () =>
+      startAbort.abort(
+        new Error(
+          `${provider} 回合在 ${AGENT_RUN_START_TIMEOUT_MS / 1000} 秒内未启动（阶段：回合启动）`,
+        ),
+      ),
+    AGENT_RUN_START_TIMEOUT_MS,
+  );
 
   try {
     await agentManager.waitForAgentRunStart(agentId, { signal: startAbort.signal });
@@ -262,6 +284,7 @@ export async function sendPromptToAgent(
   return await startAgentRun(params.agentManager, params.agentId, params.prompt, params.logger, {
     replaceRunning: true,
     activeTurnBehavior: params.activeTurnBehavior,
+    clearPendingPermissions: params.clearPendingPermissions,
     runOptions,
   });
 }

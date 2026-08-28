@@ -1058,6 +1058,10 @@ export const en = {
       status: "Status",
       filter: "Filter",
       allHosts: "All hosts",
+      projectFilter: {
+        label: "Project",
+        all: "All projects",
+      },
       workspaceTitle: "Workspace title",
       title: "Title",
       branchName: "Branch name",
@@ -1668,6 +1672,7 @@ export const en = {
       loading: "Loading file...",
       noPreview: "No preview available",
       binaryPreviewUnavailable: "Binary preview unavailable",
+      tooLargeToDisplay: "This file is too large to display",
       failedToLoad: "Failed to load file",
       failedToLoadPreview: "Failed to load file preview",
       editor: {

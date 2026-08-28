@@ -1060,6 +1060,10 @@ export const ja: TranslationResources = {
       status: "状態",
       filter: "フィルター",
       allHosts: "すべてのホスト",
+      projectFilter: {
+        label: "プロジェクト",
+        all: "すべてのプロジェクト",
+      },
       workspaceTitle: "ワークスペースのタイトル",
       title: "タイトル",
       branchName: "ブランチ名",
@@ -1674,6 +1678,7 @@ export const ja: TranslationResources = {
       loading: "ファイルを読み込み中...",
       noPreview: "プレビューが利用できません",
       binaryPreviewUnavailable: "バイナリプレビューが利用できません",
+      tooLargeToDisplay: "このファイルは大きすぎて表示できません",
       failedToLoad: "ファイルの読み込みに失敗しました",
       failedToLoadPreview: "ファイルプレビューの読み込みに失敗しました",
       editor: {

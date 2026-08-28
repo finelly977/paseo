@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import pino from "pino";
 import {
   decodeFileTransferFrame,
@@ -14,11 +14,18 @@ import {
   type WorkspaceFilesSessionHost,
 } from "./workspace-files-session.js";
 import { DownloadTokenStore } from "../../file-download/token-store.js";
+import type {
+  FileChange,
+  FileObserver,
+  FileObserverCallback,
+  FileObserverDiagnostics,
+} from "../../file-observer/index.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 
 const tempDirs: string[] = [];
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -34,6 +41,7 @@ function makeSubsystem(
   options: {
     hasBinaryChannel?: boolean;
     emitBinary?: (frame: Uint8Array) => Promise<void> | void;
+    directoryObserver?: FileObserver;
   } = {},
 ) {
   const emitted: SessionOutboundMessage[] = [];
@@ -53,6 +61,7 @@ function makeSubsystem(
     downloadTokenStore: new DownloadTokenStore({ ttlMs: 60_000 }),
     paseoHome,
     logger: pino({ level: "silent" }),
+    directoryObserver: options.directoryObserver,
   });
   return {
     subsystem,
@@ -65,6 +74,56 @@ function makeSubsystem(
   };
 }
 
+class TestDirectoryObserver implements FileObserver {
+  private callback: FileObserverCallback | null = null;
+  unsubscribeCount = 0;
+  closeCount = 0;
+
+  async subscribe(_directory: string, callback: FileObserverCallback) {
+    this.callback = callback;
+    return {
+      updateIgnore: async () => {},
+      unsubscribe: async () => {
+        this.unsubscribeCount += 1;
+      },
+    };
+  }
+
+  emit(events: FileChange[]): void {
+    if (!this.callback) throw new Error("目录观察器尚未订阅");
+    this.callback(null, events);
+  }
+
+  getDiagnostics(): FileObserverDiagnostics {
+    return {
+      activeObservationCount: 0,
+      nativeHandleCount: 0,
+      nativeTrackedFileCount: 0,
+      pendingEventCount: 0,
+      pendingReconciliationWorkCount: 0,
+      reconciliationInFlightCount: 0,
+      reconciliationCount: 0,
+      scopedReconciliationCount: 0,
+      fullReconciliationCount: 0,
+      reconciliationFailureCount: 0,
+      observerFailureCount: 0,
+      directoryLimitFailureCount: 0,
+      nativeEventCount: 0,
+      nativeChangeEventCount: 0,
+      nativeRenameEventCount: 0,
+      nativePathlessEventCount: 0,
+      nativeClassificationCount: 0,
+      nativeShallowScanCount: 0,
+      lastReconciliationDurationMs: 0,
+      maxReconciliationDurationMs: 0,
+    };
+  }
+
+  async close(): Promise<void> {
+    this.closeCount += 1;
+  }
+}
+
 function uploadFrame(args: Parameters<typeof encodeFileTransferFrame>[0]): FileTransferFrame {
   const frame = decodeFileTransferFrame(encodeFileTransferFrame(args));
   if (!frame) {
@@ -74,6 +133,60 @@ function uploadFrame(args: Parameters<typeof encodeFileTransferFrame>[0]): FileT
 }
 
 describe("WorkspaceFilesSession", () => {
+  test("batches directory changes and stops updates after unsubscribe", async () => {
+    vi.useFakeTimers();
+    const cwd = makeDir("workspace-directory-observation-");
+    const directoryObserver = new TestDirectoryObserver();
+    const { subsystem, emitted } = makeSubsystem({ directoryObserver });
+
+    await subsystem.handleDirectorySubscribeRequest({
+      type: "fs.directory.subscribe.request",
+      cwd,
+      subscriptionId: "directory-1",
+      requestId: "request-subscribe",
+    });
+    expect(emitted).toEqual([
+      {
+        type: "fs.directory.subscribe.response",
+        payload: {
+          status: "subscribed",
+          subscriptionId: "directory-1",
+          requestId: "request-subscribe",
+        },
+      },
+    ]);
+
+    directoryObserver.emit([
+      { type: "create", path: join(cwd, "first.txt") },
+      { type: "update", path: join(cwd, "second.txt") },
+    ]);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(emitted.at(-1)).toEqual({
+      type: "fs.directory.update",
+      payload: { status: "changed", subscriptionId: "directory-1" },
+    });
+
+    await subsystem.handleDirectoryUnsubscribeRequest({
+      type: "fs.directory.unsubscribe.request",
+      subscriptionId: "directory-1",
+      requestId: "request-unsubscribe",
+    });
+    expect(directoryObserver.unsubscribeCount).toBe(1);
+    directoryObserver.emit([{ type: "delete", path: join(cwd, "first.txt") }]);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(emitted.at(-1)).toEqual({
+      type: "fs.directory.unsubscribe.response",
+      payload: {
+        status: "unsubscribed",
+        subscriptionId: "directory-1",
+        requestId: "request-unsubscribe",
+      },
+    });
+
+    await subsystem.dispose();
+    expect(directoryObserver.closeCount).toBe(1);
+  });
+
   test("lists directory entries", async () => {
     const cwd = makeDir("workspace-files-list-");
     writeFileSync(join(cwd, "a.txt"), "alpha");
@@ -141,6 +254,30 @@ describe("WorkspaceFilesSession", () => {
       FileTransferOpcode.FileBegin,
       FileTransferOpcode.FileChunk,
       FileTransferOpcode.FileEnd,
+    ]);
+  });
+
+  test("rejects an over-budget file before opening a binary transfer", async () => {
+    const cwd = makeDir("workspace-files-read-budget-");
+    writeFileSync(join(cwd, "notes.txt"), "hello world");
+    const { subsystem, emitted, binary } = makeSubsystem({ hasBinaryChannel: true });
+
+    await subsystem.handleFileExplorerRequest({
+      type: "file_explorer_request",
+      cwd,
+      path: "notes.txt",
+      mode: "file",
+      requestId: "req-read-budget",
+      acceptBinary: true,
+      maxBytes: 5,
+    });
+
+    expect(binary).toEqual([]);
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        type: "file_explorer_response",
+        payload: expect.objectContaining({ error: "文件过大，无法显示" }),
+      }),
     ]);
   });
 

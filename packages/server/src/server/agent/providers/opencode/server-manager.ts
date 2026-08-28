@@ -21,6 +21,11 @@ import {
   type OpenCodeEventSource,
 } from "./event-consumer.js";
 
+/**
+ * OpenCode 进程启动后变为可用的等待预算。插件较多的安装在冷启动时经常超过十秒，
+ * 因此所有依赖服务端完成启动的等待都共用这份预算。
+ */
+export const OPENCODE_SERVER_STARTUP_TIMEOUT_MS = 30_000;
 const OPENCODE_SERVER_GRACEFUL_SHUTDOWN_TIMEOUT_MS = 5_000;
 const OPENCODE_SERVER_FORCE_SHUTDOWN_TIMEOUT_MS = 1_000;
 
@@ -385,7 +390,7 @@ export class OpenCodeServerManager implements OpenCodeServerManagerLike {
         if (!started) {
           failStartup(new Error(buildStartupErrorMessage("OpenCode server startup timeout")));
         }
-      }, 30_000);
+      }, OPENCODE_SERVER_STARTUP_TIMEOUT_MS);
 
       serverProcess.stdout?.on("data", (data: Buffer) => {
         const output = data.toString();

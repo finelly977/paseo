@@ -3852,23 +3852,23 @@ export class CodexAppServerAgentSession implements AgentSession {
     options: { allowArchivedHistory?: boolean } = {},
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
+    const params: Record<string, unknown> = { threadId: this.currentThreadId };
+    const developerInstructions = composeSystemPromptParts(
+      this.config.systemPrompt,
+      this.config.daemonAppendSystemPrompt,
+    );
+    if (developerInstructions) {
+      params.developerInstructions = developerInstructions;
+    }
+    const codexConfig = this.buildCodexInnerConfig();
+    if (codexConfig) {
+      params.config = codexConfig;
+    }
     try {
       const loaded = toObjectRecord(await this.client.request("thread/loaded/list", {}));
       const ids = Array.isArray(loaded?.data) ? loaded.data : [];
       if (ids.includes(this.currentThreadId)) {
         return;
-      }
-      const params: Record<string, unknown> = { threadId: this.currentThreadId };
-      const developerInstructions = composeSystemPromptParts(
-        this.config.systemPrompt,
-        this.config.daemonAppendSystemPrompt,
-      );
-      if (developerInstructions) {
-        params.developerInstructions = developerInstructions;
-      }
-      const codexConfig = this.buildCodexInnerConfig();
-      if (codexConfig) {
-        params.config = codexConfig;
       }
       await this.client.request("thread/resume", params);
     } catch (error) {
@@ -3882,6 +3882,18 @@ export class CodexAppServerAgentSession implements AgentSession {
           { threadId },
           "Loading archived Codex thread history without resuming the native session",
         );
+        return;
+      }
+      if (isArchivedCodexThreadResumeError(error, threadId)) {
+        try {
+          await this.client.request("thread/unarchive", { threadId });
+        } catch (unarchiveError) {
+          if (!isCodexAlreadyUnarchivedError(unarchiveError, threadId)) {
+            throw unarchiveError;
+          }
+        }
+        await this.client.request("thread/resume", params);
+        this.logger.info({ threadId }, "已取消归档 Codex 原生会话并恢复活动智能体");
         return;
       }
       this.logger.warn({ error, threadId }, "Failed to resume persisted Codex thread");
@@ -4227,6 +4239,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       if (acknowledgedTurnId !== nativeTurnId) {
         throw new Error("Codex returned an invalid steer acknowledgement");
       }
+      if (options.clearPendingPermissions) {
+        await this.clearPendingPermissionsForSteer();
+      }
       return { status: "accepted" };
     } catch (error) {
       if (isDefinitiveCodexSteerRejection(error)) return { status: "unavailable" };
@@ -4530,7 +4545,40 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
+  private async clearPendingPermissionsForSteer(): Promise<void> {
+    const requestIds = Array.from(this.pendingPermissionHandlers.keys());
+    for (const requestId of requestIds) {
+      if (!this.pendingPermissionHandlers.has(requestId)) continue;
+      await this.respondToPermission(requestId, {
+        behavior: "deny",
+        message: "用户没有批准，而是回复了一条消息；该消息会紧接着送达。",
+      });
+    }
+  }
+
   private resolvePlanPermission(requestId: string, resolution: AgentPermissionResponse): void {
+    if (resolution.behavior === "deny") {
+      // 权限响应、新提示和已接受的追加消息最终都会从这里进入拒绝状态，
+      // 因此时间线记录必须在这里创建，不能只放在权限响应处理器中。
+      const planText =
+        this.pendingPermissionHandlers.get(requestId)?.planText ??
+        this.pendingPermissions.get(requestId)?.metadata?.planText;
+      if (typeof planText === "string") {
+        this.emitEvent({
+          type: "timeline",
+          provider: CODEX_PROVIDER,
+          item: {
+            type: "tool_call",
+            callId: requestId,
+            name: "plan_approval",
+            status: "completed",
+            error: null,
+            detail: { type: "plan", text: planText },
+            metadata: { approved: false },
+          },
+        });
+      }
+    }
     this.pendingPermissionHandlers.delete(requestId);
     this.pendingPermissions.delete(requestId);
     this.resolvedPermissionRequests.add(requestId);

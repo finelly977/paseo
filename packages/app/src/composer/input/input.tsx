@@ -59,6 +59,7 @@ import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useComposerHeightMirror } from "./height-mirror";
+import { resolveComposerInputHeightStyle, shouldScrollComposerInput } from "./height-style";
 import {
   resolveSendTooltipLabel,
   resolveSubmitAccessibilityLabel,
@@ -1001,20 +1002,6 @@ function resolveMaxInputHeight(windowHeight: number): number {
   return Math.max(DEFAULT_MAX_INPUT_HEIGHT, Math.floor(windowHeight * MAX_INPUT_VIEWPORT_RATIO));
 }
 
-function computeTextInputHeightStyle(inputHeight: number, maxInputHeight: number) {
-  if (isWeb) {
-    return {
-      height: inputHeight,
-      minHeight: MIN_INPUT_HEIGHT,
-      maxHeight: maxInputHeight,
-    };
-  }
-  return {
-    minHeight: MIN_INPUT_HEIGHT,
-    maxHeight: maxInputHeight,
-  };
-}
-
 function isTextAreaLike(v: unknown): v is TextAreaHandle {
   return typeof v === "object" && v !== null && "scrollHeight" in v;
 }
@@ -1689,7 +1676,15 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [inputWrapperStyle, surfacePresentation.input.opacity],
     );
     const textInputStyle = useMemo(
-      () => [styles.textInput, computeTextInputHeightStyle(inputHeight, maxInputHeight)],
+      () => [
+        styles.textInput,
+        resolveComposerInputHeightStyle({
+          inputHeight,
+          minInputHeight: MIN_INPUT_HEIGHT,
+          maxInputHeight,
+          applyMeasuredHeight: isWeb,
+        }),
+      ],
       [inputHeight, maxInputHeight],
     );
     const sendButtonCombinedStyle = useMemo(
@@ -1747,7 +1742,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               onBlur={handleInputBlur}
               style={textInputStyle}
               multiline
-              scrollEnabled={isWeb ? inputHeight >= maxInputHeight : true}
+              scrollEnabled={shouldScrollComposerInput({ inputHeight, maxInputHeight })}
               onContentSizeChange={handleContentSizeChange}
               editable={!isDictating && !isRealtimeVoiceForCurrentAgent && !disabled}
               onKeyPress={shouldHandleWebKeyPress ? handleDesktopKeyPress : undefined}
