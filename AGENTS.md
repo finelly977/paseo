@@ -63,6 +63,16 @@
 - 报告使用了哪个发布标签、合并了什么、跳过了什么以及原因。
 - 同步维护 [docs/fork-features.md](docs/fork-features.md)，删除已被上游完全吸收的二开条目，更新仍有差异的条目。
 
+### 5. 合并记录（关键）
+
+[upstream-merges/](upstream-merges/) 是上游合并进度的唯一记录，一个上游标签一个文件，放在 [upstream-merges/tags/](upstream-merges/tags/) 下。
+
+- 分诊或合并任何上游标签时，必须在该标签的记录文件中登记结果：合并了什么、冲突如何解决、丢弃了什么以及原因。
+- **丢弃必须写原因**，让后续同步不必重新判断同一个提交。
+- 记录文件与 [docs/fork-features.md](docs/fork-features.md) 分工不同：前者记录“对上游每个提交做了什么”，后者记录“当前仍有效的二开差异”。合并改变了二开行为时，两者都要更新。
+- 当前分诊水位线记在 [upstream-merges/README.md](upstream-merges/README.md)，`v0.4.0` 及更早不再追溯。
+- 不要用 `git describe` 或“落后多少提交”判断进度：挑选时做过适配的提交 patch-id 与上游不同，这两个指标都会严重低估实际覆盖率。
+
 ### 已发布版本的默认命令
 
 ```powershell
