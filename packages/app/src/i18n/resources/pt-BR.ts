@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const ptBR: TranslationResources = {
@@ -1629,6 +1630,8 @@ export const ptBR: TranslationResources = {
       relayDisabled: "Relay não está ativado. Ative o relay para parear um dispositivo.",
       unavailable: "Oferta de pareamento indisponível.",
       hint: "Escaneie este QR code com o Paseo no seu celular ou copie o link abaixo.",
+      securityWarning:
+        "Trate este link de pareamento como uma senha. Qualquer pessoa com o link pode acessar este daemon.",
       qrUnavailable: "QR code indisponível.",
       retry: "Tentar novamente",
       copy: "Copiar",
@@ -1847,8 +1850,10 @@ export const ptBR: TranslationResources = {
       providers: "Provedores",
       usage: "Uso",
       terminals: "Terminais",
+      plugins: pluginSettings["pt-BR"].title,
       host: "Visão geral",
     },
+    plugins: pluginSettings["pt-BR"],
     general: {
       title: "Geral",
       browserData: {

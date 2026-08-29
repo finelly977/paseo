@@ -5,6 +5,7 @@ import {
   WorkspaceGitHubRuntimePayloadSchema,
 } from "@getpaseo/protocol/messages";
 import { AgentProviderSchema } from "@getpaseo/protocol/provider-manifest";
+import type { PluginTimelineData } from "@getpaseo/plugin";
 import {
   normalizeProjectDescriptor,
   normalizeWorkspaceDescriptor,
@@ -29,6 +30,16 @@ const TimelinePositionSchema = z.strictObject({
   epoch: z.string(),
   seq: z.number().int().nonnegative(),
 });
+const PluginTimelineDataSchema: z.ZodType<PluginTimelineData> = z.lazy(() =>
+  z.union([
+    z.null(),
+    z.boolean(),
+    z.number(),
+    z.string(),
+    z.array(PluginTimelineDataSchema),
+    z.record(z.string(), PluginTimelineDataSchema),
+  ]),
+);
 
 const TimelineItemBaseShape = {
   id: z.string(),
@@ -95,6 +106,14 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     status: z.enum(["loading", "completed"]),
     trigger: z.enum(["auto", "manual"]).optional(),
     preTokens: z.number().nonnegative().optional(),
+  }),
+  z.strictObject({
+    ...TimelineItemBaseShape,
+    kind: z.literal("plugin"),
+    pluginId: z.string(),
+    itemKind: z.string(),
+    version: z.number().int().positive(),
+    data: PluginTimelineDataSchema,
   }),
 ]);
 
@@ -322,6 +341,15 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
       };
     case "tool_call":
       return null;
+    case "plugin":
+      return {
+        ...base,
+        kind: item.kind,
+        pluginId: item.pluginId,
+        itemKind: item.itemKind,
+        version: item.version,
+        data: item.data,
+      };
   }
 }
 
@@ -374,6 +402,15 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
         status: item.status,
         ...(item.trigger ? { trigger: item.trigger } : {}),
         ...(item.preTokens !== undefined ? { preTokens: item.preTokens } : {}),
+      };
+    case "plugin":
+      return {
+        ...base,
+        kind: item.kind,
+        pluginId: item.pluginId,
+        itemKind: item.itemKind,
+        version: item.version,
+        data: item.data,
       };
   }
 }

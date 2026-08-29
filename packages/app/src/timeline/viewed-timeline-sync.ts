@@ -3,6 +3,7 @@ import {
   planInitialAgentTimelineSync,
   planResumeTimelineSync,
   planTimelineCatchUpAfter,
+  planTimelineTailFetch,
   type ProjectedTimelineForwardFetchPlan,
 } from "./timeline-sync-plan";
 
@@ -43,6 +44,7 @@ export interface ViewedTimelineUiBridge {
   subscribe(listener: () => void): () => void;
   getAgentTimelineStatus(agentId: string): ViewedTimelineStatus;
   retryVisibleAgentTimeline(agentId: string): void;
+  reprojectVisibleTimelines(): void;
 }
 
 export interface ViewedTimelineSync extends ViewedTimelineUiBridge {
@@ -50,6 +52,7 @@ export interface ViewedTimelineSync extends ViewedTimelineUiBridge {
   setConnected(connected: boolean): void;
   setDeliveryMode(mode: TimelineDeliveryMode): void;
   recoverGap(agentId: string, cursor: { epoch: string; endSeq: number }): void;
+  reprojectAgentTimeline(agentId: string): void;
   dispose(): void;
 }
 
@@ -339,12 +342,6 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     }
   };
 
-  const retryFailedCatchUps = () => {
-    for (const agentId of acknowledged) {
-      if (catchUps.get(agentId)?.status === "error") startCatchUp(agentId);
-    }
-  };
-
   const retryVisibleAgentTimeline = (agentId: string) => {
     if (!isDesired(agentId) || manualRetries.has(agentId)) return;
     const catchUp = catchUps.get(agentId);
@@ -383,8 +380,6 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     }
     if (sameAgentIds(nextDesired, desired)) {
       if (statusChanged) notifyListeners();
-      if (deliveryMode === "selective" && membershipNeedsRetry) void reconcileMembership();
-      retryFailedCatchUps();
       return;
     }
 
@@ -514,6 +509,22 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         request: planTimelineCatchUpAfter({ epoch: cursor.epoch, seq: cursor.endSeq }),
         supersede: true,
       });
+    },
+    reprojectAgentTimeline(agentId) {
+      if (!active || !connected || !isDesired(agentId)) return;
+      startCatchUp(agentId, {
+        request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+        supersede: true,
+      });
+    },
+    reprojectVisibleTimelines() {
+      if (!active || !connected) return;
+      for (const agentId of desired) {
+        startCatchUp(agentId, {
+          request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+          supersede: true,
+        });
+      }
     },
     dispose() {
       disposed = true;

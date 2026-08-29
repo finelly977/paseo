@@ -304,8 +304,11 @@ const agentResponseMocks = vi.hoisted(() => ({
 }));
 
 const spawnMocks = vi.hoisted(() => ({
-  execCommand: vi.fn(),
   spawnWorkspaceScript: vi.fn(),
+}));
+
+const gitCommandMocks = vi.hoisted(() => ({
+  runGitCommand: vi.fn(),
 }));
 
 const paseoWorktreeServiceMocks = vi.hoisted(() => ({
@@ -356,11 +359,11 @@ vi.mock("./paseo-worktree-service.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../utils/spawn.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../utils/spawn.js")>();
+vi.mock("../utils/run-git-command.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/run-git-command.js")>();
   return {
     ...actual,
-    execCommand: spawnMocks.execCommand,
+    runGitCommand: gitCommandMocks.runGitCommand,
   };
 });
 
@@ -421,6 +424,7 @@ interface SessionForTestOptions {
   messages?: unknown[];
   targetedMessages?: Array<{ source: object; message: SessionOutboundMessage }>;
   binaryMessages?: Uint8Array[];
+  pluginRuntime?: SessionOptions["pluginRuntime"];
 }
 
 function createSessionForTest(options: SessionForTestOptions = {}): Session {
@@ -507,6 +511,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
       })),
       onChange: vi.fn(() => () => {}),
     }),
+    pluginRuntime: options.pluginRuntime,
     stt: options.stt ?? null,
     tts: null,
     terminalManager: options.terminalManager ?? null,
@@ -524,6 +529,89 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   };
   return new Session(sessionOptions);
 }
+
+test("routes plugin requests and releases its owned catalog subscription on cleanup", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const listeners = new Set<(pluginId: string) => void>();
+  const releasePluginSubscription = vi.fn((listener: (pluginId: string) => void) => {
+    listeners.delete(listener);
+  });
+  const plugin = {
+    id: "example",
+    path: "/plugins/example",
+    enabled: true,
+    status: "running" as const,
+  };
+  const pluginRuntime: NonNullable<SessionOptions["pluginRuntime"]> = {
+    listPlugins: () => [plugin],
+    getLogs: () => [
+      {
+        sequence: 1,
+        timestamp: "2026-08-16T12:00:00.000Z",
+        stream: "stdout",
+        message: "ready",
+      },
+    ],
+    installDirectory: async () => plugin,
+    inspectDirectory: async () => ({ id: "example" }),
+    reloadPlugin: async () => plugin,
+    enablePlugin: async () => plugin,
+    disablePlugin: async () => ({ ...plugin, enabled: false, status: "disabled" }),
+    removePlugin: async () => undefined,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => releasePluginSubscription(listener);
+    },
+    catalog: () => [{ id: "example", clientBundle: "bundle" }],
+    invokePluginRpc: async () => ({ ok: true }),
+  };
+  const session = createSessionForTest({ messages, pluginRuntime });
+
+  await session.handleMessage({ type: "plugin.list.request", requestId: "list" });
+  await session.handleMessage({
+    type: "plugin.logs.get.request",
+    requestId: "logs",
+    pluginId: "example",
+  });
+  await session.handleMessage({
+    type: "plugin.directory.install.request",
+    requestId: "install",
+    path: "/plugins/example",
+  });
+  await session.handleMessage({
+    type: "plugin.reload.request",
+    requestId: "reload",
+    pluginId: "example",
+  });
+  await session.handleMessage({
+    type: "plugin.disable.request",
+    requestId: "disable",
+    pluginId: "example",
+  });
+  await session.handleMessage({
+    type: "plugin.remove.request",
+    requestId: "remove",
+    pluginId: "example",
+  });
+  for (const listener of listeners) listener("example");
+
+  expect(messages.map((message) => message.type)).toEqual([
+    "plugin.list.response",
+    "plugin.logs.get.response",
+    "plugin.directory.install.response",
+    "plugin.reload.response",
+    "plugin.disable.response",
+    "plugin.remove.response",
+    "status",
+  ]);
+  expect(messages.at(-1)).toEqual({
+    type: "status",
+    payload: { status: "plugin_catalog_changed", pluginId: "example" },
+  });
+  await session.cleanup();
+  expect(listeners.size).toBe(0);
+  expect(releasePluginSubscription).toHaveBeenCalledOnce();
+});
 
 describe("session authorization scopes", () => {
   test("rejects an RPC outside an exact grant with the generic RPC error", async () => {
@@ -4251,7 +4339,7 @@ describe("session stash mutation handling", () => {
     const messages: unknown[] = [];
     const workspaceGitService = { getSnapshot: vi.fn().mockResolvedValue({}) };
     const session = createSessionForTest({ workspaceGitService, messages });
-    spawnMocks.execCommand.mockResolvedValue({
+    gitCommandMocks.runGitCommand.mockResolvedValue({
       stdout: "",
       stderr: "",
       exitCode: 0,
@@ -4266,6 +4354,10 @@ describe("session stash mutation handling", () => {
       requestId: "request-stash-push",
     });
 
+    expect(gitCommandMocks.runGitCommand).toHaveBeenCalledWith(
+      ["stash", "push", "--include-untracked", "-m", "paseo-auto-stash: feature"],
+      { cwd: "/tmp/repo", timeout: 120_000 },
+    );
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
       includeForge: false,
@@ -4286,7 +4378,7 @@ describe("session stash mutation handling", () => {
     const messages: unknown[] = [];
     const workspaceGitService = { getSnapshot: vi.fn().mockResolvedValue({}) };
     const session = createSessionForTest({ workspaceGitService, messages });
-    spawnMocks.execCommand.mockResolvedValue({
+    gitCommandMocks.runGitCommand.mockResolvedValue({
       stdout: "",
       stderr: "",
       exitCode: 0,
@@ -4301,6 +4393,10 @@ describe("session stash mutation handling", () => {
       requestId: "request-stash-pop",
     });
 
+    expect(gitCommandMocks.runGitCommand).toHaveBeenCalledWith(["stash", "pop", "stash@{0}"], {
+      cwd: "/tmp/repo",
+      timeout: 120_000,
+    });
     expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith("/tmp/repo", {
       force: true,
       includeForge: false,

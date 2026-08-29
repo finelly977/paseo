@@ -330,7 +330,7 @@ If we ever need to avoid the transition entirely, store at least the theme prefe
 
 ## Runtime Theme Patching For User Preferences
 
-Appearance settings (UI/mono font family, font sizes, syntax-highlight theme) are applied by patching every registered theme at runtime with `UnistylesRuntime.updateTheme(name, updater)` — not by threading preference reads through components. `applyAppearance` in `packages/app/src/screens/settings/appearance/apply-appearance.ts` runs from a `ProvidersWrapper` effect on settings load/change and loops all six theme keys, returning `{ ...theme, fontFamily, fontSize, lineHeight, colors.syntax }`.
+外观设置（界面/等宽字体、字号和语法高亮主题）由 `packages/app/src/appearance` 统一管理。`AppearanceProvider` 在设置或插件主题目录变化时调用 `UnistylesRuntime.updateTheme(name, updater)`，给全部内置主题和两个插件保留槽叠加 `{ ...theme, fontFamily, fontSize, lineHeight, colors.syntax }`，组件不直接订阅设置。
 
 This works without `useUnistyles()` because every consumer already reads these tokens through `StyleSheet.create((theme) => …)` (or the `withUnistyles`/`uniProps` path for the markdown renderer), so patching the theme repaints tracked views through the ShadowRegistry with no React re-render.
 
@@ -341,6 +341,7 @@ This works without `useUnistyles()` because every consumer already reads these t
 Gotchas:
 
 - **更新全部主题，而不只更新当前主题。** 当前主题可能切换，自动主题也可能随系统在亮色和暗色之间变化；更新全部主题可确保每个可选主题都持有最新外观。初始化和设置变更统一先执行 `applyAppearance`，再调用 `setTheme` 或 `setAdaptiveThemes`，避免新激活主题短暂显示旧字号。副作用只依赖外观设置值，不依赖 Unistyles 当前主题，因此不会形成循环。
+- **插件主题先重建保留槽，再应用用户外观。** 插件只提供小型浅色或深色调色板；宿主先重建对应的 `pluginLight` 或 `pluginDark` 槽，再叠加用户当前的字体、字号、行高和语法高亮设置，避免切换插件主题后把二开外观设置恢复成默认值。
 - **Narrow the discriminated union before spreading.** `updateTheme`'s updater returns the theme union; spreading the union widens `colorScheme` to `"light" | "dark"`, which is assignable to neither concrete member. Branch on `t.colorScheme` so each branch spreads a single narrowed theme type (no `as`).
 - **`lineHeight.diff` is the code/diff line-height axis** — it is coupled to the code-font-size control (≈ `codeFontSize * 1.5`). Do NOT use it for prose. Markdown body line-height scales with the UI ramp (`Math.round(theme.fontSize.base * 1.4)`); routing prose through `lineHeight.diff` clips text at small code sizes.
 - **High-churn draft values** (live-while-typing in the appearance preview) bypass the theme: apply them as inline styles marked with `inlineUnistylesStyle` so per-keystroke values don't grow the `#unistyles-web` CSS registry.

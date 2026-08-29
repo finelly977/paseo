@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: "Paseo CLI reference: manage agents, workspaces, scripts, schedules, daemons, and permissions from your terminal."
+description: "Paseo CLI reference: manage agents, workspaces, plugins, scripts, schedules, daemons, and permissions from your terminal."
 nav: CLI
 order: 3
 category: Getting started
@@ -112,6 +112,32 @@ By default, Paseo selects the workspace whose directory is the current directory
 
 The output includes each script's lifecycle and supervised terminal ID. Services also include their assigned port, proxy URL, and health. See [Git worktrees](/docs/worktrees#scripts-and-services) for `paseo.json` configuration.
 
+## Plugins
+
+Create and manage trusted plugins on a daemon:
+
+```bash
+paseo plugin init /absolute/path/to/plugin
+paseo plugin install /absolute/path/to/plugin
+paseo plugin add owner/repository
+paseo plugin add https://git.example.com/owner/repository.git --ref main
+paseo plugin status
+paseo plugin update my-plugin
+paseo plugin update --all
+paseo plugin ls
+paseo plugin reload my-plugin
+paseo plugin logs my-plugin
+paseo plugin disable my-plugin
+paseo plugin enable my-plugin
+paseo plugin remove my-plugin
+```
+
+GitHub shorthand checks an existing host directory first. Use `--path <directory>` for a plugin in
+a monorepo. `paseo plugin logs <id>` returns the plugin's recent daemon-side stdout and stderr. Add `--json` for
+structured entries or `--host <target>` for another daemon. See the
+[Plugin reference](/docs/plugins/reference) for installation, trust, lifecycle, and log-retention
+behavior.
+
 ## Listing agents
 
 ```bash
@@ -200,8 +226,12 @@ Detaching is an explicit lifecycle action, not a creation flag. The agent keeps 
 paseo daemon start             # Start the daemon
 paseo daemon start --web-ui    # Start and serve the bundled web UI
 paseo daemon status            # Check status
+paseo reload                    # Reload config.json (top-level alias)
+paseo daemon reload             # Reload config.json
 paseo daemon stop              # Stop the daemon
 ```
+
+Reload validates the whole file, applies runtime-safe changes, and reports `appliedPaths`, `restartRequiredPaths`, and `overrideControlledPaths`. Human output prints `paseo daemon restart` only when a changed setting needs it. Use `--json` or `--format yaml` for the structured result, and `--host` to reload a remote daemon's own configuration file. An older host that does not support reload returns an update-host error.
 
 Use `PASEO_HOME` to run multiple isolated daemon instances.
 

@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const fr: TranslationResources = {
@@ -1646,6 +1647,8 @@ export const fr: TranslationResources = {
       relayDisabled: "Le relais n'est pas activé. Activer le relais pour coupler un appareil.",
       unavailable: "Offre de jumelage indisponible.",
       hint: "Scannez ce codeQRavecPaseosur votre téléphone ou copiez le lien ci-dessous.",
+      securityWarning:
+        "Traitez ce lien d’association comme un mot de passe. Toute personne qui le possède peut accéder à ce daemon.",
       qrUnavailable: "CodeQRindisponible.",
       retry: "Réessayer",
       copy: "Copie",
@@ -1864,8 +1867,10 @@ export const fr: TranslationResources = {
       providers: "Fournisseurs",
       usage: "Utilisation",
       terminals: "Terminals",
+      plugins: pluginSettings["fr"].title,
       host: "Aperçu",
     },
+    plugins: pluginSettings["fr"],
     general: {
       title: "Général",
       browserData: {

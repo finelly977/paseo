@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const es: TranslationResources = {
@@ -1644,6 +1645,8 @@ export const es: TranslationResources = {
       relayDisabled: "El relé no está habilitado. Habilite el relé para emparejar un dispositivo.",
       unavailable: "Oferta de maridaje no disponible.",
       hint: "Escanee este códigoQRconPaseoen su teléfono o copie el enlace a continuación.",
+      securityWarning:
+        "Trata este enlace de emparejamiento como una contraseña. Cualquiera que lo tenga puede acceder a este daemon.",
       qrUnavailable: "CódigoQRno disponible.",
       retry: "Rever",
       copy: "Copiar",
@@ -1862,8 +1865,10 @@ export const es: TranslationResources = {
       providers: "Proveedores",
       usage: "Uso",
       terminals: "Terminals",
+      plugins: pluginSettings["es"].title,
       host: "Resumen",
     },
+    plugins: pluginSettings["es"],
     general: {
       title: "General",
       browserData: {

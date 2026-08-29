@@ -241,6 +241,27 @@ The supervisor rotates `daemon.log`. Persisted `log.file.rotate` settings in
 `PASEO_LOG_ROTATE_SIZE` and `PASEO_LOG_ROTATE_COUNT` env vars override the
 defaults. The default rotation is `10m` x `3` files everywhere.
 
+### Git process pressure
+
+If Git refreshes consume too much CPU, disk, or antivirus capacity, especially on Windows, reduce
+the daemon-global Git process limits in `$PASEO_HOME/config.json`:
+
+```json
+{
+  "daemon": {
+    "git": {
+      "maxProcessesPerSecond": 5,
+      "maxProcessConcurrency": 4
+    }
+  }
+}
+```
+
+Reload the daemon with `paseo reload`. Environment-variable overrides still require a restart because
+the launch environment remains authoritative. Lower values reduce machine pressure but make Git-backed workspace state and
+Git RPCs wait longer. See [Git process limits](data-model.md#git-process-limits) for defaults,
+semantics, and environment-variable overrides.
+
 ### Agent Tool Catalog Measurement
 
 Measure the MCP `tools/list` payload that Paseo injects into agents with:
@@ -410,6 +431,16 @@ For tighter loops, you can rebuild a single workspace:
 - Changed `packages/protocol/src/*` or `packages/client/src/*`: `npm run build:client`.
 - Changed `packages/server/src/*`, `packages/cli/src/*`, `packages/relay/src/*`, or `packages/highlight/src/*`: `npm run build:server`.
 - Changed app build dependencies: `npm run build:app-deps`.
+
+## Dependency patches
+
+`patches/*.patch` are applied by `scripts/postinstall-patches.mjs` on every install. A patch only
+runs when its package is actually present, so add the package to that script's `patchedPackages`
+list when you introduce a new patch — otherwise the file sits in `patches/` and never applies.
+Regenerate a patch with `npx patch-package <package>` after editing `node_modules/<package>`, and
+patch every build the consumers use: Metro resolves the `react-native` field of a package
+(`src/*.ts` for `react-native-svg`), while Node and Vitest resolve `main`/`module`
+(`lib/commonjs`, `lib/module`). Patching only `lib/` leaves the app bundle unfixed.
 
 ## ACP provider catalog versions
 

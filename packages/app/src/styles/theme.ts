@@ -108,6 +108,12 @@ export const baseColors = {
 } as const;
 
 export type ThemeName = "light" | "dark" | "zinc" | "midnight" | "claude" | "ghostty";
+export const PLUGIN_THEME_PREFERENCE = "plugin";
+export type ThemePreference = ThemeName | "auto" | typeof PLUGIN_THEME_PREFERENCE;
+export const PLUGIN_THEME_NAMES = {
+  light: "pluginLight",
+  dark: "pluginDark",
+} as const;
 
 // Diff stat colors — light uses muted tones, dark uses the brighter palette values
 const lightDiffColors = {
@@ -238,11 +244,88 @@ const lightSemanticColors = {
   },
 } as const;
 
+export interface LightThemeConfig {
+  surface0: string;
+  surface1: string;
+  surface2: string;
+  surface3: string;
+  surface4: string;
+  surfaceDiffEmpty: string;
+  surfaceSidebar: string;
+  foreground: string;
+  foregroundMuted: string;
+  foregroundExtraMuted: string;
+  border: string;
+  borderAccent: string;
+  accent: string;
+  accentBright: string;
+  accentForeground?: string;
+  primary: string;
+  primaryForeground: string;
+  destructive: string;
+  terminalBlack: string;
+  terminalBrightBlack: string;
+  ring: string;
+}
+
+/**
+ * 在不改变二开 Git 面板专用配色的前提下，把插件的小型调色板扩展为完整浅色主题。
+ */
+export function buildLightSemanticColors(tint: LightThemeConfig) {
+  return {
+    ...lightSemanticColors,
+    surface0: tint.surface0,
+    surface1: tint.surface1,
+    surface2: tint.surface2,
+    surface3: tint.surface3,
+    surface4: tint.surface4,
+    surfaceDiffEmpty: tint.surfaceDiffEmpty,
+    surfaceSidebar: tint.surfaceSidebar,
+    surfaceSidebarHover: tint.surface1,
+    surfaceWorkspace: tint.surface0,
+    foreground: tint.foreground,
+    foregroundMuted: tint.foregroundMuted,
+    foregroundExtraMuted: tint.foregroundExtraMuted,
+    scrollbarHandle: tint.terminalBrightBlack,
+    border: tint.border,
+    borderAccent: tint.borderAccent,
+    accent: tint.accent,
+    accentBright: tint.accentBright,
+    accentForeground: tint.accentForeground ?? tint.surface0,
+    destructive: tint.destructive,
+    destructiveForeground: tint.surface0,
+    success: tint.accent,
+    successForeground: tint.surface0,
+    background: tint.surface0,
+    popover: tint.surface0,
+    popoverForeground: tint.foreground,
+    primary: tint.primary,
+    primaryForeground: tint.primaryForeground,
+    secondary: tint.surface2,
+    secondaryForeground: tint.foreground,
+    muted: tint.surface2,
+    mutedForeground: tint.foregroundMuted,
+    accentBorder: tint.borderAccent,
+    input: tint.surface2,
+    ring: tint.ring,
+    terminal: {
+      ...lightSemanticColors.terminal,
+      background: tint.surface0,
+      foreground: tint.foreground,
+      cursor: tint.foreground,
+      cursorAccent: tint.surface0,
+      selectionForeground: tint.foreground,
+      black: tint.terminalBlack,
+      brightBlack: tint.terminalBrightBlack,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Dark theme variant builder
 // ---------------------------------------------------------------------------
 
-interface DarkThemeConfig {
+export interface DarkThemeConfig {
   surface0: string;
   surface1: string;
   surface2: string;
@@ -262,6 +345,9 @@ interface DarkThemeConfig {
   accentForeground?: string;
   destructive: string;
   success?: string;
+  ring?: string;
+  terminalBlack?: string;
+  terminalBrightBlack?: string;
 }
 
 const darkTerminalAnsi = {
@@ -281,7 +367,7 @@ const darkTerminalAnsi = {
   brightWhite: "#f0f0f2",
 } as const;
 
-function buildDarkSemanticColors(tint: DarkThemeConfig) {
+export function buildDarkSemanticColors(tint: DarkThemeConfig) {
   return {
     surface0: tint.surface0,
     surface1: tint.surface1,
@@ -323,7 +409,7 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
     mutedForeground: tint.foregroundMuted,
     accentBorder: tint.borderAccent,
     input: tint.surface2,
-    ring: "#d4d4d8",
+    ring: tint.ring ?? "#d4d4d8",
 
     ...darkDiffColors,
     ...darkStatusColors,
@@ -355,9 +441,9 @@ function buildDarkSemanticColors(tint: DarkThemeConfig) {
       cursorAccent: tint.surface0,
       selectionBackground: "rgba(255, 255, 255, 0.2)",
       selectionForeground: tint.foreground,
-      black: tint.surfaceSidebar,
+      black: tint.terminalBlack ?? tint.surfaceSidebar,
       ...darkTerminalAnsi,
-      brightBlack: tint.surface3,
+      brightBlack: tint.terminalBrightBlack ?? tint.surface3,
     },
   };
 }
@@ -606,7 +692,7 @@ const darkShadow = {
   },
 } as const;
 
-function buildDarkTheme(semanticColors: ReturnType<typeof buildDarkSemanticColors>) {
+export function buildDarkTheme(semanticColors: ReturnType<typeof buildDarkSemanticColors>) {
   return {
     colorScheme: "dark" as const,
     colors: {
@@ -625,41 +711,47 @@ export const darkMidnightTheme = buildDarkTheme(midnightDarkColors);
 export const darkClaudeTheme = buildDarkTheme(claudeDarkColors);
 export const darkGhosttyTheme = buildDarkTheme(ghosttyDarkColors);
 
-export const lightTheme = {
-  colorScheme: "light" as const,
-  colors: {
-    ...lightSemanticColors,
-    palette: baseColors,
-    syntax: lightHighlightColors,
+const lightShadow = {
+  sm: {
+    shadowColor: "rgba(0, 0, 0, 0.02)",
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
   },
-  shadow: {
-    sm: {
-      shadowColor: "rgba(0, 0, 0, 0.02)",
-      shadowOffset: { width: 0, height: 2 },
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    md: {
-      shadowColor: "rgba(0, 0, 0, 0.04)",
-      shadowOffset: { width: 0, height: 4 },
-      shadowRadius: 16,
-      elevation: 4,
-    },
-    lg: {
-      shadowColor: "rgba(0, 0, 0, 0.08)",
-      shadowOffset: { width: 0, height: 8 },
-      shadowRadius: 24,
-      elevation: 8,
-    },
+  md: {
+    shadowColor: "rgba(0, 0, 0, 0.04)",
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 16,
+    elevation: 4,
   },
-  ...commonTheme,
+  lg: {
+    shadowColor: "rgba(0, 0, 0, 0.08)",
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 24,
+    elevation: 8,
+  },
 } as const;
+
+export function buildLightTheme(semanticColors: ReturnType<typeof buildLightSemanticColors>) {
+  return {
+    colorScheme: "light" as const,
+    colors: {
+      ...semanticColors,
+      palette: baseColors,
+      syntax: lightHighlightColors,
+    },
+    shadow: lightShadow,
+    ...commonTheme,
+  } as const;
+}
+
+export const lightTheme = buildLightTheme(lightSemanticColors);
 
 // Keep compatibility with existing code
 export const theme = darkTheme;
 
 // Export a union type that works for both themes
-export type Theme = typeof darkTheme | typeof lightTheme;
+export type Theme = ReturnType<typeof buildDarkTheme> | ReturnType<typeof buildLightTheme>;
 
 type UnistylesThemeKey =
   | "light"
@@ -686,3 +778,14 @@ export const THEME_SWATCHES: Record<ThemeName, string> = {
   claude: "#D97757",
   ghostty: "#8caaee",
 };
+
+export const REGISTERED_THEMES = {
+  light: lightTheme,
+  dark: darkTheme,
+  darkZinc: darkZincTheme,
+  darkMidnight: darkMidnightTheme,
+  darkClaude: darkClaudeTheme,
+  darkGhostty: darkGhosttyTheme,
+  [PLUGIN_THEME_NAMES.light]: lightTheme,
+  [PLUGIN_THEME_NAMES.dark]: darkTheme,
+} as const;

@@ -225,6 +225,7 @@ function createServer(options?: {
 }) {
   const speechReadiness = options?.speechReadiness ?? null;
   const daemonConfigStore = {
+    onApply: vi.fn(() => () => {}),
     onChange: vi.fn(() => () => {}),
   };
   const logger = options?.logger ?? createLogger();

@@ -1,4 +1,4 @@
-import { useRef, ReactNode, useCallback, useEffect } from "react";
+import { useRef, ReactNode, useCallback, useEffect, useMemo } from "react";
 import { Buffer } from "buffer";
 import { AppState } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,6 +61,7 @@ import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
 import { useSettings } from "@/hooks/use-settings";
 import { getSendingClientMessageIds } from "@/composer/submission/model";
+import { createInstalledTimelineTransform } from "@/plugins/timeline";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -444,6 +445,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const queryClient = useQueryClient();
   const isConnected = useHostRuntimeIsConnected(serverId);
   const toast = useToast();
+  const transformTimelineItem = useMemo(
+    () => createInstalledTimelineTransform(serverId),
+    [serverId],
+  );
 
   // Zustand store actions
   const setIsPlayingAudio = useSessionStore((state) => state.setIsPlayingAudio);
@@ -729,6 +734,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         hasActiveInitDeferred,
         initRequestDirection: activeInitDeferred?.requestDirection ?? "tail",
         sendingClientMessageIds,
+        transformTimelineItem,
       });
 
       if (result.error) {
@@ -781,6 +787,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       setAgentTimelineHasOlder,
       setAgentConversationIndex,
       setInitializingAgents,
+      transformTimelineItem,
     ],
   );
 
@@ -872,6 +879,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       setAgentTimelineCursor,
       setAgents,
       recoverTimelineGap,
+      reprojectTimeline: (agentId) =>
+        viewedTimelineSyncRef.current?.reprojectAgentTimeline(agentId),
+      transformTimelineItem,
     });
 
     const unsubAgentStream = client.on("agent_stream", (message) => {
@@ -1149,6 +1159,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     setPendingPermissions,
     notifyAgentAttention,
     recoverTimelineGap,
+    transformTimelineItem,
     applyWorkspaceSetupProgress,
     applyTimelineResponse,
     updateSessionServerInfo,

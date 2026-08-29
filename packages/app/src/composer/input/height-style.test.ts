@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveComposerInputHeightStyle, shouldScrollComposerInput } from "./height-style";
+import {
+  resolveComposerInputHeightStyle,
+  resolveComposerInputScrollEnabled,
+  shouldScrollComposerInput,
+} from "./height-style";
 
 describe("composer input height style", () => {
   it("applies the measured height alongside its bounds", () => {
@@ -34,5 +38,22 @@ describe("composer input height style", () => {
   it("keeps native measurement unconstrained until the composer reaches its cap", () => {
     expect(shouldScrollComposerInput({ inputHeight: 30, maxInputHeight: 240 })).toBe(false);
     expect(shouldScrollComposerInput({ inputHeight: 240, maxInputHeight: 240 })).toBe(true);
+  });
+
+  it("让原生输入框自行管理内容滚动，网页端只在达到高度上限后滚动", () => {
+    expect(
+      resolveComposerInputScrollEnabled({
+        inputHeight: 30,
+        maxInputHeight: 240,
+        applyMeasuredHeight: false,
+      }),
+    ).toBe(true);
+    expect(
+      resolveComposerInputScrollEnabled({
+        inputHeight: 30,
+        maxInputHeight: 240,
+        applyMeasuredHeight: true,
+      }),
+    ).toBe(false);
   });
 });

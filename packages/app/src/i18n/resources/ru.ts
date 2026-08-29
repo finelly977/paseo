@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const ru: TranslationResources = {
@@ -1631,6 +1632,8 @@ export const ru: TranslationResources = {
       relayDisabled: "Реле не включено. Включите реле для сопряжения устройства.",
       unavailable: "Предложение по сопряжению недоступно.",
       hint: "Отсканируйте этот код QR с помощью Paseo на своем телефоне или скопируйте ссылку ниже.",
+      securityWarning:
+        "Обращайтесь с этой ссылкой для сопряжения как с паролем. Любой, у кого она есть, может получить доступ к этому демону.",
       qrUnavailable: "Код QR недоступен.",
       retry: "Повторить попытку",
       copy: "Копировать",
@@ -1849,8 +1852,10 @@ export const ru: TranslationResources = {
       providers: "Провайдеры",
       usage: "Использование",
       terminals: "Terminals",
+      plugins: pluginSettings["ru"].title,
       host: "Обзор",
     },
+    plugins: pluginSettings["ru"],
     general: {
       title: "Общий",
       browserData: {

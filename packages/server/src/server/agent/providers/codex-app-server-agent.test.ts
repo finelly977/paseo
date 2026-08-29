@@ -3413,8 +3413,42 @@ describe("Codex app-server provider", () => {
     }
   });
 
-  test("rejects an interrupt until Codex identifies the accepted turn", async () => {
-    const appServer = createFakeCodexAppServer();
+  test("把提供方已经空闲视为中断成功", async () => {
+    const appServer = createFakeCodexAppServer({
+      "turn/interrupt": () => ({
+        __jsonRpcError: { code: -32600, message: "no active turn to interrupt" },
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    try {
+      const resultPromise = session.run("Wait for the child.");
+      await appServer.waitForTurnStart();
+      appServer.startsTurn({ threadId: "thread-1", turnId: "turn-already-idle" });
+
+      await expect(session.interrupt()).resolves.toBeUndefined();
+
+      appServer.completeTurn();
+      await resultPromise;
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("等待 Codex 确认原生回合后再中断", async () => {
+    const interruptedTurns: unknown[] = [];
+    const appServer = createFakeCodexAppServer({
+      "turn/interrupt": async (params) => {
+        interruptedTurns.push(params);
+        return {};
+      },
+    });
     const session = new CodexAppServerAgentSession(
       createConfig({ cwd: "/workspace/project" }),
       null,
@@ -3426,11 +3460,11 @@ describe("Codex app-server provider", () => {
       const resultPromise = session.run("Start working.");
       await appServer.waitForTurnStart();
 
-      await expect(session.interrupt()).rejects.toThrow(
-        "Cannot interrupt Codex before turn/started identifies the active turn",
-      );
-
+      const interruptPromise = session.interrupt();
       appServer.startsTurn({ threadId: "thread-1", turnId: "turn-identified-late" });
+      await interruptPromise;
+
+      expect(interruptedTurns).toEqual([{ threadId: "thread-1", turnId: "turn-identified-late" }]);
       appServer.completeTurn();
       await resultPromise;
       appServer.assertNoErrors();
@@ -3439,7 +3473,37 @@ describe("Codex app-server provider", () => {
     }
   });
 
-  test("rejects an interrupt before Codex initializes the thread", async () => {
+  test("回合在原生标识出现前结束时也确认中断", async () => {
+    const interruptedTurns: unknown[] = [];
+    const appServer = createFakeCodexAppServer({
+      "turn/interrupt": async (params) => {
+        interruptedTurns.push(params);
+        return {};
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    try {
+      const resultPromise = session.run("Finish before identification.");
+      await appServer.waitForTurnStart();
+      const interruptPromise = session.interrupt();
+      appServer.completeTurn();
+
+      await expect(interruptPromise).resolves.toBeUndefined();
+      await resultPromise;
+      expect(interruptedTurns).toEqual([]);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("尚未创建原生线程时中断是成功的空操作", async () => {
     const appServer = createFakeCodexAppServer();
     const session = new CodexAppServerAgentSession(
       createConfig({ cwd: "/workspace/project" }),
@@ -3448,11 +3512,45 @@ describe("Codex app-server provider", () => {
       async () => appServer.child,
     );
 
-    await expect(session.interrupt()).rejects.toThrow(
-      "Cannot interrupt Codex before the active thread is initialized",
-    );
+    await expect(session.interrupt()).resolves.toBeUndefined();
 
     await session.close();
+  });
+
+  test("冷启动期间中断不会再向 Codex 提交原生回合", async () => {
+    const threadStart = deferred<{ thread: { id: string } }>();
+    const appServer = createFakeCodexAppServer({
+      "thread/start": () => threadStart.promise,
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+    const resultPromise = session.run("Start after the delayed thread.");
+
+    try {
+      await appServer.waitForRequest("thread/start");
+      let interruptSettled = false;
+      const interruptPromise = session.interrupt().then(() => {
+        interruptSettled = true;
+        return undefined;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(interruptSettled).toBe(false);
+
+      threadStart.resolve({ thread: { id: "thread-1" } });
+      await expect(interruptPromise).resolves.toBeUndefined();
+      await expect(resultPromise).rejects.toThrow("提交给提供方之前已被中断");
+      expect(appServer.requests()).not.toContainEqual(
+        expect.objectContaining({ method: "turn/start" }),
+      );
+      appServer.assertNoErrors();
+    } finally {
+      threadStart.resolve({ thread: { id: "thread-1" } });
+      await session.close();
+    }
   });
 
   test("interrupts an autonomous Codex turn identified by live notifications", async () => {
@@ -4903,7 +5001,7 @@ describe("Codex app-server provider", () => {
       requestId: pendingPlan!.id,
       resolution: {
         behavior: "deny",
-        message: "Dismissed by a new prompt",
+        message: "新消息已取代待处理的计划批准",
       },
     });
   });

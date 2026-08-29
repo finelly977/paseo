@@ -21,3 +21,17 @@ export function shouldScrollComposerInput(input: {
 }): boolean {
   return input.inputHeight >= input.maxInputHeight;
 }
+
+export function resolveComposerInputScrollEnabled(input: {
+  inputHeight: number;
+  maxInputHeight: number;
+  applyMeasuredHeight: boolean;
+}): boolean {
+  return (
+    !input.applyMeasuredHeight ||
+    shouldScrollComposerInput({
+      inputHeight: input.inputHeight,
+      maxInputHeight: input.maxInputHeight,
+    })
+  );
+}

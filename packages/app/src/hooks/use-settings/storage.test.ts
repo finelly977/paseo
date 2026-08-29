@@ -399,6 +399,21 @@ describe("saveAppSettings", () => {
       toolCallDetailLevel: "overview",
     });
   });
+
+  it("持久化选中的插件主题", async () => {
+    const deps = makeDeps();
+    const queryClient = new QueryClient();
+
+    await saveAppSettings({
+      queryClient,
+      updates: { theme: "plugin", pluginThemeId: "catppuccin/theme/mocha" },
+      deps,
+    });
+
+    const loaded = await loadAppSettingsFromStorage(deps);
+    expect(loaded.theme).toBe("plugin");
+    expect(loaded.pluginThemeId).toBe("catppuccin/theme/mocha");
+  });
 });
 
 describe("parseTerminalScrollbackLines", () => {

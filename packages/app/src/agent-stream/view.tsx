@@ -120,6 +120,7 @@ import { ProviderImageMessage } from "./provider-image-message";
 import { isStandaloneMarkdownImage } from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
+import { PluginTimelineItemView } from "@/plugins/timeline";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -1140,16 +1141,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               />
             );
 
+          case "plugin":
+            return (
+              <PluginTimelineItemView agentId={agentId} item={item} serverId={resolvedServerId} />
+            );
+
           default:
             return null;
         }
       },
       [
+        agentId,
         conversationDividerSpacing,
         renderUserMessageItem,
         renderAssistantMessageItem,
         renderThoughtItem,
         renderToolCallItem,
+        resolvedServerId,
       ],
     );
 

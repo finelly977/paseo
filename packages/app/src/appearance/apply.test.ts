@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { darkHighlightColors, resolveSyntaxColors } from "@getpaseo/highlight";
 import { DEFAULT_UI_FONT_STACK } from "@/styles/theme";
-import { applyAppearance, type AppearanceInput } from "./apply-appearance";
+import { applyAppearance, type AppearanceInput } from "./apply";
 
 // Override the global react-native-unistyles mock (vitest.setup.ts) so that
 // UnistylesRuntime.updateTheme is a spy that records (themeName, updater) calls.
 const { updateTheme } = vi.hoisted(() => ({ updateTheme: vi.fn() }));
 vi.mock("react-native-unistyles", () => ({ UnistylesRuntime: { updateTheme } }));
 
-// The six registered Unistyles theme keys, in the order applyAppearance patches them.
+// 所有内置主题和两个插件保留槽都必须应用外观设置。
 const ALL_THEME_KEYS = [
   "light",
   "dark",
@@ -16,6 +16,8 @@ const ALL_THEME_KEYS = [
   "darkMidnight",
   "darkClaude",
   "darkGhostty",
+  "pluginLight",
+  "pluginDark",
 ] as const;
 
 // The signature of the updater passed to UnistylesRuntime.updateTheme.
@@ -87,7 +89,7 @@ describe("applyAppearance", () => {
   it("patches every registered Unistyles theme exactly once", () => {
     applyAppearance(makeInput());
 
-    expect(updateTheme).toHaveBeenCalledTimes(6);
+    expect(updateTheme).toHaveBeenCalledTimes(8);
     expect(updateTheme.mock.calls.map((call) => call[0])).toEqual([...ALL_THEME_KEYS]);
   });
 

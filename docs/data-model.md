@@ -64,6 +64,9 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
+├── plugins/
+│   ├── sources.json                      # Git origin, ref, commit, and managed checkout ownership
+│   └── {pluginId}/{version}/checkout/    # Source checkout for one installed Git commit
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
@@ -178,6 +181,13 @@ Terminal activity contributes to the workspace status bucket **per `workspaceId`
 
 Single file, validated with `PersistedConfigSchema`.
 
+`paseo reload` reads and validates this file once inside the daemon. That snapshot drives resolution,
+classification, application, and reload bookkeeping. `DaemonConfigStore` owns applying runtime-safe
+fields and their removal/default semantics; session handlers and the CLI only relay the structured
+result. Normal config patches persist only the requested fields, so launch overrides and resolved
+defaults never leak into the file. Startup-only fields remain compared with the daemon's launch
+snapshot so a mixed edit can apply its live subset and still name the paths that require restart.
+
 ```
 {
   version: 1,
@@ -186,6 +196,7 @@ Single file, validated with `PersistedConfigSchema`.
     hostnames: true | string[],   // legacy alias `allowedHosts` is migrated on load
     trustedProxies: true | string[], // defaults to ["loopback"]; Express proxy names/CIDRs
     mcp: { enabled: boolean, injectIntoAgents: boolean },
+    git: { maxProcessesPerSecond: number, maxProcessConcurrency: number },
     appendSystemPrompt: string,    // appended to supported provider system/developer prompts
     terminalProfiles: TerminalProfile[],  // named shell commands; omitted means DEFAULT_TERMINAL_PROFILES
     agentProfiles: AgentProfile[],        // named agent launch bundles; omitted means none
@@ -221,6 +232,8 @@ Single file, validated with `PersistedConfigSchema`.
       providers: [{ provider, model?, thinkingOptionId? }]
     }
   },
+  pluginsEnabled: boolean,
+  plugins: Record<pluginId, { source: "directory", path: string, enabled?: boolean }>,
   features: {
     dictation: { enabled, stt: { provider, model, language, confidenceThreshold } },
     voiceMode: { enabled, llm, stt: { provider, model, language }, turnDetection, tts: { provider, model, voice, speakerId, speed } }
@@ -236,6 +249,8 @@ Single file, validated with `PersistedConfigSchema`.
 All fields are optional with sensible defaults.
 
 `agents.metadataGeneration.providers` 控制提交说明、拉取请求文本等守护进程元数据任务的结构化生成回退顺序。Paseo 先按配置顺序尝试，再使用动态发现的默认候选，最后在可用时尝试当前选择。新建智能体的工作区标题和初始分支名不使用这条回退链，而是只使用该智能体实际采用的 Provider、模型和思考配置，避免在用户所选智能体之外启动其他 Provider。尚未创建智能体的独立工作区仍使用已配置的元数据生成顺序。
+
+Git 管理的插件在 `config.json` 中仍表现为目录来源，使插件运行时和协议配置继续兼容只认识目录来源的客户端。`plugins/sources.json` 负责记录 Git 远端、跟踪引用、已安装提交、仓库子目录和检出根目录，并通过原子写入保存。更新时先创建并验证新的版本目录，再切换配置中的目录路径；新版本成功启用后才删除旧版本。
 
 ### Profile lists
 
@@ -282,9 +297,9 @@ Environment variables override `config.json`:
 | `PASEO_GIT_MAX_PROCESS_CONCURRENCY`  | `maxProcessConcurrency`  |
 | `PASEO_GIT_CONCURRENCY`              | Legacy concurrency alias |
 
-`PASEO_GIT_MAX_PROCESS_CONCURRENCY` wins when it and the legacy alias are both set. Restart the
-daemon after changing the file or environment. Run `paseo daemon restart` for a standalone daemon.
-For a desktop-managed daemon, fully quit and reopen Paseo Desktop.
+`PASEO_GIT_MAX_PROCESS_CONCURRENCY` wins when it and the legacy alias are both set. Run `paseo reload`
+after changing `config.json`. Environment changes require a daemon restart; the launch environment
+remains authoritative during reload.
 
 `agents.metadataGeneration.providers` controls the preferred structured-generation fallback order for daemon-side metadata tasks such as commit messages, PR text, branch names, and generated agent titles. Entries are tried first in the configured order, then Paseo falls through to dynamically discovered defaults and finally the current selection when available.
 

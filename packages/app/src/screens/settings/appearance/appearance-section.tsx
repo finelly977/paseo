@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { SettingsSection } from "@/screens/settings/settings-section";
+import { useContributedThemes } from "@/appearance/provider";
 import {
   MAX_CODE_FONT_SIZE,
   MAX_CONVERSATION_DIVIDER_SPACING,
@@ -51,10 +52,12 @@ import {
   DEFAULT_MONO_FONT_STACK,
   DEFAULT_UI_FONT_STACK,
   ICON_SIZE,
+  PLUGIN_THEME_PREFERENCE,
   THEME_SWATCHES,
   type Theme,
 } from "@/styles/theme";
 import { isNative } from "@/constants/platform";
+import type { PluginThemeOption } from "@/plugins/themes";
 import { settingsStyles } from "@/styles/settings";
 import { AppearancePreview } from "./appearance-preview";
 
@@ -71,8 +74,10 @@ const ThemedChevronDown = withUnistyles(ChevronDown);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-function getThemeLabel(t: TFunction, value: AppSettings["theme"]): string {
-  const labelKeys: Record<AppSettings["theme"], string> = {
+type BuiltInThemePreference = Exclude<AppSettings["theme"], typeof PLUGIN_THEME_PREFERENCE>;
+
+function getThemeLabel(t: TFunction, value: BuiltInThemePreference): string {
+  const labelKeys: Record<BuiltInThemePreference, string> = {
     light: "settings.appearance.theme.options.light",
     dark: "settings.appearance.theme.options.dark",
     zinc: "settings.appearance.theme.options.zinc",
@@ -84,8 +89,8 @@ function getThemeLabel(t: TFunction, value: AppSettings["theme"]): string {
   return t(labelKeys[value]);
 }
 
-const PRIMARY_THEMES: readonly AppSettings["theme"][] = ["light", "dark", "auto"];
-const DARK_VARIANT_THEMES: readonly AppSettings["theme"][] = [
+const PRIMARY_THEMES: readonly BuiltInThemePreference[] = ["light", "dark", "auto"];
+const DARK_VARIANT_THEMES: readonly BuiltInThemePreference[] = [
   "zinc",
   "midnight",
   "claude",
@@ -117,7 +122,7 @@ function dropdownTriggerStyle({ pressed }: PressableStateCallbackType) {
 // ---------------------------------------------------------------------------
 
 interface ThemeLeadingProps {
-  themeValue: AppSettings["theme"];
+  themeValue: BuiltInThemePreference;
 }
 
 function ThemeLeading({ themeValue }: ThemeLeadingProps) {
@@ -143,9 +148,9 @@ function ThemeSwatch({ color }: ThemeSwatchProps) {
 }
 
 interface ThemeMenuItemProps {
-  themeValue: AppSettings["theme"];
+  themeValue: BuiltInThemePreference;
   selected: boolean;
-  onChange: (theme: AppSettings["theme"]) => void;
+  onChange: (theme: BuiltInThemePreference) => void;
 }
 
 function ThemeMenuItem({ themeValue, selected, onChange }: ThemeMenuItemProps) {
@@ -161,14 +166,42 @@ function ThemeMenuItem({ themeValue, selected, onChange }: ThemeMenuItemProps) {
   );
 }
 
-interface ThemeRowProps {
-  value: AppSettings["theme"];
-  onChange: (theme: AppSettings["theme"]) => void;
+interface PluginThemeMenuItemProps {
+  option: PluginThemeOption;
+  selected: boolean;
+  onSelect: (option: PluginThemeOption) => void;
 }
 
-function ThemeRow({ value, onChange }: ThemeRowProps) {
+function PluginThemeMenuItem({ option, selected, onSelect }: PluginThemeMenuItemProps) {
+  const handleSelect = useCallback(() => onSelect(option), [onSelect, option]);
+  const leading = useMemo(() => <ThemeSwatch color={option.swatch} />, [option.swatch]);
+  return (
+    <DropdownMenuItem selected={selected} onSelect={handleSelect} leading={leading}>
+      {option.name}
+    </DropdownMenuItem>
+  );
+}
+
+interface ThemeRowProps {
+  value: AppSettings["theme"];
+  pluginThemes: PluginThemeOption[];
+  selectedPluginTheme: PluginThemeOption | null;
+  onChange: (theme: BuiltInThemePreference) => void;
+  onSelectPluginTheme: (option: PluginThemeOption) => void;
+}
+
+function ThemeRow({
+  value,
+  pluginThemes,
+  selectedPluginTheme,
+  onChange,
+  onSelectPluginTheme,
+}: ThemeRowProps) {
   const { t } = useTranslation();
-  const selectedLabel = getThemeLabel(t, value);
+  const builtInValue = value === PLUGIN_THEME_PREFERENCE ? "auto" : value;
+  const selectedLabel = selectedPluginTheme
+    ? selectedPluginTheme.name
+    : getThemeLabel(t, builtInValue);
   return (
     <View style={settingsStyles.row}>
       <View style={settingsStyles.rowContent}>
@@ -181,7 +214,11 @@ function ThemeRow({ value, onChange }: ThemeRowProps) {
             value: selectedLabel,
           })}
         >
-          <ThemeLeading themeValue={value} />
+          {selectedPluginTheme ? (
+            <ThemeSwatch color={selectedPluginTheme.swatch} />
+          ) : (
+            <ThemeLeading themeValue={builtInValue} />
+          )}
           <Text style={styles.triggerText}>{selectedLabel}</Text>
           <ThemedChevronDown size={ICON_SIZE.sm} uniProps={mutedColorMapping} />
         </DropdownMenuTrigger>
@@ -190,7 +227,7 @@ function ThemeRow({ value, onChange }: ThemeRowProps) {
             <ThemeMenuItem
               key={themeValue}
               themeValue={themeValue}
-              selected={value === themeValue}
+              selected={selectedPluginTheme === null && builtInValue === themeValue}
               onChange={onChange}
             />
           ))}
@@ -199,8 +236,17 @@ function ThemeRow({ value, onChange }: ThemeRowProps) {
             <ThemeMenuItem
               key={themeValue}
               themeValue={themeValue}
-              selected={value === themeValue}
+              selected={selectedPluginTheme === null && builtInValue === themeValue}
               onChange={onChange}
+            />
+          ))}
+          {pluginThemes.length > 0 ? <DropdownMenuSeparator /> : null}
+          {pluginThemes.map((option) => (
+            <PluginThemeMenuItem
+              key={option.id}
+              option={option}
+              selected={selectedPluginTheme?.id === option.id}
+              onSelect={onSelectPluginTheme}
             />
           ))}
         </DropdownMenuContent>
@@ -550,6 +596,7 @@ function SyntaxRow({ value, onChange }: SyntaxRowProps) {
 export function AppearanceSection() {
   const { t } = useTranslation();
   const { settings, updateSettings } = useAppSettings();
+  const contributedThemes = useContributedThemes();
   const showFontFamilyRows = !isNative;
   const uiFontPlaceholder = resolveDefaultStackPlaceholder(t, DEFAULT_UI_FONT_STACK);
   const monoFontPlaceholder = resolveDefaultStackPlaceholder(t, DEFAULT_MONO_FONT_STACK);
@@ -568,8 +615,8 @@ export function AppearanceSection() {
   }, [settings.codeFontSize]);
 
   const handleThemeChange = useCallback(
-    (theme: AppSettings["theme"]) => {
-      void updateSettings({ theme });
+    (theme: BuiltInThemePreference) => {
+      void updateSettings({ theme, pluginThemeId: null });
     },
     [updateSettings],
   );
@@ -681,7 +728,13 @@ export function AppearanceSection() {
     <View>
       <SettingsSection title={t("settings.appearance.theme.title")}>
         <View style={settingsStyles.card}>
-          <ThemeRow value={settings.theme} onChange={handleThemeChange} />
+          <ThemeRow
+            value={settings.theme}
+            pluginThemes={contributedThemes.options}
+            selectedPluginTheme={contributedThemes.selected}
+            onChange={handleThemeChange}
+            onSelectPluginTheme={contributedThemes.select}
+          />
         </View>
       </SettingsSection>
       <SettingsSection title={t("settings.appearance.detailLevel.title")}>

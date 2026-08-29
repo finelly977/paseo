@@ -93,7 +93,7 @@ import {
   normalizeWorkspaceTabTarget,
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
-import { selectVisibleAgentIds } from "./visible-agent-ids";
+import { useVisibleAgentIds } from "./visible-agent-ids";
 import {
   getHostRuntimeStore,
   useHostRuntimeClient,
@@ -406,6 +406,9 @@ function getFallbackTabOptionDescription(
   }
   if (tab.target.kind === "working_diff") {
     return labels.changes;
+  }
+  if (tab.target.kind === "plugin") {
+    return tab.target.panelId;
   }
   return tab.target.path;
 }
@@ -2075,16 +2078,16 @@ function WorkspaceScreenContent({
   const viewedTimelineSync = useSessionStore(
     (state) => state.sessions[normalizedServerId]?.viewedTimelineSync ?? null,
   );
-  const visibleAgentIds = useMemo(
-    () =>
-      selectVisibleAgentIds({
-        layout: workspaceLayout,
-        tabs: uiTabs,
-        routeFocused: isRouteFocused,
-        focusedPaneOnly: isMobile || isFocusModeEnabled || !supportsDesktopPaneSplits(),
-      }),
-    [isFocusModeEnabled, isMobile, isRouteFocused, uiTabs, workspaceLayout],
+  const syncFocusedPaneOnly = useMemo(
+    () => isMobile || isFocusModeEnabled || !supportsDesktopPaneSplits(),
+    [isFocusModeEnabled, isMobile],
   );
+  const visibleAgentIds = useVisibleAgentIds({
+    layout: workspaceLayout,
+    tabs: uiTabs,
+    routeFocused: isRouteFocused,
+    focusedPaneOnly: syncFocusedPaneOnly,
+  });
   useLayoutEffect(() => {
     if (!persistenceKey || !viewedTimelineSync) {
       return;
@@ -3022,6 +3025,9 @@ function WorkspaceScreenContent({
         case "workspace.terminal.new":
           handleCreateTerminal();
           return true;
+        case "workspace.browser.new":
+          handleCreateBrowserTab();
+          return true;
         case "workspace.tab.close-current":
           if (activeTabId) {
             void handleCloseTabById(activeTabId);
@@ -3054,6 +3060,7 @@ function WorkspaceScreenContent({
       activeTabId,
       handleCloseTabById,
       handleCreateDraftTab,
+      handleCreateBrowserTab,
       handleCreateTerminal,
       navigateToTabId,
       tabs,
@@ -3168,6 +3175,7 @@ function WorkspaceScreenContent({
       "workspace.tab.navigate-index",
       "workspace.tab.navigate-relative",
       "workspace.terminal.new",
+      "workspace.browser.new",
     ] as const,
     enabled: Boolean(isRouteFocused && normalizedServerId && normalizedWorkspaceId),
     priority: 100,

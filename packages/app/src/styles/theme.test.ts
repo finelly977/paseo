@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { darkTheme, darkZincTheme, THEME_SWATCHES } from "./theme";
+import { darkTheme, darkZincTheme, lightTheme, REGISTERED_THEMES, THEME_SWATCHES } from "./theme";
 
 describe("默认 Dark 主题", () => {
   test("使用中性黑白表面和参考强调色", () => {
@@ -34,5 +34,10 @@ describe("默认 Dark 主题", () => {
       foreground: "#fafafa",
       accent: "#e4e4e7",
     });
+  });
+
+  test("为插件主题预留浅色和深色槽位", () => {
+    expect(REGISTERED_THEMES.pluginLight).toBe(lightTheme);
+    expect(REGISTERED_THEMES.pluginDark).toBe(darkTheme);
   });
 });

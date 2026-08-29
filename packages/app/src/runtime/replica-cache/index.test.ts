@@ -349,6 +349,34 @@ describe("ReplicaCache", () => {
     ]);
   });
 
+  it("往返保存插件时间线条目", async () => {
+    const storage = new MemoryStorage();
+    const writer = new ReplicaCache(storage);
+    writer.setHosts([SERVER_ID]);
+    seedSession();
+    const pluginItem: StreamItem = {
+      kind: "plugin",
+      id: "reports/test-report/1",
+      pluginId: "reports",
+      itemKind: "test-report",
+      version: 1,
+      data: { passed: 4, failed: 0 },
+      timestamp: new Date("2026-07-18T08:02:00.000Z"),
+      timelineCursor: { epoch: "epoch-1", seq: 12 },
+    };
+    useSessionStore.getState().setAgentStreamTail(SERVER_ID, new Map([["agent-1", [pluginItem]]]));
+    await writer.flush();
+
+    useSessionStore.getState().clearSession(SERVER_ID);
+    const reader = new ReplicaCache(storage);
+    reader.setHosts([SERVER_ID]);
+    await reader.restore();
+
+    expect(useSessionStore.getState().sessions[SERVER_ID]?.agentStreamTail.get("agent-1")).toEqual([
+      pluginItem,
+    ]);
+  });
+
   it("persists reconciled rows without caching unreconciled local presentations", async () => {
     const storage = new MemoryStorage();
     const cache = new ReplicaCache(storage);

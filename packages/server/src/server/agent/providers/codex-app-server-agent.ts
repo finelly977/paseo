@@ -941,6 +941,14 @@ function isDefinitiveCodexSteerRejection(error: unknown): boolean {
   );
 }
 
+function isCodexAlreadyIdleInterrupt(error: unknown): boolean {
+  return (
+    error instanceof CodexAppServerRpcError &&
+    error.code === -32600 &&
+    error.message === "no active turn to interrupt"
+  );
+}
+
 // Codex app-server API response types
 interface CodexReasoningEffortEntry {
   reasoningEffort?: string;
@@ -3384,6 +3392,16 @@ export class CodexAppServerAgentSession implements AgentSession {
   private currentMode: string;
   private currentThreadId: string | null = null;
   private currentTurnId: string | null = null;
+  private pendingForegroundTurnIdentification: {
+    foregroundTurnId: string;
+    promise: Promise<string | null>;
+    resolve: (turnId: string | null) => void;
+  } | null = null;
+  private pendingForegroundStart: {
+    promise: Promise<void>;
+    resolve: () => void;
+    cancelRequested: boolean;
+  } | null = null;
   private client: CodexAppServerClient | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private nextTurnOrdinal = 0;
@@ -3511,8 +3529,14 @@ export class CodexAppServerAgentSession implements AgentSession {
   async connect(): Promise<void> {
     if (this.connected) return;
     const child = await this.spawnAppServer();
-    this.client = new CodexAppServerClient(child, this.logger, () => this.traceContext());
-    this.client.setNotificationHandler((method, params) => this.handleNotification(method, params));
+    const client = new CodexAppServerClient(child, this.logger, () => this.traceContext());
+    this.client = client;
+    client.setUnexpectedTerminationHandler((error) => {
+      if (this.client !== client) return;
+      this.client = null;
+      this.handleUnexpectedTermination(error);
+    });
+    client.setNotificationHandler((method, params) => this.handleNotification(method, params));
     this.registerRequestHandlers();
 
     try {
@@ -4139,48 +4163,122 @@ export class CodexAppServerAgentSession implements AgentSession {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): Promise<{ turnId: string }> {
-    if (this.activeForegroundTurnId) {
-      throw new Error("A foreground turn is already active");
+    if (this.activeForegroundTurnId || this.pendingForegroundStart) {
+      throw new Error("Codex 已有活动中的前台回合");
     }
 
-    this.dismissPendingPlanApprovals("Dismissed by a new prompt");
-    await this.connect();
-    if (!this.client) {
-      throw new Error("Codex client not initialized");
-    }
-
-    const slashCommand = await this.resolveSlashCommandInvocation(prompt);
-    const effectivePrompt = slashCommand
-      ? await this.buildCommandPromptInput(slashCommand.commandName, slashCommand.args)
-      : prompt;
-
-    if (this.currentThreadId) {
-      await this.ensureThreadLoaded();
-    } else {
-      await this.ensureThread();
-    }
-
-    const turnId = this.createTurnId();
-    this.activeForegroundTurnId = turnId;
-    this.activeClientMessageId = options?.clientMessageId ?? null;
-    this.activeCodexUserMessageId = null;
-    const activeTurnRequest: CodexCapacityRetryRequest<CodexPromptInput> = {
-      prompt: effectivePrompt,
-      ...(options ? { options } : {}),
+    let resolveStart!: () => void;
+    const pendingStart = {
+      promise: new Promise<void>((resolve) => {
+        resolveStart = resolve;
+      }),
+      resolve: () => resolveStart(),
+      cancelRequested: false,
     };
-    this.activeTurnRequest = activeTurnRequest;
-    this.currentTurnId = null;
+    this.pendingForegroundStart = pendingStart;
 
+    this.dismissPendingPlanApprovals("新消息已取代待处理的计划批准");
     try {
+      await this.connect();
+      if (!this.client) {
+        throw new Error("Codex 客户端尚未初始化");
+      }
+
+      const slashCommand = await this.resolveSlashCommandInvocation(prompt);
+      const effectivePrompt = slashCommand
+        ? await this.buildCommandPromptInput(slashCommand.commandName, slashCommand.args)
+        : prompt;
+
+      if (this.currentThreadId) {
+        await this.ensureThreadLoaded();
+      } else {
+        await this.ensureThread();
+      }
+
+      const turnId = this.createTurnId();
+      this.activeForegroundTurnId = turnId;
+      this.activeClientMessageId = options?.clientMessageId ?? null;
+      this.activeCodexUserMessageId = null;
+      const activeTurnRequest: CodexCapacityRetryRequest<CodexPromptInput> = {
+        prompt: effectivePrompt,
+        ...(options ? { options } : {}),
+      };
+      this.activeTurnRequest = activeTurnRequest;
+      this.currentTurnId = null;
+      this.beginForegroundTurnIdentification(turnId);
+      if (pendingStart.cancelRequested) {
+        throw new Error("Codex 回合在提交给提供方之前已被中断");
+      }
       await this.requestCodexTurn(activeTurnRequest, turnId);
       return { turnId };
     } catch (error) {
+      this.pendingForegroundTurnIdentification?.resolve(null);
+      this.pendingForegroundTurnIdentification = null;
       this.activeForegroundTurnId = null;
       this.activeClientMessageId = null;
       this.activeCodexUserMessageId = null;
       this.activeTurnRequest = null;
       throw error;
+    } finally {
+      if (this.pendingForegroundStart === pendingStart) {
+        this.pendingForegroundStart = null;
+      }
+      pendingStart.resolve();
     }
+  }
+
+  private handleUnexpectedTermination(error: Error): void {
+    this.connected = false;
+    const startOwnsFailure = this.pendingForegroundStart !== null;
+    const hasActiveRootTurn =
+      this.activeForegroundTurnId !== null ||
+      this.currentTurnId !== null ||
+      this.pendingForegroundTurnIdentification !== null;
+    this.clearPendingPermissions({ preservePlanApprovals: !hasActiveRootTurn });
+    if (hasActiveRootTurn && !startOwnsFailure) {
+      this.emitEvent({
+        type: "turn_failed",
+        provider: CODEX_PROVIDER,
+        error: error.message,
+      });
+    }
+    this.activeForegroundTurnId = null;
+    this.activeClientMessageId = null;
+    this.activeCodexUserMessageId = null;
+    this.activeTurnRequest = null;
+    this.currentTurnId = null;
+    this.pendingForegroundTurnIdentification?.resolve(null);
+    this.pendingForegroundTurnIdentification = null;
+  }
+
+  private clearPendingPermissions(options?: { preservePlanApprovals?: boolean }): void {
+    const removedRequestIds = new Set<string>();
+    for (const [requestId, pending] of this.pendingPermissionHandlers) {
+      if (options?.preservePlanApprovals && pending.kind === "plan") continue;
+      pending.resolve({ decision: "cancel" });
+      this.pendingPermissionHandlers.delete(requestId);
+      this.pendingPermissions.delete(requestId);
+      removedRequestIds.add(requestId);
+    }
+    for (const [rpcId, requestId] of this.mcpElicitationPermissionIds) {
+      if (removedRequestIds.has(requestId)) {
+        this.mcpElicitationPermissionIds.delete(rpcId);
+      }
+    }
+    this.resolvedPermissionRequests.clear();
+  }
+
+  private beginForegroundTurnIdentification(foregroundTurnId: string): void {
+    this.pendingForegroundTurnIdentification?.resolve(null);
+    let resolveTurnIdentification!: (turnId: string | null) => void;
+    const promise = new Promise<string | null>((resolve) => {
+      resolveTurnIdentification = resolve;
+    });
+    this.pendingForegroundTurnIdentification = {
+      foregroundTurnId,
+      promise,
+      resolve: resolveTurnIdentification,
+    };
   }
 
   private async requestCodexTurn(
@@ -4680,35 +4778,72 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async interrupt(): Promise<void> {
+    const pendingStart = this.pendingForegroundStart;
+    if (pendingStart) {
+      pendingStart.cancelRequested = true;
+      await pendingStart.promise;
+    }
     if (!this.client || !this.currentThreadId) {
+      if (
+        !this.activeForegroundTurnId &&
+        !this.currentTurnId &&
+        !this.pendingForegroundTurnIdentification
+      ) {
+        return;
+      }
       throw new Error("Cannot interrupt Codex before the active thread is initialized");
     }
-    if (!this.currentTurnId) {
-      throw new Error("Cannot interrupt Codex before turn/started identifies the active turn");
+    let turnId = this.currentTurnId;
+    const foregroundTurnId = this.activeForegroundTurnId;
+    const pendingIdentification = this.pendingForegroundTurnIdentification;
+    // Codex 接受回合后才异步发布原生回合标识；中断必须等待该标识，且始终绑定同一个前台回合。
+    if (
+      !turnId &&
+      foregroundTurnId &&
+      pendingIdentification?.foregroundTurnId === foregroundTurnId
+    ) {
+      turnId = await pendingIdentification.promise;
     }
-    await this.client.request(
-      "turn/interrupt",
-      {
-        threadId: this.currentThreadId,
-        turnId: this.currentTurnId,
-      },
-      INTERRUPT_TIMEOUT_MS,
-    );
+    if (!turnId && !this.activeForegroundTurnId && !this.currentTurnId) {
+      return;
+    }
+    if (!turnId || (foregroundTurnId && this.activeForegroundTurnId !== foregroundTurnId)) {
+      throw new Error("Codex 尚未确认活动回合，当前无法中断");
+    }
+    try {
+      await this.client.request(
+        "turn/interrupt",
+        {
+          threadId: this.currentThreadId,
+          turnId,
+        },
+        INTERRUPT_TIMEOUT_MS,
+      );
+    } catch (error) {
+      if (!isCodexAlreadyIdleInterrupt(error)) {
+        throw error;
+      }
+      this.activeForegroundTurnId = null;
+      this.activeClientMessageId = null;
+      this.currentTurnId = null;
+      this.pendingForegroundTurnIdentification?.resolve(null);
+      this.pendingForegroundTurnIdentification = null;
+    }
   }
 
   async close(): Promise<void> {
-    for (const pending of this.pendingPermissionHandlers.values()) {
-      pending.resolve({ decision: "cancel" });
+    if (this.pendingForegroundStart) {
+      this.pendingForegroundStart.cancelRequested = true;
     }
-    this.pendingPermissionHandlers.clear();
-    this.pendingPermissions.clear();
-    this.resolvedPermissionRequests.clear();
+    this.clearPendingPermissions();
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.subscribers.clear();
     this.activeForegroundTurnId = null;
     this.activeClientMessageId = null;
     this.activeCodexUserMessageId = null;
     this.activeTurnRequest = null;
+    this.pendingForegroundTurnIdentification?.resolve(null);
+    this.pendingForegroundTurnIdentification = null;
     this.capacityRetryInFlight = false;
     this.suppressNextRetriedUserMessage = false;
     this.resetTurnTrackingState();
@@ -5791,6 +5926,14 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     this.currentTurnId = parsed.turnId;
+    const pendingIdentification = this.pendingForegroundTurnIdentification;
+    if (
+      pendingIdentification &&
+      pendingIdentification.foregroundTurnId === this.activeForegroundTurnId
+    ) {
+      pendingIdentification.resolve(parsed.turnId);
+      this.pendingForegroundTurnIdentification = null;
+    }
     this.resetTurnTrackingState();
     this.emitEvent({ type: "turn_started", provider: CODEX_PROVIDER });
   }
@@ -5835,6 +5978,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.activeClientMessageId = null;
     this.activeCodexUserMessageId = null;
     this.activeTurnRequest = null;
+    this.currentTurnId = null;
+    this.pendingForegroundTurnIdentification?.resolve(null);
+    this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.resetTurnTrackingState();
   }
@@ -5907,6 +6053,8 @@ export class CodexAppServerAgentSession implements AgentSession {
         },
         "Codex 模型容量已满，正在自动恢复当前逻辑回合",
       );
+      this.currentTurnId = null;
+      this.beginForegroundTurnIdentification(input.logicalTurnId);
       await this.requestCodexTurn(input.retryPlan.request, input.logicalTurnId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -5924,6 +6072,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.activeCodexUserMessageId = null;
       this.activeTurnRequest = null;
       this.suppressNextRetriedUserMessage = false;
+      this.currentTurnId = null;
+      this.pendingForegroundTurnIdentification?.resolve(null);
+      this.pendingForegroundTurnIdentification = null;
       this.pendingSubAgentNotificationsByThreadId.clear();
       this.resetTurnTrackingState();
     } finally {

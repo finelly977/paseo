@@ -5,7 +5,7 @@ import {
   type CheckoutExistingBranchResult,
   type GitMutationRefreshReason,
 } from "../../../utils/checkout-git.js";
-import { execCommand } from "../../../utils/spawn.js";
+import { runGitCommand } from "../../../utils/run-git-command.js";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
 import { assertSafeGitRef as assertWorktreeSafeGitRef } from "../../worktree-session.js";
 
@@ -122,7 +122,10 @@ export function createGitMutationService(deps: {
       }
 
       await ensureCleanWorkingTree(cwd);
-      await execCommand("git", ["checkout", "-b", newBranchName, baseBranch], { cwd });
+      await runGitCommand(["checkout", "-b", newBranchName, baseBranch], {
+        cwd,
+        timeout: 120_000,
+      });
       await notifyGitMutation(cwd, "create-branch");
     },
 

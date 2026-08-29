@@ -6,6 +6,7 @@ import {
   useQuery,
   type InfiniteData,
   type QueryKey,
+  type QueryClient,
   type UseInfiniteQueryOptions,
   type UseInfiniteQueryResult,
   type UseQueryOptions,
@@ -65,8 +66,11 @@ export function useFetchQuery<
   TError = Error,
   TData = TQueryFnData,
   TQueryKey extends QueryKey = QueryKey,
->(input: FetchQueryInput<TQueryFnData, TError, TData, TQueryKey>): UseQueryResult<TData, TError> {
-  return useQuery(fetchQueryOptions(input));
+>(
+  input: FetchQueryInput<TQueryFnData, TError, TData, TQueryKey>,
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> {
+  return useQuery(fetchQueryOptions(input), queryClient);
 }
 
 export function useFetchQueries<TData>(

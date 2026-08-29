@@ -410,6 +410,45 @@ test("manual retries can immediately re-attempt a failed catch-up", async () => 
   await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
 });
 
+test("插件目录变化时从最新尾部重新投影可见时间线", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const initial = await world.nextFetch("agent-a");
+  initial.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  world.sync.reprojectVisibleTimelines();
+  const reprojection = await world.nextFetch("agent-a");
+
+  expect(reprojection.request).toEqual({
+    direction: "tail",
+    limit: 40,
+    projection: "projected",
+  });
+  reprojection.respond({ hasNewer: false });
+});
+
+test("重复发布相同可见会话不会绕过历史同步退避", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+
+  const failed = await world.nextFetch("agent-a");
+  failed.fail("timeline unavailable");
+  await world.nextRetry();
+
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+
+  world.expectNoPendingMembership();
+  world.expectNoPendingFetch();
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("error");
+});
+
 test("a manual retry that fails returns to the error state", async () => {
   const world = new TimelineWorld();
   world.sync.setConnected(true);
@@ -530,7 +569,23 @@ test("membership failures retry with exponential backoff", async () => {
   await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
 });
 
-test("background waits for grace before unsubscribing and catches up on return", async () => {
+test("重复发布相同可见会话不会绕过订阅退避", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+
+  const failed = await world.nextMembership();
+  failed.fail("subscription unavailable");
+  await world.nextRetry();
+
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+
+  world.expectNoPendingMembership();
+  world.expectNoPendingFetch();
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("error");
+});
+
+test("进入后台后等待宽限期再取消订阅，返回时补齐时间线", async () => {
   const world = new TimelineWorld();
   world.sync.setConnected(true);
   world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);

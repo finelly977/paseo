@@ -99,6 +99,12 @@ Keep the protocol shape provider-agnostic. Do not add provider-specific renderer
 
 Kimi Code usage follows the CLI-managed credential file at `KIMI_CODE_HOME` or `~/.kimi-code/credentials/kimi-code.json`; do not probe the legacy `~/.kimi` path as the primary source for current Kimi Code installs.
 
+Cursor 用量查询优先读取桌面端 `state.vscdb` 中的令牌，然后读取 `cursor-agent` 的 `~/.config/cursor/auth.json`；无桌面环境的主机只有命令行凭据文件。
+
+### 用量查询只读提供方凭据
+
+用量查询器只能读取提供方凭据文件，禁止写入。收到 401 或 403 时应返回“不可用”，并由提供方自己的命令行工具刷新凭据：刷新令牌只能使用一次，在查询器中兑换会让命令行工具持有的副本失效；再用查询器的 Zod 结构重写文件，还会丢弃结构中没有声明的字段，最终破坏命令行工具的凭据文件。
+
 ---
 
 ## ACP Provider Checklist

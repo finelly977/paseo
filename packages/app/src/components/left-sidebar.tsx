@@ -69,6 +69,7 @@ import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
 import { SidebarWorkspaceList } from "./sidebar-workspace-list";
+import { PluginSidebarItems } from "@/plugins";
 
 type SidebarIconTone = "foreground" | "muted";
 
@@ -676,6 +677,7 @@ function MobileSidebar({
             testID="sidebar-schedules"
             variant="compact"
           />
+          <PluginSidebarItems onBeforeNavigate={closeSidebar} />
         </View>
         <WindowChromeSafeArea placement="inline" style={styles.mobileCloseButtonRow}>
           <Pressable
@@ -861,6 +863,7 @@ function DesktopSidebar({
               testID="sidebar-schedules"
               variant="compact"
             />
+            <PluginSidebarItems />
           </View>
         </View>
 

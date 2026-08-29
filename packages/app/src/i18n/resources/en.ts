@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 export const en = {
   common: {
     back: "Back",
@@ -1608,6 +1609,8 @@ export const en = {
       relayDisabled: "Relay is not enabled. Enable relay to pair a device.",
       unavailable: "Pairing offer unavailable.",
       hint: "Scan this QR code with Paseo on your phone, or copy the link below.",
+      securityWarning:
+        "Treat this pairing link like a password. Anyone with it can access this daemon.",
       qrUnavailable: "QR code unavailable.",
       retry: "Retry",
       copy: "Copy",
@@ -1826,8 +1829,10 @@ export const en = {
       providers: "Providers",
       usage: "Usage",
       terminals: "Terminals",
+      plugins: pluginSettings["en"].title,
       host: "Overview",
     },
+    plugins: pluginSettings["en"],
     general: {
       title: "General",
       browserData: {

@@ -448,6 +448,34 @@ export interface SessionOptions {
   workspaceGitService: WorkspaceGitService;
   workspaceAutoName: WorkspaceAutoName;
   daemonConfigStore: DaemonConfigStore;
+  pluginRuntime?: {
+    listPlugins(): import("@getpaseo/protocol/messages").PluginListItem[];
+    getLogs(pluginId: string): import("@getpaseo/protocol/messages").PluginLogEntry[];
+    installDirectory(input: {
+      path: string;
+      id?: string;
+    }): Promise<import("@getpaseo/protocol/messages").PluginListItem>;
+    inspectDirectory(path: string): Promise<{ id: string }>;
+    installSource(input: {
+      source: string;
+      id?: string;
+      ref?: string;
+      pluginPath?: string;
+    }): Promise<import("@getpaseo/protocol/messages").PluginListItem>;
+    statusSources(
+      pluginId?: string,
+    ): Promise<import("@getpaseo/protocol/messages").PluginSourceStatusItem[]>;
+    updateSources(
+      pluginId?: string,
+    ): Promise<import("@getpaseo/protocol/messages").PluginSourceUpdateItem[]>;
+    reloadPlugin(pluginId: string): Promise<import("@getpaseo/protocol/messages").PluginListItem>;
+    enablePlugin(pluginId: string): Promise<import("@getpaseo/protocol/messages").PluginListItem>;
+    disablePlugin(pluginId: string): Promise<import("@getpaseo/protocol/messages").PluginListItem>;
+    removePlugin(pluginId: string): Promise<void>;
+    subscribe(listener: (pluginId: string) => void): () => void;
+    catalog(): Array<{ id: string; clientBundle: string }>;
+    invokePluginRpc(pluginId: string, method: string, input: unknown): Promise<unknown>;
+  };
   mcpBaseUrl?: string | null;
   stt: Resolvable<SpeechToTextProvider | null>;
   sttLanguage?: string;
@@ -612,8 +640,10 @@ export class Session {
   private readonly workspaceRecovery: WorkspaceRecoveryService;
   private readonly daemonConfigStore: DaemonConfigStore;
   private readonly pushNotifications: PushNotifications;
+  private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeProjectMutations: (() => void) | null = null;
+  private unsubscribePluginChanges: (() => void) | null = null;
   private unsubscribeWorkspaceMutations: (() => void) | null = null;
   private registryMutationQueue: Promise<void> = Promise.resolve();
   private isCleanedUp = false;
@@ -694,6 +724,7 @@ export class Session {
       workspaceGitService,
       workspaceAutoName,
       daemonConfigStore,
+      pluginRuntime,
       stt,
       sttLanguage,
       tts,
@@ -731,6 +762,8 @@ export class Session {
     this.pushNotifications = pushNotifications;
     this.paseoHome = paseoHome;
     this.worktreesRoot = worktreesRoot;
+    this.pluginRuntime = pluginRuntime;
+    this.unsubscribePluginChanges = this.subscribeToPluginChanges(pluginRuntime);
     this.sessionLogger = logger.child({
       module: "session",
       clientId: this.clientId,
@@ -894,6 +927,7 @@ export class Session {
       listWorkspaces: () => this.workspaceRegistry.list(),
       logger: this.sessionLogger,
       hubRelationships: options.hubRelationships,
+      reloadConfig: () => daemonConfigStore.reload(),
     });
     this.hubExecutionController = options.hubExecutionAgents
       ? new HubExecutionController({
@@ -1850,10 +1884,164 @@ export class Session {
       this.dispatchWorkspaceAndProjectMessage(msg) ??
       this.dispatchWorkspaceFileMessage(msg, source) ??
       this.dispatchProviderMessage(msg) ??
+      this.dispatchPluginDirectoryMessage(msg) ??
+      this.dispatchPluginMessage(msg) ??
       this.dispatchTerminalMessage(msg) ??
       this.dispatchChatScheduleLoopMessage(msg) ??
       this.dispatchMiscMessage(msg);
     if (promise) await promise;
+  }
+
+  private dispatchPluginMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type === "plugin.list.request") {
+      this.emit({
+        type: "plugin.list.response",
+        payload: { requestId: msg.requestId, plugins: this.pluginRuntime?.listPlugins() ?? [] },
+      });
+      return undefined;
+    }
+    if (msg.type === "plugin.logs.get.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      this.emit({
+        type: "plugin.logs.get.response",
+        payload: {
+          requestId: msg.requestId,
+          pluginId: msg.pluginId,
+          entries: this.pluginRuntime.getLogs(msg.pluginId),
+        },
+      });
+      return undefined;
+    }
+    if (msg.type === "plugin.reload.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.reloadPlugin(msg.pluginId).then((plugin) => {
+        this.emit({
+          type: "plugin.reload.response",
+          payload: { requestId: msg.requestId, plugin },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.enable.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.enablePlugin(msg.pluginId).then((plugin) => {
+        this.emit({
+          type: "plugin.enable.response",
+          payload: { requestId: msg.requestId, plugin },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.disable.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.disablePlugin(msg.pluginId).then((plugin) => {
+        this.emit({
+          type: "plugin.disable.response",
+          payload: { requestId: msg.requestId, plugin },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.remove.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.removePlugin(msg.pluginId).then(() => {
+        this.emit({ type: "plugin.remove.response", payload: { requestId: msg.requestId } });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.catalog.get.request") {
+      this.emit({
+        type: "plugin.catalog.get.response",
+        payload: {
+          requestId: msg.requestId,
+          plugins: this.pluginRuntime?.catalog() ?? [],
+        },
+      });
+      return undefined;
+    }
+    if (msg.type === "plugin.rpc.invoke.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime
+        .invokePluginRpc(msg.pluginId, msg.method, msg.input)
+        .then((output) => {
+          this.emit({
+            type: "plugin.rpc.invoke.response",
+            payload: { requestId: msg.requestId, output },
+          });
+          return undefined;
+        });
+    }
+    return undefined;
+  }
+
+  private dispatchPluginDirectoryMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type === "plugin.source.install.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime
+        .installSource({
+          source: msg.source,
+          ...(msg.id ? { id: msg.id } : {}),
+          ...(msg.ref ? { ref: msg.ref } : {}),
+          ...(msg.pluginPath ? { pluginPath: msg.pluginPath } : {}),
+        })
+        .then((plugin) => {
+          this.emit({
+            type: "plugin.source.install.response",
+            payload: { requestId: msg.requestId, plugin },
+          });
+          return undefined;
+        });
+    }
+    if (msg.type === "plugin.source.status.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.statusSources(msg.pluginId).then((plugins) => {
+        this.emit({
+          type: "plugin.source.status.response",
+          payload: { requestId: msg.requestId, plugins },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.source.update.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.updateSources(msg.pluginId).then((plugins) => {
+        this.emit({
+          type: "plugin.source.update.response",
+          payload: { requestId: msg.requestId, plugins },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.directory.install.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.installDirectory({ path: msg.path, id: msg.id }).then((plugin) => {
+        this.emit({
+          type: "plugin.directory.install.response",
+          payload: { requestId: msg.requestId, plugin },
+        });
+        return undefined;
+      });
+    }
+    if (msg.type === "plugin.directory.inspect.request") {
+      if (!this.pluginRuntime) throw new Error("Plugin service is unavailable");
+      return this.pluginRuntime.inspectDirectory(msg.path).then(({ id }) => {
+        this.emit({
+          type: "plugin.directory.inspect.response",
+          payload: { requestId: msg.requestId, id },
+        });
+        return undefined;
+      });
+    }
+    return undefined;
+  }
+
+  private subscribeToPluginChanges(
+    pluginRuntime: SessionOptions["pluginRuntime"],
+  ): (() => void) | null {
+    if (!pluginRuntime) return null;
+    return pluginRuntime.subscribe((pluginId) => {
+      this.emit({ type: "status", payload: { status: "plugin_catalog_changed", pluginId } });
+    });
   }
 
   private dispatchVoiceAndControlMessage(msg: SessionInboundMessage): Promise<void> | undefined {
@@ -2041,6 +2229,9 @@ export class Session {
         return this.daemonSession.handleGetStatusRequest(msg);
       case "daemon.get_pairing_offer.request":
         return this.daemonSession.handleGetPairingOfferRequest(msg);
+      case "daemon.config.reload.request":
+        this.daemonSession.handleConfigReloadRequest(msg);
+        return undefined;
       case "hub.management.daemon.connect.request":
       case "hub.management.daemon.get_status.request":
       case "hub.management.daemon.disconnect.request":
@@ -6890,6 +7081,8 @@ export class Session {
     }
     this.unsubscribeProjectMutations?.();
     this.unsubscribeProjectMutations = null;
+    this.unsubscribePluginChanges?.();
+    this.unsubscribePluginChanges = null;
     this.unsubscribeWorkspaceMutations?.();
     this.unsubscribeWorkspaceMutations = null;
     this.agentUpdates.dispose();

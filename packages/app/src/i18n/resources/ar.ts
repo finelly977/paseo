@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const ar: TranslationResources = {
@@ -1599,6 +1600,8 @@ export const ar: TranslationResources = {
       relayDisabled: "لم يتم تمكين التتابع. تمكين التتابع لإقران جهاز.",
       unavailable: "عرض الاقتران غير متاح.",
       hint: "قم بمسح رمز QR هذا باستخدام Paseo على هاتفك، أو انسخ الرابط أدناه.",
+      securityWarning:
+        "تعامل مع رابط الاقتران هذا ككلمة مرور. يمكن لأي شخص يملكه الوصول إلى هذا البرنامج الخفي.",
       qrUnavailable: "رمز QR غير متاح.",
       retry: "أعد المحاولة",
       copy: "ينسخ",
@@ -1817,8 +1820,10 @@ export const ar: TranslationResources = {
       providers: "مقدمي الخدمات",
       usage: "الاستخدام",
       terminals: "Terminals",
+      plugins: pluginSettings["ar"].title,
       host: "نظرة عامة",
     },
+    plugins: pluginSettings["ar"],
     general: {
       title: "عام",
       browserData: {

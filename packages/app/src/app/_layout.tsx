@@ -21,8 +21,11 @@ import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-ha
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { AppearanceProvider } from "@/appearance/provider";
 import { CommandCenter, CommandCenterRootActions } from "@/command-center/command-center";
 import { CommandCenterProvider } from "@/command-center/provider";
+import { CommandCenterWorkspaceActions } from "@/command-center/workspace-registration";
+import { PluginCommandCenterActions } from "@/plugins/command-center/registration";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
 import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
@@ -101,7 +104,6 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { getDaemonStartService } from "@/runtime/daemon-start-service";
-import { applyAppearanceSettings } from "@/screens/settings/appearance/apply-appearance-settings";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { flushDraftPersistStorage } from "@/stores/draft-store";
 import type { ThemeName } from "@/styles/theme";
@@ -123,6 +125,7 @@ import {
 } from "@/utils/host-routes";
 import { buildNotificationRoute, resolveNotificationTarget } from "@/utils/notification-routing";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { PluginCatalogSync } from "@/plugins";
 import {
   ensureOsNotificationPermission,
   WEB_NOTIFICATION_CLICK_EVENT,
@@ -265,6 +268,7 @@ function ManagedDaemonSession({ daemon }: { daemon: HostProfile }) {
   return (
     <SessionProvider key={daemon.serverId} serverId={daemon.serverId} client={client}>
       <LegacyFavoriteProfileMigrationBootstrap serverId={daemon.serverId} client={client} />
+      <PluginCatalogSync serverId={daemon.serverId} client={client} />
     </SessionProvider>
   );
 }
@@ -588,6 +592,8 @@ function AppContainer({
       <UpdateCalloutSource />
       <WorktreeSetupCalloutSource />
       <CommandCenterRootActions />
+      <CommandCenterWorkspaceActions />
+      <PluginCommandCenterActions />
       <CommandCenter />
       <AddProjectFlowHost />
       <HostChooserModal />
@@ -649,38 +655,19 @@ function MobileGestureWrapper({
 }
 
 function ProvidersWrapper({ children }: { children: ReactNode }) {
-  const { settings, isLoading: settingsLoading } = useAppSettings();
+  const { isLoading: settingsLoading } = useAppSettings();
   const { upsertConnectionFromOfferUrl } = useHostMutations();
 
-  // 先更新所有主题的外观内容，再选择固定主题或启用自动主题。
-  useEffect(() => {
-    if (settingsLoading) return;
-    applyAppearanceSettings({
-      theme: settings.theme,
-      uiFontFamily: settings.uiFontFamily,
-      monoFontFamily: settings.monoFontFamily,
-      uiFontSize: settings.uiFontSize,
-      codeFontSize: settings.codeFontSize,
-      syntaxTheme: settings.syntaxTheme,
-    });
-  }, [
-    settingsLoading,
-    settings.theme,
-    settings.uiFontFamily,
-    settings.monoFontFamily,
-    settings.uiFontSize,
-    settings.codeFontSize,
-    settings.syntaxTheme,
-  ]);
-
   return (
-    <VoiceProvider>
-      <DesktopWindowControlsSync enabled={!settingsLoading} />
-      <OfferLinkListener upsertDaemonFromOfferUrl={upsertConnectionFromOfferUrl} />
-      <HostSessionManager />
-      <FaviconStatusSync />
-      {children}
-    </VoiceProvider>
+    <AppearanceProvider>
+      <VoiceProvider>
+        <DesktopWindowControlsSync enabled={!settingsLoading} />
+        <OfferLinkListener upsertDaemonFromOfferUrl={upsertConnectionFromOfferUrl} />
+        <HostSessionManager />
+        <FaviconStatusSync />
+        {children}
+      </VoiceProvider>
+    </AppearanceProvider>
   );
 }
 

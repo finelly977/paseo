@@ -8,6 +8,24 @@ import {
 import { CodexAppServerClient } from "./app-server-transport.js";
 
 describe("Codex app-server transport", () => {
+  test("进程异常退出时只通知一次并拒绝尚未完成的请求", async () => {
+    const child = createCodexAppServerChildProcess();
+    const client = new CodexAppServerClient(child, createTestLogger());
+    const terminations: Error[] = [];
+    client.setUnexpectedTerminationHandler((error) => terminations.push(error));
+    const request = client.request("model/list", {});
+
+    child.emit("exit", 9, null);
+    child.emit("error", new Error("重复的进程错误"));
+
+    await expect(request).rejects.toThrow("exited with code 9");
+    expect(terminations).toHaveLength(1);
+    expect(terminations[0]?.message).toContain("exited with code 9");
+    child.stdout.end();
+    child.stderr.end();
+    child.stdin.end();
+  });
+
   test("ignores non-JSON stdout lines without dropping pending requests", async () => {
     const child = createCodexAppServerChildProcess();
     const client = new CodexAppServerClient(child, createTestLogger());

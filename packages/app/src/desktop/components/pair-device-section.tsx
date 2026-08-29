@@ -8,6 +8,7 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { RotateCw, Copy, Check } from "lucide-react-native";
 import { settingsStyles } from "@/styles/settings";
 import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
 import { getDesktopDaemonPairing, shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { useState } from "react";
 
@@ -109,6 +110,7 @@ export function PairDeviceSection() {
       retry: t("pairing.device.retry"),
       copy: t("pairing.device.copy"),
       copied: t("pairing.device.copied"),
+      securityWarning: t("pairing.device.securityWarning"),
     }),
     [t],
   );
@@ -164,6 +166,7 @@ interface PairDeviceBodyProps {
     retry: string;
     copy: string;
     copied: string;
+    securityWarning: string;
   };
 }
 
@@ -225,6 +228,7 @@ function PairDeviceBody(props: PairDeviceBodyProps) {
           {copied ? labels.copied : labels.copy}
         </Button>
       </View>
+      <Alert variant="warning" description={labels.securityWarning} />
     </View>
   );
 }

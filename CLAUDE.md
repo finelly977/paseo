@@ -12,6 +12,7 @@ Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移�
 
 - `packages/server` — 守护进程：智能体生命周期、WebSocket API、MCP 服务端
 - `packages/app` — 移动端和网页客户端（Expo）
+- `packages/plugin` — 受信任本地插件的公共 SDK 与宿主契约
 - `packages/cli` — Docker 风格命令行工具（`paseo run/ls/logs/wait`）
 - `packages/relay` — 端到端加密的远程中继
 - `packages/desktop` — Electron 桌面端外壳
@@ -44,6 +45,7 @@ Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移�
 | [docs/providers.md](docs/providers.md)                             | 端到端新增智能体提供方                                                              |
 | [docs/forge-providers.md](docs/forge-providers.md)                 | 新增 Git 托管服务：注册表、清单、接入检查表、自托管/GHES 和两级事实模型             |
 | [docs/custom-providers.md](docs/custom-providers.md)               | 自定义提供方配置：Z.AI、阿里云/Qwen、ACP 智能体、配置档案和自定义二进制文件         |
+| [docs/plugins.md](docs/plugins.md)                                 | 本地插件清单、安装来源、RPC、界面扩展和附件来源                                     |
 | [docs/service-proxy.md](docs/service-proxy.md)                     | 服务代理：通过公网地址暴露工作区脚本、DNS 设置和反向代理                            |
 | [docs/development.md](docs/development.md)                         | 开发服务、构建同步注意事项、CLI 参考和智能体状态                                    |
 | [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                 | WebSocket RPC 命名空间规范：点分命名和 `.request`/`.response` 配对                  |

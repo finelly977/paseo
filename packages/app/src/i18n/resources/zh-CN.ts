@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const zhCN: TranslationResources = {
@@ -1578,6 +1579,7 @@ export const zhCN: TranslationResources = {
       relayDisabled: "Relay 未启用。启用 relay 后才能配对设备。",
       unavailable: "配对 offer 不可用。",
       hint: "用手机上的 Paseo 扫描此二维码，或复制下方链接。",
+      securityWarning: "请像保管密码一样保管此配对链接。任何获得此链接的人都可以访问此守护进程。",
       qrUnavailable: "二维码不可用。",
       retry: "重试",
       copy: "复制",
@@ -1796,8 +1798,10 @@ export const zhCN: TranslationResources = {
       providers: "Providers",
       usage: "使用情况",
       terminals: "Terminals",
+      plugins: pluginSettings["zh-CN"].title,
       host: "概览",
     },
+    plugins: pluginSettings["zh-CN"],
     general: {
       title: "通用",
       browserData: {

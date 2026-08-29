@@ -1,3 +1,4 @@
+import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const ja: TranslationResources = {
@@ -1614,6 +1615,8 @@ export const ja: TranslationResources = {
         "リレーが有効になっていません。デバイスをペアリングするにはリレーを有効にしてください。",
       unavailable: "ペアリングオファーが利用できません。",
       hint: "スマートフォンのPaseoでこのQRコードをスキャンするか、以下のリンクをコピーしてください。",
+      securityWarning:
+        "このペアリングリンクはパスワードと同様に扱ってください。リンクを知っている人は誰でもこのデーモンにアクセスできます。",
       qrUnavailable: "QRコードが利用できません。",
       retry: "再試行",
       copy: "コピー",
@@ -1832,8 +1835,10 @@ export const ja: TranslationResources = {
       providers: "プロバイダー",
       usage: "使用状況",
       terminals: "ターミナル",
+      plugins: pluginSettings["ja"].title,
       host: "概要",
     },
+    plugins: pluginSettings["ja"],
     general: {
       title: "一般",
       browserData: {

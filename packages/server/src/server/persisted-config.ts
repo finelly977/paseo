@@ -12,6 +12,8 @@ import { ensurePrivateFile, writePrivateFileAtomicSync } from "./private-files.j
 import {
   AgentProfileSchema,
   GitAiConfigSchema,
+  PluginIdSchema,
+  PluginSourceSchema,
   TerminalProfileSchema,
 } from "@getpaseo/protocol/messages";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
@@ -252,6 +254,13 @@ export const PersistedConfigSchema = z
           })
           .passthrough()
           .optional(),
+        git: z
+          .object({
+            maxProcessesPerSecond: z.number().int().positive().optional(),
+            maxProcessConcurrency: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
         autoArchiveAfterMerge: z.boolean().optional(),
         enableTerminalAgentHooks: z.boolean().optional(),
         appendSystemPrompt: z.string().optional(),
@@ -301,6 +310,8 @@ export const PersistedConfigSchema = z
       .optional(),
 
     providers: ProvidersSchema.optional(),
+    pluginsEnabled: z.boolean().optional(),
+    plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
     worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({

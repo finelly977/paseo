@@ -7,9 +7,9 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   NativeSyntheticEvent,
-  TextInputContentSizeChangeEventData,
   TextInputKeyPressEventData,
   TextInputSelectionChangeEventData,
+  type LayoutChangeEvent,
 } from "react-native";
 import {
   useState,
@@ -59,7 +59,7 @@ import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useComposerHeightMirror } from "./height-mirror";
-import { resolveComposerInputHeightStyle, shouldScrollComposerInput } from "./height-style";
+import { resolveComposerInputHeightStyle, resolveComposerInputScrollEnabled } from "./height-style";
 import {
   resolveSendTooltipLabel,
   resolveSubmitAccessibilityLabel,
@@ -1524,9 +1524,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         if (Math.abs(inputHeightRef.current - bounded) < 1) return;
         inputHeightRef.current = bounded;
         setInputHeight(bounded);
-        onHeightChange?.(bounded);
       },
-      [maxInputHeight, onHeightChange],
+      [maxInputHeight],
     );
 
     useEffect(() => {
@@ -1540,14 +1539,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       maxHeight: maxInputHeight,
       onHeight: setBoundedInputHeight,
     });
-
-    const handleContentSizeChange = useCallback(
-      (event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
-        if (isWeb) return;
-        setBoundedInputHeight(event.nativeEvent.contentSize.height);
-      },
-      [setBoundedInputHeight],
-    );
 
     const handleSelectionChange = useCallback(
       (event: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
@@ -1719,8 +1710,20 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [isDictating, isRealtimeVoiceForCurrentAgent, voice?.isMuted, buttonIconSize],
     );
 
+    const handleComposerLayout = useCallback(
+      (event: LayoutChangeEvent) => {
+        onHeightChange?.(event.nativeEvent.layout.height);
+      },
+      [onHeightChange],
+    );
+
     return (
-      <View ref={rootRef} style={styles.container} testID="message-input-root">
+      <View
+        ref={rootRef}
+        style={styles.container}
+        testID="message-input-root"
+        onLayout={handleComposerLayout}
+      >
         {/* Regular input */}
         <View
           ref={inputWrapperRef}
@@ -1742,8 +1745,11 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               onBlur={handleInputBlur}
               style={textInputStyle}
               multiline
-              scrollEnabled={shouldScrollComposerInput({ inputHeight, maxInputHeight })}
-              onContentSizeChange={handleContentSizeChange}
+              scrollEnabled={resolveComposerInputScrollEnabled({
+                inputHeight,
+                maxInputHeight,
+                applyMeasuredHeight: isWeb,
+              })}
               editable={!isDictating && !isRealtimeVoiceForCurrentAgent && !disabled}
               onKeyPress={shouldHandleWebKeyPress ? handleDesktopKeyPress : undefined}
               onSelectionChange={handleSelectionChange}

@@ -46,6 +46,7 @@ export class CodexAppServerRpcError extends Error {
 
 type RequestHandler = (params: unknown, requestId: number) => unknown;
 type NotificationHandler = (method: string, params: unknown) => void;
+type UnexpectedTerminationHandler = (error: Error) => void;
 
 export interface CodexThreadForkParams {
   threadId: string;
@@ -170,6 +171,7 @@ export class CodexAppServerClient {
   private readonly pending = new Map<number, PendingRequest>();
   private readonly requestHandlers = new Map<string, RequestHandler>();
   private notificationHandler: NotificationHandler | null = null;
+  private unexpectedTerminationHandler: UnexpectedTerminationHandler | null = null;
   private nextId = 1;
   private disposed = false;
   private stderrBuffer = "";
@@ -195,12 +197,7 @@ export class CodexAppServerClient {
 
     child.on("error", (err) => {
       this.logger.error({ err }, "Codex app-server child process error");
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(err);
-      }
-      this.pending.clear();
-      this.disposed = true;
+      this.handleUnexpectedTermination(err);
     });
 
     child.on("exit", (code, signal) => {
@@ -209,13 +206,12 @@ export class CodexAppServerClient {
           ? "Codex app-server exited"
           : `Codex app-server exited with code ${code ?? "null"} and signal ${signal ?? "null"}`;
       const error = new Error(`${message}\n${this.stderrBuffer}`.trim());
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(error);
-      }
-      this.pending.clear();
-      this.disposed = true;
+      this.handleUnexpectedTermination(error);
     });
+  }
+
+  setUnexpectedTerminationHandler(handler: UnexpectedTerminationHandler): void {
+    this.unexpectedTerminationHandler = handler;
   }
 
   setNotificationHandler(handler: NotificationHandler): void {
@@ -262,6 +258,7 @@ export class CodexAppServerClient {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.unexpectedTerminationHandler = null;
     this.rl.close();
     try {
       this.child.stdin.end();
@@ -283,6 +280,25 @@ export class CodexAppServerClient {
         { timeoutMs: APP_SERVER_FORCE_SHUTDOWN_TIMEOUT_MS },
         "Codex app-server did not report exit after SIGKILL",
       );
+    }
+  }
+
+  private handleUnexpectedTermination(error: Error): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.rl.close();
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pending.clear();
+    const handler = this.unexpectedTerminationHandler;
+    this.unexpectedTerminationHandler = null;
+    if (!handler) return;
+    try {
+      handler(error);
+    } catch (handlerError) {
+      this.logger.warn({ err: handlerError }, "Codex 进程异常终止处理器执行失败");
     }
   }
 

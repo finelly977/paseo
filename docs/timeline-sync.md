@@ -37,6 +37,14 @@ Initialization timeouts guard lack of catch-up progress, not the full multi-page
 
 The first load of an agent without a local cursor is different: it fetches a bounded latest tail page. Older history remains user-driven by scrolling upward.
 
+首次打开或恢复没有本地游标的会话时，只读取一页有界的最新尾部；更早的历史仍由用户向上滚动时加载。
+
+补载或订阅协调失败后会自动重试，间隔从 1 秒开始翻倍，最高 30 秒。固定每秒重试会让持续存在的守护进程拒绝（例如同一 Codex 线程已有活动写入者）在应用空闲时也不断产生请求和日志。成功、重连、传输模式变化或真正的可见会话集合变化会重置间隔；重复发布完全相同的可见集合是空操作，不能绕过退避。
+
+后台自动重试不打扰用户。同步错误提示中的手动重试是可能失败的用户操作，进行中状态由同步模型统一发布；重试失败后界面会回到错误状态。
+
+到达历史起点阈值时只加载一页更早内容，并保持当前可见内容锚点。游标推进本身不会连续触发下一页；只有新页面仍不足以填满视口或历史尚未脱离起点时，才在同一次加载操作中继续分页，直到填满视口或耗尽历史。
+
 ## Durable item anchors
 
 Provider message IDs are not guaranteed for every displayed item. Paseo-generated system errors are one example. Rendered item indices are not durable either because pagination and projection can merge source rows.

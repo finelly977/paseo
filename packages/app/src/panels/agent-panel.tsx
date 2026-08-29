@@ -54,6 +54,7 @@ import { reconcileMissingAgentStateWithPresentAgent } from "@/panels/agent-panel
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
 import { RenderProfile } from "@/utils/render-profiler";
+import { PluginComposerPills } from "@/plugins";
 import { buildDraftPanelDescriptor } from "@/panels/draft-panel-descriptor";
 import {
   type HostRuntimeConnectionStatus,
@@ -1590,6 +1591,12 @@ function ActiveAgentComposer({
 
   return (
     <ReanimatedAnimated.View style={inputAreaStyle} onLayout={onInputAreaLayout}>
+      <PluginComposerPills
+        serverId={serverId}
+        workspaceId={workspaceId}
+        agentId={agentId}
+        compact={isCompactComposerLayout}
+      />
       <AgentTaskList serverId={serverId} agentId={agentId} />
       <SubagentsTrack
         rows={subagentRows}
