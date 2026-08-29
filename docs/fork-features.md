@@ -430,3 +430,15 @@
 - `packages/protocol/src/messages.ts`
 - `packages/server/src/server/session/files/workspace-files-session.ts`
 - `packages/server/src/server/file-observer/`
+
+### 22. 更换守护进程客户端后时间线订阅不会丢失
+
+- 守护进程把时间线订阅记在具体的 WebSocket 连接上，连接关闭即丢弃。客户端因此必须在每条新连接上重新发送订阅。
+- 客户端的订阅同步器现在按创建时的真实连接状态初始化，不再一律从“未连接”开始。此前主机运行时在连接保持在线的情况下更换守护进程客户端实例时，会新建一个始终认为自己离线的同步器，它永远不会发出订阅请求：智能体正常执行并写入时间线，但该客户端收不到任何实时事件，界面停在发出消息的那一刻，直到重新加载会话走权威拉取才显示新增内容。
+- 该缺陷与提供方无关，Claude 和 Codex 都会出现，且在空闲时正常发送消息即可触发。
+- 上游 `v0.7.0-beta.2` 仍存在同一缺陷，属于二开先行修复。
+
+主要涉及：
+
+- `packages/app/src/timeline/viewed-timeline-sync.ts`
+- `packages/app/src/contexts/session-context.tsx`

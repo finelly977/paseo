@@ -13,6 +13,16 @@ interface TimelinePageResult {
 
 interface ViewedTimelineSyncPorts {
   initialDeliveryMode: TimelineDeliveryMode;
+  /**
+   * Whether the daemon connection is already established when the sync is created.
+   *
+   * The daemon keys each timeline subscription to the physical socket and drops it when that
+   * socket closes, so a sync that starts life believing it is offline never sends the
+   * subscription RPC. Callers that recreate the sync while a connection is already live — for
+   * example when the host runtime swaps the daemon client — must seed the real state here
+   * instead of relying on a later `setConnected` transition that will never arrive.
+   */
+  initialConnected: boolean;
   setSubscription(agentIds: string[]): Promise<void>;
   readCursor(agentId: string): AgentTimelineCursorState | undefined;
   hasAuthoritativeHistory(agentId: string): boolean;
@@ -106,7 +116,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   const manualRetries = new Set<string>();
   const listeners = new Set<() => void>();
   let active = true;
-  let connected = false;
+  let connected = ports.initialConnected;
   let deliveryMode = ports.initialDeliveryMode;
   let disposed = false;
   let desired: string[] = [];

@@ -38,6 +38,7 @@ class TimelineWorld {
   readonly errors: string[] = [];
   readonly sync = createViewedTimelineSync({
     initialDeliveryMode: "selective",
+    initialConnected: false,
     setSubscription: async (agentIds) => {
       const result = deferred<void>();
       this.memberships.push({
@@ -790,4 +791,30 @@ test("switching from legacy to selective delivery publishes membership and catch
   expect(membership.agentIds).toEqual(["agent-a"]);
   world.expectNoPendingMembership();
   world.expectNoPendingFetch();
+});
+
+test("a sync created while already connected subscribes without a setConnected transition", async () => {
+  // The daemon keys each timeline subscription to the physical socket and drops it when that
+  // socket closes. Recreating the sync against a live connection — the host runtime swapping the
+  // daemon client — used to leave it believing it was offline, so it never sent the subscription
+  // RPC and the agent silently stopped receiving live events until an authoritative reload.
+  const memberships: string[][] = [];
+  const sync = createViewedTimelineSync({
+    initialDeliveryMode: "selective",
+    initialConnected: true,
+    setSubscription: async (agentIds) => {
+      memberships.push(agentIds);
+    },
+    readCursor: () => undefined,
+    hasAuthoritativeHistory: () => false,
+    fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+    reportError: () => {},
+    schedule: () => () => {},
+  });
+
+  sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+
+  await vi.waitFor(() => expect(memberships).toEqual([["agent-a"]]));
+  await vi.waitFor(() => expect(sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  sync.dispose();
 });

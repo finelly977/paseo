@@ -491,6 +491,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const attentionNotificationInFlightRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef(AppState.currentState);
   const viewedTimelineSyncRef = useRef<ViewedTimelineSync | null>(null);
+  // The sync is recreated whenever the daemon client instance changes, which can happen while the
+  // connection stays online. Seeding it from this ref keeps a recreated sync from waiting forever
+  // on a setConnected transition that already happened.
+  const isConnectedRef = useRef(isConnected);
   const audioOutputBuffersRef = useRef<Map<string, BufferedAudioChunk[]>>(new Map());
   const activeAudioGroupsRef = useRef<Set<string>>(new Set());
 
@@ -787,6 +791,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     );
     const sync = createViewedTimelineSync({
       initialDeliveryMode,
+      initialConnected: isConnectedRef.current,
       setSubscription: (agentIds) => client.setAgentTimelineSubscription(agentIds),
       readCursor: (agentId) =>
         useSessionStore.getState().sessions[serverId]?.agentTimelineCursor.get(agentId),
@@ -855,6 +860,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   }, [client, serverId, setInitializingAgents, setViewedTimelineSync]);
 
   useEffect(() => {
+    isConnectedRef.current = isConnected;
     viewedTimelineSyncRef.current?.setConnected(isConnected);
   }, [isConnected]);
 
