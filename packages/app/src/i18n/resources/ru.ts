@@ -1211,6 +1211,12 @@ export const ru: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Свернуть окно",
+      maximize: "Развернуть окно",
+      restore: "Восстановить окно",
+      close: "Закрыть окно",
+    },
     quitting: {
       title: "Выход из Paseo...",
       detail: "Остановка локального демона.",

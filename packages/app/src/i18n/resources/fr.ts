@@ -1222,6 +1222,12 @@ export const fr: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Réduire la fenêtre",
+      maximize: "Agrandir la fenêtre",
+      restore: "Restaurer la fenêtre",
+      close: "Fermer la fenêtre",
+    },
     quitting: {
       title: "QuitterPaseo...",
       detail: "Arrêt du démon local.",

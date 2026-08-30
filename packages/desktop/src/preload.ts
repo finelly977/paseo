@@ -10,6 +10,16 @@ import type { BrowserKeyboardPolicy } from "./features/browser-keyboard/index.js
 const PASEO_BROWSER_PROFILE_PARTITION = "persist:paseo-browser";
 
 type EventHandler = (payload: unknown) => void;
+type DesktopWindowChromeMode = "native-mac" | "custom-windows" | "custom-linux";
+
+function readWindowChromeMode(): DesktopWindowChromeMode {
+  const prefix = "--paseo-window-chrome-mode=";
+  const value = process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+  if (value === "native-mac" || value === "custom-windows" || value === "custom-linux") {
+    return value;
+  }
+  throw new Error(`桌面窗口控件模式参数缺失或无效：${String(value)}`);
+}
 
 interface AttachedBrowserRegistration {
   browserId: string;
@@ -19,6 +29,7 @@ interface AttachedBrowserRegistration {
 
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
+  windowChromeMode: readWindowChromeMode(),
   invoke: (command: string, args?: Record<string, unknown>) =>
     ipcRenderer.invoke("paseo:invoke", command, args),
   getPendingOpenProject: () =>
@@ -45,16 +56,15 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     openNew: (options?: { pendingOpenProjectPath?: string | null }) =>
       ipcRenderer.invoke("paseo:window:openNew", options),
     getCurrentWindow: () => ({
+      minimize: () => ipcRenderer.invoke("paseo:window:minimize"),
+      close: () => ipcRenderer.invoke("paseo:window:close"),
       toggleMaximize: () => ipcRenderer.invoke("paseo:window:toggleMaximize"),
+      isMaximized: () => ipcRenderer.invoke("paseo:window:isMaximized"),
       setFullscreen: (fullscreen: boolean) =>
         ipcRenderer.invoke("paseo:window:setFullscreen", fullscreen),
       isFullscreen: () => ipcRenderer.invoke("paseo:window:isFullscreen"),
-      updateWindowControls: (update: {
-        height?: number;
-        backgroundColor?: string;
-        foregroundColor?: string;
-        trafficLightOffsetY?: number;
-      }) => ipcRenderer.invoke("paseo:window:updateWindowControls", update),
+      updateChrome: (update: { backgroundColor?: string; trafficLightOffsetY?: number }) =>
+        ipcRenderer.invoke("paseo:window:updateChrome", update),
       onResized: (handler: EventHandler): (() => void) => {
         const listener = (_ipcEvent: Electron.IpcRendererEvent, payload: unknown) => {
           handler(payload);

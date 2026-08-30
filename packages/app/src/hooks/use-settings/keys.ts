@@ -4,10 +4,7 @@ export const APP_SETTINGS_KEY = "@paseo:app-settings";
 export const LEGACY_SETTINGS_KEY = "@paseo:settings";
 
 /**
- * The applied-migration marker deliberately sits outside the settings blob:
- * `StoredAppSettingsSchema` is a strict object and `readValidatedJson` clears the value when
- * parsing fails, so a new field there would wipe every setting for anyone who downgrades to a
- * client that predates it. Keeping the marker as a list of ids also means the next migration is
- * a new entry rather than a schema change.
+ * 已执行迁移的标记独立于设置主体保存。设置主体会保留较新版本写入的字段，而迁移标记
+ * 继续使用标识列表，新增迁移时只增加列表项，不必改变设置结构。
  */
 export const SETTINGS_MIGRATIONS_KEY = "@paseo:settings-migrations";

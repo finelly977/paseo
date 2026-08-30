@@ -3,7 +3,7 @@ import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
 import type { QueryClient } from "@tanstack/react-query";
 import type { DesktopSettings } from "@/desktop/settings/desktop-settings";
 import { parseAppLanguage, type AppLanguage } from "@/i18n/locales";
-import { PLUGIN_THEME_PREFERENCE, THEME_TO_UNISTYLES, type ThemePreference } from "@/styles/theme";
+import { PLUGIN_THEME_PREFERENCE, type ThemePreference } from "@/styles/theme";
 import {
   DEFAULT_CONVERSATION_HISTORY_LOAD_COUNT,
   DEFAULT_TOTAL_CONVERSATION_HISTORY_LIMIT,
@@ -27,11 +27,6 @@ export type WorkspaceTitleSource = "title" | "branch";
 export type ToolCallDetailLevel = "overview" | "detailed";
 
 export const DEFAULT_THEME_PREFERENCE = "auto" satisfies ThemePreference;
-const VALID_THEMES = new Set<string>([
-  ...Object.keys(THEME_TO_UNISTYLES),
-  "auto",
-  PLUGIN_THEME_PREFERENCE,
-]);
 const ThemePreferenceSchema = z.enum([
   "light",
   "dark",
@@ -42,9 +37,6 @@ const ThemePreferenceSchema = z.enum([
   "auto",
   PLUGIN_THEME_PREFERENCE,
 ]);
-const VALID_SERVICE_URL_BEHAVIORS = new Set<ServiceUrlBehavior>(["ask", "in-app", "external"]);
-const VALID_WORKSPACE_TITLE_SOURCES = new Set<WorkspaceTitleSource>(["title", "branch"]);
-const VALID_TOOL_CALL_DETAIL_LEVELS = new Set<ToolCallDetailLevel>(["overview", "detailed"]);
 export const DEFAULT_TERMINAL_SCROLLBACK_LINES = 10_000;
 export const MIN_TERMINAL_SCROLLBACK_LINES = 0;
 export const MAX_TERMINAL_SCROLLBACK_LINES = 1_000_000;
@@ -122,45 +114,44 @@ export interface Settings extends AppSettings {
   releaseChannel: ReleaseChannel;
 }
 
-const StoredAppSettingsSchema = z.strictObject({
-  theme: ThemePreferenceSchema.optional(),
-  pluginThemeId: z.string().nullable().optional(),
-  language: z
-    .enum(["system", "ar", "en", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-CN"])
-    .optional(),
-  sendBehavior: z.enum(["interrupt", "steer", "queue"]).optional(),
-  serviceUrlBehavior: z.enum(["ask", "in-app", "external"]).optional(),
-  terminalScrollbackLines: z.union([z.number(), z.string()]).optional(),
-  uiFontFamily: z.string().optional(),
-  monoFontFamily: z.string().optional(),
-  uiFontSize: z.union([z.number(), z.string()]).optional(),
-  codeFontSize: z.union([z.number(), z.string()]).optional(),
-  syntaxTheme: z.string().refine(isSyntaxThemeId).optional(),
-  workspaceTitleSource: z.enum(["title", "branch"]).optional(),
-  autoExpandReasoning: z.boolean().optional(),
-  toolCallDetailLevel: z.enum(["overview", "detailed"]).optional(),
-  compactToolCalls: z.boolean().optional(),
-  vimKeybindings: z.boolean().optional(),
-  messageParagraphSpacing: z.union([z.number(), z.string()]).optional(),
-  conversationMessageSpacing: z.union([z.number(), z.string()]).optional(),
-  conversationDividerSpacing: z.union([z.number(), z.string()]).optional(),
-  conversationVerticalPadding: z.union([z.number(), z.string()]).optional(),
-  conversationHorizontalPadding: z.union([z.number(), z.string()]).optional(),
-  sidebarWorkspaceVisibleCount: z.union([z.number(), z.string()]).optional(),
-  sidebarProjectSpacing: z.union([z.number(), z.string()]).optional(),
-  sidebarSessionSpacing: z.union([z.number(), z.string()]).optional(),
-  sidebarRowVerticalPadding: z.union([z.number(), z.string()]).optional(),
-  sidebarHorizontalPadding: z.union([z.number(), z.string()]).optional(),
-  conversationHistoryLoadCount: z.union([z.number(), z.string()]).optional(),
-  totalConversationHistoryLimit: z.union([z.number(), z.string()]).optional(),
+const StoredAppSettingsSchema = z.looseObject({
+  theme: z.unknown().optional(),
+  pluginThemeId: z.unknown().optional(),
+  language: z.unknown().optional(),
+  sendBehavior: z.unknown().optional(),
+  serviceUrlBehavior: z.unknown().optional(),
+  terminalScrollbackLines: z.unknown().optional(),
+  uiFontFamily: z.unknown().optional(),
+  monoFontFamily: z.unknown().optional(),
+  uiFontSize: z.unknown().optional(),
+  codeFontSize: z.unknown().optional(),
+  syntaxTheme: z.unknown().optional(),
+  workspaceTitleSource: z.unknown().optional(),
+  autoExpandReasoning: z.unknown().optional(),
+  toolCallDetailLevel: z.unknown().optional(),
+  compactToolCalls: z.unknown().optional(),
+  vimKeybindings: z.unknown().optional(),
+  messageParagraphSpacing: z.unknown().optional(),
+  conversationMessageSpacing: z.unknown().optional(),
+  conversationDividerSpacing: z.unknown().optional(),
+  conversationVerticalPadding: z.unknown().optional(),
+  conversationHorizontalPadding: z.unknown().optional(),
+  sidebarWorkspaceVisibleCount: z.unknown().optional(),
+  sidebarProjectSpacing: z.unknown().optional(),
+  sidebarSessionSpacing: z.unknown().optional(),
+  sidebarRowVerticalPadding: z.unknown().optional(),
+  sidebarHorizontalPadding: z.unknown().optional(),
+  conversationHistoryLoadCount: z.unknown().optional(),
+  totalConversationHistoryLimit: z.unknown().optional(),
   // COMPAT(rendererDesktopSettings): these fields used to share this renderer-owned key.
-  manageBuiltInDaemon: z.boolean().optional(),
-  releaseChannel: z.enum(["stable", "beta"]).optional(),
+  manageBuiltInDaemon: z.unknown().optional(),
+  releaseChannel: z.unknown().optional(),
 });
 
 const LegacyRendererSettingsSchema = StoredAppSettingsSchema;
 
 type StoredAppSettings = z.infer<typeof StoredAppSettingsSchema>;
+export type PersistedAppSettings = StoredAppSettings;
 
 export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME_PREFERENCE,
@@ -229,16 +220,18 @@ export async function saveAppSettings(input: {
   const current = normalizeAppSettings(storedCurrent);
   const next = { ...current, ...input.updates };
   input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
-  await input.deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(next));
+  const stored =
+    (await readValidatedJson(input.deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema)) ?? {};
+  await writeAppSettings(input.deps.storage, stored, next);
 }
 
 export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<AppSettings> {
   try {
     const read = await readAppSettings(deps);
     if (read.needsWrite) {
-      await deps.storage.setItem(APP_SETTINGS_KEY, JSON.stringify(read.settings));
+      await writeAppSettings(deps.storage, read.stored, read.settings);
     }
-    return await migrateAppSettings(read.settings, deps.storage);
+    return await migrateAppSettings(read.settings, deps.storage, read.stored);
   } catch (error) {
     console.error("[AppSettings] Failed to load settings:", error);
     throw error;
@@ -251,12 +244,13 @@ export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<Ap
  */
 async function readAppSettings(
   deps: SettingsDeps,
-): Promise<{ settings: AppSettings; needsWrite: boolean }> {
+): Promise<{ settings: AppSettings; needsWrite: boolean; stored: StoredAppSettings }> {
   const stored = await readValidatedJson(deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema);
   if (stored) {
     return {
       settings: normalizeAppSettings(stored),
       needsWrite: false,
+      stored,
     };
   }
 
@@ -272,10 +266,11 @@ async function readAppSettings(
         ...pickAppSettingsFromLegacy(legacyStored),
       } satisfies AppSettings,
       needsWrite: true,
+      stored: legacyStored,
     };
   }
 
-  return { settings: DEFAULT_CLIENT_SETTINGS, needsWrite: true };
+  return { settings: DEFAULT_CLIENT_SETTINGS, needsWrite: true, stored: {} };
 }
 
 export async function loadSettingsFromStorage(deps: SettingsDeps): Promise<Settings> {
@@ -314,15 +309,11 @@ export function normalizeAppSettings(value: unknown): AppSettings {
 
 function parseToolCallDetailLevel(stored: StoredAppSettings): ToolCallDetailLevel | null {
   if (stored.toolCallDetailLevel !== undefined) {
-    if (
-      typeof stored.toolCallDetailLevel === "string" &&
-      VALID_TOOL_CALL_DETAIL_LEVELS.has(stored.toolCallDetailLevel)
-    ) {
+    if (stored.toolCallDetailLevel === "overview" || stored.toolCallDetailLevel === "detailed") {
       return stored.toolCallDetailLevel;
     }
-    // COMPAT(toolCallDetailLevelConcise): removed in v0.1.107; legacy "concise" values
-    // deliberately follow the unknown-value fallback. Remove after 2027-01-14.
-    return "overview";
+    // COMPAT(toolCallDetailLevelConcise): v0.1.107 移除了 concise，2027-01-14 后删除。
+    return stored.toolCallDetailLevel === "concise" ? "overview" : null;
   }
   if (typeof stored.compactToolCalls === "boolean") {
     // COMPAT(compactToolCalls): migrated in v0.1.105, remove after 2027-01-12.
@@ -361,8 +352,9 @@ function copyClampedNumericSetting(
 
 function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   const result: Partial<AppSettings> = {};
-  if (typeof stored.theme === "string" && VALID_THEMES.has(stored.theme)) {
-    result.theme = stored.theme;
+  const theme = ThemePreferenceSchema.safeParse(stored.theme);
+  if (theme.success) {
+    result.theme = theme.data;
   }
   if (typeof stored.pluginThemeId === "string") {
     result.pluginThemeId = stored.pluginThemeId;
@@ -379,8 +371,9 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
     result.sendBehavior = stored.sendBehavior;
   }
   if (
-    typeof stored.serviceUrlBehavior === "string" &&
-    VALID_SERVICE_URL_BEHAVIORS.has(stored.serviceUrlBehavior)
+    stored.serviceUrlBehavior === "ask" ||
+    stored.serviceUrlBehavior === "in-app" ||
+    stored.serviceUrlBehavior === "external"
   ) {
     result.serviceUrlBehavior = stored.serviceUrlBehavior;
   }
@@ -493,10 +486,7 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   if (typeof stored.vimKeybindings === "boolean") {
     result.vimKeybindings = stored.vimKeybindings;
   }
-  if (
-    typeof stored.workspaceTitleSource === "string" &&
-    VALID_WORKSPACE_TITLE_SOURCES.has(stored.workspaceTitleSource)
-  ) {
+  if (stored.workspaceTitleSource === "title" || stored.workspaceTitleSource === "branch") {
     result.workspaceTitleSource = stored.workspaceTitleSource;
   }
   if (typeof stored.autoExpandReasoning === "boolean") {
@@ -611,4 +601,18 @@ async function loadRendererSettingsPayload(
   }
 
   return readValidatedJson(storage, LEGACY_SETTINGS_KEY, LegacyRendererSettingsSchema);
+}
+
+async function writeAppSettings(
+  storage: KeyValueStorage,
+  stored: StoredAppSettings,
+  settings: AppSettings,
+): Promise<void> {
+  const {
+    compactToolCalls: _compactToolCalls,
+    manageBuiltInDaemon: _manageBuiltInDaemon,
+    releaseChannel: _releaseChannel,
+    ...preserved
+  } = stored;
+  await storage.setItem(APP_SETTINGS_KEY, JSON.stringify({ ...preserved, ...settings }));
 }

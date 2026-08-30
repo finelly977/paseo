@@ -28,6 +28,7 @@ import type {
 // 这里故意使用独立字面量而不是生产常量；否则生产等待预算被意外缩短时，
 // 测试也会跟着缩短，无法发现回归。
 const EXPECTED_STARTUP_BUDGET_MS = 30_000;
+const EXPECTED_EVENT_READINESS_BUDGET_MS = 45_000;
 
 function tmpCwd(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "opencode-agent-test-"));
@@ -43,11 +44,21 @@ const TEST_MODEL = "opencode/big-pickle";
 function createDirectEventSource(client: OpencodeClient): OpenCodeEventSource {
   const listeners = new Set<(input: never) => void>();
   const abort = new AbortController();
+  let connected = false;
   void client.global
     .event({ signal: abort.signal, sseMaxRetryAttempts: 0 })
     .then(async ({ stream }) => {
       for await (const event of stream) {
-        for (const listener of listeners) listener(event as never);
+        const payload = "payload" in event ? event.payload : event;
+        if (!connected && payload.type === "server.connected") {
+          connected = true;
+          continue;
+        }
+        for (const listener of listeners) {
+          listener(
+            ("payload" in event ? event : { directory: "/tmp/test", payload: event }) as never,
+          );
+        }
       }
       return undefined;
     });
@@ -3010,7 +3021,7 @@ describe("OpenCode adapter startTurn error handling", () => {
     }
   });
 
-  test("事件流等待会在服务端启动预算到期后失败", async () => {
+  test("服务连接就绪事件等待会在独立预算到期后失败，并附带诊断信息", async () => {
     vi.useFakeTimers();
     const openCode = new TestOpenCodeClient();
     const session = new __openCodeInternals.OpenCodeAgentSession(
@@ -3022,18 +3033,26 @@ describe("OpenCode adapter startTurn error handling", () => {
       {
         ready: () => new Promise<void>(() => undefined),
         subscribe: () => () => undefined,
+        diagnostics: () => ({
+          attempt: 2,
+          phase: "first-record",
+          elapsedMs: EXPECTED_EVENT_READINESS_BUDGET_MS,
+          lastOutcome: "watchdog",
+        }),
       },
     );
     try {
       const dispatch = session.startTurn("wait for transport");
-      const rejection = expect(dispatch).rejects.toThrow("OpenCode 事件流首条记录等待超时");
+      const rejection = expect(dispatch).rejects.toThrow(
+        "OpenCode 服务连接就绪事件等待超时，消息尚未发送。OpenCode 事件流诊断 尝试次数=2 阶段=等待首条记录 已等待毫秒=45000 上次结果=watchdog",
+      );
       let settled = false;
       const markSettled = () => {
         settled = true;
       };
       void dispatch.then(markSettled, markSettled);
 
-      await vi.advanceTimersByTimeAsync(EXPECTED_STARTUP_BUDGET_MS - 1);
+      await vi.advanceTimersByTimeAsync(EXPECTED_EVENT_READINESS_BUDGET_MS - 1);
       expect(settled).toBe(false);
       expect(openCode.calls.sessionPromptAsync).toHaveLength(0);
 
@@ -3043,6 +3062,36 @@ describe("OpenCode adapter startTurn error handling", () => {
       expect(openCode.calls.sessionPromptAsync).toHaveLength(0);
     } finally {
       vi.useRealTimers();
+      await session.close();
+    }
+  });
+
+  test("共享事件流首轮看门狗超时后仍允许一次恢复", async () => {
+    vi.useFakeTimers();
+    const openCode = new TestOpenCodeClient();
+    openCode.sessionPromptAsyncEvents = [];
+    const streamReady = createTestDeferred<void>();
+    const session = new __openCodeInternals.OpenCodeAgentSession(
+      { provider: "opencode", cwd: "/workspace/repo" },
+      openCode.asSdkClient(),
+      "ses_readiness_retry",
+      createTestLogger(),
+      new Map(),
+      {
+        ready: () => streamReady.promise,
+        subscribe: () => () => undefined,
+      },
+    );
+    try {
+      const dispatch = session.startTurn("wait for the producer retry");
+      await vi.advanceTimersByTimeAsync(35_000);
+      streamReady.resolve();
+      await dispatch;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(openCode.calls.sessionPromptAsync).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      streamReady.resolve();
       await session.close();
     }
   });

@@ -1201,6 +1201,12 @@ export const ja: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "ウィンドウを最小化",
+      maximize: "ウィンドウを最大化",
+      restore: "ウィンドウを元に戻す",
+      close: "ウィンドウを閉じる",
+    },
     quitting: {
       title: "Paseoを終了中...",
       detail: "ローカルデーモンを停止中。",

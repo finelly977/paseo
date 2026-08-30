@@ -1224,6 +1224,12 @@ export const es: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Minimizar ventana",
+      maximize: "Maximizar ventana",
+      restore: "Restaurar ventana",
+      close: "Cerrar ventana",
+    },
     quitting: {
       title: "Saliendo dePaseo...",
       detail: "Deteniendo el demonio local.",

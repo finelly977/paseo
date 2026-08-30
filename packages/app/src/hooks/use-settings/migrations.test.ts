@@ -36,7 +36,7 @@ describe("migrateAppSettings", () => {
   it("flips a stored interrupt to steer and marks itself applied", async () => {
     const storage = createInMemoryKeyValueStorage();
 
-    const result = await migrateAppSettings(settingsWith("interrupt"), storage);
+    const result = await migrateAppSettings(settingsWith("interrupt"), storage, {});
 
     expect(result.sendBehavior).toBe("steer");
     expect(storedSendBehavior(storage)).toBe("steer");
@@ -45,9 +45,9 @@ describe("migrateAppSettings", () => {
 
   it("leaves interrupt alone once the migration has run", async () => {
     const storage = createInMemoryKeyValueStorage();
-    await migrateAppSettings(settingsWith("interrupt"), storage);
+    await migrateAppSettings(settingsWith("interrupt"), storage, {});
 
-    const result = await migrateAppSettings(settingsWith("interrupt"), storage);
+    const result = await migrateAppSettings(settingsWith("interrupt"), storage, {});
 
     expect(result.sendBehavior).toBe("interrupt");
   });
@@ -55,7 +55,7 @@ describe("migrateAppSettings", () => {
   it("leaves queue alone", async () => {
     const storage = createInMemoryKeyValueStorage();
 
-    const result = await migrateAppSettings(settingsWith("queue"), storage);
+    const result = await migrateAppSettings(settingsWith("queue"), storage, {});
 
     expect(result.sendBehavior).toBe("queue");
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
@@ -65,7 +65,7 @@ describe("migrateAppSettings", () => {
   it("marks itself applied on a fresh install without rewriting settings", async () => {
     const storage = createInMemoryKeyValueStorage();
 
-    await migrateAppSettings(settingsWith("steer"), storage);
+    await migrateAppSettings(settingsWith("steer"), storage, {});
 
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
     expect(appliedIds(storage)).toEqual(["steer-default"]);
@@ -76,7 +76,7 @@ describe("migrateAppSettings", () => {
       [SETTINGS_MIGRATIONS_KEY]: JSON.stringify({ applied: ["some-later-migration"] }),
     });
 
-    await migrateAppSettings(settingsWith("interrupt"), storage);
+    await migrateAppSettings(settingsWith("interrupt"), storage, {});
 
     expect(appliedIds(storage)).toEqual(["some-later-migration", "steer-default"]);
   });
@@ -84,20 +84,33 @@ describe("migrateAppSettings", () => {
   it("stays unmarked when the settings write fails, so a later launch retries", async () => {
     const storage = createFailingWriteStorage(APP_SETTINGS_KEY);
 
-    await expect(migrateAppSettings(settingsWith("interrupt"), storage)).rejects.toThrow();
+    await expect(migrateAppSettings(settingsWith("interrupt"), storage, {})).rejects.toThrow();
 
     expect(appliedIds(storage)).toEqual([]);
   });
 
   it("re-runs harmlessly when the marker write fails after settings landed", async () => {
     const failing = createFailingWriteStorage(SETTINGS_MIGRATIONS_KEY);
-    await expect(migrateAppSettings(settingsWith("interrupt"), failing)).rejects.toThrow();
+    await expect(migrateAppSettings(settingsWith("interrupt"), failing, {})).rejects.toThrow();
     expect(storedSendBehavior(failing)).toBe("steer");
 
     const recovered = createInMemoryKeyValueStorage(Object.fromEntries(failing.entries));
-    const result = await migrateAppSettings(settingsWith("steer"), recovered);
+    const result = await migrateAppSettings(settingsWith("steer"), recovered, {});
 
     expect(result.sendBehavior).toBe("steer");
     expect(appliedIds(recovered)).toEqual(["steer-default"]);
+  });
+
+  it("迁移发送行为时保留较新版本写入的未知设置", async () => {
+    const storage = createInMemoryKeyValueStorage();
+
+    await migrateAppSettings(settingsWith("interrupt"), storage, {
+      futureSetting: { enabled: true },
+    });
+
+    expect(JSON.parse(storage.entries.get(APP_SETTINGS_KEY) as string)).toMatchObject({
+      sendBehavior: "steer",
+      futureSetting: { enabled: true },
+    });
   });
 });

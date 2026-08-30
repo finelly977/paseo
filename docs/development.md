@@ -144,6 +144,21 @@ When running a dedicated Electron QA instance against a non-default Expo port, s
 `EXPO_DEV_URL` explicitly. Desktop main defaults to `http://localhost:8081`, so
 `PASEO_PORT=57928` alone starts Metro on 57928 but Electron still loads 8081.
 
+### 桌面窗口控件预览
+
+发布版本在 Windows 和 Linux 使用对应平台的应用自绘窗口控件，macOS 保留系统交通灯。开发版本可以在 macOS 临时预览 Windows 或 Linux 控件，便于检查悬停、最大化状态和右上角安全区：
+
+```powershell
+$env:PASEO_DESKTOP_WINDOW_CONTROLS = 'windows'
+npm run dev:desktop
+
+# 或预览 Linux 控件
+$env:PASEO_DESKTOP_WINDOW_CONTROLS = 'linux'
+npm run dev:desktop
+```
+
+该变量只允许用于开发版本。结束预览后执行 `Remove-Item Env:PASEO_DESKTOP_WINDOW_CONTROLS`，恢复当前系统的默认窗口控件。
+
 ### React render profiling
 
 The app has a gated React render profiler in

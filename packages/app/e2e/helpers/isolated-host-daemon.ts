@@ -1,10 +1,10 @@
-import { once } from "node:events";
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { withDisabledE2ESpeechEnv } from "./speech-env";
+import { killProcessTree, spawnTsx } from "./spawn-node";
 
 export interface IsolatedHostDaemon {
   serverId: string;
@@ -30,12 +30,14 @@ async function getAvailablePort(): Promise<number> {
 }
 
 async function waitForServer(port: number, child: ChildProcess): Promise<void> {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 90_000;
   let lastError: unknown = null;
 
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`Isolated host daemon exited before listening (exit ${child.exitCode})`);
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `隔离守护进程在开始监听前退出（退出码：${String(child.exitCode)}，信号：${String(child.signalCode)}）`,
+      );
     }
     try {
       await new Promise<void>((resolve, reject) => {
@@ -63,19 +65,6 @@ async function waitForServer(port: number, child: ChildProcess): Promise<void> {
   );
 }
 
-async function stopProcess(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
-  const timeout = setTimeout(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-  }, 5_000);
-  try {
-    await once(child, "exit");
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function startIsolatedHostDaemon(serverId: string): Promise<IsolatedHostDaemon> {
   const primaryPort = Number(process.env.E2E_DAEMON_PORT ?? 0);
   let port = await getAvailablePort();
@@ -86,9 +75,8 @@ export async function startIsolatedHostDaemon(serverId: string): Promise<Isolate
 
   const paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-e2e-secondary-host-"));
   const serverDir = path.resolve(__dirname, "../../../server");
-  const tsxBin = execSync("which tsx").toString().trim();
   const spawnDaemon = async (): Promise<ChildProcess> => {
-    const child = spawn(tsxBin, ["scripts/supervisor-entrypoint.ts", "--dev"], {
+    const child = spawnTsx("scripts/supervisor-entrypoint.ts", ["--dev"], {
       cwd: serverDir,
       env: withDisabledE2ESpeechEnv({
         ...process.env,
@@ -114,7 +102,7 @@ export async function startIsolatedHostDaemon(serverId: string): Promise<Isolate
       await waitForServer(port, child);
       return child;
     } catch (error) {
-      await stopProcess(child);
+      await killProcessTree(child);
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}\nDaemon stderr:\n${stderr}`,
         { cause: error },
@@ -137,13 +125,13 @@ export async function startIsolatedHostDaemon(serverId: string): Promise<Isolate
     paseoHome,
     restart: async () => {
       if (closed) throw new Error(`Cannot restart closed isolated daemon ${serverId}`);
-      await stopProcess(child);
+      await killProcessTree(child);
       child = await spawnDaemon();
     },
     close: async () => {
       if (closed) return;
       closed = true;
-      await stopProcess(child);
+      await killProcessTree(child);
       await rm(paseoHome, { recursive: true, force: true });
     },
   };

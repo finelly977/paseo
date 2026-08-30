@@ -57,6 +57,44 @@ describe("loadAppSettingsFromStorage", () => {
     });
     expect((await loadAppSettingsFromStorage(deps)).sendBehavior).toBe("steer");
   });
+
+  it("较新版本增加设置字段后仍保留当前版本认识的设置", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          theme: "dark",
+          uiFontSize: 18,
+          futureSetting: { enabled: true },
+        }),
+      }),
+    });
+
+    await expect(loadAppSettingsFromStorage(deps)).resolves.toMatchObject({
+      theme: "dark",
+      uiFontSize: 18,
+    });
+    expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) as string)).toMatchObject({
+      futureSetting: { enabled: true },
+    });
+  });
+
+  it("单个已知字段无效时不会清空其他有效设置", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          theme: "dark",
+          uiFontSize: "无效",
+          sidebarWorkspaceVisibleCount: 12,
+        }),
+      }),
+    });
+
+    await expect(loadAppSettingsFromStorage(deps)).resolves.toMatchObject({
+      theme: "dark",
+      uiFontSize: DEFAULT_UI_FONT_SIZE,
+      sidebarWorkspaceVisibleCount: 12,
+    });
+  });
   it("migrates a stored interrupt to steer and persists it", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
@@ -397,6 +435,29 @@ describe("saveAppSettings", () => {
       ...DEFAULT_CLIENT_SETTINGS,
       theme: "light",
       toolCallDetailLevel: "overview",
+    });
+  });
+
+  it("保存当前设置时保留较新版本写入的未知字段", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({
+          ...DEFAULT_CLIENT_SETTINGS,
+          futureSetting: { enabled: true },
+        }),
+      }),
+    });
+
+    await saveAppSettings({
+      queryClient: new QueryClient(),
+      updates: { theme: "dark", sidebarWorkspaceVisibleCount: 20 },
+      deps,
+    });
+
+    expect(JSON.parse(deps.storage.entries.get(APP_SETTINGS_KEY) as string)).toMatchObject({
+      theme: "dark",
+      sidebarWorkspaceVisibleCount: 20,
+      futureSetting: { enabled: true },
     });
   });
 

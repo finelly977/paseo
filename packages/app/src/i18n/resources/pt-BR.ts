@@ -1214,6 +1214,12 @@ export const ptBR: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Minimizar janela",
+      maximize: "Maximizar janela",
+      restore: "Restaurar janela",
+      close: "Fechar janela",
+    },
     quitting: {
       title: "Saindo do Paseo...",
       detail: "Parando o daemon local.",

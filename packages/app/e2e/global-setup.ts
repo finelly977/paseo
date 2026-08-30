@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcess, execSync } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { loadDaemonClientConstructor } from "./helpers/daemon-client-loader";
 import { createNodeWebSocketFactory, type NodeWebSocketFactory } from "./helpers/node-ws-factory";
 import { forkPaseoHomeMetadata, resolvePaseoHomePath } from "./helpers/paseo-home-fork";
 import { withDisabledE2ESpeechEnv } from "./helpers/speech-env";
+import { killProcessTree, spawnTsx } from "./helpers/spawn-node";
 
 const wranglerCliPath = path.resolve(__dirname, "../node_modules/wrangler/bin/wrangler.js");
 
@@ -101,7 +102,7 @@ async function waitForServer(
   let lastConnectionError: unknown = null;
 
   while (Date.now() - start < timeoutMs) {
-    if (childProcess && childProcess.exitCode !== null) {
+    if (childProcess && (childProcess.exitCode !== null || childProcess.signalCode !== null)) {
       const signal = childProcess.signalCode ? `, signal ${childProcess.signalCode}` : "";
       throw new Error(
         `${label} exited before listening on ${host}:${port} (exit code ${childProcess.exitCode}${signal}).${formatRecentOutput(getRecentOutput)}`,
@@ -157,30 +158,7 @@ function parseRelayStartupFailure(line: string): string | null {
 }
 
 async function stopProcess(child: ChildProcess | null): Promise<void> {
-  if (!child) {
-    return;
-  }
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    let pendingResolve: (() => void) | null = resolve;
-    const settle = () => {
-      if (!pendingResolve) return;
-      const fn = pendingResolve;
-      pendingResolve = null;
-      clearTimeout(timeout);
-      fn();
-    };
-    const timeout = setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) {
-        child.kill("SIGKILL");
-      }
-      settle();
-    }, 5000);
-    child.once("exit", settle);
-  });
+  await killProcessTree(child);
 }
 
 function isProcessRunning(pid: number): boolean {
@@ -330,9 +308,18 @@ async function createFakeEditorBin(): Promise<string> {
   const binDir = await mkdtemp(path.join(tmpdir(), "paseo-e2e-editor-bin-"));
   let realGhPath = "";
   try {
-    realGhPath = execSync("which gh").toString().trim();
-  } catch {
-    // The local PR fixture below remains usable without a system gh binary.
+    const locator = process.platform === "win32" ? "where.exe" : "which";
+    const candidates = execFileSync(locator, ["gh"], { encoding: "utf8" })
+      .split(/\r?\n/u)
+      .map((candidate) => candidate.trim())
+      .filter(Boolean);
+    realGhPath =
+      candidates.find(
+        (candidate) =>
+          process.platform !== "win32" || !/\.(?:cmd|bat)$/iu.test(path.extname(candidate)),
+      ) ?? "";
+  } catch (error) {
+    console.warn("[E2E] 未找到系统 GitHub CLI，本地拉取请求夹具仍可运行。", error);
   }
 
   const fakeEditorSource = `#!/usr/bin/env node
@@ -353,6 +340,7 @@ if (recordPath) {
     const editorPath = path.join(binDir, editorCommand);
     await writeFile(editorPath, fakeEditorSource);
     await chmod(editorPath, 0o755);
+    await writeWindowsCommandShim(binDir, editorCommand);
   }
 
   const fakeGhPath = path.join(binDir, "gh");
@@ -418,8 +406,15 @@ process.exit(result.status ?? 1);
 `;
   await writeFile(fakeGhPath, fakeGhSource);
   await chmod(fakeGhPath, 0o755);
+  await writeWindowsCommandShim(binDir, "gh");
 
   return binDir;
+}
+
+async function writeWindowsCommandShim(binDir: string, command: string): Promise<void> {
+  if (process.platform !== "win32") return;
+  const shim = `@echo off\r\n"${process.execPath}" "%~dp0${command}" %*\r\n`;
+  await writeFile(path.join(binDir, `${command}.cmd`), shim);
 }
 
 const ANSI_PATTERN = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
@@ -435,7 +430,11 @@ function ensureRelayBuildArtifact(repoRoot: string): void {
   }
 
   console.log("[e2e] Building @getpaseo/relay for daemon startup");
-  execSync("npm run build:relay", {
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli || path.basename(npmCli).toLowerCase() !== "npm-cli.js") {
+    throw new Error("E2E 测试必须通过 npm 脚本启动，当前无法定位 npm 命令入口");
+  }
+  execFileSync(process.execPath, [npmCli, "run", "build:relay"], {
     cwd: repoRoot,
     stdio: "inherit",
   });
@@ -719,21 +718,26 @@ function startMetro(input: {
   buffer: ReturnType<typeof createLineBuffer>;
 }): ChildProcess {
   const appDir = path.resolve(__dirname, "..");
-  const child = spawn("npx", ["expo", "start", "--web", "--port", String(input.metroPort)], {
-    cwd: appDir,
-    env: {
-      ...process.env,
-      BROWSER: "none",
-      ...(process.env.E2E_DESKTOP_RUNTIME === "1"
-        ? {
-            PASEO_WEB_PLATFORM: "electron",
-            EXPO_PUBLIC_LOCAL_DAEMON: `127.0.0.1:${input.daemonPort}`,
-          }
-        : {}),
+  const expoCli = require.resolve("expo/bin/cli");
+  const child = spawn(
+    process.execPath,
+    [expoCli, "start", "--web", "--port", String(input.metroPort)],
+    {
+      cwd: appDir,
+      env: {
+        ...process.env,
+        BROWSER: "none",
+        ...(process.env.E2E_DESKTOP_RUNTIME === "1"
+          ? {
+              PASEO_WEB_PLATFORM: "electron",
+              EXPO_PUBLIC_LOCAL_DAEMON: `127.0.0.1:${input.daemonPort}`,
+            }
+          : {}),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: false,
     },
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: false,
-  });
+  );
 
   child.stdout?.on("data", (data: Buffer) => {
     const lines = data
@@ -772,7 +776,6 @@ interface DaemonSpawnArgs {
 
 function startDaemon(args: DaemonSpawnArgs): ChildProcess {
   const serverDir = path.resolve(__dirname, "../../..", "packages/server");
-  const tsxBin = execSync("which tsx").toString().trim();
   const env = withDisabledE2ESpeechEnv({
     ...process.env,
     PATH: `${args.fakeEditorBinDir}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -786,7 +789,7 @@ function startDaemon(args: DaemonSpawnArgs): ChildProcess {
     NODE_ENV: "development",
   });
 
-  const child = spawn(tsxBin, ["scripts/supervisor-entrypoint.ts", "--dev"], {
+  const child = spawnTsx("scripts/supervisor-entrypoint.ts", ["--dev"], {
     cwd: serverDir,
     env,
     stdio: ["ignore", "pipe", "pipe"],
@@ -898,6 +901,7 @@ export default async function globalSetup() {
 
     await waitForServer(port, {
       label: "Paseo daemon",
+      timeoutMs: 90_000,
       childProcess: daemonProcess,
       getRecentOutput: daemonLineBuffer.dump,
     });

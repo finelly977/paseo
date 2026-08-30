@@ -1199,6 +1199,12 @@ export const en = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "Minimize window",
+      maximize: "Maximize window",
+      restore: "Restore window",
+      close: "Close window",
+    },
     quitting: {
       title: "Quitting Paseo...",
       detail: "Stopping the local daemon.",

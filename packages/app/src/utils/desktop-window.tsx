@@ -3,12 +3,14 @@ import { View, type ViewProps } from "react-native";
 import {
   DESKTOP_TRAFFIC_LIGHT_HEIGHT,
   DESKTOP_TRAFFIC_LIGHT_WIDTH,
-  DESKTOP_WINDOW_CONTROLS_HEIGHT,
-  DESKTOP_WINDOW_CONTROLS_WIDTH,
   getIsElectronRuntime,
-  getIsElectronRuntimeMac,
 } from "@/constants/layout";
 import { getDesktopWindow } from "@/desktop/electron/window";
+import { getDesktopWindowChromeMode, type DesktopWindowChromeMode } from "@/desktop/host";
+import {
+  getDesktopWindowControlsPresentation,
+  getDesktopWindowControlsWidth,
+} from "@/desktop/window-chrome-presentation";
 import { isNative } from "@/constants/platform";
 
 export type WindowChromeCorners = "none" | "top-left" | "top-right" | "both";
@@ -31,6 +33,11 @@ type WindowChromeSafeAreaStyle = { height: number } | { paddingLeft: number; pad
 const EMPTY_OBSTRUCTION: WindowChromeObstruction = { topLeft: null, topRight: null };
 const WindowChromeContext = createContext<WindowChromeObstruction>(EMPTY_OBSTRUCTION);
 const WindowChromeCornersContext = createContext<WindowChromeCorners>("none");
+const DesktopWindowChromeContext = createContext<{
+  mode: DesktopWindowChromeMode | null;
+  isFullscreen: boolean;
+  isMaximized: boolean;
+}>({ mode: null, isFullscreen: false, isMaximized: false });
 
 function windowChromeCornersFromFlags(topLeft: boolean, topRight: boolean): WindowChromeCorners {
   if (topLeft && topRight) return "both";
@@ -77,20 +84,23 @@ export function intersectWindowChromeCorners(
 }
 
 export function resolveWindowChromeObstruction(input: {
-  isElectron: boolean;
-  isMac: boolean;
+  mode: DesktopWindowChromeMode | null;
   isFullscreen: boolean;
 }): WindowChromeObstruction {
-  if (!input.isElectron || input.isFullscreen) return EMPTY_OBSTRUCTION;
-  if (input.isMac) {
+  if (!input.mode || input.isFullscreen) return EMPTY_OBSTRUCTION;
+  if (input.mode === "native-mac") {
     return {
       topLeft: { width: DESKTOP_TRAFFIC_LIGHT_WIDTH, height: DESKTOP_TRAFFIC_LIGHT_HEIGHT },
       topRight: null,
     };
   }
+  const presentation = getDesktopWindowControlsPresentation(input.mode);
   return {
     topLeft: null,
-    topRight: { width: DESKTOP_WINDOW_CONTROLS_WIDTH, height: DESKTOP_WINDOW_CONTROLS_HEIGHT },
+    topRight: {
+      width: getDesktopWindowControlsWidth(input.mode),
+      height: presentation.railHeight,
+    },
   };
 }
 
@@ -111,7 +121,7 @@ export function resolveWindowChromeSafeArea(input: {
 
 export function WindowChromeProvider({ children }: { children: ReactNode }) {
   const [isElectronReady, setIsElectronReady] = useState(getIsElectronRuntime);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [windowState, setWindowState] = useState({ isFullscreen: false, isMaximized: false });
 
   useEffect(() => {
     let active = true;
@@ -124,7 +134,7 @@ export function WindowChromeProvider({ children }: { children: ReactNode }) {
       if (!active || dispose || retryTimer) return;
       if (retryCount >= 40) {
         if (warnOnExhaustion) {
-          console.warn("[DesktopWindow] Chrome bridge unavailable; window controls may overlap UI");
+          console.warn("[桌面窗口] 窗口桥接不可用，窗口控件可能遮挡界面");
         }
         return;
       }
@@ -142,29 +152,34 @@ export function WindowChromeProvider({ children }: { children: ReactNode }) {
       if (
         !desktopWindow ||
         typeof desktopWindow.isFullscreen !== "function" ||
+        typeof desktopWindow.isMaximized !== "function" ||
         typeof desktopWindow.onResized !== "function"
       )
         return scheduleRetry(true);
       const readFullscreen = desktopWindow.isFullscreen;
+      const readMaximized = desktopWindow.isMaximized;
       const subscribeToResized = desktopWindow.onResized;
       connecting = true;
       void (async () => {
-        async function syncFullscreen() {
+        async function syncWindowState() {
           try {
-            const fullscreen = await readFullscreen();
-            if (active) setIsFullscreen(fullscreen);
+            const [isFullscreen, isMaximized] = await Promise.all([
+              readFullscreen(),
+              readMaximized(),
+            ]);
+            if (active) setWindowState({ isFullscreen, isMaximized });
           } catch (error) {
-            if (active) console.warn("[DesktopWindow] Failed to read fullscreen state", error);
+            if (active) console.warn("[桌面窗口] 读取窗口状态失败", error);
           }
         }
         try {
-          const nextDispose = await subscribeToResized(syncFullscreen);
+          const nextDispose = await subscribeToResized(syncWindowState);
           if (!active) return nextDispose();
           dispose = nextDispose;
           setIsElectronReady(true);
-          await syncFullscreen();
+          await syncWindowState();
         } catch (error) {
-          if (active) console.warn("[DesktopWindow] Failed to subscribe to resize", error);
+          if (active) console.warn("[桌面窗口] 订阅窗口大小变化失败", error);
         } finally {
           connecting = false;
           if (!dispose) scheduleRetry();
@@ -184,19 +199,43 @@ export function WindowChromeProvider({ children }: { children: ReactNode }) {
   const obstruction = useMemo(
     () =>
       resolveWindowChromeObstruction({
-        isElectron: isElectronReady,
-        isMac: getIsElectronRuntimeMac(),
-        isFullscreen,
+        mode: isElectronReady ? getDesktopWindowChromeMode() : null,
+        isFullscreen: windowState.isFullscreen,
       }),
-    [isElectronReady, isFullscreen],
+    [isElectronReady, windowState.isFullscreen],
+  );
+  const desktopWindowChrome = useMemo(
+    () => ({
+      mode: isElectronReady ? getDesktopWindowChromeMode() : null,
+      isFullscreen: windowState.isFullscreen,
+      isMaximized: windowState.isMaximized,
+    }),
+    [isElectronReady, windowState],
   );
   return (
-    <WindowChromeContext.Provider value={obstruction}>
-      <WindowChromeCornersContext.Provider value="both">
-        {children}
-      </WindowChromeCornersContext.Provider>
-    </WindowChromeContext.Provider>
+    <DesktopWindowChromeContext.Provider value={desktopWindowChrome}>
+      <WindowChromeContext.Provider value={obstruction}>
+        <WindowChromeCornersContext.Provider value="both">
+          {children}
+        </WindowChromeCornersContext.Provider>
+      </WindowChromeContext.Provider>
+    </DesktopWindowChromeContext.Provider>
   );
+}
+
+export function useCustomDesktopWindowControls(): {
+  visible: boolean;
+  mode: "custom-windows" | "custom-linux" | null;
+  isMaximized: boolean;
+} {
+  const chrome = useContext(DesktopWindowChromeContext);
+  const customMode =
+    chrome.mode === "custom-windows" || chrome.mode === "custom-linux" ? chrome.mode : null;
+  return {
+    visible: customMode !== null && !chrome.isFullscreen,
+    mode: customMode,
+    isMaximized: chrome.isMaximized,
+  };
 }
 
 /** Narrows inherited corner ownership to the corners occupied by this child surface. */

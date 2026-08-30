@@ -78,6 +78,7 @@
 - 助手消息中的本地文件链接优先按可见路径文本解析，Windows 盘符路径的末尾行号会作为编辑器定位信息，不会误并入文件名；本机桌面会话支持右键在系统文件管理器中定位已解析文件，远端会话和外部网址不显示该操作，外部网址仍按网页链接打开。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
 - 默认 Dark 主题使用中性黑灰层级：应用与工作区背景固定为 `#111111`，主要前景固定为 `#E6E6E6`，侧栏、输入框、浮层、悬停和边框只通过亮度区分，不再带绿色或蓝灰色偏；强调色使用 `#0169CC`，成功、警告、错误等语义状态继续保留独立颜色。Zinc、Midnight、Claude 和 Ghostty 等用户主动选择的暗色变体保持原样。
+- Windows 和 Linux 桌面端使用应用自绘的最小化、最大化、还原和关闭按钮，沿用二开 48 像素标题栏、当前主题和右上角安全区；最大化、还原、全屏和主题切换会即时同步按钮状态与布局。macOS 继续使用系统交通灯，开发版本可以在 macOS 预览 Windows 或 Linux 控件。
 
 主要涉及：
 
@@ -92,6 +93,9 @@
 - `packages/app/src/components/sidebar/`
 - `packages/app/src/components/user-message-collapse.ts`
 - `packages/app/src/assistant-file-links/`
+- `packages/app/src/components/desktop/window-controls.tsx`
+- `packages/app/src/desktop/window-chrome-presentation.ts`
+- `packages/desktop/src/window/`
 - `packages/app/src/workspace/open-in-file-manager/`
 - `packages/app/src/agent-stream/web-virtualization.ts`
 

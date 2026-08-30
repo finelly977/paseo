@@ -9,6 +9,8 @@ import {
   type OpenCodeEventSourceInput,
 } from "./event-consumer.js";
 
+const EXPECTED_STREAM_WATCHDOG_MS = 30_000;
+
 describe("OpenCodeEventConsumer", () => {
   const cleanups: Array<() => Promise<void>> = [];
   afterEach(async () => {
@@ -43,7 +45,7 @@ describe("OpenCodeEventConsumer", () => {
     await expect(closePromise).resolves.toBeUndefined();
   });
 
-  test("becomes ready on the first record and reconnects once after EOF", async () => {
+  test("等待服务连接就绪事件，并在连接结束后重新建立一次连接", async () => {
     const upstream = await createSseUpstream();
     const timing = new ControlledTiming();
     const processExit = deferred<Error>();
@@ -62,9 +64,12 @@ describe("OpenCodeEventConsumer", () => {
 
     await upstream.connected(1);
     expect(await promiseState(consumer.ready())).toBe("pending");
+    upstream.send(0, arbitraryRecord("/one"));
+    await eventually(() => expect(inputs).toEqual([arbitraryRecord("/one")]));
+    expect(await promiseState(consumer.ready())).toBe("pending");
     upstream.send(0, connectedRecord("/one"));
     await consumer.ready();
-    expect(inputs).toEqual([connectedRecord("/one")]);
+    expect(inputs).toEqual([arbitraryRecord("/one")]);
 
     upstream.end(0);
     await timing.waiting();
@@ -72,12 +77,8 @@ describe("OpenCodeEventConsumer", () => {
     timing.advanceWait();
     await upstream.connected(2);
     upstream.send(1, connectedRecord("/two"));
-    await eventually(() => expect(inputs).toHaveLength(3));
-    expect(inputs).toEqual([
-      connectedRecord("/one"),
-      { type: "reconnected" },
-      connectedRecord("/two"),
-    ]);
+    await eventually(() => expect(inputs).toHaveLength(2));
+    expect(inputs).toEqual([arbitraryRecord("/one"), connectedRecord("/two")]);
     expect(upstream.requests).toHaveLength(2);
     expect(upstream.requests.map((request) => request.url)).toEqual([
       "/global/event",
@@ -105,13 +106,46 @@ describe("OpenCodeEventConsumer", () => {
     await consumer.ready();
 
     timing.expireWatchdog();
-    expect(timing.watchdogDelays).toEqual([30_000, 30_000]);
+    expect(timing.watchdogDelays).toEqual([
+      EXPECTED_STREAM_WATCHDOG_MS,
+      EXPECTED_STREAM_WATCHDOG_MS,
+    ]);
     await timing.waiting();
     timing.advanceWait();
     await upstream.connected(2);
     upstream.send(1, connectedRecord("/two"));
-    await eventually(() => expect(inputs).toHaveLength(3));
-    expect(inputs[1]).toEqual({ type: "reconnected" });
+    await eventually(() => expect(inputs).toHaveLength(1));
+    expect(inputs[0]).toEqual(connectedRecord("/two"));
+  });
+
+  test("首条记录看门狗超时后重试，并暴露恢复尝试的诊断信息", async () => {
+    const upstream = await createSseUpstream();
+    const timing = new ControlledTiming();
+    const consumer = new OpenCodeEventConsumer({
+      serverUrl: upstream.url,
+      processExit: new Promise<Error>(() => undefined),
+      logger: createTestLogger(),
+      timing,
+    });
+    cleanups.push(async () => {
+      await consumer.close();
+      await upstream.close();
+    });
+
+    await upstream.connected(1);
+    timing.expireWatchdog();
+    await timing.waiting();
+    expect(consumer.diagnostics()).toMatchObject({
+      attempt: 1,
+      phase: "first-record",
+      lastOutcome: "watchdog",
+    });
+
+    timing.advanceWait();
+    await upstream.connected(2);
+    upstream.send(1, connectedRecord("/recovered"));
+    await consumer.ready();
+    expect(consumer.diagnostics()).toMatchObject({ attempt: 2, phase: "stream" });
   });
 
   test("publishes one terminal and stops reconnecting on process exit", async () => {
@@ -135,8 +169,8 @@ describe("OpenCodeEventConsumer", () => {
     await consumer.ready();
 
     processExit.resolve(new Error("process exited"));
-    await eventually(() => expect(inputs).toHaveLength(2));
-    expect(inputs[1]).toMatchObject({ type: "server-exited" });
+    await eventually(() => expect(inputs).toHaveLength(1));
+    expect(inputs[0]).toMatchObject({ type: "server-exited" });
     expect(upstream.requests).toHaveLength(1);
   });
 
@@ -186,7 +220,9 @@ describe("OpenCodeEventConsumer", () => {
     await upstream.connected(1);
     upstream.send(0, connectedRecord("/one"));
     await consumer.ready();
-    expect(inputs).toEqual([connectedRecord("/one")]);
+    upstream.send(0, arbitraryRecord("/one"));
+    await eventually(() => expect(inputs).toHaveLength(1));
+    expect(inputs).toEqual([arbitraryRecord("/one")]);
   });
 
   test("reconnects after a socket error with a delivered-record backoff reset", async () => {
@@ -267,6 +303,30 @@ describe("OpenCodeEventConsumer", () => {
     expect(requestOptions).toMatchObject({ sseMaxRetryAttempts: 0 });
   });
 
+  test("首条记录前的 SDK 错误会保留在诊断信息中", async () => {
+    const upstream = await createSseUpstream();
+    upstream.failNext(1);
+    const timing = new ControlledTiming();
+    const consumer = new OpenCodeEventConsumer({
+      serverUrl: upstream.url,
+      processExit: new Promise<Error>(() => undefined),
+      logger: createTestLogger(),
+      timing,
+    });
+    cleanups.push(async () => {
+      await consumer.close();
+      await upstream.close();
+    });
+
+    await timing.waiting();
+    expect(consumer.diagnostics()).toMatchObject({
+      attempt: 1,
+      phase: "first-record",
+      lastOutcome: "error",
+      lastError: expect.stringContaining("503"),
+    });
+  });
+
   test("rejects readiness and publishes terminal when the process exits before a record", async () => {
     const upstream = await createSseUpstream();
     const processExit = deferred<Error>();
@@ -305,7 +365,7 @@ describe("OpenCodeEventConsumer", () => {
 
     await consumer.close();
 
-    expect(inputs).toEqual([connectedRecord("/one")]);
+    expect(inputs).toEqual([]);
   });
 });
 
@@ -345,6 +405,16 @@ class ControlledTiming implements OpenCodeEventConsumerTiming {
 
 function connectedRecord(directory: string) {
   return { directory, payload: { type: "server.connected", properties: {} } };
+}
+
+function arbitraryRecord(directory: string) {
+  return {
+    directory,
+    payload: {
+      type: "session.status",
+      properties: { sessionID: "unrelated", status: { type: "idle" } },
+    },
+  };
 }
 
 async function createSseUpstream() {

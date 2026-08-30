@@ -1178,6 +1178,12 @@ export const zhCN: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "最小化窗口",
+      maximize: "最大化窗口",
+      restore: "还原窗口",
+      close: "关闭窗口",
+    },
     quitting: {
       title: "正在退出 Paseo...",
       detail: "正在停止本地 daemon。",

@@ -20,7 +20,7 @@ import { AppState, useWindowDimensions, View } from "react-native";
 import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AppearanceProvider } from "@/appearance/provider";
 import { CommandCenter, CommandCenterRootActions } from "@/command-center/command-center";
 import { CommandCenterProvider } from "@/command-center/provider";
@@ -33,6 +33,7 @@ import { QuittingOverlay } from "@/components/quitting-overlay";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
 import { LeftSidebar } from "@/components/left-sidebar";
+import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { WindowSidebarMenuToggle } from "@/components/headers/menu-header";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
 import { CompactExplorerSidebarHost } from "@/components/compact-explorer-sidebar-host";
@@ -74,7 +75,7 @@ import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { AgentNavigationListener } from "@/desktop/agent-navigation";
 import { legacyFavoriteProfileMigration } from "@/agent-profiles/migration";
 import { listenToDesktopEvent } from "@/desktop/electron/events";
-import { updateDesktopWindowControls } from "@/desktop/electron/window";
+import { updateDesktopWindowChrome } from "@/desktop/electron/window";
 import { getDesktopHost } from "@/desktop/host";
 import { loadDesktopSettings } from "@/desktop/settings/desktop-settings";
 import { RosettaCalloutSource } from "@/desktop/updates/rosetta-callout-source";
@@ -584,6 +585,7 @@ function AppContainer({
           </WindowChromeSafeArea>
         </WindowChromeRegion>
       ) : null}
+      <DesktopWindowControls />
       <FloatingPanelPortalHost />
       <CommitReviewHost />
       {isCompactLayout ? sidebarChrome : null}
@@ -671,10 +673,13 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
   );
 }
 
-function DesktopWindowControlsSync({ enabled }: { enabled: boolean }) {
-  const { theme } = useUnistyles();
-  const surface0 = theme.colors.surface0;
-  const foreground = theme.colors.foreground;
+function DesktopWindowControlsSyncView({
+  enabled,
+  backgroundColor,
+}: {
+  enabled: boolean;
+  backgroundColor: string;
+}) {
   const pathname = usePathname();
   const isFocusModeEnabled = usePanelStore((state) => state.desktop.focusModeEnabled);
   const liftTrafficLights =
@@ -684,17 +689,20 @@ function DesktopWindowControlsSync({ enabled }: { enabled: boolean }) {
 
   useEffect(() => {
     if (!enabled || isNative) return;
-    void updateDesktopWindowControls({
-      backgroundColor: surface0,
-      foregroundColor: foreground,
+    void updateDesktopWindowChrome({
+      backgroundColor,
       trafficLightOffsetY: liftTrafficLights ? -5 : 0.5,
     }).catch((error) => {
-      console.warn("[DesktopWindow] Failed to update window controls overlay", error);
+      console.warn("[桌面窗口] 同步窗口外观失败", error);
     });
-  }, [enabled, surface0, foreground, liftTrafficLights]);
+  }, [backgroundColor, enabled, liftTrafficLights]);
 
   return null;
 }
+
+const DesktopWindowControlsSync = withUnistyles(DesktopWindowControlsSyncView, (theme) => ({
+  backgroundColor: theme.colors.surface0,
+}));
 
 function OfferLinkListener({
   upsertDaemonFromOfferUrl,

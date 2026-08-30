@@ -1191,6 +1191,12 @@ export const ar: TranslationResources = {
     },
   },
   desktop: {
+    windowControls: {
+      minimize: "تصغير النافذة",
+      maximize: "تكبير النافذة",
+      restore: "استعادة النافذة",
+      close: "إغلاق النافذة",
+    },
     quitting: {
       title: "جارٍ إنهاء Paseo...",
       detail: "إيقاف البرنامج الخفي المحلي.",

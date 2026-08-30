@@ -71,12 +71,14 @@ import { withTimeout } from "../../../utils/promise-timeout.js";
 import { execCommand } from "../../../utils/spawn.js";
 import { mapOpencodeToolCall } from "./opencode/tool-call-mapper.js";
 import {
+  OPENCODE_EVENT_STREAM_READY_TIMEOUT_MS,
   OpenCodeServerManager,
   OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
   type OpenCodeServerManagerLike,
 } from "./opencode/server-manager.js";
 import {
   OpenCodeEventConsumer,
+  type OpenCodeEventStreamDiagnostics,
   type OpenCodeEventSource,
   type OpenCodeEventSourceInput,
 } from "./opencode/event-consumer.js";
@@ -94,6 +96,17 @@ import { composeSystemPromptParts } from "../system-prompt.js";
 import { normalizeProviderReplayTimestamp } from "../provider-history-timestamps.js";
 import { revertOpenCodeConversationAndFiles } from "./opencode/rewind.js";
 import type { ManagedProcessRegistry } from "../../managed-processes/managed-processes.js";
+
+function formatOpenCodeEventStreamDiagnostics(diagnostics: OpenCodeEventStreamDiagnostics): string {
+  return [
+    "OpenCode 事件流诊断",
+    `尝试次数=${diagnostics.attempt}`,
+    `阶段=${diagnostics.phase === "first-record" ? "等待首条记录" : "持续传输"}`,
+    `已等待毫秒=${diagnostics.elapsedMs}`,
+    ...(diagnostics.lastOutcome ? [`上次结果=${diagnostics.lastOutcome}`] : []),
+    ...(diagnostics.lastError ? [`上次错误=${JSON.stringify(diagnostics.lastError)}`] : []),
+  ].join(" ");
+}
 
 const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -1341,11 +1354,11 @@ export class OpenCodeAgentClient implements AgentClient {
       OpenCodeServerManager.getInstance(this.logger, runtimeSettings, {
         managedProcesses: deps.managedProcesses,
         resolveHomeDir: deps.resolveHomeDir,
-        createEventSource: ({ serverUrl, processExit }) =>
+        createEventSource: ({ serverUrl, processExit, logger: eventLogger }) =>
           new OpenCodeEventConsumer({
             serverUrl,
             processExit,
-            logger: this.logger,
+            logger: eventLogger,
             createClient: (baseUrl) => this.createOpenCodeClient({ baseUrl, directory: "" }),
           }),
       });
@@ -3481,20 +3494,7 @@ class OpenCodeAgentSession implements AgentSession {
     const effectiveVariant = thinkingOptionId ?? undefined;
     const effectiveMode = resolveOpenCodeRuntimeAgentId(this.currentMode);
 
-    try {
-      // 事件流必须等 OpenCode 完成启动后才能产生首条记录，因此这里与服务端启动共用
-      // 同一份等待预算，避免插件较多或冷启动较慢时被更短的外层等待误判为失败。
-      await withTimeout(
-        this.events.ready(),
-        OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
-        "OpenCode 事件流首条记录等待超时",
-      );
-    } catch (error) {
-      if (this.abortController === turnAbortController) {
-        this.abortController = null;
-      }
-      throw error;
-    }
+    await this.awaitEventStreamReady(turnAbortController);
 
     const turnId = this.createTurnId();
     this.materializedParts.clear();
@@ -3667,6 +3667,32 @@ class OpenCodeAgentSession implements AgentSession {
     }
 
     return { turnId };
+  }
+
+  private async awaitEventStreamReady(turnAbortController: AbortController): Promise<void> {
+    const timeoutMessage = "OpenCode 服务连接就绪事件等待超时";
+    try {
+      await withTimeout(
+        this.events.ready(),
+        OPENCODE_EVENT_STREAM_READY_TIMEOUT_MS,
+        timeoutMessage,
+      );
+    } catch (error) {
+      if (this.abortController === turnAbortController) {
+        this.abortController = null;
+      }
+      if (!(error instanceof Error) || error.message !== timeoutMessage) {
+        throw error;
+      }
+      const diagnostics = this.events.diagnostics?.();
+      if (!diagnostics) {
+        throw error;
+      }
+      throw new Error(
+        `${timeoutMessage}，消息尚未发送。${formatOpenCodeEventStreamDiagnostics(diagnostics)}`,
+        { cause: error },
+      );
+    }
   }
 
   private rethrowRunnerWaitError(error: unknown): never {
@@ -3894,11 +3920,7 @@ class OpenCodeAgentSession implements AgentSession {
   }
 
   private async consumeEventSourceInput(input: OpenCodeEventSourceInput): Promise<void> {
-    if ("type" in input && input.type === "reconnected") {
-      await this.reconcileAfterGap(++this.gapRepairRevision);
-      return;
-    }
-    if ("type" in input && input.type === "server-exited") {
+    if (!("payload" in input)) {
       if (this.turnState.status === "stopping") return this.finishStoppingTurn(this.turnState.stop);
       const turnId = this.activeForegroundTurnId;
       if (turnId) {
@@ -3907,6 +3929,10 @@ class OpenCodeAgentSession implements AgentSession {
           turnId,
         );
       }
+      return;
+    }
+    if (input.payload.type === "server.connected") {
+      await this.reconcileAfterGap(++this.gapRepairRevision);
       return;
     }
     await this.consumeOpenCodeStreamEvent({ rawEvent: input, eventCount: 0 });

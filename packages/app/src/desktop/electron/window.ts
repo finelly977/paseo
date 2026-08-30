@@ -1,7 +1,7 @@
 import {
   getDesktopHost,
   type DesktopWindowBridge,
-  type DesktopWindowControlsOverlayUpdate,
+  type DesktopWindowChromeUpdate,
 } from "@/desktop/host";
 
 export function getDesktopWindow(): DesktopWindowBridge | null {
@@ -11,17 +11,42 @@ export function getDesktopWindow(): DesktopWindowBridge | null {
   }
   try {
     return getter() ?? null;
-  } catch {
+  } catch (error) {
+    console.error("[桌面窗口] 读取当前窗口桥接失败", error);
     return null;
   }
+}
+
+export async function minimizeDesktopWindow(): Promise<void> {
+  const minimize = getDesktopWindow()?.minimize;
+  if (typeof minimize !== "function") {
+    throw new Error("桌面窗口桥接缺少最小化能力");
+  }
+  await minimize();
+}
+
+export async function closeDesktopWindow(): Promise<void> {
+  const close = getDesktopWindow()?.close;
+  if (typeof close !== "function") {
+    throw new Error("桌面窗口桥接缺少关闭能力");
+  }
+  await close();
 }
 
 export async function toggleDesktopMaximize(): Promise<void> {
   const win = getDesktopWindow();
   if (!win || typeof win.toggleMaximize !== "function") {
-    return;
+    throw new Error("桌面窗口桥接缺少最大化切换能力");
   }
   await win.toggleMaximize();
+}
+
+export async function isDesktopMaximized(): Promise<boolean> {
+  const readMaximized = getDesktopWindow()?.isMaximized;
+  if (typeof readMaximized !== "function") {
+    throw new Error("桌面窗口桥接缺少最大化状态读取能力");
+  }
+  return await readMaximized();
 }
 
 export async function isDesktopFullscreen(): Promise<boolean> {
@@ -32,13 +57,11 @@ export async function isDesktopFullscreen(): Promise<boolean> {
   return await win.isFullscreen();
 }
 
-export async function updateDesktopWindowControls(
-  update: DesktopWindowControlsOverlayUpdate,
-): Promise<void> {
+export async function updateDesktopWindowChrome(update: DesktopWindowChromeUpdate): Promise<void> {
   const win = getDesktopWindow();
-  if (!win || typeof win.updateWindowControls !== "function") {
-    return;
+  if (!win || typeof win.updateChrome !== "function") {
+    throw new Error("桌面窗口桥接缺少外观同步能力");
   }
 
-  await win.updateWindowControls(update);
+  await win.updateChrome(update);
 }
