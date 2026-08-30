@@ -38,7 +38,7 @@ function processItem(id: string): StreamItem {
 
 describe("完成回合过程收起展示", () => {
   it("按当前语言显示完整的处理耗时", () => {
-    expect(formatCompletedTurnDuration(128_000, "zh-CN")).toBe("2分钟8秒");
+    expect(formatCompletedTurnDuration(128_000, "zh-CN")).toBe("2 分钟 8 秒");
     expect(formatCompletedTurnDuration(128_000, "en")).toBe("2 min 8 sec");
   });
 

@@ -287,8 +287,8 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
-const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 37;
-const COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE = 24;
+const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 39;
+const COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE = 26;
 const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -1936,8 +1936,8 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   completedTurnProcessToggleText: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    lineHeight: 20,
+    fontSize: theme.fontSize.base,
+    lineHeight: 22,
   },
   invertedWrapper: {
     transform: [{ scaleY: -1 }],

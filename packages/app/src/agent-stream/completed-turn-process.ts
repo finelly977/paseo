@@ -85,8 +85,20 @@ export function formatCompletedTurnDuration(durationMs: number, locale: string):
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   const seconds = totalSeconds % 60;
-  const formatUnit = (value: number, unit: "hour" | "minute" | "second") =>
-    new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "short" }).format(value);
+  const formatUnit = (value: number, unit: "hour" | "minute" | "second") => {
+    const formatter = new Intl.NumberFormat(locale, {
+      style: "unit",
+      unit,
+      unitDisplay: "short",
+    });
+    if (!locale.startsWith("zh")) {
+      return formatter.format(value);
+    }
+    return formatter
+      .formatToParts(value)
+      .map((part) => (part.type === "unit" ? ` ${part.value}` : part.value))
+      .join("");
+  };
   const parts: string[] = [];
 
   if (hours > 0) {
@@ -99,5 +111,5 @@ export function formatCompletedTurnDuration(durationMs: number, locale: string):
     parts.push(formatUnit(totalSeconds, "second"));
   }
 
-  return parts.join(locale.startsWith("zh") ? "" : " ");
+  return parts.join(" ");
 }
