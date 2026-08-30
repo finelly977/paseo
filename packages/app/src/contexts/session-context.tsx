@@ -62,6 +62,8 @@ import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalida
 import { useSettings } from "@/hooks/use-settings";
 import { getSendingClientMessageIds } from "@/composer/submission/model";
 import { createInstalledTimelineTransform } from "@/plugins/timeline";
+import { useAppActivelyVisible } from "@/hooks/use-app-visible";
+import { selectLiveAgentTimelineIds } from "@/timeline/live-agent-membership";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -76,6 +78,8 @@ export type {
 } from "@/stores/session-store";
 
 type AudioOutputPayload = Extract<SessionOutboundMessage, { type: "audio_output" }>["payload"];
+
+const LIVE_AGENT_TIMELINE_SOURCE_ID = "session-live-agents";
 
 interface BufferedAudioChunk {
   chunkIndex: number;
@@ -444,6 +448,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const voiceAudioEngine = useVoiceAudioEngineOptional();
   const queryClient = useQueryClient();
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const isAppActivelyVisible = useAppActivelyVisible();
   const toast = useToast();
   const transformTimelineItem = useMemo(
     () => createInstalledTimelineTransform(serverId),
@@ -500,6 +505,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   // connection stays online. Seeding it from this ref keeps a recreated sync from waiting forever
   // on a setConnected transition that already happened.
   const isConnectedRef = useRef(isConnected);
+  const wasAppActivelyVisibleRef = useRef(isAppActivelyVisible);
   const audioOutputBuffersRef = useRef<Map<string, BufferedAudioChunk[]>>(new Map());
   const activeAudioGroupsRef = useRef<Set<string>>(new Set());
 
@@ -853,11 +859,27 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     });
     viewedTimelineSyncRef.current = sync;
     setViewedTimelineSync(serverId, sync);
-    // 时间线订阅保持激活，不随应用可见性关闭：切走或隐藏期间 agent 事件
-    // 仍持续推送到本地存储，返回聚焦时新增内容立即可见，无需重新拉取。
+    // 时间线订阅保持激活，不随应用可见性关闭；重新聚焦时另行执行
+    // 权威增量核对，确保实时通道偶发丢失也不会留下旧记录。
     sync.setActive(true);
 
+    let trackedAgents = useSessionStore.getState().sessions[serverId]?.agents;
+    const publishLiveAgentMembership = () => {
+      sync.replaceVisibleAgentIds(
+        LIVE_AGENT_TIMELINE_SOURCE_ID,
+        selectLiveAgentTimelineIds(trackedAgents?.values() ?? []),
+      );
+    };
+    publishLiveAgentMembership();
+    const unsubscribeLiveAgentMembership = useSessionStore.subscribe((state) => {
+      const nextAgents = state.sessions[serverId]?.agents;
+      if (nextAgents === trackedAgents) return;
+      trackedAgents = nextAgents;
+      publishLiveAgentMembership();
+    });
+
     return () => {
+      unsubscribeLiveAgentMembership();
       if (viewedTimelineSyncRef.current === sync) {
         viewedTimelineSyncRef.current = null;
       }
@@ -870,6 +892,14 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     isConnectedRef.current = isConnected;
     viewedTimelineSyncRef.current?.setConnected(isConnected);
   }, [isConnected]);
+
+  useEffect(() => {
+    const becameActivelyVisible = isAppActivelyVisible && !wasAppActivelyVisibleRef.current;
+    wasAppActivelyVisibleRef.current = isAppActivelyVisible;
+    if (becameActivelyVisible) {
+      viewedTimelineSyncRef.current?.catchUpVisibleTimelines();
+    }
+  }, [isAppActivelyVisible]);
 
   // Daemon message handlers - directly update Zustand store
   useEffect(() => {

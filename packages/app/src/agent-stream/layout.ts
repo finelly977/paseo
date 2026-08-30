@@ -49,7 +49,6 @@ export interface StreamLayoutInput {
 
 interface LayoutSegmentInput {
   strategy: StreamStrategy;
-  agentStatus: string;
   items: StreamItem[];
   timingByAssistantId: Map<string, TurnTiming>;
   auxiliaryTurnFooter: TurnFooterHost | null;
@@ -149,9 +148,8 @@ export function collectCompletedTurnProcessItemIds(input: {
       input.boundaryAboveIndex === null ||
       input.boundaryAboveIndex === undefined
     ) {
-      // 分页从一轮对话中间开始：空闲状态直接收起已加载的过程项，避免一直
-      // 展开、等到更早分页加载后才突然收起造成撕裂；运行中保持展开等待
-      // 边界加载完成。
+      // 分页从一轮对话中间开始：已完成的历史区域直接收起已加载过程项，
+      // 避免等到更早分页加载后才突然改变行高；当前实时区域保持展开。
       return input.allowPartialBoundary ? processItemIds : [];
     }
 
@@ -253,7 +251,7 @@ function resolveCompletedFooter(input: {
   index: number;
   item: StreamItem;
   belowItem: StreamItem | null;
-  agentStatus: string;
+  phase: "streaming" | "complete";
   timingByAssistantId: Map<string, TurnTiming>;
   auxiliaryTurnFooter: TurnFooterHost | null;
   boundaryAboveItems: StreamItem[] | null;
@@ -282,7 +280,7 @@ function resolveCompletedFooter(input: {
     turnEndIndex: input.index,
     processBoundaryAboveItems: input.boundaryAboveItems,
     processBoundaryAboveIndex: input.boundaryAboveIndex,
-    allowPartialBoundary: input.agentStatus !== "running",
+    allowPartialBoundary: input.phase === "complete",
     timingByAssistantId: input.timingByAssistantId,
   });
 }
@@ -295,8 +293,8 @@ function isToolSequenceItem(
 
 /**
  * 分页加载从回合中间开始时（tail 开头只有过程项、回合的助手消息还在更早的
- * 未加载历史里），正常 completedFooter 无法生成。空闲状态下直接收起这段已
- * 加载的过程项，避免一直展开、等到更早分页加载后才突然收起造成撕裂。
+ * 未加载历史里），正常 completedFooter 无法生成。已完成的历史区域直接收起
+ * 这段已加载过程项，避免等到更早分页加载后才突然改变行高。
  */
 function tryResolvePartialTurnFooter(input: {
   strategy: StreamStrategy;
@@ -304,9 +302,9 @@ function tryResolvePartialTurnFooter(input: {
   index: number;
   item: StreamItem;
   aboveItem: StreamItem | null;
-  agentStatus: string;
+  phase: "streaming" | "complete";
 }): TurnFooterHost | null {
-  if (input.agentStatus === "running") {
+  if (input.phase === "streaming") {
     return null;
   }
   if (!isToolSequenceItem(input.item)) {
@@ -426,7 +424,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       index,
       item,
       belowItem,
-      agentStatus: input.agentStatus,
+      phase: input.phase,
       timingByAssistantId: input.timingByAssistantId,
       auxiliaryTurnFooter: input.auxiliaryTurnFooter,
       boundaryAboveItems: input.boundaryAboveItems,
@@ -440,7 +438,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
           index,
           item,
           aboveItem,
-          agentStatus: input.agentStatus,
+          phase: input.phase,
         });
     const turnFooter = completedFooter ?? partialTurnFooter;
 
@@ -486,7 +484,6 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     // is membership, so changing it must not reuse a layout from the adjacent turn.
     const historyCacheKey = [
       frameOrder,
-      input.agentStatus,
       historyBoundaryIndex ?? "null",
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
@@ -505,7 +502,6 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     } else {
       history = layoutSegment({
         strategy: input.strategy,
-        agentStatus: input.agentStatus,
         items: input.history,
         timingByAssistantId: input.timingByAssistantId,
         auxiliaryTurnFooter,
@@ -526,7 +522,6 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
 
   const liveHead = layoutSegment({
     strategy: input.strategy,
-    agentStatus: input.agentStatus,
     items: input.liveHead,
     timingByAssistantId: input.timingByAssistantId,
     auxiliaryTurnFooter,

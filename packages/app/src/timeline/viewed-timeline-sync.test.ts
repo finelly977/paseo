@@ -337,6 +337,24 @@ test("overlapping sources deduplicate membership and source removal preserves re
   });
 });
 
+test("运行中会话在可见面板移除后仍保持订阅", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const catchUp = await world.nextFetch("agent-a");
+  catchUp.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  world.sync.replaceVisibleAgentIds("live-agents", ["agent-a"]);
+  world.sync.replaceVisibleAgentIds("workspace", []);
+
+  world.expectNoPendingUnsubscribe();
+  world.expectNoPendingMembership();
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+});
+
 test("a failed catch-up reports once and retries through the explicit retry policy", async () => {
   const world = new TimelineWorld();
   world.sync.setConnected(true);
@@ -669,8 +687,9 @@ test("membership retry cannot run while disconnected", async () => {
   expect(restored.agentIds).toEqual(["agent-a"]);
 });
 
-test("quickly returning to an agent cancels its pending unsubscribe without another catch-up", async () => {
+test("快速返回会话时保留订阅并从当前游标核对最新时间线", async () => {
   const world = new TimelineWorld();
+  world.setCursor("agent-a", 9);
   world.sync.setConnected(true);
   world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
   const membership = await world.nextMembership();
@@ -685,12 +704,66 @@ test("quickly returning to an agent cancels its pending unsubscribe without anot
   world.sync.replaceVisibleAgentIds("workspace", []);
   world.expectNoPendingMembership();
   world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const resumedCatchUp = await world.nextFetch("agent-a");
+  resumedCatchUp.respond({ hasNewer: false });
 
-  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
 
+  expect(resumedCatchUp.request).toEqual({
+    direction: "after",
+    cursor: { epoch: "epoch-agent-a", seq: 9 },
+    limit: 40,
+    projection: "projected",
+  });
   world.expectNoPendingUnsubscribe();
   world.expectNoPendingMembership();
   world.expectNoPendingFetch();
+});
+
+test("应用重新聚焦时从当前游标核对所有可见会话", async () => {
+  const world = new TimelineWorld();
+  world.setCursor("agent-a", 12);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const initialCatchUp = await world.nextFetch("agent-a");
+  initialCatchUp.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  world.sync.catchUpVisibleTimelines();
+  const resumedCatchUp = await world.nextFetch("agent-a");
+
+  expect(resumedCatchUp.request).toEqual({
+    direction: "after",
+    cursor: { epoch: "epoch-agent-a", seq: 12 },
+    limit: 40,
+    projection: "projected",
+  });
+  resumedCatchUp.respond({ hasNewer: false });
+});
+
+test("应用重新聚焦不会中断正在进行的补载", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const firstPage = await world.nextFetch("agent-a");
+
+  world.sync.catchUpVisibleTimelines();
+  world.expectNoPendingFetch();
+
+  firstPage.respond({ hasNewer: true, seq: 6 });
+  const secondPage = await world.nextFetch("agent-a");
+  secondPage.respond({ hasNewer: false });
+
+  expect(secondPage.request).toEqual({
+    direction: "after",
+    cursor: { epoch: "epoch-agent-a", seq: 6 },
+    limit: 40,
+    projection: "projected",
+  });
 });
 
 test("unsubscribe grace expiry removes the agent exactly once", async () => {

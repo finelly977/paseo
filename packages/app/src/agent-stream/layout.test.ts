@@ -644,12 +644,30 @@ describe("layoutStream", () => {
   );
 
   it.each(["web", "android"] as const)(
-    "分页只加载到半轮且运行中 %s 时保持展开，直到用户消息边界可用",
+    "智能体运行中时，历史分页只加载到半轮的 %s 对话仍收起已加载过程项",
     (platform) => {
       const layout = layoutFor({
         platform,
         agentStatus: "running",
         tail: [toolCall("partial-tool", 1), assistantMessage("final", 2), userMessage("next", 3)],
+      });
+
+      const host = [...layout.history, ...layout.liveHead].find(
+        (item) => item.completedFooter?.itemId === "final",
+      )?.completedFooter;
+      expect(host?.processItemIds).toEqual(["partial-tool"]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "当前实时区域只加载到半轮且仍在输出 %s 时保持展开",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        agentStatus: "running",
+        isTurnActive: true,
+        tail: [],
+        head: [toolCall("partial-tool", 1), assistantMessage("final", 2), userMessage("next", 3)],
       });
 
       const host = [...layout.history, ...layout.liveHead].find(
@@ -776,13 +794,31 @@ describe("layoutStream", () => {
     expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id, toolItem2.id]);
   });
 
-  it("运行中分页从回合中间开始时保持展开", () => {
+  it("智能体运行中时，历史分页从回合中间开始的过程项仍直接收起", () => {
     const thoughtItem = thought("thought-1", 1);
     const toolItem = toolCall("tool-1", 2);
     const layout = layoutFor({
       platform: "web",
       agentStatus: "running",
       tail: [thoughtItem, toolItem],
+      timingIds: [],
+    });
+
+    const host = [...layout.history, ...layout.liveHead].find((item) =>
+      item.completedFooter?.itemId.startsWith("partial:"),
+    )?.completedFooter;
+    expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id]);
+  });
+
+  it("当前实时区域从回合中间开始且仍在输出时保持展开", () => {
+    const thoughtItem = thought("thought-1", 1);
+    const toolItem = toolCall("tool-1", 2);
+    const layout = layoutFor({
+      platform: "web",
+      agentStatus: "running",
+      isTurnActive: true,
+      tail: [],
+      head: [thoughtItem, toolItem],
       timingIds: [],
     });
 

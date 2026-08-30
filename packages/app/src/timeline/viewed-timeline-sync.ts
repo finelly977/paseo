@@ -44,6 +44,7 @@ export interface ViewedTimelineUiBridge {
   subscribe(listener: () => void): () => void;
   getAgentTimelineStatus(agentId: string): ViewedTimelineStatus;
   retryVisibleAgentTimeline(agentId: string): void;
+  catchUpVisibleTimelines(): void;
   reprojectVisibleTimelines(): void;
 }
 
@@ -274,6 +275,11 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     }
   };
 
+  const restartCatchUpUnlessRunning = (agentId: string) => {
+    if (catchUps.get(agentId)?.status === "running") return;
+    startCatchUp(agentId, { supersede: true });
+  };
+
   const reconcileLatestMembership = async (): Promise<void> => {
     if (disposed || !connected || deliveryMode !== "selective") return;
     const generation = membershipGeneration;
@@ -451,10 +457,14 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       return "ready";
     },
     replaceVisibleAgentIds(sourceId, agentIds) {
+      const previouslyVisible = visibleAgentIds();
       const normalized = normalizeAgentIds(agentIds);
       if (normalized.length === 0) sources.delete(sourceId);
       else sources.set(sourceId, normalized);
       publishVisibleMembership(true);
+      for (const agentId of normalized) {
+        if (!previouslyVisible.includes(agentId)) restartCatchUpUnlessRunning(agentId);
+      }
     },
     setActive(nextActive) {
       if (active === nextActive) return;
@@ -516,6 +526,10 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
         supersede: true,
       });
+    },
+    catchUpVisibleTimelines() {
+      if (!active || !connected) return;
+      for (const agentId of visibleAgentIds()) restartCatchUpUnlessRunning(agentId);
     },
     reprojectVisibleTimelines() {
       if (!active || !connected) return;

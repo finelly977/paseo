@@ -73,13 +73,12 @@ session and host-scoped setup state together.
 
 The app chooses one delivery policy from `server_info.features.selectiveAgentTimeline`:
 
-- Selective daemons receive the union of agents visible in every pane. Additions subscribe and
-  catch up immediately. Every visibility-driven removal, including app backgrounding, stays
-  subscribed for a 30-second grace period so brief tab, pane, route, and app switches do not repeatedly
-  unsubscribe and catch up. Losing window keyboard focus does not make a selected pane invisible.
-  Disconnecting and disposal clear pending grace because the subscription itself no longer exists.
-  After grace has expired, revisiting a retained timeline displays its cached state immediately and
-  authoritative catch-up advances it to the current tail.
+- 选择性投递的守护进程接收所有面板可见会话的并集，新增会话立即订阅并补载。任何由可见性
+  引起的移除都保留 30 秒订阅宽限，避免短暂切换标签、面板、路由或应用时反复退订和补载。
+  初始化和运行中会话即使没有可见面板也始终保留订阅，停止后再应用同一宽限期。窗口失去键盘焦点不会让
+  已选面板变为不可见；断开连接或销毁同步器会清除待执行的宽限期，因为此时订阅本身已不存在。面板重新可见时，
+  即使仍在宽限期内，也必须从本地游标执行权威增量补载；应用重新聚焦时对当前可见和运行中会话执行同样的核对。
+  实时投递仍是快速路径，权威补载则保证偶发丢失的事件不会让已完成会话永久停留在旧记录。
 - Legacy daemons keep globally streaming agent timelines. Visibility still triggers the existing
   authoritative catch-up, but the app does not issue selective-subscription RPCs.
 
