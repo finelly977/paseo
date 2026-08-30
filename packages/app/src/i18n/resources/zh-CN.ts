@@ -191,6 +191,8 @@ export const zhCN: TranslationResources = {
     completedTurn: {
       expand: "中间过程",
       collapse: "隐藏中间过程",
+      processed: "已处理",
+      processedFor: "已处理 {{duration}}",
     },
     permission: {
       plan: "Plan",

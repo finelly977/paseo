@@ -191,6 +191,8 @@ export const ptBR: TranslationResources = {
     completedTurn: {
       expand: "Etapas intermediárias",
       collapse: "Ocultar etapas intermediárias",
+      processed: "Processado",
+      processedFor: "Processado em {{duration}}",
     },
     permission: {
       plan: "Plano",

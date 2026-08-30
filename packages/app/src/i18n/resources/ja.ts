@@ -191,6 +191,8 @@ export const ja: TranslationResources = {
     completedTurn: {
       expand: "途中経過",
       collapse: "途中経過を隠す",
+      processed: "処理済み",
+      processedFor: "{{duration}}で処理",
     },
     permission: {
       plan: "プラン",

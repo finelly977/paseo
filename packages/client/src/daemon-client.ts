@@ -2435,6 +2435,9 @@ export class DaemonClient {
       })
         .then((payload) => {
           if (payload.status === "error") throw new Error(payload.error);
+          if (this.directorySubscriptions.get(subscriptionId) === subscription) {
+            subscription.onUpdate();
+          }
           return null;
         })
         .catch((error: unknown) => {
@@ -4507,7 +4510,8 @@ export class DaemonClient {
     onError: (error: Error) => void,
   ): Promise<{ unsubscribe: () => Promise<void> }> {
     const subscriptionId = this.createRequestId();
-    this.directorySubscriptions.set(subscriptionId, { ...input, onUpdate, onError });
+    const subscription = { ...input, onUpdate, onError };
+    this.directorySubscriptions.set(subscriptionId, subscription);
     try {
       const payload = await this.sendCorrelatedSessionRequest({
         message: {
@@ -4518,6 +4522,9 @@ export class DaemonClient {
         responseType: "fs.directory.subscribe.response",
       });
       if (payload.status === "error") throw new Error(payload.error);
+      if (this.directorySubscriptions.get(subscriptionId) === subscription) {
+        subscription.onUpdate();
+      }
       return {
         unsubscribe: async () => {
           if (!this.directorySubscriptions.delete(subscriptionId)) return;

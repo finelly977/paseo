@@ -1598,6 +1598,51 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
+  test("立即中断时即使尚未收到原生用户消息，也能按客户端消息标识回退", async () => {
+    const appServer = createFakeCodexAppServer({
+      "turn/interrupt": () => ({}),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    const resultPromise = session.run("立即停止", { clientMessageId: "client-interrupted" });
+    await appServer.waitForTurnStart();
+    appServer.startsTurn({ threadId: "thread-1", turnId: "turn-interrupted" });
+    await session.interrupt();
+    appServer.completeTurn({ status: "interrupted" });
+    await resultPromise;
+
+    await session.revertConversation({ messageId: "client-interrupted" });
+
+    expect(appServer.recordedRollbacks).toEqual([{ threadId: "thread-1", numTurns: 1 }]);
+    appServer.assertNoErrors();
+    await session.close();
+  });
+
+  test("原生用户消息稍后到达时不会把客户端消息重复计算为两个回合", async () => {
+    const appServer = createFakeCodexAppServer();
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    await session.startTurn("只计算一次", { clientMessageId: "client-once" });
+    emitCodexUserMessage(appServer, { id: "codex-once", text: "只计算一次" });
+    appServer.completeTurn();
+
+    await session.revertConversation({ messageId: "client-once" });
+
+    expect(appServer.recordedRollbacks).toEqual([{ threadId: "thread-1", numTurns: 1 }]);
+    appServer.assertNoErrors();
+    await session.close();
+  });
+
   test("容量错误前已有有效答复时自动发送继续且不结束当前逻辑回合", async () => {
     const turnStarts: Record<string, unknown>[] = [];
     const appServer = createFakeCodexAppServer({

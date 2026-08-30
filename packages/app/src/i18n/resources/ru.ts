@@ -191,6 +191,8 @@ export const ru: TranslationResources = {
     completedTurn: {
       expand: "Промежуточные шаги",
       collapse: "Скрыть промежуточные шаги",
+      processed: "Обработано",
+      processedFor: "Обработано за {{duration}}",
     },
     permission: {
       plan: "План",

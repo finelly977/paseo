@@ -102,11 +102,12 @@ import {
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
-import {
-  isStandaloneMarkdownHorizontalRule,
-  splitMarkdownBlocks,
-} from "@/utils/split-markdown-blocks";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
+import {
+  buildCompletedTurnProcessModel,
+  formatCompletedTurnDuration,
+  type CompletedTurnProcessToggleModel,
+} from "./completed-turn-process";
 import { ConversationHistoryIndex } from "./history-index";
 import {
   buildConversationHistoryIndex,
@@ -293,11 +294,6 @@ const processToggleIconColorMapping = (theme: Theme) => ({
 });
 const ThemedProcessToggleChevron = withUnistyles(ChevronDown);
 
-interface CompletedTurnProcessToggleModel {
-  turnId: string;
-  isFollowedByDivider: boolean;
-}
-
 function CompletedTurnProcessToggle({
   model,
   expanded,
@@ -307,7 +303,7 @@ function CompletedTurnProcessToggle({
   expanded: boolean;
   onToggle: (turnId: string) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const handlePress = useCallback(() => onToggle(model.turnId), [model.turnId, onToggle]);
   const iconStyle = useMemo(
     () => [stylesheet.completedTurnProcessToggleIcon, expanded && stylesheet.processToggleExpanded],
@@ -317,6 +313,13 @@ function CompletedTurnProcessToggle({
   const accessibilityLabel = expanded
     ? t("agentStream.completedTurn.collapse")
     : t("agentStream.completedTurn.expand");
+  const label = useMemo(() => {
+    if (model.durationMs === undefined) {
+      return t("agentStream.completedTurn.processed");
+    }
+    const duration = formatCompletedTurnDuration(model.durationMs, i18n.language);
+    return t("agentStream.completedTurn.processedFor", { duration });
+  }, [i18n.language, model.durationMs, t]);
   const rowStyle = useMemo(
     () => [
       stylesheet.completedTurnProcessToggleRow,
@@ -336,9 +339,7 @@ function CompletedTurnProcessToggle({
         onPress={handlePress}
         style={stylesheet.completedTurnProcessToggle}
       >
-        <Text style={stylesheet.completedTurnProcessToggleText}>
-          {t("agentStream.completedTurn.expand")}
-        </Text>
+        <Text style={stylesheet.completedTurnProcessToggleText}>{label}</Text>
         <View style={iconStyle}>
           <ThemedProcessToggleChevron size={12} uniProps={processToggleIconColorMapping} />
         </View>
@@ -732,8 +733,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
     const completedTurnProcess = useMemo(() => {
-      const turnIdByProcessItemId = new Map<string, string>();
-      const toggleByItemId = new Map<string, CompletedTurnProcessToggleModel>();
       const hosts = [
         ...streamLayout.history.flatMap((item) =>
           item.completedFooter ? [item.completedFooter] : [],
@@ -743,29 +742,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         ),
         ...(streamLayout.auxiliaryTurnFooter ? [streamLayout.auxiliaryTurnFooter] : []),
       ];
-      for (const host of hosts) {
-        if (host.processItemIds.length === 0) {
-          continue;
-        }
-        for (const itemId of host.processItemIds) {
-          turnIdByProcessItemId.set(itemId, host.itemId);
-        }
-        const toggleItemId = host.processItemIds.at(-1);
-        if (toggleItemId) {
-          const finalAssistant = host.items.find((item) => item.id === host.itemId);
-          const firstFinalBlock =
-            finalAssistant?.kind === "assistant_message"
-              ? splitMarkdownBlocks(finalAssistant.text)[0]
-              : undefined;
-          toggleByItemId.set(toggleItemId, {
-            turnId: host.itemId,
-            isFollowedByDivider:
-              firstFinalBlock !== undefined && isStandaloneMarkdownHorizontalRule(firstFinalBlock),
-          });
-        }
-      }
-      return { turnIdByProcessItemId, toggleByItemId };
-    }, [streamLayout.auxiliaryTurnFooter, streamLayout.history, streamLayout.liveHead]);
+      return buildCompletedTurnProcessModel({
+        hosts,
+        visibleItems: [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+      });
+    }, [
+      baseRenderModel.history,
+      baseRenderModel.segments.liveHead,
+      streamLayout.auxiliaryTurnFooter,
+      streamLayout.history,
+      streamLayout.liveHead,
+    ]);
 
     const toggleCompletedTurnProcess = useCallback((turnId: string) => {
       setExpandedCompletedTurnIds((previous) => {

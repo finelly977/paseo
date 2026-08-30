@@ -193,6 +193,8 @@ export const fr: TranslationResources = {
     completedTurn: {
       expand: "Étapes intermédiaires",
       collapse: "Masquer les étapes intermédiaires",
+      processed: "Traité",
+      processedFor: "Traité en {{duration}}",
     },
     permission: {
       plan: "Plan",

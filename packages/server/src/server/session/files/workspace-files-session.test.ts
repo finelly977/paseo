@@ -160,7 +160,11 @@ describe("WorkspaceFilesSession", () => {
       { type: "create", path: join(cwd, "first.txt") },
       { type: "update", path: join(cwd, "second.txt") },
     ]);
-    await vi.advanceTimersByTimeAsync(150);
+    await vi.advanceTimersByTimeAsync(100);
+    directoryObserver.emit([{ type: "update", path: join(cwd, "third.txt") }]);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(emitted).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(100);
     expect(emitted.at(-1)).toEqual({
       type: "fs.directory.update",
       payload: { status: "changed", subscriptionId: "directory-1" },
@@ -185,6 +189,35 @@ describe("WorkspaceFilesSession", () => {
 
     await subsystem.dispose();
     expect(directoryObserver.closeCount).toBe(1);
+  });
+
+  test("持续发生目录变化时最迟一秒发送一次更新", async () => {
+    vi.useFakeTimers();
+    const cwd = makeDir("workspace-directory-max-wait-");
+    const directoryObserver = new TestDirectoryObserver();
+    const { subsystem, emitted } = makeSubsystem({ directoryObserver });
+
+    await subsystem.handleDirectorySubscribeRequest({
+      type: "fs.directory.subscribe.request",
+      cwd,
+      subscriptionId: "directory-sustained",
+      requestId: "request-sustained",
+    });
+
+    directoryObserver.emit([{ type: "create", path: join(cwd, "first.txt") }]);
+    for (let index = 1; index <= 9; index += 1) {
+      await vi.advanceTimersByTimeAsync(100);
+      directoryObserver.emit([{ type: "update", path: join(cwd, `${index}.txt`) }]);
+    }
+    await vi.advanceTimersByTimeAsync(99);
+    expect(emitted).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(emitted.at(-1)).toEqual({
+      type: "fs.directory.update",
+      payload: { status: "changed", subscriptionId: "directory-sustained" },
+    });
+
+    await subsystem.dispose();
   });
 
   test("lists directory entries", async () => {

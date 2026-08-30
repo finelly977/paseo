@@ -437,6 +437,7 @@ export function FileExplorerPane({
       showHiddenFiles: shouldShowHiddenFiles,
       requestDirectoryListing: (path) =>
         requestDirectoryListing(path, {
+          background: true,
           recordHistory: false,
           setCurrentPath: false,
         }),
@@ -1150,6 +1151,10 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
   },
   entryIcon: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
   },
   entryName: {

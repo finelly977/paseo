@@ -191,6 +191,8 @@ export const es: TranslationResources = {
     completedTurn: {
       expand: "Pasos intermedios",
       collapse: "Ocultar pasos intermedios",
+      processed: "Procesado",
+      processedFor: "Procesado durante {{duration}}",
     },
     permission: {
       plan: "Plan",

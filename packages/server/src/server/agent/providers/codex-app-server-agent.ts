@@ -3827,7 +3827,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.resetCodexUserMessageTurns();
     for (const entry of timeline) {
       if (entry.item.type === "user_message") {
-        this.rememberCodexUserMessageTurn(entry.item.messageId);
+        this.rememberCodexUserMessageTurn(entry.item.messageId, null);
       }
     }
     this.persistedHistory = timeline;
@@ -4299,6 +4299,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       hasCodexConfig: turnStart.hasCodexConfig,
     });
     await this.client.request("turn/start", turnStart.params, TURN_START_TIMEOUT_MS);
+    this.rememberCodexUserMessageTurn(request.options?.clientMessageId, null);
   }
 
   async steerActiveTurn(
@@ -4361,15 +4362,32 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
   }
 
-  private rememberCodexUserMessageTurn(messageId: string | null | undefined): boolean {
+  private rememberCodexUserMessageTurn(
+    messageId: string | null | undefined,
+    aliasMessageId: string | null | undefined,
+  ): boolean {
     if (typeof messageId !== "string" || messageId.length === 0) {
       return false;
     }
-    if (this.userMessageTurnIndexes.has(messageId)) {
+    const existingTurnIndex = this.userMessageTurnIndexes.get(messageId);
+    if (existingTurnIndex !== undefined) {
+      if (aliasMessageId) {
+        this.userMessageTurnIndexes.set(aliasMessageId, existingTurnIndex);
+      }
       return false;
+    }
+    const aliasTurnIndex = aliasMessageId
+      ? this.userMessageTurnIndexes.get(aliasMessageId)
+      : undefined;
+    if (aliasTurnIndex !== undefined) {
+      this.userMessageTurnIndexes.set(messageId, aliasTurnIndex);
+      return true;
     }
     this.userMessageTurnIndexes.set(messageId, this.userMessageTurnIds.length);
     this.userMessageTurnIds.push(messageId);
+    if (aliasMessageId) {
+      this.userMessageTurnIndexes.set(aliasMessageId, this.userMessageTurnIds.length - 1);
+    }
     return true;
   }
 
@@ -4382,11 +4400,11 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (numTurns <= 0) {
       return;
     }
-    this.userMessageTurnIds.length = Math.max(0, this.userMessageTurnIds.length - numTurns);
-    this.userMessageTurnIndexes.clear();
-    this.userMessageTurnIds.forEach((messageId, index) => {
-      this.userMessageTurnIndexes.set(messageId, index);
-    });
+    const nextLength = Math.max(0, this.userMessageTurnIds.length - numTurns);
+    this.userMessageTurnIds.length = nextLength;
+    for (const [messageId, index] of this.userMessageTurnIndexes) {
+      if (index >= nextLength) this.userMessageTurnIndexes.delete(messageId);
+    }
   }
 
   private codexUserMessageTurns(): CodexUserMessageTurnIndex {
@@ -6729,11 +6747,11 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.emitSubAgentActivityUpdate(childSubAgentCallId, "running");
       return;
     }
-    if (!this.rememberCodexUserMessageTurn(timelineItem.messageId)) {
+    const clientMessageId = timelineItem.clientMessageId ?? this.activeClientMessageId;
+    if (!this.rememberCodexUserMessageTurn(timelineItem.messageId, clientMessageId)) {
       return;
     }
     this.activeCodexUserMessageId = timelineItem.messageId ?? itemId ?? null;
-    const clientMessageId = timelineItem.clientMessageId ?? this.activeClientMessageId;
     const item = clientMessageId ? { ...timelineItem, clientMessageId } : timelineItem;
     this.activeClientMessageId = null;
     if (this.suppressNextRetriedUserMessage) {

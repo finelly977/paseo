@@ -189,6 +189,8 @@ export const en = {
     completedTurn: {
       expand: "Intermediate steps",
       collapse: "Hide intermediate steps",
+      processed: "Processed",
+      processedFor: "Processed for {{duration}}",
     },
     permission: {
       plan: "Plan",

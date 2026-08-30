@@ -38,6 +38,7 @@ import {
 import { getProjectIcon } from "../../../utils/project-icon.js";
 
 const DIRECTORY_UPDATE_DEBOUNCE_MS = 150;
+const DIRECTORY_UPDATE_MAX_WAIT_MS = 1_000;
 
 interface DirectorySubscription {
   token: object;
@@ -156,10 +157,35 @@ export class WorkspaceFilesSession {
 
     const token = {};
     let updateTimer: ReturnType<typeof setTimeout> | null = null;
+    let updateBatchStartedAt: number | null = null;
     const cancelPendingUpdate = () => {
-      if (!updateTimer) return;
-      clearTimeout(updateTimer);
+      if (updateTimer) {
+        clearTimeout(updateTimer);
+        updateTimer = null;
+      }
+      updateBatchStartedAt = null;
+    };
+    const emitPendingUpdate = () => {
       updateTimer = null;
+      updateBatchStartedAt = null;
+      if (this.directorySubscriptions.get(request.subscriptionId)?.token !== token) return;
+      this.host.emit({
+        type: "fs.directory.update",
+        payload: { status: "changed", subscriptionId: request.subscriptionId },
+      });
+    };
+    const schedulePendingUpdate = () => {
+      const now = Date.now();
+      updateBatchStartedAt ??= now;
+      if (updateTimer) clearTimeout(updateTimer);
+      const remainingBatchTime = Math.max(
+        0,
+        DIRECTORY_UPDATE_MAX_WAIT_MS - (now - updateBatchStartedAt),
+      );
+      updateTimer = setTimeout(
+        emitPendingUpdate,
+        Math.min(DIRECTORY_UPDATE_DEBOUNCE_MS, remainingBatchTime),
+      );
     };
 
     try {
@@ -183,15 +209,8 @@ export class WorkspaceFilesSession {
           });
           return;
         }
-        if (events.length === 0 || updateTimer) return;
-        updateTimer = setTimeout(() => {
-          updateTimer = null;
-          if (this.directorySubscriptions.get(request.subscriptionId)?.token !== token) return;
-          this.host.emit({
-            type: "fs.directory.update",
-            payload: { status: "changed", subscriptionId: request.subscriptionId },
-          });
-        }, DIRECTORY_UPDATE_DEBOUNCE_MS);
+        if (events.length === 0) return;
+        schedulePendingUpdate();
       });
       this.directorySubscriptions.set(request.subscriptionId, {
         token,

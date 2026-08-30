@@ -191,6 +191,8 @@ export const ar: TranslationResources = {
     completedTurn: {
       expand: "الخطوات الوسيطة",
       collapse: "إخفاء الخطوات الوسيطة",
+      processed: "تمت المعالجة",
+      processedFor: "تمت المعالجة خلال {{duration}}",
     },
     permission: {
       plan: "يخطط",
