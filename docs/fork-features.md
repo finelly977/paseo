@@ -298,8 +298,9 @@
 
 ### 15. Paseo 创建的 Claude 会话在 Claude CLI 中可见
 
-- Paseo 启动 Claude Agent SDK 时固定使用普通 Claude CLI 来源标记，新建会话、恢复会话以及后续追加内容都会被 Claude CLI 的 `/resume` 选择器识别，不再因 SDK 来源而隐藏。
-- 守护进程启动时会遍历 Paseo 已保存的 Claude 原生会话句柄，把现有会话 JSONL 中的 SDK 来源结构化转换为 CLI 来源；转换采用原子写入，读取期间发生变化的文件会拒绝覆盖并写入完整错误日志。
+- Paseo 启动 Claude Agent SDK 时仍固定传入普通 Claude CLI 来源；针对会把非交互启动重新标记成 `sdk-cli` 的新版 Claude Code，每个持久化回合收到原生完成结果后还会立即把当前会话的顶层来源改回 `cli`，因此无需重启 Paseo 就能在 Claude CLI 的 `/resume` 选择器中看到新建会话和后续内容。
+- 运行中转换只原位替换来源标识并保持文件字节长度不变，写入前会验证目标字节仍是刚读取的 SDK 标识，避免覆盖 Claude 同时追加的新记录；原生回合已完成却没有会话文件或转换失败时必须显式失败，不能把 CLI 可见性失效伪装成正常完成。
+- 守护进程启动时仍会遍历 Paseo 已保存的 Claude 原生会话句柄，把历史会话 JSONL 中残留的 SDK 来源结构化转换为 CLI 来源；启动迁移采用原子写入，读取期间发生变化的文件会拒绝覆盖并写入完整错误日志。
 - 迁移只处理 Paseo 持有持久化句柄的 Claude 会话，不扫描或修改其他应用创建的 Claude SDK 会话。
 
 主要涉及：

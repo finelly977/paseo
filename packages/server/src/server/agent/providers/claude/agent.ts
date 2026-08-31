@@ -42,7 +42,10 @@ import {
 } from "./model-manifest.js";
 import { parsePartialJsonObject } from "./partial-json.js";
 import { ClaudeSidechainTracker } from "./sidechain-tracker.js";
-import { CLAUDE_CLI_ENTRYPOINT } from "./session-entrypoint.js";
+import {
+  CLAUDE_CLI_ENTRYPOINT,
+  rewriteActiveClaudeSessionEntrypointAsCli,
+} from "./session-entrypoint.js";
 import { ClaudeTaskState } from "./task-state.js";
 import { buildClaudeFeatures, claudeModelSupportsFastMode } from "./feature-definitions.js";
 import {
@@ -1988,6 +1991,8 @@ class ClaudeAgentSession implements AgentSession {
   private readonly resolveBinary: () => Promise<string>;
   private query: Query | null = null;
   private childProcess: ChildProcess | null = null;
+  private nativeClaudeProcessSpawned = false;
+  private sessionEntrypointRewriteTail: Promise<void> = Promise.resolve();
   private input: AsyncMessageInput<SDKUserMessage> | null = null;
   /** 当前前台回合实际归属的 SDK 查询与输入。 */
   private activeForegroundQuery: Query | null = null;
@@ -2648,7 +2653,8 @@ class ClaudeAgentSession implements AgentSession {
       }
       this.childProcess = null;
     }
-    if (this.persistSession === false && this.claudeSessionId) {
+    await this.synchronizeClaudeSessionEntrypointOnClose();
+    if (!this.shouldPersistSession() && this.claudeSessionId) {
       // Claude Code currently ignores --no-session-persistence outside --print mode
       // (see `claude --help`), so the SDK's persistSession=false is silently dropped
       // in stream-json mode. Sweep the transcript ourselves so ephemeral runs
@@ -3095,6 +3101,7 @@ class ClaudeAgentSession implements AgentSession {
         launchEnv: this.launchEnv,
         queryFactory: this.queryFactory,
         onChildProcess: (child) => {
+          this.nativeClaudeProcessSpawned = true;
           this.childProcess = child;
           child.once("exit", (code, signal) => this.handleRuntimeExit(child, code, signal));
         },
@@ -3771,6 +3778,9 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async routeSdkMessageFromPump(message: SDKMessage): Promise<void> {
+    if (this.shouldSynchronizeClaudeSessionEntrypoint(message)) {
+      await this.synchronizeClaudeSessionEntrypoint(message.session_id, "require-existing");
+    }
     if (this.shouldSuppressStaleResult(message)) {
       return;
     }
@@ -3833,6 +3843,66 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     this.dispatchEvents(events);
+  }
+
+  private shouldSynchronizeClaudeSessionEntrypoint(
+    message: SDKMessage,
+  ): message is SDKResultMessage {
+    return (
+      message.type === "result" && this.nativeClaudeProcessSpawned && this.shouldPersistSession()
+    );
+  }
+
+  private async synchronizeClaudeSessionEntrypointOnClose(): Promise<void> {
+    if (!this.nativeClaudeProcessSpawned || !this.shouldPersistSession() || !this.claudeSessionId) {
+      return;
+    }
+    await this.synchronizeClaudeSessionEntrypoint(this.claudeSessionId, "allow-missing");
+  }
+
+  private async synchronizeClaudeSessionEntrypoint(
+    sessionId: string,
+    missingPolicy: "allow-missing" | "require-existing",
+  ): Promise<void> {
+    if (!sessionId.trim()) {
+      throw new Error("Claude 结果缺少有效的原生会话标识，无法同步 CLI 可见性");
+    }
+    const configDir = this.buildSdkEnv(this.config.extra?.claude).CLAUDE_CONFIG_DIR;
+    const rewrite = this.sessionEntrypointRewriteTail.then(() =>
+      rewriteActiveClaudeSessionEntrypointAsCli({
+        session: { cwd: this.config.cwd, sessionId },
+        ...(typeof configDir === "string" ? { configDir } : {}),
+      }),
+    );
+    // 调用方保留本次失败；队尾只恢复串行能力，让关闭阶段可以再次尝试，而不是被旧拒绝永久污染。
+    this.sessionEntrypointRewriteTail = rewrite.then(
+      () => undefined,
+      () => undefined,
+    );
+    const result = await rewrite;
+    if (result.status === "missing") {
+      if (missingPolicy === "require-existing") {
+        throw new Error(`Claude 已完成回合但未生成原生会话文件：${result.sessionPath}`);
+      }
+      return;
+    }
+    if (result.status === "migrated") {
+      this.logger.debug(
+        {
+          sessionId,
+          sessionPath: result.sessionPath,
+          changedEntries: result.changedEntries,
+        },
+        "Claude session entrypoint synchronized for CLI visibility",
+      );
+    }
+  }
+
+  private shouldPersistSession(): boolean {
+    if (this.persistSession !== undefined) {
+      return this.persistSession;
+    }
+    return this.config.extra?.claude?.persistSession !== false;
   }
 
   private async buildPumpedMessageEvents(
