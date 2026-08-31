@@ -357,6 +357,7 @@ function mergeCanonicalUserWithLocalPresentation(
     ...(canonical.clientMessageId ? { clientMessageId: canonical.clientMessageId } : {}),
     ...(canonical.messageId ? { messageId: canonical.messageId } : {}),
     ...(canonical.turnId ? { turnId: canonical.turnId } : {}),
+    ...(canonical.turnRole ? { turnRole: canonical.turnRole } : {}),
     text: local.text,
     timestamp: local.timestamp,
     ...(canonical.timelineCursor ? { timelineCursor: canonical.timelineCursor } : {}),

@@ -559,6 +559,7 @@ describe("processTimelineResponse", () => {
               type: "user_message",
               text: "server-rendered attachment text",
               messageId: "canonical-create-user",
+              turnRole: "start",
             },
           },
         ],
@@ -573,6 +574,7 @@ describe("processTimelineResponse", () => {
       timestamp: new Date(1000),
       images: [image],
       attachments: [attachment],
+      turnRole: "start",
     });
     expect(userMessages[0]?.optimistic).toBeUndefined();
 
@@ -591,6 +593,7 @@ describe("processTimelineResponse", () => {
               type: "user_message",
               text: "server-rendered attachment text",
               messageId: "canonical-create-user",
+              turnRole: "start",
             },
           },
         ],

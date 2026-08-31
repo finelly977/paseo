@@ -325,9 +325,11 @@ function mergeCanonicalIdentity(
   provider: AgentTimelineItem,
 ): AgentTimelineItem {
   if (canonical.type !== "user_message" || provider.type !== "user_message") return provider;
+  const turnRole = provider.turnRole ?? canonical.turnRole;
   return {
     ...provider,
     ...(canonical.clientMessageId ? { clientMessageId: canonical.clientMessageId } : {}),
     ...(canonical.messageId ? { messageId: canonical.messageId } : {}),
+    ...(turnRole ? { turnRole } : {}),
   };
 }

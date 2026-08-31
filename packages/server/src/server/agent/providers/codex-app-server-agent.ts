@@ -47,6 +47,7 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { isSystemInjectedEnvelope } from "../agent-prompt.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { curateAgentActivity } from "../activity-curator.js";
 import {
@@ -2139,6 +2140,28 @@ async function requestCodexThreadHistory(
   return CodexThreadReadResponseSchema.parse(response);
 }
 
+function restoreCodexHistoryTurnRole(
+  item: AgentTimelineItem,
+  state: {
+    hasVisibleUserMessage: boolean;
+    previousTurnNeedsCapacityContinuation: boolean;
+  },
+): { item: AgentTimelineItem; hasVisibleUserMessage: boolean } {
+  if (item.type !== "user_message" || isSystemInjectedEnvelope(item.text)) {
+    return { item, hasVisibleUserMessage: state.hasVisibleUserMessage };
+  }
+  const continuesCapacityRecovery =
+    !state.hasVisibleUserMessage &&
+    state.previousTurnNeedsCapacityContinuation &&
+    item.text.trim() === "继续";
+  const turnRole = state.hasVisibleUserMessage || continuesCapacityRecovery ? "steer" : "start";
+  return { item: { ...item, turnRole }, hasVisibleUserMessage: true };
+}
+
+function isCodexCapacityTimelineItem(item: AgentTimelineItem): boolean {
+  return item.type === "assistant_message" && isCodexModelCapacityMessage(item.text);
+}
+
 async function loadCodexThreadHistoryTimeline(params: {
   threadId: string;
   cwd: string | null;
@@ -2147,7 +2170,10 @@ async function loadCodexThreadHistoryTimeline(params: {
   const response = await requestCodexThreadHistory(params.requestThread, params.threadId);
   const timeline: PersistedTimelineEntry[] = [];
   const subAgentTimelineIndexByThreadId = new Map<string, number>();
+  let previousTurnNeedsCapacityContinuation = false;
   for (const turn of response.thread.turns) {
+    let hasVisibleUserMessage = false;
+    let currentTurnNeedsCapacityContinuation = false;
     for (const item of turn.items) {
       const historicalSubAgentActivity = readCodexSubAgentActivity(item);
       if (historicalSubAgentActivity) {
@@ -2175,8 +2201,14 @@ async function loadCodexThreadHistoryTimeline(params: {
           historicalSubAgentActivity && timelineItem.type === "tool_call"
             ? settleHistoricalSubAgentActivity(timelineItem, historicalSubAgentActivity.kind)
             : timelineItem;
+        const restored = restoreCodexHistoryTurnRole(settledTimelineItem, {
+          hasVisibleUserMessage,
+          previousTurnNeedsCapacityContinuation,
+        });
+        hasVisibleUserMessage = restored.hasVisibleUserMessage;
+        currentTurnNeedsCapacityContinuation ||= isCodexCapacityTimelineItem(settledTimelineItem);
         timeline.push({
-          item: settledTimelineItem,
+          item: restored.item,
           timestamp: timestamp ?? undefined,
         });
         for (const childThreadId of readCodexHistoricalSubAgentThreadIds(item)) {
@@ -2184,6 +2216,7 @@ async function loadCodexThreadHistoryTimeline(params: {
         }
       }
     }
+    previousTurnNeedsCapacityContinuation = currentTurnNeedsCapacityContinuation;
   }
   const subAgentRoutes = Array.from(subAgentTimelineIndexByThreadId.entries()).flatMap(
     ([childThreadId, timelineIndex]): PersistedSubAgentRoute[] => {
@@ -3404,7 +3437,6 @@ export class CodexAppServerAgentSession implements AgentSession {
   } | null = null;
   private client: CodexAppServerClient | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
-  private nextTurnOrdinal = 0;
   private activeForegroundTurnId: string | null = null;
   private activeClientMessageId: string | null = null;
   private activeCodexUserMessageId: string | null = null;
@@ -5232,7 +5264,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private createTurnId(): string {
-    return `codex-turn-${this.nextTurnOrdinal++}`;
+    return `codex-turn-${randomUUID()}`;
   }
 
   private handleNotification(method: string, params: unknown): void {

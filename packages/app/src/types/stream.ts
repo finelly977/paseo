@@ -97,6 +97,7 @@ export interface UserMessageItem {
   clientMessageId?: string;
   messageId?: string;
   turnId?: string;
+  turnRole?: "start" | "steer";
   text: string;
   timestamp: Date;
   timelineCursor?: TimelinePosition;
@@ -121,6 +122,7 @@ export interface UserMessageInput {
   clientMessageId?: string;
   messageId?: string;
   turnId?: string;
+  turnRole?: "start" | "steer";
   timelineCursor?: TimelinePosition;
   text: string;
   timestamp: Date;
@@ -141,6 +143,7 @@ export function createUserMessage(input: UserMessageInput): UserMessageItem {
     ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
     ...(input.messageId ? { messageId: input.messageId } : {}),
     ...(input.turnId ? { turnId: input.turnId } : {}),
+    ...(input.turnRole ? { turnRole: input.turnRole } : {}),
     ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
     text: input.text,
     timestamp: input.timestamp,
@@ -297,6 +300,7 @@ function mergeUserMessage(
       existing.messageId ??
       (matchPolicy === "handoff" ? existing.id : undefined),
     turnId: incoming.turnId ?? existing.turnId,
+    turnRole: incoming.turnRole ?? existing.turnRole,
     timelineCursor: incoming.timelineCursor ?? existing.timelineCursor,
     optimistic: hasCanonicalIdentity ? undefined : presentation.optimistic,
     providerImages: incoming.providerImages ?? existing.providerImages,
@@ -312,6 +316,7 @@ function hasSameUserMessagePresentation(
     existing.clientMessageId === merged.clientMessageId &&
     existing.messageId === merged.messageId &&
     existing.turnId === merged.turnId &&
+    existing.turnRole === merged.turnRole &&
     existing.timelineCursor === merged.timelineCursor &&
     existing.optimistic === merged.optimistic &&
     existing.text === merged.text &&
@@ -906,11 +911,26 @@ function markThoughtReady(item: ThoughtItem): ThoughtItem {
   };
 }
 
+function buildUserMessageCanonicalFields(input: {
+  clientMessageId?: string;
+  messageId?: string;
+  turnId?: string;
+  turnRole?: "start" | "steer";
+}) {
+  return {
+    ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
+    ...(input.messageId ? { messageId: input.messageId } : {}),
+    ...(input.turnId ? { turnId: input.turnId } : {}),
+    ...(input.turnRole ? { turnRole: input.turnRole } : {}),
+  };
+}
+
 function buildUserMessageItem(input: {
   id: string;
   clientMessageId?: string;
   messageId?: string;
   turnId?: string;
+  turnRole?: "start" | "steer";
   text: string;
   timestamp: Date;
   timelineCursor?: TimelinePosition;
@@ -921,9 +941,7 @@ function buildUserMessageItem(input: {
     return {
       kind: "user_message",
       id: input.id,
-      ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
-      ...(input.messageId ? { messageId: input.messageId } : {}),
-      ...(input.turnId ? { turnId: input.turnId } : {}),
+      ...buildUserMessageCanonicalFields(input),
       text: input.optimistic.text,
       timestamp: input.optimistic.timestamp,
       ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
@@ -944,9 +962,7 @@ function buildUserMessageItem(input: {
   return {
     kind: "user_message",
     id: input.id,
-    ...(input.clientMessageId ? { clientMessageId: input.clientMessageId } : {}),
-    ...(input.messageId ? { messageId: input.messageId } : {}),
-    ...(input.turnId ? { turnId: input.turnId } : {}),
+    ...buildUserMessageCanonicalFields(input),
     text: input.text,
     timestamp: input.timestamp,
     ...(input.timelineCursor ? { timelineCursor: input.timelineCursor } : {}),
@@ -1025,6 +1041,7 @@ function appendUserMessage(
   providerImages?: AgentUserMessageImage[],
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  turnRole?: "start" | "steer",
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
   if (!hasContent && (!providerImages || providerImages.length === 0)) {
@@ -1049,6 +1066,7 @@ function appendUserMessage(
     clientMessageId,
     messageId,
     turnId,
+    turnRole,
     text: chunk,
     timestamp,
     timelineCursor,
@@ -1683,6 +1701,7 @@ function reduceTimelineEvent(
           item.images,
           timelineCursor,
           event.turnId,
+          item.turnRole,
         ),
       );
     case "assistant_message":
@@ -1782,7 +1801,12 @@ function applyTimelineTurnId(
   const clientMessageId =
     event.item.type === "user_message" ? event.item.clientMessageId : undefined;
   if (clientMessageId) {
-    return reconcileCanonicalUserTurnMembership(items, clientMessageId, event.turnId);
+    return reconcileCanonicalUserTurnMembership(
+      items,
+      clientMessageId,
+      event.turnId,
+      event.item.type === "user_message" ? event.item.turnRole : undefined,
+    );
   }
 
   if (!event.turnId || items.length === 0) return items;
@@ -1800,23 +1824,28 @@ function reconcileCanonicalUserTurnMembership(
   items: StreamItem[],
   clientMessageId: string,
   turnId: string | undefined,
+  turnRole?: "start" | "steer",
 ): StreamItem[] {
   const index = items.findIndex(
     (item) => item.kind === "user_message" && item.clientMessageId === clientMessageId,
   );
   const matched = items[index];
-  if (!matched || matched.kind !== "user_message" || matched.turnId === turnId) {
+  if (
+    !matched ||
+    matched.kind !== "user_message" ||
+    (matched.turnId === turnId && matched.turnRole === turnRole)
+  ) {
     return items;
   }
 
   // A canonical user row is authoritative for membership. This replaces a
   // provisional optimistic turn and clears it for daemons that do not emit IDs.
-  const next = turnId
-    ? { ...matched, turnId }
-    : (() => {
-        const { turnId: _, ...withoutTurnId } = matched;
-        return withoutTurnId;
-      })();
+  const { turnId: _turnId, turnRole: _turnRole, ...base } = matched;
+  const next: UserMessageItem = {
+    ...base,
+    ...(turnId ? { turnId } : {}),
+    ...(turnRole ? { turnRole } : {}),
+  };
   return [...items.slice(0, index), next, ...items.slice(index + 1)];
 }
 
@@ -2110,7 +2139,12 @@ function reconcileCanonicalUserMessageTurn(
   turnId: string | undefined,
 ): StreamItem[] {
   if (!canonical.clientMessageId) return items;
-  return reconcileCanonicalUserTurnMembership(items, canonical.clientMessageId, turnId);
+  return reconcileCanonicalUserTurnMembership(
+    items,
+    canonical.clientMessageId,
+    turnId,
+    canonical.turnRole,
+  );
 }
 
 function acknowledgedCanonicalUserMessage(matched: boolean, message: UserMessageItem): string[] {
@@ -2197,6 +2231,7 @@ function applyCanonicalUserMessageEvent(params: {
     messageId: event.item.messageId,
     clientMessageId: event.item.clientMessageId,
     turnId: event.turnId,
+    turnRole: event.item.turnRole,
     timelineCursor,
     text: normalized.chunk,
     timestamp,

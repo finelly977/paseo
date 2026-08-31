@@ -44,6 +44,7 @@ describe("user message identity", () => {
           text: "hello",
           clientMessageId: "hello-client",
           messageId: "provider-hello",
+          turnRole: "start",
         },
       },
       timestamp: new Date("2026-08-15T10:00:01Z"),
@@ -56,6 +57,7 @@ describe("user message identity", () => {
         clientMessageId: "hello-client",
         messageId: "provider-hello",
         turnId: "turn-b",
+        turnRole: "start",
       }),
     );
   });

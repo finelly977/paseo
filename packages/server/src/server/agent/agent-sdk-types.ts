@@ -390,6 +390,7 @@ export type AgentTimelineItem =
       text: string;
       messageId?: string;
       clientMessageId?: string;
+      turnRole?: "start" | "steer";
       images?: AgentUserMessageImage[];
     }
   | { type: "assistant_message"; text: string; messageId?: string }

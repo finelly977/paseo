@@ -9,8 +9,20 @@ function at(second: number): Date {
   return new Date(`2026-01-01T00:00:${second.toString().padStart(2, "0")}.000Z`);
 }
 
-function user(id: string, second: number, turnId: string): StreamItem {
-  return { kind: "user_message", id, text: id, timestamp: at(second), turnId };
+function user(
+  id: string,
+  second: number,
+  turnId: string,
+  turnRole?: "start" | "steer",
+): StreamItem {
+  return {
+    kind: "user_message",
+    id,
+    text: id,
+    timestamp: at(second),
+    turnId,
+    ...(turnRole ? { turnRole } : {}),
+  };
 }
 
 function assistant(id: string, second: number, turnId: string): StreamItem {
@@ -77,22 +89,40 @@ describe("canonical turn membership", () => {
     );
   });
 
+  it("keeps an explicit historical steer in its provider turn when legacy rows have no turn ID", () => {
+    const previous: StreamItem = {
+      kind: "assistant_message",
+      id: "preface",
+      text: "preface",
+      timestamp: at(1),
+    };
+    const steer: StreamItem = {
+      kind: "user_message",
+      id: "steer",
+      text: "steer",
+      timestamp: at(2),
+      turnRole: "steer",
+    };
+
+    expect(continuesTurn(previous, steer)).toBe(true);
+  });
+
   it.each([
     [
       "Claude",
       (turnId: string) => [
-        user("prompt", 1, turnId),
+        user("prompt", 1, turnId, "start"),
         runningTool("sleep", 2, turnId),
-        user("hello", 3, turnId),
+        user("hello", 3, turnId, "steer"),
       ],
     ],
     [
       "Codex",
       (turnId: string) => [
-        user("prompt", 1, turnId),
+        user("prompt", 1, turnId, "start"),
         assistant("preface", 2, turnId),
         runningTool("sleep", 3, turnId),
-        user("hello", 4, turnId),
+        user("hello", 4, turnId, "steer"),
       ],
     ],
   ] as const)("keeps %s-shaped active steers in one visible turn", (_provider, build) => {
@@ -109,6 +139,32 @@ describe("canonical turn membership", () => {
       startedAt: at(1),
       completedAt: at(9),
       durationMs: 8000,
+    });
+  });
+
+  it("splits completed prompts when an old Codex runtime reused its local turn ID", () => {
+    const reusedTurnId = "codex-turn-0";
+    const completed = layoutFor(
+      [
+        user("first-prompt", 1, reusedTurnId, "start"),
+        runningTool("first-tool", 2, reusedTurnId),
+        assistant("first-done", 9, reusedTurnId),
+        user("second-prompt", 20, reusedTurnId, "start"),
+        assistant("second-done", 24, reusedTurnId),
+      ],
+      false,
+    );
+
+    expect(completedFooterIds(completed.layout)).toEqual(["first-done", "second-done"]);
+    expect(completed.model.turnTiming.byAssistantId.get("first-done")).toMatchObject({
+      startedAt: at(1),
+      completedAt: at(9),
+      durationMs: 8000,
+    });
+    expect(completed.model.turnTiming.byAssistantId.get("second-done")).toMatchObject({
+      startedAt: at(20),
+      completedAt: at(24),
+      durationMs: 4000,
     });
   });
 });

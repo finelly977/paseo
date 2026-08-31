@@ -6,6 +6,15 @@ import type { StreamItem } from "@/types/stream";
  */
 export function continuesTurn(previous: StreamItem | null, next: StreamItem | null): boolean {
   if (!previous || !next) return false;
+  if (next.kind === "user_message" && next.turnRole === "start") {
+    return false;
+  }
+  if (next.kind === "user_message" && next.turnRole === "steer") {
+    if (previous.turnId !== undefined && next.turnId !== undefined) {
+      return previous.turnId === next.turnId;
+    }
+    return true;
+  }
   if (previous.turnId !== undefined && next.turnId !== undefined) {
     return previous.turnId === next.turnId;
   }

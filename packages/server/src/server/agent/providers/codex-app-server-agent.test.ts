@@ -177,6 +177,31 @@ function deferred<T>() {
 }
 
 describe("Codex active-turn steering admission", () => {
+  test("new provider runtimes never reuse a logical foreground turn ID", async () => {
+    const startInNewRuntime = async (): Promise<string> => {
+      const appServer = createFakeCodexAppServer();
+      const session = new CodexAppServerAgentSession(
+        createConfig({ cwd: "/workspace/project" }),
+        null,
+        createTestLogger(),
+        async () => appServer.child,
+      );
+      try {
+        const started = await session.startTurn("hello");
+        return started.turnId;
+      } finally {
+        await session.close();
+        appServer.assertNoErrors();
+      }
+    };
+
+    const first = await startInNewRuntime();
+    const second = await startInNewRuntime();
+
+    expect(first).toMatch(/^codex-turn-[0-9a-f-]{36}$/);
+    expect(second).not.toBe(first);
+  });
+
   test("a steer without the clearing contract leaves permissions open", async () => {
     const appServer = createFakeCodexAppServer({
       "turn/steer": () => ({ turn: { id: "native-A" } }),
@@ -3397,20 +3422,22 @@ describe("Codex app-server provider", () => {
         agentPath: "/root/legacy-only-child",
       });
 
-      await expect(child).resolves.toMatchObject({
+      const childEvent = await child;
+      expect(childEvent).toMatchObject({
         type: "provider_subagent",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: expect.stringMatching(/^codex-turn-[0-9a-f-]{36}$/),
         event: {
           type: "upsert",
           id: "legacy-only-child-thread",
           status: "running",
         },
       });
-      await expect(spawn).resolves.toMatchObject({
+      const spawnEvent = await spawn;
+      expect(spawnEvent).toMatchObject({
         type: "timeline",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: childEvent.turnId,
         item: {
           type: "tool_call",
           callId: "spawn-legacy-only-child",
@@ -3852,6 +3879,71 @@ describe("Codex app-server provider", () => {
           status: "completed",
         },
       },
+    ]);
+  });
+
+  test("restores new-turn and in-turn steer roles from native Codex history", async () => {
+    const session = createSession();
+    session.client = {
+      request: vi.fn(async (method: string) => {
+        if (method !== "thread/read") {
+          return {};
+        }
+        return {
+          thread: {
+            turns: [
+              {
+                items: [
+                  { type: "userMessage", id: "first", content: [{ type: "text", text: "first" }] },
+                  { type: "userMessage", id: "steer", content: [{ type: "text", text: "steer" }] },
+                ],
+              },
+              {
+                items: [
+                  {
+                    type: "userMessage",
+                    id: "second",
+                    content: [{ type: "text", text: "second" }],
+                  },
+                  {
+                    type: "agentMessage",
+                    id: "capacity",
+                    text: CODEX_MODEL_CAPACITY_MESSAGE,
+                  },
+                ],
+              },
+              {
+                items: [
+                  {
+                    type: "userMessage",
+                    id: "capacity-continue",
+                    content: [{ type: "text", text: "继续" }],
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      }),
+    };
+
+    await asInternals(session).loadPersistedHistory();
+
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(
+      history.flatMap((event) =>
+        event.type === "timeline" && event.item.type === "user_message"
+          ? [{ text: event.item.text, turnRole: event.item.turnRole }]
+          : [],
+      ),
+    ).toEqual([
+      { text: "first", turnRole: "start" },
+      { text: "steer", turnRole: "steer" },
+      { text: "second", turnRole: "start" },
+      { text: "继续", turnRole: "steer" },
     ]);
   });
 
@@ -4298,6 +4390,7 @@ describe("Codex app-server provider", () => {
           type: "user_message",
           text: "Check OpenCode timestamps.",
           messageId: "user-history",
+          turnRole: "start",
         },
       },
       {

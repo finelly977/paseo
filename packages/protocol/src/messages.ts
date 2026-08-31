@@ -720,6 +720,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    turnRole: z.enum(["start", "steer"]).optional(),
     images: z
       .array(
         z.object({

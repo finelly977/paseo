@@ -1310,7 +1310,11 @@ test("unavailable steer interrupts once and starts one replacement turn", async 
     expect(session.interruptCount).toBe(1);
     expect(session.startCount).toBe(2);
     expect(manager.getTimeline(agentId)).toContainEqual(
-      expect.objectContaining({ type: "user_message", clientMessageId: "replacement-client" }),
+      expect.objectContaining({
+        type: "user_message",
+        clientMessageId: "replacement-client",
+        turnRole: "start",
+      }),
     );
   } finally {
     await manager.closeAgent(agentId);
@@ -1411,7 +1415,7 @@ test("persists an immediate provider echo behind its queued canonical row", asyn
       expect.objectContaining({
         turnId: "active-turn-1",
         providerMessageId: "provider-hello-client",
-        item: expect.objectContaining({ clientMessageId: "hello-client" }),
+        item: expect.objectContaining({ clientMessageId: "hello-client", turnRole: "steer" }),
       }),
     ]);
   } finally {
@@ -1687,7 +1691,10 @@ test("orders an accepted steer before output emitted while acknowledgement is pe
       );
     });
     expect(rows).toMatchObject([
-      { item: { type: "user_message", text: "hello" }, turnId: "active-turn-1" },
+      {
+        item: { type: "user_message", text: "hello", turnRole: "steer" },
+        turnId: "active-turn-1",
+      },
       {
         item: { type: "assistant_message", text: "terminal output" },
         turnId: "active-turn-1",
@@ -10147,6 +10154,7 @@ test("authoritative timeline includes provider-emitted submitted user prompt", a
           text: "hello from composer",
           messageId: "msg-client-1",
           clientMessageId: "msg-client-1",
+          turnRole: "start",
         },
       }),
     );

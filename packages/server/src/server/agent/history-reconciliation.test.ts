@@ -71,6 +71,52 @@ describe("reconcileProviderHistory", () => {
     ]);
   });
 
+  test("restores explicit turn roles onto legacy canonical user rows", () => {
+    const rows = reconcileProviderHistory(
+      [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: user("first", "first-client"),
+          turnId: "codex-turn-0",
+        },
+        {
+          seq: 2,
+          timestamp: "2026-01-02T00:00:00.000Z",
+          item: user("second", "second-client"),
+          turnId: "codex-turn-0",
+        },
+      ],
+      [
+        { item: { type: "user_message", text: "first", turnRole: "start" } },
+        { item: { type: "user_message", text: "second", turnRole: "start" } },
+      ],
+    );
+
+    expect(rows).toMatchObject([
+      { item: { clientMessageId: "first-client", turnRole: "start" } },
+      { item: { clientMessageId: "second-client", turnRole: "start" } },
+    ]);
+  });
+
+  test("retains a canonical steer role when provider history omits the new metadata", () => {
+    const rows = reconcileProviderHistory(
+      [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: { ...user("steer", "steer-client"), turnRole: "steer" },
+          turnId: "turn-1",
+        },
+      ],
+      [{ item: user("steer") }],
+    );
+
+    expect(rows).toMatchObject([
+      { item: { clientMessageId: "steer-client", turnRole: "steer" }, turnId: "turn-1" },
+    ]);
+  });
+
   test("retains a canonical suffix when provider history is lagging", () => {
     const rows = reconcileProviderHistory(
       [
