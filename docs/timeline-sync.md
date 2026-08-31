@@ -70,6 +70,12 @@ When a client resumes without a cursor, it fetches the latest tail page.
 传输中，用户消息、工具过程和最终回复也不会从实时通道漏掉。之后客户端的正常可见集合更新仍
 负责在离开会话时移除该订阅。
 
+恢复 Codex 提供方历史时，一条完整助手消息可能对应规范时间线中多条连续的实时片段，而且两边
+使用不同的消息标识。历史对齐必须按连续片段合并后的正文识别同一消息，并忽略实时显示专用的
+助手消息分界线；匹配后保留实时记录原有的回合归属和片段位置，不能再追加一条提供方完整消息。
+如果旧版本已经在同一用户回合内留下标识相同但没有回合归属的提供方副本，下一次对齐应删除该
+副本并把修正后的时间线重新持久化。
+
 ## Client replica lifetime
 
 The host runtime owns each session replica for as long as the host remains registered. React

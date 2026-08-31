@@ -222,6 +222,139 @@ test("reconciles provider history whenever a persisted agent starts a new runtim
   }
 });
 
+test("重新打开时清理重复的提供方助手消息并保留实时回合记录", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-assistant-history-duplicate-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const timelineDirectory = join(workdir, "agent-timelines");
+  const first = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    registry: storage,
+    durableTimelineStore: new FileAgentTimelineStore(timelineDirectory),
+    logger,
+  });
+  let agentId: string | null = null;
+  let second: AgentManager | null = null;
+  try {
+    const created = await first.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = created.id;
+    await first.closeAgent(created.id);
+    await storage.flush();
+
+    await new FileAgentTimelineStore(timelineDirectory).replaceCommittedSnapshot(created.id, {
+      historyComplete: true,
+      rows: [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: {
+            type: "user_message",
+            text: "开始",
+            clientMessageId: "client-user",
+          },
+          turnId: "turn-1",
+        },
+        {
+          seq: 2,
+          timestamp: "2026-01-01T00:00:03.000Z",
+          item: {
+            type: "assistant_message",
+            text: "正在处理",
+            messageId: "provider-assistant",
+          },
+        },
+        {
+          seq: 3,
+          timestamp: "2026-01-01T00:00:01.000Z",
+          item: {
+            type: "assistant_message",
+            text: "\n\n---\n\n正在",
+            messageId: "live-assistant",
+          },
+          turnId: "turn-1",
+        },
+        {
+          seq: 4,
+          timestamp: "2026-01-01T00:00:01.100Z",
+          item: {
+            type: "assistant_message",
+            text: "处理",
+            messageId: "live-assistant",
+          },
+          turnId: "turn-1",
+        },
+      ],
+    });
+
+    class HistorySession extends TestAgentSession {
+      override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+        yield {
+          type: "timeline",
+          provider: "codex",
+          item: { type: "user_message", text: "开始", messageId: "provider-user" },
+        };
+        yield {
+          type: "timeline",
+          provider: "codex",
+          item: {
+            type: "assistant_message",
+            text: "正在处理",
+            messageId: "provider-assistant",
+          },
+        };
+      }
+    }
+    class HistoryClient extends TestAgentClient {
+      override async resumeSession(
+        _handle: AgentPersistenceHandle,
+        config?: Partial<AgentSessionConfig>,
+      ): Promise<AgentSession> {
+        return new HistorySession({ provider: "codex", cwd: config?.cwd ?? workdir });
+      }
+    }
+    second = new AgentManager({
+      clients: { codex: new HistoryClient() },
+      registry: storage,
+      durableTimelineStore: new FileAgentTimelineStore(timelineDirectory),
+      logger,
+    });
+
+    await ensureAgentLoaded(created.id, { agentManager: second, agentStorage: storage, logger });
+
+    const rows = second.fetchTimeline(created.id, { limit: 0 }).rows;
+    expect(rows).toHaveLength(3);
+    expect(rows.slice(1)).toMatchObject([
+      {
+        turnId: "turn-1",
+        item: { type: "assistant_message", messageId: "live-assistant" },
+      },
+      {
+        turnId: "turn-1",
+        item: { type: "assistant_message", messageId: "live-assistant" },
+      },
+    ]);
+    expect(
+      rows.filter(
+        (row) =>
+          row.item.type === "assistant_message" && row.item.messageId === "provider-assistant",
+      ),
+    ).toEqual([]);
+
+    const persisted = await new FileAgentTimelineStore(timelineDirectory).getCommittedSnapshot(
+      created.id,
+    );
+    expect(persisted.rows).toEqual(rows);
+  } finally {
+    try {
+      if (second && agentId) await second.closeAgent(agentId);
+      await storage.flush();
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("retains a canonical steer when incomplete provider history lags on reopen", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-lagging-history-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

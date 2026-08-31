@@ -8,6 +8,12 @@ const user = (text: string, id?: string) => ({
   ...(id ? { clientMessageId: id } : {}),
 });
 
+const assistant = (text: string, messageId: string) => ({
+  type: "assistant_message" as const,
+  text,
+  messageId,
+});
+
 describe("reconcileProviderHistory", () => {
   test("puts missing provider prefix before a newer durable suffix while preserving suffix metadata", () => {
     const rows = reconcileProviderHistory(
@@ -131,5 +137,137 @@ describe("reconcileProviderHistory", () => {
         { mode: "force" },
       ),
     ).toEqual([]);
+  });
+
+  test("将提供方完整助手消息与同一条实时流式片段对齐", () => {
+    const rows = reconcileProviderHistory(
+      [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: user("开始", "client-user"),
+          turnId: "turn-1",
+        },
+        {
+          seq: 2,
+          timestamp: "2026-01-01T00:00:01.000Z",
+          item: assistant("\n\n---\n\n正在", "live-assistant"),
+          turnId: "turn-1",
+        },
+        {
+          seq: 3,
+          timestamp: "2026-01-01T00:00:01.100Z",
+          item: assistant("处理", "live-assistant"),
+          turnId: "turn-1",
+        },
+      ],
+      [
+        { item: { type: "user_message", text: "开始", messageId: "provider-user" } },
+        { item: assistant("正在处理", "provider-assistant") },
+      ],
+    );
+
+    expect(rows).toHaveLength(3);
+    expect(rows.map((row) => row.item)).toEqual([
+      expect.objectContaining({ type: "user_message", text: "开始" }),
+      assistant("\n\n---\n\n正在", "live-assistant"),
+      assistant("处理", "live-assistant"),
+    ]);
+    expect(rows.slice(1).map((row) => row.turnId)).toEqual(["turn-1", "turn-1"]);
+  });
+
+  test("再次恢复时清理同一回合中旧版本写入的助手消息副本", () => {
+    const rows = reconcileProviderHistory(
+      [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: user("开始", "client-user"),
+          turnId: "turn-1",
+        },
+        {
+          seq: 2,
+          timestamp: "2026-01-01T00:00:03.000Z",
+          item: assistant("正在处理", "provider-assistant"),
+        },
+        {
+          seq: 3,
+          timestamp: "2026-01-01T00:00:01.000Z",
+          item: assistant("正在", "live-assistant"),
+          turnId: "turn-1",
+        },
+        {
+          seq: 4,
+          timestamp: "2026-01-01T00:00:01.100Z",
+          item: assistant("处理", "live-assistant"),
+          turnId: "turn-1",
+        },
+      ],
+      [
+        { item: { type: "user_message", text: "开始", messageId: "provider-user" } },
+        { item: assistant("正在处理", "provider-assistant") },
+      ],
+    );
+
+    expect(rows).toHaveLength(3);
+    expect(
+      rows.filter(
+        (row) =>
+          row.item.type === "assistant_message" && row.item.messageId === "provider-assistant",
+      ),
+    ).toEqual([]);
+    expect(rows.slice(1).map((row) => row.item)).toEqual([
+      assistant("正在", "live-assistant"),
+      assistant("处理", "live-assistant"),
+    ]);
+  });
+
+  test("相同助手正文出现在不同用户回合时仍按原顺序逐轮对齐", () => {
+    const rows = reconcileProviderHistory(
+      [
+        {
+          seq: 1,
+          timestamp: "2026-01-01T00:00:00.000Z",
+          item: user("第一轮", "client-user-1"),
+          turnId: "turn-1",
+        },
+        {
+          seq: 2,
+          timestamp: "2026-01-01T00:00:01.000Z",
+          item: assistant("完成", "provider-assistant-1"),
+        },
+        {
+          seq: 3,
+          timestamp: "2026-01-01T00:00:02.000Z",
+          item: user("第二轮", "client-user-2"),
+          turnId: "turn-2",
+        },
+        {
+          seq: 4,
+          timestamp: "2026-01-01T00:00:03.000Z",
+          item: assistant("完成", "live-assistant-2"),
+          turnId: "turn-2",
+        },
+      ],
+      [
+        { item: { type: "user_message", text: "第一轮", messageId: "provider-user-1" } },
+        { item: assistant("完成", "provider-assistant-1") },
+        { item: { type: "user_message", text: "第二轮", messageId: "provider-user-2" } },
+        { item: assistant("完成", "provider-assistant-2") },
+      ],
+    );
+
+    expect(rows).toHaveLength(4);
+    expect(rows.map((row) => row.item.type)).toEqual([
+      "user_message",
+      "assistant_message",
+      "user_message",
+      "assistant_message",
+    ]);
+    expect(rows[1]?.item).toEqual(assistant("完成", "provider-assistant-1"));
+    expect(rows[3]).toMatchObject({
+      turnId: "turn-2",
+      item: assistant("完成", "live-assistant-2"),
+    });
   });
 });
