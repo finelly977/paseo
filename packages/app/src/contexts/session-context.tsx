@@ -13,6 +13,7 @@ import type { StreamItem } from "@/types/stream";
 import {
   createSessionAgentStreamReducerQueue,
   processTimelineResponse,
+  type AgentStreamReducerQueue,
   type ProcessTimelineResponseOutput,
   type TimelineReducerSideEffect,
 } from "@/timeline/session-stream-reducers";
@@ -501,6 +502,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   const attentionNotificationInFlightRef = useRef<Set<string>>(new Set());
   const appStateRef = useRef(AppState.currentState);
   const viewedTimelineSyncRef = useRef<ViewedTimelineSync | null>(null);
+  const agentStreamReducerQueueRef = useRef<AgentStreamReducerQueue | null>(null);
   // The sync is recreated whenever the daemon client instance changes, which can happen while the
   // connection stays online. Seeding it from this ref keeps a recreated sync from waiting forever
   // on a setConnected transition that already happened.
@@ -897,6 +899,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     const becameActivelyVisible = isAppActivelyVisible && !wasAppActivelyVisibleRef.current;
     wasAppActivelyVisibleRef.current = isAppActivelyVisible;
     if (becameActivelyVisible) {
+      agentStreamReducerQueueRef.current?.flush();
       viewedTimelineSyncRef.current?.catchUpVisibleTimelines();
     }
   }, [isAppActivelyVisible]);
@@ -913,6 +916,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         viewedTimelineSyncRef.current?.reprojectAgentTimeline(agentId),
       transformTimelineItem,
     });
+    agentStreamReducerQueueRef.current = agentStreamReducerQueue;
 
     const unsubAgentStream = client.on("agent_stream", (message) => {
       if (message.type !== "agent_stream") return;
@@ -1174,6 +1178,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       unsubTranscription();
       unsubVoiceInputState();
       unsubTerminalAttention();
+      if (agentStreamReducerQueueRef.current === agentStreamReducerQueue) {
+        agentStreamReducerQueueRef.current = null;
+      }
       agentStreamReducerQueue.dispose({ flush: true });
     };
   }, [

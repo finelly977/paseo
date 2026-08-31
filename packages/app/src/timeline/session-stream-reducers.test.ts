@@ -3287,4 +3287,43 @@ describe("createAgentStreamReducerQueue", () => {
     expect(commits).toEqual(["agent-1:queued"]);
     expect(scheduler.size).toBe(0);
   });
+
+  it("主动排空被延迟的刷新后仍能为后续事件安排新刷新", () => {
+    const scheduler = createManualScheduler();
+    const commits: string[] = [];
+    let currentHead: StreamItem[] = [];
+    let currentCursor: TimelineCursor | undefined;
+    const queue = createAgentStreamReducerQueue({
+      getSnapshot: () => ({
+        currentTail: [],
+        currentHead,
+        currentCursor,
+        currentAgent: null,
+      }),
+      commit: (_agentId, result) => {
+        currentHead = result.head;
+        currentCursor = result.cursor ?? undefined;
+        const item = result.head.at(-1);
+        commits.push(item?.kind === "assistant_message" ? item.text : "");
+      },
+      handleSideEffects: () => {},
+      scheduleFlush: scheduler.schedule,
+      cancelFlush: scheduler.cancel,
+    });
+
+    queue.enqueue("agent-1", makeStreamReducerEvent(makeTimelineEvent("后台积压"), 1));
+    expect(scheduler.size).toBe(1);
+
+    queue.flush();
+
+    expect(commits).toEqual(["后台积压"]);
+    expect(scheduler.size).toBe(0);
+
+    queue.enqueue("agent-1", makeStreamReducerEvent(makeTimelineEvent("后续事件"), 2));
+    expect(scheduler.size).toBe(1);
+    scheduler.flushOne();
+
+    expect(commits).toEqual(["后台积压", "后台积压后续事件"]);
+    expect(scheduler.size).toBe(0);
+  });
 });

@@ -19,3 +19,11 @@ Git owns Git-ignore evaluation. The observer accepts absolute excluded roots and
 Workspace Git verifies each repository metadata subscription with a one-shot canary inside the Git directory. If the event does not round-trip through the subscription callback, treat the watcher as unavailable and enter degraded polling. Refresh working-tree Git-ignore exclusions from ignore-file events and watcher recovery, never from a healthy-watcher timer.
 
 The real-filesystem contracts and daemon auto-archive lifecycle run in the normal server test suite. Use the scripts only for manual performance and soak work: `npm run measure:file-observer --workspace=@getpaseo/server` measures burst and sustained-create behavior, and `npm run repro:file-observer-teardown --workspace=@getpaseo/server` runs the teardown soak.
+
+文件浏览器客户端为每条目录订阅单独持有一个串行刷新队列。刷新期间到达的新事件必须在队列
+进入空闲前再触发一轮读取。释放或替换订阅时立即使该队列失效：旧守护进程客户端尚未结束的
+请求既不能阻塞新订阅，也不能把过期目录快照写入当前工作区状态。
+
+文件浏览器的目录观察以工作区文件系统为准，不读取 Git 工作树状态，也不使用 `.gitignore`
+筛选变化事件。已跟踪、未跟踪和被 Git 忽略的文件采用同一刷新路径；隐藏文件显示设置只影响
+目录内容的可见性，不得阻止其变化触发当前目录订阅刷新。

@@ -50,7 +50,11 @@ import {
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
-import { reconcileMissingAgentStateWithPresentAgent } from "@/panels/agent-panel-load-state";
+import {
+  reconcileMissingAgentStateWithPresentAgent,
+  shouldInitializeAgentPane,
+  shouldResumeClosedRuntimeOnPaneEntry,
+} from "@/panels/agent-panel-load-state";
 import { usePaneContext, usePaneFocus } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
 import { RenderProfile } from "@/utils/render-profiler";
@@ -794,6 +798,7 @@ function ChatAgentContent({
     routeKey: string;
     reason: "initial-entry" | "resume";
   } | null>(null);
+  const lastVisibleAgentEntryKeyRef = useRef<string | null>(null);
   const agentState = useSessionStore(
     useShallow((state) => selectChatAgentState(state, serverId, agentId)),
   );
@@ -859,6 +864,16 @@ function ChatAgentContent({
   });
 
   const hasHydratedHistoryBefore = hasAppliedAuthoritativeHistory;
+  const visibleAgentEntryKey = isPaneVisible && agentId ? `${serverId}:${agentId}` : null;
+  const shouldResumeClosedRuntime = shouldResumeClosedRuntimeOnPaneEntry({
+    visibleEntryKey: visibleAgentEntryKey,
+    previousVisibleEntryKey: lastVisibleAgentEntryKeyRef.current,
+    status: agentState.status,
+  });
+
+  useEffect(() => {
+    lastVisibleAgentEntryKeyRef.current = visibleAgentEntryKey;
+  }, [visibleAgentEntryKey]);
 
   const attentionController = useAgentAttentionClear({
     agentId,
@@ -1009,7 +1024,13 @@ function ChatAgentContent({
     if (agentState.archivedAt) {
       return;
     }
-    if (agentState.id && hasAppliedAuthoritativeHistory) {
+    if (
+      !shouldInitializeAgentPane({
+        hasAgentRecord: Boolean(agentState.id),
+        hasAuthoritativeHistory: hasAppliedAuthoritativeHistory,
+        shouldResumeClosedRuntime,
+      })
+    ) {
       if (
         missingAgentState.kind === "resolving" ||
         missingAgentState.kind === "not_found" ||
@@ -1084,6 +1105,7 @@ function ChatAgentContent({
     isPaneVisible,
     missingAgentState.kind,
     serverId,
+    shouldResumeClosedRuntime,
   ]);
 
   const animatedContentStyle = useMemo(

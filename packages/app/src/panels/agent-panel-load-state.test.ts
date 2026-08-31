@@ -3,6 +3,8 @@ import type { AgentScreenMissingState } from "@/hooks/use-agent-screen-state-mac
 import {
   clearHistorySyncErrorAfterSuccessfulSync,
   reconcileMissingAgentStateWithPresentAgent,
+  shouldInitializeAgentPane,
+  shouldResumeClosedRuntimeOnPaneEntry,
 } from "./agent-panel-load-state";
 
 describe("reconcileMissingAgentStateWithPresentAgent", () => {
@@ -42,5 +44,66 @@ describe("clearHistorySyncErrorAfterSuccessfulSync", () => {
     const state: AgentScreenMissingState = { kind: "resolving" };
 
     expect(clearHistorySyncErrorAfterSuccessfulSync(state)).toBe(state);
+  });
+});
+
+describe("shouldInitializeAgentPane", () => {
+  it("已经回收但保留历史的会话再次打开时仍会恢复运行时", () => {
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: true,
+        hasAuthoritativeHistory: true,
+        shouldResumeClosedRuntime: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("已加载历史的常驻会话不重复初始化", () => {
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: true,
+        hasAuthoritativeHistory: true,
+        shouldResumeClosedRuntime: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("缺少智能体记录或权威历史时执行初始化", () => {
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: false,
+        hasAuthoritativeHistory: true,
+        shouldResumeClosedRuntime: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: true,
+        hasAuthoritativeHistory: false,
+        shouldResumeClosedRuntime: false,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("shouldResumeClosedRuntimeOnPaneEntry", () => {
+  it("进入已经关闭的会话时恢复运行时", () => {
+    expect(
+      shouldResumeClosedRuntimeOnPaneEntry({
+        visibleEntryKey: "server:agent",
+        previousVisibleEntryKey: null,
+        status: "closed",
+      }),
+    ).toBe(true);
+  });
+
+  it("当前面板内手动释放运行时后不会立即自动恢复", () => {
+    expect(
+      shouldResumeClosedRuntimeOnPaneEntry({
+        visibleEntryKey: "server:agent",
+        previousVisibleEntryKey: "server:agent",
+        status: "closed",
+      }),
+    ).toBe(false);
   });
 });

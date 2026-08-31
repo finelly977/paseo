@@ -43,6 +43,18 @@ function normalizeWorkspaceValue(value: string | null | undefined): string | nul
   return trimmed.length > 0 ? trimmed : null;
 }
 
+interface DirectoryListingOptions {
+  recordHistory?: boolean;
+  setCurrentPath?: boolean;
+  background?: boolean;
+  shouldApply?: () => boolean;
+}
+
+function canApplyDirectoryListing(options: DirectoryListingOptions | undefined): boolean {
+  const shouldApply = options?.shouldApply;
+  return shouldApply === undefined || shouldApply();
+}
+
 export function buildWorkspaceExplorerStateKey(scope: FileExplorerWorkspaceScope): string | null {
   const normalizedWorkspaceId = normalizeWorkspaceValue(scope.workspaceId);
   if (normalizedWorkspaceId) {
@@ -89,11 +101,11 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
   );
 
   const requestDirectoryListing = useCallback(
-    async (
-      path: string,
-      options?: { recordHistory?: boolean; setCurrentPath?: boolean; background?: boolean },
-    ): Promise<ExplorerDirectory | null> => {
+    async (path: string, options?: DirectoryListingOptions): Promise<ExplorerDirectory | null> => {
       if (!workspaceStateKey) {
+        return null;
+      }
+      if (!canApplyDirectoryListing(options)) {
         return null;
       }
       const normalizedPath = path && path.length > 0 ? path : ".";
@@ -139,6 +151,9 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
 
       try {
         const directory = await client.listDirectory(normalizedWorkspaceRoot, normalizedPath);
+        if (!canApplyDirectoryListing(options)) {
+          return null;
+        }
         updateExplorerState((state) => {
           const nextState: AgentFileExplorerState = {
             ...state,
@@ -157,6 +172,9 @@ export function useFileExplorerActions(params: { serverId: string } & FileExplor
         return directory;
       } catch (error) {
         console.error("读取工作区目录失败", error);
+        if (!canApplyDirectoryListing(options)) {
+          return null;
+        }
         updateExplorerState((state) => ({
           ...state,
           lastError:

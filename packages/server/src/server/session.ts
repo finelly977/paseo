@@ -1098,6 +1098,25 @@ export class Session {
     this.rebuildViewedTimelineAgentIds();
   }
 
+  private ensureAgentTimelineSubscription(source: object | undefined, agentId: string): void {
+    const supportsSelectiveDelivery = source
+      ? this.supportsForSource(CLIENT_CAPS.selectiveAgentTimeline, source)
+      : this.supports(CLIENT_CAPS.selectiveAgentTimeline);
+    if (!supportsSelectiveDelivery) {
+      return;
+    }
+
+    const subscriptionSource = source ?? this.defaultTimelineSubscriptionSource;
+    const currentAgentIds = this.viewedTimelineAgentIdsBySource.get(subscriptionSource);
+    if (currentAgentIds?.has(agentId)) {
+      return;
+    }
+    const nextAgentIds = currentAgentIds ? new Set(currentAgentIds) : new Set<string>();
+    nextAgentIds.add(agentId);
+    this.viewedTimelineAgentIdsBySource.set(subscriptionSource, nextAgentIds);
+    this.rebuildViewedTimelineAgentIds();
+  }
+
   private rebuildViewedTimelineAgentIds(): void {
     const viewedAgentIds = new Set<string>();
     for (const agentIds of this.viewedTimelineAgentIdsBySource.values()) {
@@ -1313,6 +1332,10 @@ export class Session {
     appVisibilityChangedAt: Date;
   } | null {
     return this.clientActivity;
+  }
+
+  public getViewedTimelineAgentIds(): ReadonlySet<string> {
+    return new Set(this.viewedTimelineAgentIds);
   }
 
   private getFocusedAgentSelectionForCwd(cwd: string):
@@ -1877,7 +1900,7 @@ export class Session {
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??
-      this.dispatchAgentLifecycleMessage(msg) ??
+      this.dispatchAgentLifecycleMessage(msg, source) ??
       this.dispatchAgentConfigMessage(msg) ??
       this.dispatchCheckoutMessage(msg) ??
       this.dispatchWorkspaceRecoveryMessage(msg) ??
@@ -2162,7 +2185,10 @@ export class Session {
       : undefined;
   }
 
-  private dispatchAgentLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+  private dispatchAgentLifecycleMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
     switch (msg.type) {
       case "fetch_agents_request":
         return this.handleFetchAgents(msg);
@@ -2185,7 +2211,7 @@ export class Session {
       case "project.rename.request":
         return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
       case "send_agent_message_request":
-        return this.handleSendAgentMessageRequest(msg);
+        return this.handleSendAgentMessageRequest(msg, source);
       case "wait_for_finish_request":
         return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
       case "create_agent_request":
@@ -6792,6 +6818,7 @@ export class Session {
 
   private async handleSendAgentMessageRequest(
     msg: Extract<SessionInboundMessage, { type: "send_agent_message_request" }>,
+    source?: object,
   ): Promise<void> {
     const resolved = await this.resolveAgentIdentifier(msg.agentId);
     if (!resolved.ok) {
@@ -6809,6 +6836,7 @@ export class Session {
 
     try {
       const agentId = resolved.agentId;
+      this.ensureAgentTimelineSubscription(source, agentId);
 
       const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
       this.sessionLogger.trace(

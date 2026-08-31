@@ -2240,6 +2240,8 @@ export class AgentManager {
 
     const agent = existingAgent;
     const isReplacement = agent.pendingReplacement;
+    const nextLifecycle = agent.lifecycle === "error" ? "idle" : agent.lifecycle;
+    agent.lifecycle = nextLifecycle;
     agent.lastError = undefined;
 
     const pendingRun = this.runs.createPendingRun(agentId);

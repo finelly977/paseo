@@ -127,6 +127,7 @@ import type { LocalSpeechProviderConfig } from "./speech/providers/local/config.
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { createSpeechService } from "./speech/speech-runtime.js";
 import { AgentManager } from "./agent/agent-manager.js";
+import { collectRuntimeProtectedAgentIds } from "./agent-runtime-protection.js";
 import { FileAgentTimelineStore } from "./agent/file-agent-timeline-store.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { createProviderEnv } from "./agent/provider-launch-config.js";
@@ -1319,7 +1320,10 @@ export async function createPaseoDaemon(
   await scheduleService.start();
   let inFlightIdleAgentCollection: Promise<void> | null = null;
   const collectIdleAgentRuntimes = async () => {
-    const protectedAgentIds = await scheduleService.listActiveAgentTargetIds();
+    const protectedAgentIds = collectRuntimeProtectedAgentIds({
+      scheduledAgentIds: await scheduleService.listActiveAgentTargetIds(),
+      sessions: wsServer?.listTrustedSessions() ?? [],
+    });
     const cutoff = new Date(Date.now() - IDLE_AGENT_RUNTIME_TTL_MS);
     const result = await agentManager.collectIdleAgents({ cutoff, protectedAgentIds });
     for (const collected of result.collected) {

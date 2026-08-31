@@ -59,6 +59,17 @@ When a client resumes with a known cursor, it catches up after that cursor to co
 
 When a client resumes without a cursor, it fetches the latest tail page.
 
+应用重新获得焦点后，在开始任一补载路径前，客户端会同步排空已经收到但仍在本地归并队列中的
+实时事件。浏览器或操作系统挂起后台任务时，队列的短时归并定时器可能被无限期延迟；如果继续
+把它视为已经安排，后续事件就无法安排新的刷新。排空完成后再执行权威拉取，此时拉取逻辑可以
+读取更新后的本地游标，只请求仍然缺失的内容。
+
+已经持有权威历史的 `closed` 会话再次进入可见面板时仍必须执行增量初始化，因为这次请求还负责
+恢复提供方运行时，不能因本地已有历史而提前返回。使用选择性投递的连接发送消息时，守护进程
+会在启动回合之前把目标会话加入该发送连接的时间线投递集合；这样即使界面的可见订阅请求仍在
+传输中，用户消息、工具过程和最终回复也不会从实时通道漏掉。之后客户端的正常可见集合更新仍
+负责在离开会话时移除该订阅。
+
 ## Client replica lifetime
 
 The host runtime owns each session replica for as long as the host remains registered. React

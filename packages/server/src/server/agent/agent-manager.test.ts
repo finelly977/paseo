@@ -6114,6 +6114,113 @@ test("waitForAgentRunStart resolves while a foreground run is still only pending
   expect(manager.getAgent(snapshot.id)?.lifecycle).toBe("idle");
 });
 
+test("上一回合失败后等待下一回合启动不会误报旧错误", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-retry-after-failure-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const secondStartEntered = deferred<void>();
+  const secondStartAllowed = deferred<void>();
+
+  class RetryAfterFailureSession extends TestAgentSession {
+    private attempt = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      this.attempt += 1;
+      const turnId = `turn-${this.attempt}`;
+      if (this.attempt === 1) {
+        setTimeout(() => {
+          this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+          this.pushEvent({
+            type: "turn_failed",
+            provider: this.provider,
+            error: "服务暂时不可用",
+            turnId,
+          });
+        }, 0);
+        return { turnId };
+      }
+      if (this.attempt === 3) {
+        throw new Error("本次启动失败");
+      }
+
+      secondStartEntered.resolve();
+      await secondStartAllowed.promise;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  class RetryAfterFailureClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new RetryAfterFailureSession(config);
+    }
+  }
+
+  const manager = new AgentManager({
+    clients: { codex: new RetryAfterFailureClient() },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000225",
+  });
+  let agentId: string | null = null;
+  let drainSecondRun: Promise<void> | null = null;
+
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    agentId = agent.id;
+
+    await expect(manager.runAgent(agent.id, "第一次发送")).rejects.toThrow("服务暂时不可用");
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("error");
+
+    const secondRun = manager.streamAgent(agent.id, "再次发送");
+    drainSecondRun = (async () => {
+      for await (const _event of secondRun) {
+        // 消费事件，使智能体生命周期按正常路径推进。
+      }
+    })();
+    await secondStartEntered.promise;
+
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    const waitForStart = manager.waitForAgentRunStart(agent.id);
+    secondStartAllowed.resolve();
+
+    await expect(waitForStart).resolves.toBeUndefined();
+    await drainSecondRun;
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+
+    const thirdRun = manager.streamAgent(agent.id, "第三次发送");
+    const waitForThirdStart = manager.waitForAgentRunStart(agent.id);
+    const thirdRunResult = (async () => {
+      try {
+        for await (const _event of thirdRun) {
+          // 消费事件，使真实的启动错误进入统一错误处理路径。
+        }
+        return null;
+      } catch (error) {
+        return error;
+      }
+    })();
+
+    await expect(waitForThirdStart).rejects.toThrow("本次启动失败");
+    await expect(thirdRunResult).resolves.toEqual(
+      expect.objectContaining({ message: "本次启动失败" }),
+    );
+  } finally {
+    secondStartAllowed.resolve();
+    if (drainSecondRun) {
+      await drainSecondRun;
+    }
+    if (agentId) {
+      await manager.closeAgent(agentId);
+    }
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("replaceAgentRun does not emit idle or resolve waiters between interrupted and replacement runs", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-replace-run-"));
   const storagePath = join(workdir, "agents");

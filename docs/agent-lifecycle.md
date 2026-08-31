@@ -27,9 +27,11 @@ or permission, and have not been activated during the idle window are eligible. 
 `initializing`, and `error` agents stay resident. Subagents are considered independently; collection
 does not cascade or change parentage.
 
-Active schedules targeting an existing agent protect that agent from collection. Paused, completed,
-and new-agent schedules do not. A pane may remain open after collection; its next prompt resumes the
-runtime.
+指向现有智能体的活动定时任务会保护该智能体不被回收。每个已连接客户端当前选中或在分栏中
+可见的智能体也会受到保护，即使客户端窗口被隐藏或失去焦点也不例外。已暂停、已完成以及新建
+智能体类型的定时任务不提供保护。已经回收的智能体再次进入可见面板时，会立即恢复运行时并
+增量核对历史；不必等到用户发送下一条消息。未被查看的面板可能在运行时回收后仍保持打开；
+下次显示或发送消息时会恢复运行时。手动释放仍是明确的用户操作，可以释放当前选中的智能体。
 
 用户可以从会话菜单手动释放一个常驻运行时。手动释放只作用于对应的 Paseo 智能体 ID：
 关闭提供方会话及其拥有的子进程，把智能体持久化为 `closed`，同时保留对话、原生会话句柄、

@@ -4,6 +4,7 @@ import { isHiddenExplorerPath } from "./visibility";
 interface RefreshExplorerDirectoriesInput {
   expandedPaths: ReadonlySet<string>;
   showHiddenFiles: boolean;
+  shouldContinue: () => boolean;
   requestDirectoryListing: (path: string) => Promise<ExplorerDirectory | null>;
 }
 
@@ -14,8 +15,10 @@ interface RefreshExplorerDirectoriesResult {
 export async function refreshExplorerDirectories({
   expandedPaths,
   showHiddenFiles,
+  shouldContinue,
   requestDirectoryListing,
 }: RefreshExplorerDirectoriesInput): Promise<RefreshExplorerDirectoriesResult> {
+  if (!shouldContinue()) return { missingPaths: [] };
   const directoryPaths = Array.from(expandedPaths).filter(
     (path) => showHiddenFiles || !isHiddenExplorerPath(path),
   );
@@ -25,7 +28,7 @@ export async function refreshExplorerDirectories({
   const refreshedDirectories = new Map<string, ExplorerDirectory>();
   const missingPaths = new Set<string>();
   const root = await requestDirectoryListing(".");
-  if (!root) return { missingPaths: [] };
+  if (!root || !shouldContinue()) return { missingPaths: [] };
   refreshedDirectories.set(".", root);
 
   const maximumDepth = directoryPaths.reduce(
@@ -33,6 +36,7 @@ export async function refreshExplorerDirectories({
     0,
   );
   for (let depth = 1; depth <= maximumDepth; depth += 1) {
+    if (!shouldContinue()) return { missingPaths: Array.from(missingPaths) };
     const pathsAtDepth = directoryPaths.filter((path) => explorerPathDepth(path) === depth);
     const visiblePaths = pathsAtDepth.filter((path) => {
       const parent = refreshedDirectories.get(explorerParentPath(path));
@@ -44,6 +48,7 @@ export async function refreshExplorerDirectories({
       return stillExists;
     });
     const refreshed = await Promise.all(visiblePaths.map(requestDirectoryListing));
+    if (!shouldContinue()) return { missingPaths: Array.from(missingPaths) };
     for (let index = 0; index < visiblePaths.length; index += 1) {
       const directory = refreshed[index];
       if (directory) refreshedDirectories.set(visiblePaths[index], directory);

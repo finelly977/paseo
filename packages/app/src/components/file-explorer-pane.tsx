@@ -39,6 +39,7 @@ import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { isHiddenExplorerPath } from "@/file-explorer/visibility";
 import { refreshExplorerDirectories } from "@/file-explorer/refresh";
+import { createExplorerRefreshQueue } from "@/file-explorer/refresh-queue";
 import {
   flattenExplorerTree,
   reconcileRestoredExpandedPaths,
@@ -429,68 +430,61 @@ export function FileExplorerPane({
     workspaceStateKey,
   ]);
 
-  const refreshExplorer = useCallback(async () => {
-    if (!hasWorkspaceScope) return null;
-    const shouldShowHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
-    const { missingPaths } = await refreshExplorerDirectories({
+  const refreshExplorer = useCallback(
+    async (shouldContinue: () => boolean) => {
+      if (!hasWorkspaceScope) return null;
+      const shouldShowHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
+      const { missingPaths } = await refreshExplorerDirectories({
+        expandedPaths,
+        showHiddenFiles: shouldShowHiddenFiles,
+        shouldContinue,
+        requestDirectoryListing: (path) =>
+          requestDirectoryListing(path, {
+            background: true,
+            recordHistory: false,
+            setCurrentPath: false,
+            shouldApply: shouldContinue,
+          }),
+      });
+      if (!shouldContinue()) return null;
+      if (workspaceStateKey && missingPaths.length > 0) {
+        setExpandedPathsForWorkspace(workspaceStateKey, (currentPaths) =>
+          currentPaths.filter((path) => !isMissingExplorerPath(path, missingPaths)),
+        );
+      }
+      return null;
+    },
+    [
       expandedPaths,
-      showHiddenFiles: shouldShowHiddenFiles,
-      requestDirectoryListing: (path) =>
-        requestDirectoryListing(path, {
-          background: true,
-          recordHistory: false,
-          setCurrentPath: false,
-        }),
-    });
-    if (workspaceStateKey && missingPaths.length > 0) {
-      setExpandedPathsForWorkspace(workspaceStateKey, (currentPaths) =>
-        currentPaths.filter((path) => !isMissingExplorerPath(path, missingPaths)),
-      );
-    }
-    return null;
-  }, [
-    expandedPaths,
-    hasWorkspaceScope,
-    requestDirectoryListing,
-    setExpandedPathsForWorkspace,
-    workspaceStateKey,
-  ]);
+      hasWorkspaceScope,
+      requestDirectoryListing,
+      setExpandedPathsForWorkspace,
+      workspaceStateKey,
+    ],
+  );
   const latestRefreshExplorerRef = useRef(refreshExplorer);
-  const observedRefreshInFlightRef = useRef<Promise<void> | null>(null);
-  const observedRefreshPendingRef = useRef(false);
 
   useEffect(() => {
     latestRefreshExplorerRef.current = refreshExplorer;
   }, [refreshExplorer]);
 
-  const queueObservedRefresh = useCallback(() => {
-    observedRefreshPendingRef.current = true;
-    if (observedRefreshInFlightRef.current) return;
-    const refreshUntilCurrent = async () => {
-      while (observedRefreshPendingRef.current) {
-        observedRefreshPendingRef.current = false;
-        try {
-          await latestRefreshExplorerRef.current();
-        } catch (refreshError) {
-          console.error("自动刷新工作区文件列表失败", refreshError);
-        }
-      }
-    };
-    const refreshPromise = refreshUntilCurrent().finally(() => {
-      observedRefreshInFlightRef.current = null;
-    });
-    observedRefreshInFlightRef.current = refreshPromise;
-  }, []);
-
   useEffect(() => {
     if (!client || !hasWorkspaceScope || !supportsDirectoryObservation) return;
     let disposed = false;
     let unsubscribe: (() => Promise<void>) | null = null;
+    const refreshQueue = createExplorerRefreshQueue({
+      refresh: async (isCurrent) => {
+        await latestRefreshExplorerRef.current(isCurrent);
+      },
+      onError: (refreshError) => {
+        console.error("自动刷新工作区文件列表失败", refreshError);
+      },
+    });
     void client
       .subscribeWorkspaceDirectory(
         { cwd: normalizedWorkspaceRoot },
         () => {
-          if (!disposed) queueObservedRefresh();
+          if (!disposed) refreshQueue.request();
         },
         (observationError) => console.error("工作区文件列表实时更新已中断", observationError),
       )
@@ -510,23 +504,17 @@ export function FileExplorerPane({
 
     return () => {
       disposed = true;
-      observedRefreshPendingRef.current = false;
+      refreshQueue.dispose();
       if (unsubscribe) {
         void unsubscribe().catch((unsubscribeError: unknown) => {
           console.error("取消工作区目录订阅失败", unsubscribeError);
         });
       }
     };
-  }, [
-    client,
-    hasWorkspaceScope,
-    normalizedWorkspaceRoot,
-    queueObservedRefresh,
-    supportsDirectoryObservation,
-  ]);
+  }, [client, hasWorkspaceScope, normalizedWorkspaceRoot, supportsDirectoryObservation]);
   const { refetch: refetchExplorer, isFetching: isRefreshFetching } = useQuery({
     queryKey: ["fileExplorerRefresh", serverId, workspaceStateKey],
-    queryFn: refreshExplorer,
+    queryFn: () => refreshExplorer(() => true),
     enabled: false,
   });
 

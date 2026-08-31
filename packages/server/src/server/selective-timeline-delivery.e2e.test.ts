@@ -151,6 +151,22 @@ test("subscription acknowledgements stay on the requesting socket of a retained 
   ).toBe(false);
 });
 
+test("发送消息会在回合启动前为发送方建立实时时间线投递", async () => {
+  const capable = await connect({ clientId: "send-without-membership", selective: true });
+  const agent = await capable.client.createAgent({
+    provider: "codex",
+    cwd: "/tmp",
+    title: "重新打开的会话",
+    modeId: "full-access",
+  });
+  capable.clear();
+
+  await capable.client.sendMessage(agent.id, "重新打开后继续工作");
+  await capable.barrier("send-auto-subscription");
+
+  expect(capable.messages.filter(isAgentStream(agent.id))).not.toEqual([]);
+}, 30_000);
+
 test("real WebSocket sessions enforce selective delivery, retained resets, downgrade, and dedicated attention", async () => {
   const legacy = await connect({ clientId: "legacy-client", selective: false });
   let capable = await connect({ clientId: "capable-client", selective: true });

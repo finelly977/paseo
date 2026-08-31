@@ -34,6 +34,7 @@ describe("文件面板目录刷新", () => {
         "src/deleted/nested",
       ]),
       showHiddenFiles: true,
+      shouldContinue: () => true,
       requestDirectoryListing,
     });
 
@@ -55,9 +56,28 @@ describe("文件面板目录刷新", () => {
     await refreshExplorerDirectories({
       expandedPaths: new Set([".", "src", ".git"]),
       showHiddenFiles: false,
+      shouldContinue: () => true,
       requestDirectoryListing,
     });
 
     expect(requestDirectoryListing.mock.calls.map(([path]) => path)).toEqual([".", "src"]);
+  });
+
+  test("订阅在根目录返回后失效时不会继续读取展开目录", async () => {
+    let current = true;
+    const requestDirectoryListing = vi.fn(async (path: string) => {
+      current = false;
+      return directory(path, path === "." ? ["src"] : []);
+    });
+
+    const result = await refreshExplorerDirectories({
+      expandedPaths: new Set([".", "src"]),
+      showHiddenFiles: true,
+      shouldContinue: () => current,
+      requestDirectoryListing,
+    });
+
+    expect(requestDirectoryListing.mock.calls.map(([path]) => path)).toEqual(["."]);
+    expect(result).toEqual({ missingPaths: [] });
   });
 });
