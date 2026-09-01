@@ -107,6 +107,15 @@ describe("canonical turn membership", () => {
     expect(continuesTurn(previous, steer)).toBe(true);
   });
 
+  it("treats a user message without a role as a new turn even when Codex reused its turn ID", () => {
+    expect(
+      continuesTurn(
+        assistant("first-done", 9, "codex-turn-0"),
+        user("second-prompt", 20, "codex-turn-0"),
+      ),
+    ).toBe(false);
+  });
+
   it.each([
     [
       "Claude",
@@ -142,14 +151,14 @@ describe("canonical turn membership", () => {
     });
   });
 
-  it("splits completed prompts when an old Codex runtime reused its local turn ID", () => {
+  it("splits persisted prompts without roles when an old Codex runtime reused its local turn ID", () => {
     const reusedTurnId = "codex-turn-0";
     const completed = layoutFor(
       [
-        user("first-prompt", 1, reusedTurnId, "start"),
+        user("first-prompt", 1, reusedTurnId),
         runningTool("first-tool", 2, reusedTurnId),
         assistant("first-done", 9, reusedTurnId),
-        user("second-prompt", 20, reusedTurnId, "start"),
+        user("second-prompt", 20, reusedTurnId),
         assistant("second-done", 24, reusedTurnId),
       ],
       false,

@@ -6,19 +6,22 @@ import type { StreamItem } from "@/types/stream";
  */
 export function continuesTurn(previous: StreamItem | null, next: StreamItem | null): boolean {
   if (!previous || !next) return false;
-  if (next.kind === "user_message" && next.turnRole === "start") {
-    return false;
-  }
-  if (next.kind === "user_message" && next.turnRole === "steer") {
-    if (previous.turnId !== undefined && next.turnId !== undefined) {
-      return previous.turnId === next.turnId;
+  if (next.kind === "user_message") {
+    if (next.turnRole === "steer") {
+      if (previous.turnId !== undefined && next.turnId !== undefined) {
+        return previous.turnId === next.turnId;
+      }
+      return true;
     }
-    return true;
+    // A user message is a new visible turn unless the canonical timeline explicitly identifies it
+    // as steering. Older Codex runtimes reused local turn IDs after runtime recreation, while old
+    // persisted rows did not carry turnRole; trusting the matching ID would merge separate prompts.
+    return false;
   }
   if (previous.turnId !== undefined && next.turnId !== undefined) {
     return previous.turnId === next.turnId;
   }
-  return next.kind !== "user_message";
+  return true;
 }
 
 export function isTurnBoundary(previous: StreamItem | null, next: StreamItem | null): boolean {

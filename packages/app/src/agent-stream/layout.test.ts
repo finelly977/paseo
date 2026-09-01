@@ -303,7 +303,11 @@ describe("layoutStream", () => {
 
   it("keeps an accepted steer inline while its canonical turn is active", () => {
     const assistant = { ...assistantMessage("a1", 2), turnId: "turn-1" };
-    const steer = { ...userMessage("u2", 3), turnId: "turn-1" };
+    const steer = {
+      ...userMessage("u2", 3),
+      turnId: "turn-1",
+      turnRole: "steer" as const,
+    };
     const layout = layoutFor({
       platform: "web",
       isTurnActive: true,
