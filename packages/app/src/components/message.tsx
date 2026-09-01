@@ -74,6 +74,7 @@ import type { AgentUserMessageImage, ToolCallDetail } from "@getpaseo/protocol/a
 import { buildToolCallPresentation } from "@/tool-calls/presentation";
 import { resolveToolCallIcon } from "@/utils/tool-call-icon";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
+import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
@@ -925,15 +926,7 @@ interface AssistantMessageProps {
   phase: MarkdownPhase;
 }
 
-const assistantMarkdownParser = MarkdownIt({ typographer: true, linkify: true });
-const defaultAssistantValidateLink =
-  assistantMarkdownParser.validateLink.bind(assistantMarkdownParser);
-assistantMarkdownParser.validateLink = (url: string) => {
-  if (url.trim().toLowerCase().startsWith("file://")) {
-    return true;
-  }
-  return defaultAssistantValidateLink(url);
-};
+const assistantMarkdownParser = createAssistantMarkdownParser();
 
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   container: {

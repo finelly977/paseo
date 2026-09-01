@@ -1,6 +1,6 @@
-import MarkdownIt from "markdown-it";
+import { createMarkdownParser } from "@/utils/markdown-parser";
 
-const markdownParser = new MarkdownIt({ html: false, linkify: false, typographer: false });
+const markdownParser = createMarkdownParser({ linkify: false });
 const defaultValidateLink = markdownParser.validateLink.bind(markdownParser);
 markdownParser.validateLink = (url: string) =>
   url.trim().toLowerCase().startsWith("file://") || defaultValidateLink(url);

@@ -8,7 +8,10 @@ const webSelectableTextStyle = isWeb ? { userSelect: "text" as const } : {};
  *
  * Usage:
  *   const markdownStyles = useMemo(() => createMarkdownStyles(theme), [theme]);
- *   <Markdown style={markdownStyles}>{content}</Markdown>
+ *   <Markdown style={markdownStyles} markdownit={parser}>{content}</Markdown>
+ *
+ * 必须传入由 `@/utils/markdown-parser` 创建的 `markdownit`。省略后，
+ * react-native-markdown-display 会自行启用排版字符替换，把字面量 `(c)` 改成 ©。
  */
 export function createMarkdownStyles(theme: Theme) {
   return {

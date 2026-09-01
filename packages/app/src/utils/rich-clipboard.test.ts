@@ -74,6 +74,13 @@ describe("createMarkdownClipboardContent", () => {
     expect(content.html).not.toContain('href="javascript:');
     expect(content.html).toContain("&lt;script&gt;");
   });
+
+  it("keeps literal characters unchanged in rich clipboard html", () => {
+    const content = createMarkdownClipboardContent('(c) ... a -- b --name="my repo"');
+
+    expect(content.html).toContain("(c) ... a -- b --name=&quot;my repo&quot;");
+    expect(content.html).not.toContain("©");
+  });
 });
 
 describe("writeMarkdownToRichClipboard", () => {

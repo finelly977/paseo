@@ -1,6 +1,7 @@
 import type { ProjectDescriptor, WorkspaceDescriptor } from "@/stores/session-store";
 import type { HostProjectListItem } from "@/projects/host-project-model";
 import { buildWorkspaceStructureProjects } from "@/projects/workspace-structure";
+import { selectPrHintFromStatus } from "@/git/pr-hint";
 
 export interface WorkspaceSummary {
   id: string;
@@ -10,6 +11,8 @@ export interface WorkspaceSummary {
   status: WorkspaceDescriptor["status"];
   currentBranch: string | null;
   archivingAt?: string;
+  /** 工作区关联的拉取请求或合并请求编号。 */
+  changeRequestNumber: number | null;
 }
 
 export interface ProjectHostEntry {
@@ -126,6 +129,18 @@ function resolveHostRepoRoot(group: HostGroup): string {
   return group.workspaces[0]?.projectRootPath ?? group.fallbackRepoRoot;
 }
 
+/**
+ * 解析工作区关联的拉取请求或合并请求编号。
+ *
+ * 协议直接携带编号时以该字段为准。旧守护进程没有编号字段时，才通过
+ * `selectPrHintFromStatus` 从规范的 PR/MR 地址中提取；地址缺失或不规范时返回空值。
+ */
+function toChangeRequestNumber(workspace: WorkspaceDescriptor): number | null {
+  const pullRequest = workspace.githubRuntime?.pullRequest;
+  if (!pullRequest) return null;
+  return pullRequest.number ?? selectPrHintFromStatus(pullRequest, workspace.forge)?.number ?? null;
+}
+
 function toWorkspaceSummary(workspace: WorkspaceDescriptor): WorkspaceSummary {
   const currentBranch = workspace.gitRuntime?.currentBranch?.trim();
   return {
@@ -136,6 +151,7 @@ function toWorkspaceSummary(workspace: WorkspaceDescriptor): WorkspaceSummary {
     status: workspace.status,
     currentBranch: currentBranch && currentBranch !== "HEAD" ? currentBranch : null,
     ...(workspace.archivingAt ? { archivingAt: workspace.archivingAt } : {}),
+    changeRequestNumber: toChangeRequestNumber(workspace),
   };
 }
 

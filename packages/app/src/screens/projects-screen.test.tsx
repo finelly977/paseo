@@ -214,6 +214,7 @@ function workspaceSummary(overrides: Partial<WorkspaceSummary> = {}): WorkspaceS
     workspaceKind: "directory",
     status: "done",
     currentBranch: "main",
+    changeRequestNumber: null,
     ...overrides,
   };
 }

@@ -48,6 +48,8 @@ export interface CommandCenterWorkspaceResult {
   id: string;
   title: string;
   subtitle: string;
+  /** 工作区关联的 PR/MR 编号，用于命令面板精确匹配。 */
+  changeRequestNumber: number | null;
   run(): void;
 }
 

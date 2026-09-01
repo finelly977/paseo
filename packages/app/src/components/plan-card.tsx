@@ -5,6 +5,11 @@ import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { createMarkdownStyles } from "@/styles/markdown-styles";
 import { getMarkdownListMarker } from "@/utils/markdown-list";
+import { createMarkdownParser } from "@/utils/markdown-parser";
+
+// 不显式传入解析器时，react-native-markdown-display 会启用排版字符替换，
+// 把计划中的 `(c)` 改成 ©。计划卡片沿用原行为，不自动链接裸 URL。
+const planMarkdownParser = createMarkdownParser({ linkify: false });
 
 type MarkdownRuleStyles = Record<string, TextStyle & ViewStyle & { [key: string]: unknown }>;
 
@@ -219,7 +224,7 @@ export function PlanCard({
     <View testID={testID} style={containerStyle}>
       <Text style={titleStyle}>{resolvedTitle}</Text>
       {description ? <Text style={descriptionStyle}>{description}</Text> : null}
-      <Markdown style={markdownStyles} rules={markdownRules}>
+      <Markdown style={markdownStyles} rules={markdownRules} markdownit={planMarkdownParser}>
         {text}
       </Markdown>
       {footer ? <View style={styles.footer}>{footer}</View> : null}

@@ -55,6 +55,7 @@ import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import type { CommandCenterContribution, CommandCenterIconProps } from "./contributions";
 import { useCommandCenterActions, useCommandCenterContributions } from "./provider";
+import { filterAndRankWorkspaces } from "./workspace-search";
 import {
   buildContributionSections,
   filterAndRankBuiltInResults,
@@ -224,10 +225,11 @@ function agentSearchFields(result: CommandCenterAgentResult): CommandCenterSearc
   return { visible: [result.title, result.subtitle], hidden: [result.agent.cwd] };
 }
 
-function workspaceSearchFields(result: CommandCenterWorkspaceResult): CommandCenterSearchFields {
-  return { visible: [result.title, result.subtitle], hidden: [] };
-}
-
+/**
+ * 按默认顺序构建固定结果，不把查询文字放进依赖；这些数据与输入无关，
+ * 否则每次按键都会重新对全部工作区执行一次本地化排序。
+ * 相对时间会在智能体或项目变化时更新，而不是在每次按键时更新。
+ */
 function useBuiltInRows(open: boolean): {
   workspaces: CommandCenterWorkspaceResult[];
   agents: CommandCenterAgentResult[];
@@ -253,6 +255,7 @@ function useBuiltInRows(open: boolean): {
               project.projectName,
               workspace.currentBranch,
             ]),
+            changeRequestNumber: workspace.changeRequestNumber,
             run: () => {
               clearCommandCenterFocusRestoreElement();
               navigateToWorkspace({ serverId: host.serverId, workspaceId: workspace.id });
@@ -303,12 +306,7 @@ function useBuiltInSections(open: boolean, query: string): CommandCenterResultSe
         band: PINNED_SECTION_BAND,
         rank: 2,
         title: t("shell.commandCenter.workspaces"),
-        results: filterAndRankBuiltInResults(
-          rows.workspaces,
-          query,
-          workspaceSearchFields,
-          compareWorkspacesByTitle,
-        ),
+        results: filterAndRankWorkspaces(rows.workspaces, query, compareWorkspacesByTitle),
       },
       {
         id: "agents",
