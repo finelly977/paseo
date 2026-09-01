@@ -35,7 +35,12 @@ import {
 import { parseGitRevParsePath, resolveGitRevParsePath } from "./git-rev-parse-path.js";
 import { runGitCommand } from "./run-git-command.js";
 import { isPaseoOwnedWorktreeCwd, resolvePaseoWorktreesBaseRoot } from "./worktree.js";
-import { type PaseoWorktreeMetadata, readPaseoWorktreeMetadata } from "./worktree-metadata.js";
+import {
+  getPaseoWorktreeChangeRequestLookupTargetForBranch,
+  type PaseoWorktreeMetadata,
+  readPaseoWorktreeMetadata,
+  rebindPaseoWorktreeChangeRequestLookupTarget,
+} from "./worktree-metadata.js";
 const READ_ONLY_GIT_ENV = {
   GIT_OPTIONAL_LOCKS: "0",
   LC_ALL: "C",
@@ -695,8 +700,8 @@ export class NotGitRepoError extends Error {
   readonly cwd: string;
   readonly code = "NOT_GIT_REPO";
 
-  constructor(cwd: string) {
-    super(`Not a git repository: ${cwd}`);
+  constructor(cwd: string, options?: ErrorOptions) {
+    super(`Not a git repository: ${cwd}`, options);
     this.name = "NotGitRepoError";
     this.cwd = cwd;
   }
@@ -859,6 +864,22 @@ async function requireGitRepo(cwd: string): Promise<void> {
     await runGitCommand(["rev-parse", "--git-dir"], { cwd, envOverlay: READ_ONLY_GIT_ENV });
   } catch {
     throw new NotGitRepoError(cwd);
+  }
+}
+
+async function requireGitWorktreeRoot(cwd: string): Promise<string> {
+  try {
+    const { stdout } = await runGitCommand(["rev-parse", "--show-toplevel"], {
+      cwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+    });
+    const worktreeRoot = parseGitRevParsePath(stdout);
+    if (!worktreeRoot) {
+      throw new Error("Git returned no worktree root");
+    }
+    return worktreeRoot;
+  } catch (error) {
+    throw new NotGitRepoError(cwd, { cause: error });
   }
 }
 
@@ -1072,7 +1093,7 @@ export async function renameCurrentBranch(
   cwd: string,
   newName: string,
 ): Promise<{ previousBranch: string | null; currentBranch: string | null }> {
-  await requireGitRepo(cwd);
+  const worktreeRoot = await requireGitWorktreeRoot(cwd);
 
   const previousBranch = await getCurrentBranch(cwd);
   if (!previousBranch || previousBranch === "HEAD") {
@@ -1085,6 +1106,9 @@ export async function renameCurrentBranch(
   });
 
   const currentBranch = await getCurrentBranch(cwd);
+  if (currentBranch) {
+    rebindPaseoWorktreeChangeRequestLookupTarget(worktreeRoot, previousBranch, currentBranch);
+  }
   return { previousBranch, currentBranch };
 }
 
@@ -1854,8 +1878,9 @@ function buildPullRequestLookupTargetFromPushConfig(
 
 function buildPullRequestLookupTargetFromMetadata(
   metadata: PaseoWorktreeMetadata | null,
+  currentBranch: string,
 ): PullRequestStatusLookupTarget | null {
-  const target = metadata?.changeRequestLookupTarget;
+  const target = getPaseoWorktreeChangeRequestLookupTargetForBranch(metadata, currentBranch);
   if (!target) {
     return null;
   }
@@ -1867,7 +1892,6 @@ function buildPullRequestLookupTargetFromMetadata(
 
 function buildInitialPullRequestLookupTarget(input: {
   currentBranch: string | null;
-  metadata: PaseoWorktreeMetadata | null;
   branchRemoteName: string | null;
   branchMergeRef: string | null;
   branchRemoteUrl: string | null;
@@ -1878,17 +1902,14 @@ function buildInitialPullRequestLookupTarget(input: {
     return null;
   }
 
-  return (
-    buildPullRequestLookupTargetFromMetadata(input.metadata) ??
-    buildPullRequestLookupTargetFromBranchConfig({
-      currentBranch: input.currentBranch,
-      branchRemoteName: input.branchRemoteName,
-      branchMergeRef: input.branchMergeRef,
-      branchRemoteUrl: input.branchRemoteUrl,
-      originRemoteUrl: input.originRemoteUrl,
-      resolvedBaseRef: input.resolvedBaseRef,
-    })
-  );
+  return buildPullRequestLookupTargetFromBranchConfig({
+    currentBranch: input.currentBranch,
+    branchRemoteName: input.branchRemoteName,
+    branchMergeRef: input.branchMergeRef,
+    branchRemoteUrl: input.branchRemoteUrl,
+    originRemoteUrl: input.originRemoteUrl,
+    resolvedBaseRef: input.resolvedBaseRef,
+  });
 }
 
 async function resolvePullRequestLookupTargetFromPushConfig(
@@ -1921,6 +1942,49 @@ async function resolvePullRequestLookupTargetFromPushConfig(
     originRemoteUrl: knownOriginRemoteUrl ?? originRemoteUrl,
     resolvedBaseRef: knownResolvedBaseRef ?? resolvedBaseRef,
   });
+}
+
+async function resolveFactsPullRequestLookupTarget(input: {
+  cwd: string;
+  inspected: CheckoutInspectionContext;
+  metadata: PaseoWorktreeMetadata | null;
+  branchRemoteName: string | null;
+  branchMergeRef: string | null;
+  branchRemoteUrl: string | null;
+  resolvedBaseRef: string | null;
+  context?: CheckoutContext;
+}): Promise<PullRequestStatusLookupTarget | null> {
+  const { cwd, inspected, metadata, context } = input;
+  const metadataTarget = inspected.currentBranch
+    ? buildPullRequestLookupTargetFromMetadata(metadata, inspected.currentBranch)
+    : null;
+  if (metadataTarget) {
+    return metadataTarget;
+  }
+
+  let target = buildInitialPullRequestLookupTarget({
+    currentBranch: inspected.currentBranch,
+    branchRemoteName: input.branchRemoteName,
+    branchMergeRef: input.branchMergeRef,
+    branchRemoteUrl: input.branchRemoteUrl,
+    originRemoteUrl: inspected.remoteUrl,
+    resolvedBaseRef: input.resolvedBaseRef,
+  });
+  if (
+    inspected.currentBranch &&
+    target?.headRef === inspected.currentBranch &&
+    !target.headRepositoryOwner
+  ) {
+    target =
+      (await resolvePullRequestLookupTargetFromPushConfig(
+        cwd,
+        inspected.currentBranch,
+        inspected.remoteUrl,
+        input.resolvedBaseRef,
+        context,
+      )) ?? target;
+  }
+  return target;
 }
 
 export async function getCheckoutSnapshotFacts(
@@ -1975,29 +2039,16 @@ export async function getCheckoutSnapshotFacts(
       ]);
     }
   }
-  let pullRequestLookupTarget = buildInitialPullRequestLookupTarget({
-    currentBranch: inspected.currentBranch,
+  let pullRequestLookupTarget = await resolveFactsPullRequestLookupTarget({
+    cwd,
+    inspected,
     metadata: paseoWorktreeMetadata,
     branchRemoteName,
     branchMergeRef,
     branchRemoteUrl,
-    originRemoteUrl: inspected.remoteUrl,
     resolvedBaseRef,
+    context,
   });
-  if (
-    inspected.currentBranch &&
-    pullRequestLookupTarget?.headRef === inspected.currentBranch &&
-    !pullRequestLookupTarget.headRepositoryOwner
-  ) {
-    pullRequestLookupTarget =
-      (await resolvePullRequestLookupTargetFromPushConfig(
-        cwd,
-        inspected.currentBranch,
-        inspected.remoteUrl,
-        resolvedBaseRef,
-        context,
-      )) ?? pullRequestLookupTarget;
-  }
   pullRequestLookupTarget = await addHeadShaToPullRequestLookupTarget(
     cwd,
     pullRequestLookupTarget,

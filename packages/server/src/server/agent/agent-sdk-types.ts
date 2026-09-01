@@ -75,6 +75,7 @@ export type ProviderStatus = "ready" | "loading" | "error" | "unavailable";
 export interface AgentModelDefinition {
   provider: AgentProvider;
   id: string;
+  isSelectable?: boolean;
   label: string;
   description?: string;
   isDefault?: boolean;
@@ -99,6 +100,12 @@ export function normalizeAgentModelDefinition(model: AgentModelDefinition): Agen
     return model;
   }
   return { ...model, defaultThinkingOptionId };
+}
+
+export function filterSelectableAgentModels(
+  models: AgentModelDefinition[] | undefined,
+): AgentModelDefinition[] {
+  return models?.filter((model) => model.isSelectable !== false) ?? [];
 }
 
 export interface ProviderSnapshotEntry {

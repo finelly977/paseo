@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures";
+import { daemonTest, test, expect } from "./fixtures";
 import { createTempGitRepo } from "./helpers/workspace";
 import {
   waitForWorkspaceTabsVisible,
@@ -108,7 +108,7 @@ test.describe("Workspace setup streaming", () => {
     }
   });
 
-  test("streams running and completed setup snapshots for a successful setup", async () => {
+  daemonTest("streams running and completed setup snapshots for a successful setup", async () => {
     const client = await connectWorkspaceSetupClient();
     const repo = await createTempGitRepo("setup-success-", {
       paseoConfig: {
@@ -153,7 +153,7 @@ test.describe("Workspace setup streaming", () => {
     }
   });
 
-  test("streams a failed setup snapshot when setup fails", async () => {
+  daemonTest("streams a failed setup snapshot when setup fails", async () => {
     const client = await connectWorkspaceSetupClient();
     const repo = await createTempGitRepo("setup-failure-", {
       paseoConfig: {
@@ -185,7 +185,7 @@ test.describe("Workspace setup streaming", () => {
     }
   });
 
-  test("emits a completed empty snapshot when no setup commands exist", async () => {
+  daemonTest("emits a completed empty snapshot when no setup commands exist", async () => {
     const client = await connectWorkspaceSetupClient();
     const repo = await createTempGitRepo("setup-none-");
 
@@ -264,7 +264,7 @@ test.describe("Workspace setup streaming", () => {
     }
   });
 
-  test("launches workspace scripts through an explicit daemon request", async () => {
+  daemonTest("launches workspace scripts through an explicit daemon request", async () => {
     const client = await connectWorkspaceSetupClient();
     const repo = await createTempGitRepo("setup-scripts-", {
       paseoConfig: {

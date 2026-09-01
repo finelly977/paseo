@@ -162,21 +162,42 @@ export async function sampleTabsDuringTransition(
   page: Page,
   action: () => Promise<void>,
   durationMs = 2_000,
-  intervalMs = 30,
-): Promise<string[][]> {
-  const snapshots: string[][] = [];
-  const startSampling = async () => {
-    const start = Date.now();
-    while (Date.now() - start < durationMs) {
-      snapshots.push(await getTabTestIds(page));
-      await page.waitForTimeout(intervalMs);
+): Promise<Array<Array<{ id: string; width: number }>>> {
+  await page.evaluate((duration) => {
+    const scope = globalThis as typeof globalThis & {
+      __paseoTabTrackFrames?: Array<Array<{ id: string; width: number }>>;
+    };
+    scope.__paseoTabTrackFrames = [];
+    const startedAt = performance.now();
+    function sample() {
+      const tabs = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-testid^="workspace-tab-"][role="button"][aria-selected]',
+        ),
+      ).filter((element) => element.getClientRects().length > 0);
+      scope.__paseoTabTrackFrames?.push(
+        tabs.map((element) => ({
+          id: element.getAttribute("data-testid") ?? "",
+          width: Math.round(element.getBoundingClientRect().width),
+        })),
+      );
+      if (performance.now() - startedAt < duration) {
+        requestAnimationFrame(sample);
+      }
     }
-  };
-
-  const samplingPromise = startSampling();
+    // Establish the known-good pre-action state synchronously. Starting on the
+    // next animation frame lets the action race the first sample, which can
+    // misclassify a not-yet-painted test harness frame as a transition blank.
+    sample();
+  }, durationMs);
   await action();
-  await samplingPromise;
-  return snapshots;
+  await page.waitForTimeout(durationMs + 100);
+  return page.evaluate(() => {
+    const scope = globalThis as typeof globalThis & {
+      __paseoTabTrackFrames?: Array<Array<{ id: string; width: number }>>;
+    };
+    return scope.__paseoTabTrackFrames ?? [];
+  });
 }
 
 export function terminalSurfaceLocator(page: Page) {

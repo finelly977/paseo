@@ -67,6 +67,24 @@ describe("combined model selector data", () => {
     ]);
   });
 
+  it("hides non-selectable models from selector data", () => {
+    const nonSelectableModel: AgentModelDefinition = {
+      ...codexModel,
+      id: "e2e-fast-stream",
+      label: "E2E fast stream",
+      isSelectable: false,
+    };
+
+    const [provider] = buildSelectableProviderSelectorProviders([
+      snapshotEntry({ provider: "codex", models: [codexModel, nonSelectableModel] }),
+    ]);
+
+    expect(provider?.modelSelection).toMatchObject({
+      kind: "models",
+      rows: [{ modelId: "gpt-5.4" }],
+    });
+  });
+
   it("synthesizes a default model row for ready enabled providers without explicit models", () => {
     expect(
       buildSelectableProviderSelectorProviders([

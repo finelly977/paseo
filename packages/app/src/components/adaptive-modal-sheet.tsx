@@ -6,7 +6,7 @@ import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "r
 import type { StyleProp, TextInputProps, ViewStyle } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { getOverlayRoot, OVERLAY_Z } from "../lib/overlay-root";
+import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "../lib/overlay-root";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -71,11 +71,14 @@ function handleEscKeyDown(event: KeyboardEvent) {
 
 function pushEscHandler(handler: EscHandler): () => void {
   escStack.push(handler);
+  const unregisterOverlay =
+    typeof window !== "undefined" ? registerActiveWebOverlay() : () => undefined;
   if (!escListenerAttached && typeof window !== "undefined") {
     window.addEventListener("keydown", handleEscKeyDown, true);
     escListenerAttached = true;
   }
   return () => {
+    unregisterOverlay();
     const index = escStack.lastIndexOf(handler);
     if (index !== -1) escStack.splice(index, 1);
     if (escStack.length === 0 && escListenerAttached && typeof window !== "undefined") {

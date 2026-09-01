@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { createTempDirectory, createTempGitRepo } from "./workspace";
@@ -129,6 +130,7 @@ export interface SeedDaemonClient {
     }>;
   }>;
   updateAgent(agentId: string, updates: { name?: string }): Promise<void>;
+  setAgentMode(agentId: string, modeId: string): Promise<AgentProviderNotice | null>;
   waitForAgentUpsert(
     agentId: string,
     predicate: (snapshot: { status: string }) => boolean,

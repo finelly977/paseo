@@ -194,7 +194,7 @@ test.describe("Tab transitions (no flash)", () => {
     await gotoWorkspace(page, workspace.workspaceId);
 
     // Sample tabs at high frequency across the transition
-    const snapshots = await sampleTabsDuringTransition(page, () => clickNewChat(page), 2_000, 30);
+    const snapshots = await sampleTabsDuringTransition(page, () => clickNewChat(page), 2_000);
 
     // Every snapshot should have at least one tab — no blank/zero-tab frames
     for (const snapshot of snapshots) {

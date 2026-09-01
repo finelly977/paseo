@@ -6,6 +6,7 @@ const ChangeRequestLookupTargetSchema = z.object({
   headRef: z.string().min(1),
   headRepositoryOwner: z.string().min(1).optional(),
   changeRequestNumber: z.number().int().positive().optional(),
+  localBranchName: z.string().min(1).optional(),
 });
 
 const PaseoWorktreeMetadataV1Schema = z.object({
@@ -47,6 +48,65 @@ export type PaseoWorktreeMetadata = z.infer<typeof PaseoWorktreeMetadataSchema>;
 export type PaseoWorktreeChangeRequestLookupTarget = z.infer<
   typeof ChangeRequestLookupTargetSchema
 >;
+
+export function createPaseoWorktreeChangeRequestLookupTarget(
+  input: PaseoWorktreeChangeRequestLookupTarget,
+): PaseoWorktreeChangeRequestLookupTarget {
+  return ChangeRequestLookupTargetSchema.parse(input);
+}
+
+export function getPaseoWorktreeChangeRequestLookupTargetForBranch(
+  metadata: PaseoWorktreeMetadata | null,
+  currentBranch: string,
+): PaseoWorktreeChangeRequestLookupTarget | null {
+  const target = metadata?.changeRequestLookupTarget;
+  if (!target) {
+    return null;
+  }
+  if (target.localBranchName) {
+    return target.localBranchName === currentBranch ? target : null;
+  }
+
+  // COMPAT(change-request-local-branch): v0.6.1 之前的工作树元数据没有本地分支绑定；
+  // 仅在当前分支仍能无歧义地对应原拉取请求时接受，计划于 2027-03-01 移除。
+  const canonicalBranches = new Set<string>();
+  if (target.headRepositoryOwner) {
+    canonicalBranches.add(`${target.headRepositoryOwner}/${target.headRef}`);
+    const normalizedOwner = normalizeLegacyGitHubOwnerForBranch(target.headRepositoryOwner);
+    if (normalizedOwner) {
+      canonicalBranches.add(`${normalizedOwner}/${target.headRef}`);
+    }
+  } else {
+    canonicalBranches.add(target.headRef);
+  }
+  return canonicalBranches.has(currentBranch) ? target : null;
+}
+
+function normalizeLegacyGitHubOwnerForBranch(owner: string): string | null {
+  const normalized = owner.trim().toLowerCase();
+  return /^[a-z0-9-]+$/.test(normalized) ? normalized : null;
+}
+
+export function rebindPaseoWorktreeChangeRequestLookupTarget(
+  worktreeRoot: string,
+  previousBranch: string,
+  currentBranch: string,
+): boolean {
+  const metadata = readPaseoWorktreeMetadata(worktreeRoot);
+  const target = getPaseoWorktreeChangeRequestLookupTargetForBranch(metadata, previousBranch);
+  if (!metadata || !target) {
+    return false;
+  }
+
+  writePaseoWorktreeMetadataFile(worktreeRoot, {
+    ...metadata,
+    changeRequestLookupTarget: {
+      ...target,
+      localBranchName: currentBranch,
+    },
+  });
+  return true;
+}
 
 function getGitDirForWorktreeRoot(worktreeRoot: string): string {
   const gitPath = join(worktreeRoot, ".git");

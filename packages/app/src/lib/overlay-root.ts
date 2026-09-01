@@ -25,3 +25,19 @@ export const OVERLAY_Z = {
   toast: 20,
   tooltip: 30,
 } as const;
+
+let activeWebOverlayCount = 0;
+
+export function registerActiveWebOverlay(): () => void {
+  activeWebOverlayCount += 1;
+  let registered = true;
+  return () => {
+    if (!registered) return;
+    registered = false;
+    activeWebOverlayCount -= 1;
+  };
+}
+
+export function hasActiveWebOverlay(): boolean {
+  return activeWebOverlayCount > 0;
+}

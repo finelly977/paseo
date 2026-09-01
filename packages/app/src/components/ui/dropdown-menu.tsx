@@ -34,7 +34,7 @@ import { FloatingScrollView, FloatingSurface } from "@/components/ui/floating";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isWeb } from "@/constants/platform";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
-import { getOverlayRoot, OVERLAY_Z } from "@/lib/overlay-root";
+import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
 
 // Action status for menu items with loading/success feedback
 export type ActionStatus = "idle" | "pending" | "success";
@@ -512,6 +512,11 @@ export function DropdownMenuContent({
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [handleClose, modalVisible]);
+
+  useEffect(() => {
+    if (!isWeb || !modalVisible) return undefined;
+    return registerActiveWebOverlay();
+  }, [modalVisible]);
 
   // Measure trigger when opening
   useEffect(() => {

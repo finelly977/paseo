@@ -54,11 +54,14 @@ function createSnapshot(overrides?: {
       aheadOfOrigin: 0,
       behindOfOrigin: 0,
       hasRemote: true,
+      stagedFileCount: 0,
+      changes: { staged: [], unstaged: [], conflicts: [] },
       diffStat: { additions: 0, deletions: 0 },
       ...overrides?.git,
     },
-    github: {
+    forge: {
       featuresEnabled: true,
+      authState: "authenticated",
       pullRequest:
         overrides && "pullRequest" in overrides
           ? (overrides.pullRequest ?? null)
@@ -286,10 +289,13 @@ function createRealOutcomeHarness(input: {
             aheadOfOrigin: 0,
             behindOfOrigin: 0,
             hasRemote: true,
+            stagedFileCount: 0,
+            changes: { staged: [], unstaged: [], conflicts: [] },
             diffStat: { additions: 0, deletions: 0 },
           },
-          github: {
+          forge: {
             featuresEnabled: true,
+            authState: "authenticated",
             pullRequest: createPullRequest({ isMerged: true }),
             error: null,
           },
@@ -396,6 +402,23 @@ describe("archiveIfSafe", () => {
 
   test("does nothing when there is no snapshot", async () => {
     const harness = createHarness({ getSnapshot: async () => null });
+
+    await runArchiveIfSafe(harness);
+
+    expect(harness.deps.isPaseoOwnedWorktreeCwd).not.toHaveBeenCalled();
+    expect(harness.deps.archiveByScope).not.toHaveBeenCalled();
+  });
+
+  test("does nothing when the authoritative snapshot no longer shows the same merged PR", async () => {
+    const harness = createHarness({
+      getSnapshot: async () =>
+        createSnapshot({
+          pullRequest: createPullRequest({
+            url: "https://github.com/acme/repo/pull/456",
+            isMerged: true,
+          }),
+        }),
+    });
 
     await runArchiveIfSafe(harness);
 

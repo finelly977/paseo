@@ -55,18 +55,18 @@ export async function archiveIfSafe(input: {
   options: AutoArchiveArchiveOptions;
   log: Logger;
   deps?: ArchiveIfSafeDependencies;
-}): Promise<void> {
+}): Promise<boolean> {
   const { cwd, pullRequest, inFlight, options, log } = input;
   const deps = input.deps ?? defaultDependencies;
 
   if (!pullRequest?.isMerged) {
-    return;
+    return false;
   }
   if (options.daemonConfigStore.get().autoArchiveAfterMerge !== true) {
-    return;
+    return false;
   }
   if (inFlight.has(cwd)) {
-    return;
+    return false;
   }
 
   inFlight.add(cwd);
@@ -78,17 +78,22 @@ export async function archiveIfSafe(input: {
       });
     } catch (error) {
       log.warn({ err: error, cwd }, "Failed to read snapshot for auto-archive; skipping");
-      return;
+      return false;
     }
     if (!snapshot) {
-      return;
+      return false;
+    }
+
+    const freshPullRequest = snapshot.forge.pullRequest;
+    if (!freshPullRequest?.isMerged || freshPullRequest.url !== pullRequest.url) {
+      return false;
     }
 
     if (snapshot.git.isDirty === true) {
-      return;
+      return false;
     }
     if (typeof snapshot.git.aheadOfOrigin === "number" && snapshot.git.aheadOfOrigin > 0) {
-      return;
+      return false;
     }
 
     const ownership = await deps.isPaseoOwnedWorktreeCwd(cwd, {
@@ -96,7 +101,7 @@ export async function archiveIfSafe(input: {
       worktreesRoot: options.paseoWorktreesBaseRoot,
     });
     if (!ownership.allowed) {
-      return;
+      return false;
     }
 
     try {
@@ -109,7 +114,7 @@ export async function archiveIfSafe(input: {
       );
       if (!workspaceId) {
         log.warn({ cwd }, "Auto-archive could not resolve a workspace for cwd; skipping");
-        return;
+        return false;
       }
 
       await deps.archiveByScope(
@@ -142,8 +147,10 @@ export async function archiveIfSafe(input: {
         },
       );
       log.info({ cwd }, "Auto-archived worktree after PR merge");
+      return true;
     } catch (error) {
       log.warn({ err: error, cwd }, "Auto-archive after merge failed");
+      return false;
     }
   } finally {
     inFlight.delete(cwd);

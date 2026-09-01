@@ -13,5 +13,5 @@ export function findModelByReference(
 export function filterSelectableModels(
   models: AgentModelDefinition[] | null,
 ): AgentModelDefinition[] | null {
-  return models;
+  return models?.filter((model) => model.isSelectable !== false) ?? null;
 }

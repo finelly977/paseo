@@ -399,6 +399,7 @@ export const AgentFeatureSchema = z.discriminatedUnion("type", [
 const AgentModelDefinitionSchema: z.ZodType<AgentModelDefinition> = z.object({
   provider: AgentProviderSchema,
   id: z.string(),
+  isSelectable: z.boolean().optional(),
   label: z.string(),
   description: z.string().optional(),
   isDefault: z.boolean().optional(),

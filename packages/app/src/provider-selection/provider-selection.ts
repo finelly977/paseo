@@ -8,6 +8,7 @@ import type { AgentProviderDefinition } from "@getpaseo/protocol/provider-manife
 import type { DraftCommandConfig } from "@/hooks/use-agent-commands-query";
 import { i18n } from "@/i18n/i18next";
 import { compareMatchScores, scoreTextFields } from "@/utils/score-match";
+import { filterSelectableModels } from "./model-catalog";
 
 export interface ProviderSelectionModelRow {
   /**
@@ -92,10 +93,11 @@ function buildModelSelection(
   if (models === null) {
     return { kind: "loading" };
   }
-  if (models.length === 0) {
+  const selectableModels = filterSelectableModels(models) ?? [];
+  if (selectableModels.length === 0) {
     return { kind: "models", rows: [buildSyntheticDefaultRow(provider, providerLabel)] };
   }
-  return { kind: "models", rows: buildModelRows(provider, providerLabel, models) };
+  return { kind: "models", rows: buildModelRows(provider, providerLabel, selectableModels) };
 }
 
 function buildEntryModelSelection(

@@ -10,6 +10,7 @@ async function openMockAgentAtMobileBreakpoint(page: Page) {
     repoPrefix: "bottom-sheet-reopen-",
     title: "Bottom sheet reopen e2e",
     initialPrompt: "Prepare a bottom sheet reopen test agent.",
+    model: "ten-second-stream",
   });
   await openAgentRoute(page, session);
   await expect(page.getByTestId("workspace-tab-switcher-trigger")).toBeVisible({
@@ -20,16 +21,6 @@ async function openMockAgentAtMobileBreakpoint(page: Page) {
     timeout: 30_000,
   });
   return session;
-}
-
-async function withMobileMockAgent(page: Page, run: () => Promise<void>) {
-  const session = await openMockAgentAtMobileBreakpoint(page);
-
-  try {
-    await run();
-  } finally {
-    await session.cleanup();
-  }
 }
 
 function bottomSheetBackdrop(page: Page) {
@@ -112,27 +103,28 @@ async function openAndCloseModelSelectorTwice(page: Page) {
 }
 
 test.describe("mobile bottom sheet reopen", () => {
-  test("tab switcher can open, close, reopen, and close again", async ({ page }) => {
-    await withMobileMockAgent(page, async () => {
-      await openAndCloseTabSwitcherTwice(page);
-    });
-  });
+  test("sheets reopen and the model selector closes after selection", async ({ page }) => {
+    const session = await openMockAgentAtMobileBreakpoint(page);
+    try {
+      await test.step("tab switcher opens, closes, and reopens", async () => {
+        await openAndCloseTabSwitcherTwice(page);
+      });
 
-  test("model selector can open, close, reopen, and close again", async ({ page }) => {
-    await withMobileMockAgent(page, async () => {
-      await openAndCloseModelSelectorTwice(page);
-    });
-  });
+      await test.step("model selector opens, closes, and reopens", async () => {
+        await openAndCloseModelSelectorTwice(page);
+      });
 
-  test("model selector closes after model selection", async ({ page }) => {
-    await withMobileMockAgent(page, async () => {
-      await openModelSelector(page);
-      const sheet = page.getByLabel("Bottom Sheet", { exact: true });
+      await test.step("model selection closes the sheet", async () => {
+        await openModelSelector(page);
+        const sheet = page.getByLabel("Bottom Sheet", { exact: true });
 
-      await sheet.getByText("Ten second stream", { exact: true }).click();
+        await sheet.getByText("Ten second stream", { exact: true }).click();
 
-      await expect(sheet).not.toBeVisible({ timeout: 10_000 });
-      await expect(page.getByRole("button", { name: /Ten second stream/ })).toBeVisible();
-    });
+        await expect(sheet).not.toBeVisible({ timeout: 10_000 });
+        await expect(page.getByRole("button", { name: /Ten second stream/ })).toBeVisible();
+      });
+    } finally {
+      await session.cleanup();
+    }
   });
 });
