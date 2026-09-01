@@ -449,6 +449,58 @@ test("插件目录变化时从最新尾部重新投影可见时间线", async ()
   reprojection.respond({ hasNewer: false });
 });
 
+test("时间线替换会丢弃旧游标并让失败可重试", async () => {
+  const world = new TimelineWorld();
+  world.setCursor("agent-a", 20);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const initial = await world.nextFetch("agent-a");
+  initial.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  world.sync.replaceAgentTimeline("agent-a", "replacement-1");
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("pending");
+  const replacement = await world.nextFetch("agent-a");
+  expect(replacement.request).toEqual({
+    direction: "tail",
+    limit: 40,
+    projection: "projected",
+  });
+  replacement.fail("replacement unavailable");
+  await world.nextError();
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("error");
+
+  world.sync.retryVisibleAgentTimeline("agent-a");
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("retrying");
+  const retry = await world.nextFetch("agent-a");
+  expect(retry.request).toEqual(replacement.request);
+  retry.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+});
+
+test("较新的替换版本会废弃仍在途的旧尾部读取", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+  const initial = await world.nextFetch("agent-a");
+  initial.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+
+  world.sync.replaceAgentTimeline("agent-a", "replacement-1");
+  const stale = await world.nextFetch("agent-a");
+  world.sync.replaceAgentTimeline("agent-a", "replacement-2");
+  const current = await world.nextFetch("agent-a");
+
+  stale.respond({ hasNewer: false });
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("pending");
+  current.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+});
+
 test("重复发布相同可见会话不会绕过历史同步退避", async () => {
   const world = new TimelineWorld();
   world.sync.setConnected(true);

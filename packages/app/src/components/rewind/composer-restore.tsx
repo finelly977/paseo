@@ -21,6 +21,7 @@ interface RewindComposerRestoreProviderProps {
   setText: (text: string) => void;
   attachments: UserComposerAttachment[];
   setAttachments: (attachments: UserComposerAttachment[]) => void;
+  onRewindComplete: () => void;
   children: ReactNode;
 }
 
@@ -53,6 +54,7 @@ export function RewindComposerRestoreProvider({
   setText,
   attachments,
   setAttachments,
+  onRewindComplete,
   children,
 }: RewindComposerRestoreProviderProps) {
   const textRef = useRef(text);
@@ -82,8 +84,9 @@ export function RewindComposerRestoreProvider({
         attachmentsRef.current = restored.attachments;
         setAttachments(restored.attachments);
       }
+      onRewindComplete();
     },
-    [setAttachments, setText],
+    [onRewindComplete, setAttachments, setText],
   );
 
   const value = useMemo(() => ({ restoreDraftIfComposerEmpty }), [restoreDraftIfComposerEmpty]);

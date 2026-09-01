@@ -651,6 +651,8 @@ export class Session {
   private readonly viewedTimelineAgentIdsBySource = new Map<object, Set<string>>();
   private readonly clientCapabilitiesBySource = new Map<object, ReadonlySet<ClientCapability>>();
   private readonly defaultTimelineSubscriptionSource = {};
+  private readonly rewindInitiators = new Map<string, { source: object | undefined }>();
+  private readonly rewindRequestTails = new Map<string, Promise<void>>();
   private unsubscribeTerminalWorkspaceContributionEvents: (() => void) | null = null;
   private readonly agentUpdates: AgentUpdatesService;
   private workspaceUpdatesSubscription: WorkspaceUpdatesSubscriptionState | null = null;
@@ -1622,6 +1624,15 @@ export class Session {
 
     this.unsubscribeAgentEvents = this.agentManager.subscribe(
       (event) => {
+        if (event.type === "timeline_replacement") {
+          this.deliverTimelineReplacement(
+            event.agentId,
+            event.epoch,
+            this.rewindInitiators.get(event.agentId),
+          );
+          return;
+        }
+
         if (event.type === "agent_state") {
           this.sessionLogger.trace(
             {
@@ -1895,7 +1906,7 @@ export class Session {
   private async dispatchInboundMessage(msg: SessionInboundMessage, source?: object): Promise<void> {
     const promise =
       this.dispatchVoiceAndControlMessage(msg) ??
-      this.dispatchAgentRewindMessage(msg) ??
+      this.dispatchAgentRewindMessage(msg, source) ??
       this.dispatchAgentRuntimeMessage(msg) ??
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source) ??
@@ -2117,10 +2128,13 @@ export class Session {
     }
   }
 
-  private dispatchAgentRewindMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+  private dispatchAgentRewindMessage(
+    msg: SessionInboundMessage,
+    source?: object,
+  ): Promise<void> | undefined {
     switch (msg.type) {
       case "agent.rewind.request":
-        return this.handleAgentRewindRequest(msg);
+        return this.handleAgentRewindRequest(msg, source);
       default:
         return undefined;
     }
@@ -3854,28 +3868,131 @@ export class Session {
 
   private async handleAgentRewindRequest(
     msg: Extract<SessionInboundMessage, { type: "agent.rewind.request" }>,
+    source?: object,
   ): Promise<void> {
+    const previous = this.rewindRequestTails.get(msg.agentId) ?? Promise.resolve();
+    let releaseCurrent!: () => void;
+    const current = new Promise<void>((resolveCurrent) => {
+      releaseCurrent = resolveCurrent;
+    });
+    const tail = previous.then(() => current);
+    this.rewindRequestTails.set(msg.agentId, tail);
+    await previous;
+    this.rewindInitiators.set(msg.agentId, { source });
+
     try {
       await this.agentManager.rewind(msg.agentId, msg.messageId, msg.mode);
-      this.emit({
-        type: "agent.rewind.response",
-        payload: {
-          requestId: msg.requestId,
-          agentId: msg.agentId,
-          ok: true,
-          error: null,
+      this.emitForSource(
+        {
+          type: "agent.rewind.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            ok: true,
+            error: null,
+          },
         },
-      });
+        source,
+      );
     } catch (error) {
-      this.emit({
-        type: "agent.rewind.response",
-        payload: {
-          requestId: msg.requestId,
-          agentId: msg.agentId,
-          ok: false,
-          error: error instanceof Error ? error.message : "Failed to rewind agent",
+      this.emitForSource(
+        {
+          type: "agent.rewind.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            ok: false,
+            error: error instanceof Error ? error.message : "Failed to rewind agent",
+          },
         },
+        source,
+      );
+    } finally {
+      this.rewindInitiators.delete(msg.agentId);
+      releaseCurrent();
+      if (this.rewindRequestTails.get(msg.agentId) === tail) {
+        this.rewindRequestTails.delete(msg.agentId);
+      }
+    }
+  }
+
+  private deliverTimelineReplacement(
+    agentId: string,
+    epoch: string,
+    initiator?: { source: object | undefined },
+  ): void {
+    const agent = this.agentManager.getAgent(agentId);
+    if (!agent) {
+      throw new Error(`Cannot deliver timeline replacement for unknown agent ${agentId}`);
+    }
+    const timeline = this.agentManager.fetchTimeline(agentId, { limit: 0 });
+    if (timeline.epoch !== epoch) {
+      throw new Error(
+        `Timeline replacement epoch mismatch for agent ${agentId}: ${epoch} != ${timeline.epoch}`,
+      );
+    }
+    const replacementMessage: SessionOutboundMessage = {
+      type: "agent.timeline.replacement",
+      payload: { agentId, epoch },
+    };
+
+    if (this.clientCapabilitiesBySource.size === 0 || !this.onMessageToSource) {
+      if (this.supports(CLIENT_CAPS.timelineReplacementInvalidation)) {
+        if (!initiator) this.emit(replacementMessage);
+      } else {
+        this.emitReconstructedTimelineRows(agentId, agent.provider, timeline.rows, timeline.epoch);
+      }
+      return;
+    }
+
+    for (const [targetSource, capabilities] of this.clientCapabilitiesBySource) {
+      const supportsReplacement = capabilities.has(CLIENT_CAPS.timelineReplacementInvalidation);
+      const usesSelectiveDelivery = capabilities.has(CLIENT_CAPS.selectiveAgentTimeline);
+      const isSubscribed =
+        !usesSelectiveDelivery ||
+        this.viewedTimelineAgentIdsBySource.get(targetSource)?.has(agentId) === true;
+      if (supportsReplacement) {
+        const isInitiator = initiator !== undefined && targetSource === initiator.source;
+        if (isSubscribed && !isInitiator) {
+          this.onMessageToSource(targetSource, replacementMessage);
+        }
+        continue;
+      }
+      this.emitReconstructedTimelineRows(
+        agentId,
+        agent.provider,
+        timeline.rows,
+        timeline.epoch,
+        targetSource,
+      );
+    }
+  }
+
+  private emitReconstructedTimelineRows(
+    agentId: string,
+    provider: ManagedAgent["provider"],
+    rows: AgentTimelineFetchResult["rows"],
+    epoch: string,
+    source?: object,
+  ): void {
+    for (const row of rows) {
+      const event = serializeAgentStreamEvent({
+        type: "timeline",
+        provider,
+        item: row.item,
+        ...(row.turnId ? { turnId: row.turnId } : {}),
+        timestamp: row.timestamp,
       });
+      if (!event) {
+        throw new Error(`Timeline row ${row.seq} for agent ${agentId} is not serializable`);
+      }
+      this.emitForSource(
+        {
+          type: "agent_stream",
+          payload: { agentId, event, timestamp: row.timestamp, seq: row.seq, epoch },
+        },
+        source,
+      );
     }
   }
 

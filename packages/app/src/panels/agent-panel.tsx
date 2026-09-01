@@ -1012,6 +1012,10 @@ function ChatAgentContent({
     streamViewRef.current?.scrollToBottom("message-sent");
   }, [agentId]);
 
+  const handleRewindComplete = useCallback(() => {
+    streamViewRef.current?.scrollToBottom("rewind");
+  }, []);
+
   useEffect(() => {
     initAttemptTokenRef.current += 1;
     setMissingAgentState({ kind: "idle" });
@@ -1157,6 +1161,7 @@ function ChatAgentContent({
       animatedContentStyle={animatedContentStyle}
       handleComposerHeightChange={handleComposerHeightChange}
       handleMessageSent={handleMessageSent}
+      handleRewindComplete={handleRewindComplete}
       showHistorySyncOverlay={showHistorySyncOverlay}
       showHistorySyncError={showHistorySyncError}
       isRetryingHistorySync={isRetryingHistorySync}
@@ -1185,6 +1190,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   animatedContentStyle,
   handleComposerHeightChange,
   handleMessageSent,
+  handleRewindComplete,
   showHistorySyncOverlay,
   showHistorySyncError,
   isRetryingHistorySync,
@@ -1209,6 +1215,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   animatedContentStyle: object[];
   handleComposerHeightChange: (height: number) => void;
   handleMessageSent: () => void;
+  handleRewindComplete: () => void;
   showHistorySyncOverlay: boolean;
   showHistorySyncError: boolean;
   isRetryingHistorySync: boolean;
@@ -1302,6 +1309,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       setText={agentInputDraft.setText}
       attachments={agentInputDraft.attachments}
       setAttachments={agentInputDraft.setAttachments}
+      onRewindComplete={handleRewindComplete}
     >
       <View style={styles.root}>
         <FileDropZone style={styles.container} disabled={isArchivingCurrentAgent}>

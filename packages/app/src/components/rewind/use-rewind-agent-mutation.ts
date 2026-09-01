@@ -10,6 +10,7 @@ import { shouldRestoreComposerForRewindMode } from "./rewind-mode";
 import { clearOptimisticUserMessages } from "@/types/stream";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import type { UserMessageImageAttachment } from "@/types/stream";
+import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 
 interface UseRewindAgentMutationInput {
   serverId?: string;
@@ -45,17 +46,12 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
             head: clearOptimisticUserMessages(session?.agentStreamHead.get(input.agentId) ?? []),
           });
         }
-        const cursor = input.serverId
-          ? useSessionStore
-              .getState()
-              .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId)
-          : undefined;
         if (!input.serverId) throw new Error(t("common.errors.daemonClientUnavailable"));
-        await getHostRuntimeStore().fetchAgentTimeline(input.serverId, input.agentId, {
-          direction: "tail",
-          projection: "projected",
-          ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
-        });
+        await getHostRuntimeStore().fetchAgentTimeline(
+          input.serverId,
+          input.agentId,
+          planTimelineTailFetch(),
+        );
       }
     },
     onSuccess: (_data, variables) => {

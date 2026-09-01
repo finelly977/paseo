@@ -23,6 +23,9 @@ export const CLIENT_CAPS = {
   // COMPAT(fullConversationIndex): v0.2.0-beta.4 新增。旧客户端会拒绝超过 50 条的
   // 对话索引，因此在最低支持版本达到该版本前继续截断响应；2027-01-27 后移除。
   fullConversationIndex: "full_conversation_index",
+  // COMPAT(timelineReplacementInvalidation)：v0.7.0 新增。支持的客户端在时间线被重建后
+  // 主动读取权威尾部；旧客户端继续接收重放的时间线行。最低支持版本达到 v0.7.0 后移除旧路径。
+  timelineReplacementInvalidation: "timeline_replacement_invalidation",
   browserHost: "browser_host",
 } as const;
 

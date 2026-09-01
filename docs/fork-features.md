@@ -63,6 +63,7 @@
 - Claude 使用原生分支能力创建回退后的新会话，并把回退前的原会话标记为已归档，避免原分支继续出现在正常导入列表中。
 - Claude 的“同时回退对话和文件”仍先执行文件检查点回退，再切换到新的会话分支。
 - 对话回退会把目标用户消息的文本和图片一起恢复到输入框；重新发送成功后会再次确认清空输入内容和附件，避免已发送内容残留。
+- 对话回退或同时回退会在提供方操作完成后一次性替换权威时间线版本，不再把长历史逐行重放给新客户端；发起回退的界面直接读取最新尾部，其他正在查看同一会话的界面收到版本通知后也丢弃旧游标并读取权威尾部。较新的替换会废弃仍在途的旧读取，读取失败进入现有历史同步错误与重试流程，不会停留在看似成功的陈旧历史。旧客户端仍接收兼容重放，回退响应只返回发起请求的连接；这套投递差异不改变 Codex 原地回退、Claude 分支回退及文本与图片恢复行为。
 
 主要涉及：
 
@@ -72,6 +73,10 @@
 - `packages/server/src/server/agent/providers/claude/rewind.ts`
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/app/src/components/rewind/`
+- `packages/app/src/timeline/viewed-timeline-sync.ts`
+- `packages/protocol/src/client-capabilities.ts`
+- `packages/protocol/src/messages.ts`
+- `packages/server/src/server/session.ts`
 
 ### 5. 对话排版、间距与默认 Dark 主题
 

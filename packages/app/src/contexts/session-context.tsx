@@ -956,6 +956,14 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       applyTimelineResponse(message.payload);
     });
 
+    const unsubTimelineReplacement = client.on("agent.timeline.replacement", (message) => {
+      if (message.type !== "agent.timeline.replacement") return;
+      viewedTimelineSyncRef.current?.replaceAgentTimeline(
+        message.payload.agentId,
+        message.payload.epoch,
+      );
+    });
+
     const unsubProviderSubagentUpdate = client.on("agent.provider_subagents.update", (message) => {
       if (message.type !== "agent.provider_subagents.update") return;
       useProviderSubagentStore.getState().applyUpdate(serverId, message.payload);
@@ -1162,6 +1170,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     });
 
     return () => {
+      unsubTimelineReplacement();
       unsubAgentStream();
       unsubAgentTimeline();
       unsubProviderSubagentUpdate();

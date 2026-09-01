@@ -474,6 +474,10 @@ export function setupFinishNotification(params: SetupFinishNotificationParams): 
         return;
       }
 
+      if (event.type === "timeline_replacement") {
+        return;
+      }
+
       if (event.event.type === "permission_requested") {
         // 权限暂停只是中间检查点。清除此前观察到的运行状态，避免后续启动期间的空闲状态
         // 被误判为最终完成。

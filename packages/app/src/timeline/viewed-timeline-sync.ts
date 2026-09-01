@@ -53,6 +53,7 @@ export interface ViewedTimelineSync extends ViewedTimelineUiBridge {
   setConnected(connected: boolean): void;
   setDeliveryMode(mode: TimelineDeliveryMode): void;
   recoverGap(agentId: string, cursor: { epoch: string; endSeq: number }): void;
+  replaceAgentTimeline(agentId: string, epoch: string): void;
   reprojectAgentTimeline(agentId: string): void;
   dispose(): void;
 }
@@ -118,6 +119,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   const visibilityCatchUpPending = new Set<string>();
   const visibilityCatchUpErrors = new Set<string>();
   const manualRetries = new Set<string>();
+  const replacementEpochs = new Map<string, string>();
   const listeners = new Set<() => void>();
   let active = true;
   let connected = ports.initialConnected;
@@ -395,6 +397,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         visibilityCatchUpPending.delete(agentId);
         visibilityCatchUpErrors.delete(agentId);
         manualRetries.delete(agentId);
+        replacementEpochs.delete(agentId);
       }
     }
     for (const agentId of nextDesired) {
@@ -520,6 +523,21 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         supersede: true,
       });
     },
+    replaceAgentTimeline(agentId, epoch) {
+      if (!active || !connected || !isDesired(agentId)) return;
+      if (replacementEpochs.get(agentId) === epoch) return;
+      replacementEpochs.set(agentId, epoch);
+      cancelCatchUp(agentId);
+      const becamePending = !visibilityCatchUpPending.has(agentId);
+      visibilityCatchUpPending.add(agentId);
+      const clearedError = visibilityCatchUpErrors.delete(agentId);
+      const clearedRetry = manualRetries.delete(agentId);
+      if (becamePending || clearedError || clearedRetry) notifyListeners();
+      startCatchUp(agentId, {
+        request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+        supersede: true,
+      });
+    },
     reprojectAgentTimeline(agentId) {
       if (!active || !connected || !isDesired(agentId)) return;
       startCatchUp(agentId, {
@@ -555,6 +573,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       visibilityCatchUpPending.clear();
       visibilityCatchUpErrors.clear();
       manualRetries.clear();
+      replacementEpochs.clear();
       notifyListeners();
       listeners.clear();
     },
