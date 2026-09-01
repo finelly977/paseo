@@ -45,14 +45,12 @@ import {
 
 const DEFAULT_OMP_COMMAND: [string, ...string[]] = [process.env.OMP_COMMAND ?? "omp"];
 const DEFAULT_COMMANDS_RPC_NAME = "get_available_commands";
-/** How long to wait for OMP's startup `ready` frame before failing startup. */
-const OMP_READY_TIMEOUT_MS = 10_000;
-
 export interface OmpCliRuntimeOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   command?: [string, ...string[]];
   commandsRpcName?: "get_available_commands";
+  requestTimeoutMs?: number;
   spawnProcess?: (launch: OmpRuntimeLaunch) => ChildProcessWithoutNullStreams;
 }
 
@@ -85,11 +83,12 @@ export class OmpCliRuntime implements OmpRuntime {
       launch: processLaunch,
       logger: this.options.logger,
       diagnosticName: "OMP RPC",
+      defaultRequestTimeoutMs: this.options.requestTimeoutMs,
       ...(spawn ? { spawn: () => spawn(launch) } : {}),
     };
     const process = new JsonlRpcProcess(processOptions);
     try {
-      await negotiateOmpProtocolV2(process, this.options.logger);
+      await negotiateOmpProtocolV2(process, this.options.logger, this.options.requestTimeoutMs);
       return new OmpCliRuntimeSession(process, this.commandsRpcName);
     } catch (error) {
       const startupError = error instanceof Error ? error : new Error(String(error));
@@ -107,14 +106,18 @@ export class OmpCliRuntime implements OmpRuntime {
  * JSONL transport reassembles. Supported OMP versions send a `ready` frame immediately
  * after launch; startup fails if the process exits or never becomes ready.
  */
-async function negotiateOmpProtocolV2(process: JsonlRpcProcess, logger: Logger): Promise<void> {
-  const ready = await waitForOmpReadyFrame(process);
+async function negotiateOmpProtocolV2(
+  process: JsonlRpcProcess,
+  logger: Logger,
+  requestTimeoutMs = JSONL_RPC_DEFAULT_TIMEOUT_MS,
+): Promise<void> {
+  const ready = await waitForOmpReadyFrame(process, requestTimeoutMs);
   if (!supportsJsonlRpcProtocolV2(ready)) {
     return;
   }
   const response = (await process.request(
     { type: "negotiate_protocol", protocolVersion: 2 },
-    JSONL_RPC_DEFAULT_TIMEOUT_MS,
+    requestTimeoutMs,
   )) as { protocolVersion?: unknown } | undefined;
   if (response?.protocolVersion !== 2) {
     throw new Error("OMP did not accept RPC protocol v2");
@@ -122,7 +125,10 @@ async function negotiateOmpProtocolV2(process: JsonlRpcProcess, logger: Logger):
   logger.debug({}, "Negotiated OMP RPC protocol v2 (chunked frame transport)");
 }
 
-function waitForOmpReadyFrame(process: JsonlRpcProcess): Promise<Record<string, unknown>> {
+function waitForOmpReadyFrame(
+  process: JsonlRpcProcess,
+  requestTimeoutMs: number,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let settled = false;
     let unsubscribeMessage = (): void => {};
@@ -147,8 +153,13 @@ function waitForOmpReadyFrame(process: JsonlRpcProcess): Promise<Record<string, 
     });
     unsubscribeExit = process.onExit(({ error }) => finish(error));
     timer = setTimeout(
-      () => finish(new Error("Timed out waiting for OMP to become ready")),
-      OMP_READY_TIMEOUT_MS,
+      () =>
+        finish(
+          new Error(
+            `OMP RPC request timed out phase=ready elapsedMs=${requestTimeoutMs} timeoutMs=${requestTimeoutMs}`,
+          ),
+        ),
+      requestTimeoutMs,
     );
   });
 }
