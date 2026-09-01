@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { SquarePen } from "lucide-react-native";
 import React, {
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -12,7 +13,6 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { ActivityIndicator, StyleSheet as RNStyleSheet, Text, View } from "react-native";
-import ReanimatedAnimated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
@@ -20,6 +20,7 @@ import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
+import { KeyboardDock } from "@/components/keyboard-dock";
 import { Button } from "@/components/ui/button";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -36,7 +37,7 @@ import {
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import { useWorkspaceAttachmentScopeKey } from "@/attachments/workspace-attachments-store";
 import { COMPACT_FORM_FACTOR_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import { useAgentAttentionClear } from "@/hooks/use-agent-attention-clear";
 import { useAgentInitialization } from "@/hooks/use-agent-initialization";
 import { useAgentInputDraft, type AgentInputDraft } from "@/composer/draft/input-draft";
@@ -48,7 +49,6 @@ import {
   useAgentScreenStateMachine,
 } from "@/hooks/use-agent-screen-state-machine";
 import { useArchiveAgent } from "@/hooks/use-archive-agent";
-import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
 import {
   reconcileMissingAgentStateWithPresentAgent,
@@ -887,10 +887,6 @@ function ChatAgentContent({
     clearOnAgentBlurRef.current = attentionController.clearOnAgentBlur;
   }, [attentionController.clearOnAgentBlur]);
 
-  const { style: animatedKeyboardStyle } = useKeyboardShiftStyle({
-    mode: "translate",
-  });
-
   useEffect(() => {
     if (connectionStatus === "online") {
       if (reconnectToastArmedRef.current) {
@@ -1112,11 +1108,6 @@ function ChatAgentContent({
     shouldResumeClosedRuntime,
   ]);
 
-  const animatedContentStyle = useMemo(
-    () => [animatedStaticStyles.content, animatedKeyboardStyle],
-    [animatedKeyboardStyle],
-  );
-
   const retryAgentLoad = useCallback(() => setMissingAgentState({ kind: "idle" }), []);
   const retryTimelineSync = useCallback(() => {
     if (!agentId || !viewedTimelineSync) return;
@@ -1158,7 +1149,6 @@ function ChatAgentContent({
       toast={toastState}
       dismiss={dismissToast}
       streamViewRef={streamViewRef}
-      animatedContentStyle={animatedContentStyle}
       handleComposerHeightChange={handleComposerHeightChange}
       handleMessageSent={handleMessageSent}
       handleRewindComplete={handleRewindComplete}
@@ -1187,7 +1177,6 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   toast,
   dismiss,
   streamViewRef,
-  animatedContentStyle,
   handleComposerHeightChange,
   handleMessageSent,
   handleRewindComplete,
@@ -1212,7 +1201,6 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   toast: ToastState | null;
   dismiss: () => void;
   streamViewRef: React.RefObject<AgentStreamViewHandle | null>;
-  animatedContentStyle: object[];
   handleComposerHeightChange: (height: number) => void;
   handleMessageSent: () => void;
   handleRewindComplete: () => void;
@@ -1298,9 +1286,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       />
     </RenderProfile>
   );
-  const streamContent = (
-    <ReanimatedAnimated.View style={animatedContentStyle}>{streamSection}</ReanimatedAnimated.View>
-  );
+  const streamContent = <View style={animatedStaticStyles.content}>{streamSection}</View>;
   const contentContainer = <View style={styles.contentContainer}>{streamContent}</View>;
 
   return (
@@ -1312,7 +1298,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       onRewindComplete={handleRewindComplete}
     >
       <View style={styles.root}>
-        <FileDropZone style={styles.container} disabled={isArchivingCurrentAgent}>
+        <DockedChatSurface disabled={isArchivingCurrentAgent}>
           {contentContainer}
 
           {showHistorySyncError ? (
@@ -1342,7 +1328,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           ) : null}
 
           <ToastViewport toast={toast} onDismiss={dismiss} placement="panel" />
-        </FileDropZone>
+        </DockedChatSurface>
 
         {isArchivingCurrentAgent ? (
           <View style={styles.archivingOverlay} testID="agent-archiving-overlay">
@@ -1355,6 +1341,16 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     </RewindComposerRestoreProvider>
   );
 });
+
+function DockedChatSurface({ children, disabled }: { children: ReactNode; disabled: boolean }) {
+  return (
+    <KeyboardDock style={styles.container}>
+      <FileDropZone style={styles.container} disabled={disabled}>
+        {children}
+      </FileDropZone>
+    </KeyboardDock>
+  );
+}
 
 const AgentStreamSection = memo(function AgentStreamSection({
   streamViewRef,
@@ -1606,21 +1602,13 @@ function ActiveAgentComposer({
     ],
   );
 
-  const { style: composerKeyboardStyle } = useKeyboardShiftStyle({
-    mode: "translate",
-  });
-
   const inputAreaStyle = useMemo(
-    () => [
-      animatedStaticStyles.inputAreaWrapper,
-      { paddingBottom: insets.bottom },
-      composerKeyboardStyle,
-    ],
-    [insets.bottom, composerKeyboardStyle],
+    () => [animatedStaticStyles.inputAreaWrapper, { paddingBottom: insets.bottom }],
+    [insets.bottom],
   );
 
   return (
-    <ReanimatedAnimated.View style={inputAreaStyle} onLayout={onInputAreaLayout}>
+    <View style={inputAreaStyle} onLayout={onInputAreaLayout}>
       <PluginComposerPills
         serverId={serverId}
         workspaceId={workspaceId}
@@ -1641,6 +1629,7 @@ function ActiveAgentComposer({
         serverId={serverId}
         workspaceId={workspaceId}
         externalKeyboardShift
+        blurOnSubmit={isNative}
         isPaneFocused={isPaneFocused}
         value={agentInputDraft.text}
         onChangeText={agentInputDraft.setText}
@@ -1660,7 +1649,7 @@ function ActiveAgentComposer({
         onClientSlashCommand={handleClientSlashCommand}
         isCompactLayout={isCompactComposerLayout}
       />
-    </ReanimatedAnimated.View>
+    </View>
   );
 }
 
@@ -1741,6 +1730,7 @@ const animatedStaticStyles = RNStyleSheet.create({
   },
   inputAreaWrapper: {
     width: "100%",
+    flexShrink: 1,
   },
 });
 

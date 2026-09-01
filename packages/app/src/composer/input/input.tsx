@@ -1842,9 +1842,11 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
 const styles = StyleSheet.create((theme: Theme) => ({
   container: {
+    flexShrink: 1,
     position: "relative",
   },
   inputWrapper: {
+    flexShrink: 1,
     flexDirection: "column",
     gap: theme.spacing[3],
     backgroundColor: theme.colors.surface1,
@@ -1868,6 +1870,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
       : {}),
   },
   textInputScrollWrapper: {
+    flexShrink: 1,
     position: "relative",
   },
   focusHintText: {
@@ -1879,6 +1882,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     opacity: 0.5,
   },
   textInput: {
+    // 长草稿受键盘高度约束时只收缩文本区，保留底部操作按钮。
+    flexShrink: 1,
     width: "100%",
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
@@ -1893,6 +1898,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
       : {}),
   },
   buttonRow: {
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",

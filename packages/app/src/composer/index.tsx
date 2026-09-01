@@ -2185,6 +2185,8 @@ export function Composer({
 const animatedStaticStyles = RNStyleSheet.create({
   container: {
     flexDirection: "column",
+    // KeyboardDock 通过底部内边距缩小可用高度，输入区必须允许继续收缩。
+    flexShrink: 1,
     position: "relative",
   },
 });
@@ -2195,6 +2197,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     backgroundColor: theme.colors.border,
   },
   inputAreaContainer: {
+    flexShrink: 1,
     position: "relative",
     minHeight: FOOTER_HEIGHT,
     marginHorizontal: "auto",
@@ -2208,11 +2211,13 @@ const styles = StyleSheet.create((theme: Theme) => ({
     opacity: 0.6,
   },
   inputAreaContent: {
+    flexShrink: 1,
     width: "100%",
     maxWidth: MAX_CONTENT_WIDTH,
     gap: theme.spacing[3],
   },
   messageInputContainer: {
+    flexShrink: 1,
     position: "relative",
     width: "100%",
     gap: theme.spacing[3],
