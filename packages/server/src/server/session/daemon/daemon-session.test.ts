@@ -1,7 +1,7 @@
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import pino from "pino";
 import {
   DaemonSession,
@@ -13,6 +13,7 @@ import type { ProviderAvailability } from "../../agent/agent-manager.js";
 import type { HubRelationshipManagement } from "../../hub/relationship-controller.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 import type { DaemonConfigReloadResult } from "../../daemon-config-store.js";
+import type { DaemonPermission } from "../../authorization/index.js";
 
 const tempDirs: string[] = [];
 
@@ -139,10 +140,13 @@ describe("DaemonSession", () => {
           state: "not_connected",
           daemonId: null,
           hubOrigin: null,
-          scopes: [],
+          permissions: [],
           connectedAt: null,
           lastError: null,
         }),
+        updatePermissions: async () => {
+          throw new Error("Hub permission update failed (503)");
+        },
         disconnect: async () => {
           throw new Error("Hub revocation failed (503)");
         },
@@ -178,6 +182,72 @@ describe("DaemonSession", () => {
           requestType: "hub.management.daemon.disconnect.request",
           error: "Hub revocation failed (503)",
           code: "handler_error",
+        },
+      },
+    ]);
+  });
+
+  test("legacy Hub connect requests retain execution authority and emit both permission fields", async () => {
+    const connect = vi.fn(
+      async (input: {
+        hubUrl: string;
+        token: string;
+        permissions: readonly DaemonPermission[];
+      }) => ({
+        state: "connected" as const,
+        daemonId: "daemon-1",
+        hubOrigin: "https://hub.test",
+        permissions: [...input.permissions],
+        connectedAt: "2026-09-01T00:00:00.000Z",
+        lastError: null,
+      }),
+    );
+    const { subsystem, emitted } = makeSubsystem({
+      hubRelationships: {
+        connect,
+        updatePermissions: async () => {
+          throw new Error("not used");
+        },
+        status: () => ({
+          state: "not_connected",
+          daemonId: null,
+          hubOrigin: null,
+          permissions: [],
+          connectedAt: null,
+          lastError: null,
+        }),
+        disconnect: async () => {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    await subsystem.handleHubRelationshipRequest({
+      type: "hub.management.daemon.connect.request",
+      requestId: "legacy-connect",
+      hubUrl: "https://hub.test",
+      token: "token",
+    });
+
+    expect(connect).toHaveBeenCalledWith({
+      hubUrl: "https://hub.test",
+      token: "token",
+      permissions: ["hub.execute"],
+    });
+    expect(emitted).toEqual([
+      {
+        type: "hub.management.daemon.connect.response",
+        payload: {
+          requestId: "legacy-connect",
+          status: {
+            state: "connected",
+            daemonId: "daemon-1",
+            hubOrigin: "https://hub.test",
+            permissions: ["hub.execute"],
+            scopes: ["hub.execution.*"],
+            connectedAt: "2026-09-01T00:00:00.000Z",
+            lastError: null,
+          },
         },
       },
     ]);

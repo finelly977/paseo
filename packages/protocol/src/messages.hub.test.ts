@@ -153,10 +153,28 @@ describe("Hub session protocol", () => {
       requestId: "r1",
       hubUrl: "https://hub.example",
       token: "token",
+      permissions: [],
     },
     { type: "hub.management.daemon.get_status.request", requestId: "r2" },
     { type: "hub.management.daemon.disconnect.request", requestId: "r3", force: true },
+    {
+      type: "hub.management.daemon.permissions.update.request",
+      requestId: "r4",
+      grant: ["hub.execute"],
+      revoke: [],
+    },
   ])("accepts trusted management request $type", (message) => {
+    expect(SessionInboundMessageSchema.parse(message)).toEqual(message);
+  });
+
+  test("accepts the legacy Hub connect request without semantic permissions", () => {
+    const message = {
+      type: "hub.management.daemon.connect.request",
+      requestId: "legacy-connect",
+      hubUrl: "https://hub.example",
+      token: "token",
+    };
+
     expect(SessionInboundMessageSchema.parse(message)).toEqual(message);
   });
 
@@ -169,6 +187,7 @@ describe("Hub session protocol", () => {
           state: "connected",
           daemonId: "daemon-1",
           hubOrigin: "https://hub.example",
+          permissions: ["hub.execute"],
           scopes: ["hub.execution.*"],
           connectedAt: "2026-07-13T00:00:00.000Z",
           lastError: null,
@@ -183,6 +202,7 @@ describe("Hub session protocol", () => {
           state: "not_connected",
           daemonId: null,
           hubOrigin: null,
+          permissions: [],
           scopes: [],
           connectedAt: null,
           lastError: null,
@@ -197,6 +217,7 @@ describe("Hub session protocol", () => {
           state: "disconnecting",
           daemonId: "daemon-1",
           hubOrigin: "https://hub.example",
+          permissions: ["hub.execute"],
           scopes: ["hub.execution.*"],
           connectedAt: null,
           lastError: "offline",
@@ -204,7 +225,59 @@ describe("Hub session protocol", () => {
         warning: "pending",
       },
     },
+    {
+      type: "hub.management.daemon.permissions.update.response",
+      payload: {
+        requestId: "r4",
+        status: {
+          state: "connected",
+          daemonId: "daemon-1",
+          hubOrigin: "https://hub.example",
+          permissions: ["hub.execute"],
+          scopes: ["hub.execution.*"],
+          connectedAt: "2026-07-13T00:00:00.000Z",
+          lastError: null,
+        },
+      },
+    },
   ])("accepts trusted management response $type", (message) => {
     expect(SessionOutboundMessageSchema.parse(message)).toEqual(message);
+  });
+
+  test("accepts a legacy Hub status that only contains scopes", () => {
+    const message = {
+      type: "hub.management.daemon.get_status.response",
+      payload: {
+        requestId: "legacy-status",
+        status: {
+          state: "connected",
+          daemonId: "daemon-1",
+          hubOrigin: "https://hub.example",
+          scopes: ["hub.execution.*"],
+          connectedAt: "2026-07-13T00:00:00.000Z",
+          lastError: null,
+        },
+      },
+    };
+
+    expect(SessionOutboundMessageSchema.parse(message)).toEqual(message);
+  });
+
+  test("rejects a Hub status without any authority field", () => {
+    const message = {
+      type: "hub.management.daemon.get_status.response",
+      payload: {
+        requestId: "missing-authority",
+        status: {
+          state: "connected",
+          daemonId: "daemon-1",
+          hubOrigin: "https://hub.example",
+          connectedAt: "2026-07-13T00:00:00.000Z",
+          lastError: null,
+        },
+      },
+    };
+
+    expect(SessionOutboundMessageSchema.safeParse(message).success).toBe(false);
   });
 });

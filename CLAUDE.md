@@ -50,6 +50,7 @@ Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移�
 | [docs/development.md](docs/development.md)                         | 开发服务、构建同步注意事项、CLI 参考和智能体状态                                    |
 | [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                 | WebSocket RPC 命名空间规范：点分命名和 `.request`/`.response` 配对                  |
 | [docs/protocol-validation.md](docs/protocol-validation.md)         | zod-aot 生成的入站 WebSocket 校验、编译器回归补丁和 Schema 纯度规则                 |
+| [docs/permissions.md](docs/permissions.md)                         | 守护进程语义权限、身份主体、凭证、配对邀请和 Hub 授权                               |
 | [docs/terminal-performance.md](docs/terminal-performance.md)       | 终端延迟链路、合并与背压约束、基准测试和性能规格                                    |
 | [docs/file-observation.md](docs/file-observation.md)               | 文件观察器的递归监听、Linux 约束、所有权、释放流程和 Parcel 对照                    |
 | [docs/testing.md](docs/testing.md)                                 | 测试驱动开发、确定性、真实依赖优先和测试组织                                        |

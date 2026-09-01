@@ -1,72 +1,48 @@
-# Paseo Hub relationship
+# Paseo Hub 关系
 
-Paseo Hub is an explicit opt-in connection from one Paseo daemon to one Hub. Running a daemon does
-not register it with a Hub. The relationship begins only when a user runs
-`paseo hub connect <url> --token <token>` from the daemon machine.
+Paseo Hub 是一个由用户主动启用的连接：一个 Paseo 守护进程最多连接一个 Hub。仅仅运行守护进程不会向 Hub 注册；只有用户在守护进程所在机器执行以下命令后，关系才会建立：
 
-## Connection and authority
+```powershell
+paseo hub connect <url> --token <token>
+```
 
-The daemon enrolls over HTTP(S), then opens and maintains a direct outbound WebSocket to the Hub.
-The Hub never discovers or acquires the daemon through Paseo's relay. The relay remains an optional
-encrypted path for normal Paseo clients and has no role in Hub enrollment, authentication, dispatch,
-or reconnects.
+## 连接与授权
 
-The daemon persists a relationship ID and private connection credential before enrollment. The
-relationship is independent of its current transport, so a future transport can replace the direct
-WebSocket without pairing again. The current foundation supports one Hub relationship per daemon.
+守护进程先通过 HTTP(S) 注册，再主动建立并维护到 Hub 的 WebSocket 连接。Hub 不会通过 Paseo 中继发现或接管守护进程；中继仍只用于普通 Paseo 客户端的可选加密连接，不参与 Hub 注册、身份验证、任务分发或重连。
 
-Normal authenticated daemon sessions may run the `hub.management.daemon.connect`,
-`hub.management.daemon.get_status`, and `hub.management.daemon.disconnect` RPCs. Hub connections
-receive only `hub.execution.*` authority, so execution credentials cannot manage the relationship.
+注册前，守护进程会先持久化关系标识与私有连接凭证。关系不依赖当前传输方式，因此未来可以替换直连 WebSocket，而无需重新配对。目前每个守护进程只支持一个 Hub 关系。
 
-## Session grants and execution ownership
+经过身份验证的普通守护进程会话可以管理 Hub 关系和权限。新建 Hub 关系默认没有任何守护进程权限，仅获得机器身份和在线状态。连接时可在 `--permission` 后列出一个或多个权限，也可以稍后调整：
 
-Trusted clients and the Hub use the same `Session` implementation. The connection boundary supplies
-grants: trusted clients receive `*`, while an enrolled Hub connection receives its persisted
-`hub.execution.*` grant. One matcher handles exact RPC names and trailing namespace wildcards for
-both inbound requests and outbound messages. A denied request returns the ordinary `rpc_error`
-shape.
+```powershell
+paseo hub connect <url> --token <token> --permission hub.execute
+paseo hub permissions list
+paseo hub permissions grant hub.execute
+paseo hub permissions revoke hub.execute
+```
 
-The Hub connection still has a narrow lifecycle boundary: it has no trusted-client hello/resume,
-browser, binary, retained-session, or broadcast state. Its outbound execution events include only
-agents owned by that daemon identity, so unrelated local agents remain outside the Hub surface.
+`hub.execute` 允许 GitHub、Slack、Discord、Linear 等外部工作流创建工作区并运行智能体。旧客户端发起的连接请求没有权限字段时，守护进程会在兼容边界保留旧行为并授予 `hub.execute`；旧关系文件中的 `hub.execution.*` 也会在加载时一次性迁移为 `hub.execute`。Hub 会话不能管理自己的关系或权限。
 
-Each Hub create carries an execution ID. The daemon stores that ID with the agent's relationship
-owner before acknowledging creation. Duplicate or replayed creates for the same daemon and
-execution resolve to the same durable agent. After a lost response, reconnect, or daemon restart,
-the Hub retries `hub.execution.agent.create.request` with the same execution ID. The idempotent
-response returns the existing agent and its current state; there is no separate reconciliation RPC.
-Transient stream frames are not durably replayed.
+## 会话授权与任务归属
 
-Daemon restart preserves the Hub relationship and owned execution identity, but interrupts any
-active turn. The daemon persists that agent as `closed`; an idempotent create retry returns the same
-daemon, execution, and agent identity with that terminal state. Paseo never stores or automatically
-replays the original prompt. A duplicate create returns the existing agent without starting another
-turn.
+普通可信客户端与 Hub 共用同一个 `Session` 实现。连接边界提供语义权限：本机所有者会话获得完整权限集，Hub 会话只获得本地持久化并由 Hub 确认的权限。权限不足时返回普通、可区分的 `rpc_error`，不会伪装成资源不存在或空数据。权限模型详见 [permissions.md](permissions.md)。
 
-Hub creates use the same agent creation path as trusted clients. They may select any existing
-worktree target shape and may request `autoArchive`. Worktree creation and terminal auto-archive use
-the shared workspace-aware lifecycle policy; Hub does not have a second launch or cleanup path.
+Hub 也使用标准会话握手、断线恢复和服务端状态通知。它能收到什么、可以发送什么，仍同时受语义权限、智能体归属和订阅范围限制：只有属于该守护进程身份的 Hub 任务会进入 Hub 的执行事件流，本机其他智能体不会泄露给 Hub；没有 `workspace.write` 时，二进制文件写入和浏览器自动化响应会被拒绝；不在其授权范围内的广播会被会话出口过滤。
 
-## Disconnect and revocation
+每次 Hub 创建任务都携带执行标识。守护进程会在确认创建成功前，把这个标识与关系所有者一起持久化。针对同一守护进程和执行标识的重复创建或重放请求会解析到同一个持久智能体。响应丢失、连接恢复或守护进程重启后，Hub 可以用同一执行标识重新发送 `hub.execution.agent.create.request`；幂等响应会返回现有智能体及其当前状态，不需要单独的对账 RPC。临时流事件不会持久化重放。
 
-Normal socket loss reconnects the active relationship with bounded exponential backoff and jitter.
-Daemon restart loads the same relationship and credential and reconnects without another enrollment
-ceremony.
+守护进程重启会保留 Hub 关系和任务归属，但会中断正在执行的回合。该智能体会以 `closed` 状态持久化；之后用同一执行标识重试仍返回同一个守护进程、执行和智能体标识，不会保存并自动重放原始提示词，也不会重复启动回合。
 
-Hub authentication rejection or close code `4403` permanently revokes the local relationship. The
-daemon deletes its credential, stops reconnecting, and retains only the relationship ID, Hub origin,
-scopes, and a sanitized reason for status reporting.
+Hub 创建任务复用普通客户端的智能体创建路径，可以选择现有的工作树目标，并可请求 `autoArchive`。工作树创建与终端自动归档继续使用共享的、感知工作区的生命周期规则，不存在第二套启动或清理流程。
 
-`paseo hub disconnect` disables socket reconnect before requesting remote revocation. If the Hub is
-offline, the daemon persists `disconnecting` and retries revocation across daemon restarts without
-opening a Hub socket. This also covers an enrollment whose request may have succeeded but whose
-response was lost. `--force` removes local authority immediately and warns that remote revocation may
-still be pending.
+## 断开与撤销
 
-## Cross-repository compatibility
+普通网络断开会按有上限、带抖动的指数退避策略重连。守护进程重启后会加载同一关系和凭证，不再重复注册。
 
-The consumer implementation lives in Paseo Cloud. Cloud owns its copy of the Hub wire schemas and
-has no Paseo runtime or build dependency. Cross-repository end-to-end verification separately builds
-a Paseo source checkout and exercises the real daemon, CLI, direct WebSocket, Cloud service, and
-Postgres. That compatibility fixture is not a package dependency or fallback implementation.
+Hub 身份验证被拒绝或收到关闭码 `4403` 时，本地关系会被永久撤销。守护进程删除凭证并停止重连，只保留关系标识、Hub 来源、权限和经过清理的原因用于状态展示。
+
+`paseo hub disconnect` 会先禁止 WebSocket 重连，再请求远端撤销。Hub 离线时，守护进程持久化 `disconnecting` 状态，并在后续重启时继续重试撤销，但不会重新打开 Hub WebSocket。这也覆盖“注册请求可能成功、响应却丢失”的情况。`--force` 会立即移除本地授权，并明确提示远端撤销可能仍未完成。
+
+## 跨仓库兼容
+
+Hub 的消费端实现位于 Paseo Cloud。Cloud 自行维护 Hub 线协议副本，不依赖 Paseo 的运行时或构建产物。跨仓库端到端验证会单独构建 Paseo 源码检出，并测试真实守护进程、CLI、直连 WebSocket、Cloud 服务和 Postgres；该兼容夹具不是包依赖，也不是运行时降级实现。

@@ -1,6 +1,11 @@
 import { afterEach, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
-import { DaemonClient, type DaemonTransport, type Logger } from "./daemon-client";
+import {
+  DaemonClient,
+  normalizeHubRelationshipStatus,
+  type DaemonTransport,
+  type Logger,
+} from "./daemon-client";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import {
@@ -238,6 +243,33 @@ test("Hub management requires daemon support before dispatching requests", async
     "Update the host to use Hub relationship management.",
   );
   expect(mock.sent).toEqual([]);
+});
+
+test("normalizes semantic-only and legacy-only Hub permission status", () => {
+  expect(normalizeHubRelationshipStatus({ permissions: ["hub.execute"] })).toEqual({
+    permissions: ["hub.execute"],
+    scopes: ["hub.execution.*"],
+  });
+  expect(normalizeHubRelationshipStatus({ scopes: ["hub.execution.*"] })).toEqual({
+    permissions: ["hub.execute"],
+    scopes: ["hub.execution.*"],
+  });
+  expect(normalizeHubRelationshipStatus({ scopes: [] })).toEqual({
+    permissions: [],
+    scopes: [],
+  });
+});
+
+test("rejects missing, unknown, or inconsistent Hub permission status", () => {
+  expect(() => normalizeHubRelationshipStatus({})).toThrow(
+    "Hub status is missing both semantic permissions and legacy scopes",
+  );
+  expect(() => normalizeHubRelationshipStatus({ scopes: ["hub.unknown.*"] })).toThrow(
+    "Hub status contains unsupported legacy scope: hub.unknown.*",
+  );
+  expect(() =>
+    normalizeHubRelationshipStatus({ permissions: [], scopes: ["hub.execution.*"] }),
+  ).toThrow("Hub status contains inconsistent permissions and legacy scopes");
 });
 
 test("sets the complete viewed timeline subscription only when the daemon supports it", async () => {

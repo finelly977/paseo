@@ -10,7 +10,10 @@ import {
 import { DaemonSelfUpdateSessionController } from "./daemon-self-update-session-controller.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
-import type { HubRelationshipManagement } from "../../hub/relationship-controller.js";
+import type {
+  HubRelationshipManagement,
+  HubRelationshipStatus,
+} from "../../hub/relationship-controller.js";
 import type { DaemonConfigReloadResult } from "../../daemon-config-store.js";
 
 export interface DaemonRuntimeConfig {
@@ -52,6 +55,14 @@ export interface DaemonSessionOptions {
   logger: pino.Logger;
   hubRelationships?: HubRelationshipManagement;
   reloadConfig: () => DaemonConfigReloadResult;
+}
+
+function hubRelationshipStatusForWire(status: HubRelationshipStatus) {
+  return {
+    ...status,
+    // COMPAT(semanticHubPermissions)：旧客户端仍要求这个旧字段别名。
+    scopes: status.permissions.includes("hub.execute") ? ["hub.execution.*"] : [],
+  };
 }
 
 /**
@@ -110,7 +121,8 @@ export class DaemonSession {
         type:
           | "hub.management.daemon.connect.request"
           | "hub.management.daemon.get_status.request"
-          | "hub.management.daemon.disconnect.request";
+          | "hub.management.daemon.disconnect.request"
+          | "hub.management.daemon.permissions.update.request";
       }
     >,
   ): Promise<void> {
@@ -120,10 +132,24 @@ export class DaemonSession {
         const status = await this.hubRelationships.connect({
           hubUrl: msg.hubUrl,
           token: msg.token,
+          // COMPAT(semanticHubPermissions)：缺失字段表示旧客户端；语义权限出现前，它的连接
+          // 操作会授予 Hub 执行权限。
+          permissions: msg.permissions ?? ["hub.execute"],
         });
         this.host.emit({
           type: "hub.management.daemon.connect.response",
-          payload: { requestId: msg.requestId, status },
+          payload: { requestId: msg.requestId, status: hubRelationshipStatusForWire(status) },
+        });
+        return;
+      }
+      if (msg.type === "hub.management.daemon.permissions.update.request") {
+        const status = await this.hubRelationships.updatePermissions({
+          grant: msg.grant,
+          revoke: msg.revoke,
+        });
+        this.host.emit({
+          type: "hub.management.daemon.permissions.update.response",
+          payload: { requestId: msg.requestId, status: hubRelationshipStatusForWire(status) },
         });
         return;
       }
@@ -131,13 +157,20 @@ export class DaemonSession {
         const result = await this.hubRelationships.disconnect({ force: msg.force ?? false });
         this.host.emit({
           type: "hub.management.daemon.disconnect.response",
-          payload: { requestId: msg.requestId, ...result },
+          payload: {
+            requestId: msg.requestId,
+            status: hubRelationshipStatusForWire(result.status),
+            ...(result.warning !== undefined ? { warning: result.warning } : {}),
+          },
         });
         return;
       }
       this.host.emit({
         type: "hub.management.daemon.get_status.response",
-        payload: { requestId: msg.requestId, status: this.hubRelationships.status() },
+        payload: {
+          requestId: msg.requestId,
+          status: hubRelationshipStatusForWire(this.hubRelationships.status()),
+        },
       });
     } catch (error) {
       this.logger.error({ err: error }, "Failed to handle Hub relationship request");

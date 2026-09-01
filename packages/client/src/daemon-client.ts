@@ -7,6 +7,7 @@ import {
   AgentRefreshedStatusPayloadSchema,
   AgentResumedStatusPayloadSchema,
   CheckoutRenameBranchResponseSchema,
+  type DaemonPermission,
   parseServerInfoStatusPayload,
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
@@ -312,7 +313,7 @@ export type BrowserAutomationExecuteResponseMessage = BrowserAutomationExecuteRe
 export interface DaemonClientConfig {
   url: string;
   clientId: string;
-  clientType?: "mobile" | "browser" | "cli" | "mcp";
+  clientType?: "mobile" | "browser" | "cli" | "mcp" | "hub";
   appVersion?: string;
   runtimeGeneration?: number | null;
   password?: string;
@@ -334,6 +335,55 @@ export interface DaemonClientConfig {
   runtimeMetricsIntervalMs?: number;
   runtimeMetricsWindowMs?: number;
   capabilities?: Partial<Record<ClientCapability, unknown>>;
+}
+
+interface HubRelationshipWireStatus {
+  permissions?: DaemonPermission[];
+  scopes?: string[];
+}
+
+export function normalizeHubRelationshipStatus<T extends HubRelationshipWireStatus>(
+  status: T,
+): T & { permissions: DaemonPermission[]; scopes: string[] } {
+  let permissions: DaemonPermission[];
+  if (status.permissions !== undefined) {
+    permissions = [...status.permissions];
+  } else if (status.scopes !== undefined) {
+    permissions = permissionsFromLegacyHubScopes(status.scopes);
+  } else {
+    throw new Error("Hub status is missing both semantic permissions and legacy scopes");
+  }
+
+  const scopes = status.scopes ?? legacyHubScopesFromPermissions(permissions);
+  const expectedLegacyScopes = legacyHubScopesFromPermissions(permissions);
+  if (!sameStringSet(scopes, expectedLegacyScopes)) {
+    throw new Error("Hub status contains inconsistent permissions and legacy scopes");
+  }
+  return { ...status, permissions, scopes };
+}
+
+function normalizeHubRelationshipResponse<T extends { status: HubRelationshipWireStatus }>(
+  response: T,
+): Omit<T, "status"> & {
+  status: T["status"] & { permissions: DaemonPermission[]; scopes: string[] };
+} {
+  return { ...response, status: normalizeHubRelationshipStatus(response.status) };
+}
+
+function permissionsFromLegacyHubScopes(scopes: readonly string[]): DaemonPermission[] {
+  const unknownScope = scopes.find((scope) => scope !== "hub.execution.*");
+  if (unknownScope !== undefined) {
+    throw new Error(`Hub status contains unsupported legacy scope: ${unknownScope}`);
+  }
+  return scopes.includes("hub.execution.*") ? ["hub.execute"] : [];
+}
+
+function legacyHubScopesFromPermissions(permissions: readonly DaemonPermission[]): string[] {
+  return permissions.includes("hub.execute") ? ["hub.execution.*"] : [];
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value) => right.includes(value));
 }
 
 export interface SendMessageOptions {
@@ -4754,31 +4804,56 @@ export class DaemonClient {
     });
   }
 
-  async connectHub(hubUrl: string, token: string, requestId?: string) {
+  async connectHub(
+    hubUrl: string,
+    token: string,
+    permissions: readonly DaemonPermission[] = [],
+    requestId?: string,
+  ) {
     this.requireHubRelationshipSupport();
-    return this.sendCorrelatedSessionRequest({
+    const response = await this.sendCorrelatedSessionRequest({
       requestId,
-      message: { type: "hub.management.daemon.connect.request", hubUrl, token },
+      message: { type: "hub.management.daemon.connect.request", hubUrl, token, permissions },
       responseType: "hub.management.daemon.connect.response",
     });
+    return normalizeHubRelationshipResponse(response);
+  }
+
+  async updateHubPermissions(
+    input: { grant?: readonly DaemonPermission[]; revoke?: readonly DaemonPermission[] },
+    requestId?: string,
+  ) {
+    this.requireHubRelationshipSupport();
+    const response = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "hub.management.daemon.permissions.update.request",
+        grant: input.grant ?? [],
+        revoke: input.revoke ?? [],
+      },
+      responseType: "hub.management.daemon.permissions.update.response",
+    });
+    return normalizeHubRelationshipResponse(response);
   }
 
   async getHubStatus(requestId?: string) {
     this.requireHubRelationshipSupport();
-    return this.sendCorrelatedSessionRequest({
+    const response = await this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "hub.management.daemon.get_status.request" },
       responseType: "hub.management.daemon.get_status.response",
     });
+    return normalizeHubRelationshipResponse(response);
   }
 
   async disconnectHub(force = false, requestId?: string) {
     this.requireHubRelationshipSupport();
-    return this.sendCorrelatedSessionRequest({
+    const response = await this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "hub.management.daemon.disconnect.request", force },
       responseType: "hub.management.daemon.disconnect.response",
     });
+    return normalizeHubRelationshipResponse(response);
   }
 
   async getDaemonPairingOffer(

@@ -14,6 +14,7 @@ import {
   WSHelloMessageSchema,
 } from "@getpaseo/protocol/messages";
 import { Session, type SessionOptions } from "./session.js";
+import { OWNER_PERMISSIONS } from "./authorization/index.js";
 import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
 import type { AgentTimelineRow } from "./agent/agent-manager.js";
 import { handleCreatePaseoWorktreeRequest } from "./worktree-session.js";
@@ -256,7 +257,7 @@ function createSessionForWireCompatTest(options?: {
 
   const session = new Session({
     clientId: "wire-compat-client",
-    scopes: ["*"],
+    permissions: OWNER_PERMISSIONS,
     clientCapabilities: options?.clientCapabilities ?? null,
     onMessage: (message) => messages.push(message),
     logger: pino({ level: "silent" }),

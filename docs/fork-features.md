@@ -493,3 +493,21 @@
 - `packages/plugin/`
 - `packages/server/src/server/plugins/`
 - `packages/cli/src/commands/plugin/`
+
+### 24. Hub 语义权限兼容旧客户端并保持授权一致
+
+- Hub 继续使用二开的直接令牌命令，不引入上游尚无前置的完整登录和导出命令栈；`paseo hub connect` 通过 `--permission <permission...>` 明确授予一个或多个权限，之后可用 `hub permissions list/grant/revoke` 查询或调整。
+- 旧客户端发送不含权限字段的连接请求时，守护进程在兼容边界保留其原有 `hub.execute` 能力；新守护进程的状态响应同时发送语义权限和旧 `scopes` 别名，旧守护进程只有 `scopes` 时新客户端会确定性迁移。两者同时缺失、旧范围未知或内容矛盾时必须明确失败，不能当成空权限继续运行。
+- Hub 注册返回的权限必须与本地申请完全一致，不能由远端扩大；同一待处理注册不能用不同权限替换。权限更新和断开操作串行执行，重叠操作会返回明确冲突；远端更新成功但本地原子持久化失败时会恢复远端旧授权，恢复也失败则同时保留两个错误。
+- Hub 与普通客户端共用标准 Session 握手和断线恢复，但每个 Hub 身份使用独立的会话键，不能用相同客户端标识接管本机所有者会话。二进制写入、浏览器能力、智能体事件、终端通知和普通广播继续经过语义权限及订阅过滤；Hub 会话接入失败时关闭当前套接字并进入有界重连，不会留下“状态已连接但会话不可用”的假成功。
+- 权限分类覆盖二开新增的运行时释放、目录观察、Git 暂存/撤销与 AI 提交说明/审查 RPC；同步上游权限表时必须继续保留这些操作，不能因上游不存在对应消息而删掉。
+
+主要涉及：
+
+- `packages/protocol/src/messages.ts`
+- `packages/client/src/daemon-client.ts`
+- `packages/cli/src/commands/hub/index.ts`
+- `packages/server/src/server/authorization/`
+- `packages/server/src/server/hub/`
+- `packages/server/src/server/session.ts`
+- `packages/server/src/server/websocket-server.ts`

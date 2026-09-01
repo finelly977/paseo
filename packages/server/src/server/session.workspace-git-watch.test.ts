@@ -4,6 +4,7 @@ import type pino from "pino";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
 import { createServiceProxySubsystem, type ServiceProxySubsystem } from "./service-proxy.js";
 import { Session, type SessionOptions } from "./session.js";
+import { OWNER_PERMISSIONS } from "./authorization/index.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
 import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
 import { createTestLogger } from "../test-utils/test-logger.js";
@@ -184,7 +185,7 @@ function createSessionForWorkspaceGitWatchTests(options?: {
 
   const session = new Session({
     clientId: "test-client",
-    scopes: ["*"],
+    permissions: OWNER_PERMISSIONS,
     onMessage: (message) => emitted.push(message as { type: string; payload: unknown }),
     logger: createStub<pino.Logger>(logger),
     downloadTokenStore: createStub<SessionOptions["downloadTokenStore"]>({}),
@@ -779,7 +780,11 @@ describe("workspace git watch targets", () => {
       requestId: "req-pr-status",
     });
 
-    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith(REPO_CWD);
+    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith(REPO_CWD, {
+      force: true,
+      includeForge: true,
+      reason: "checkout-pr-status",
+    });
     expect(
       emitted.find((message) => message.type === "checkout_pr_status_response")?.payload,
     ).toEqual({
@@ -809,7 +814,7 @@ describe("workspace git watch targets", () => {
     });
   });
 
-  test("checkout_pr_status_request reads cached snapshot without forcing a refresh", async () => {
+  test("checkout_pr_status_request refreshes its snapshot without a separate refresh call", async () => {
     const { session, emitted, workspaceGitService } = createSessionForWorkspaceGitWatchTests();
 
     await session.handleMessage({
@@ -819,7 +824,11 @@ describe("workspace git watch targets", () => {
     });
 
     expect(workspaceGitService.refresh).not.toHaveBeenCalled();
-    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith(REPO_CWD);
+    expect(workspaceGitService.getSnapshot).toHaveBeenCalledWith(REPO_CWD, {
+      force: true,
+      includeForge: true,
+      reason: "checkout-pr-status",
+    });
     expect(emitted.find((message) => message.type === "checkout_pr_status_response")).toBeDefined();
   });
 });
