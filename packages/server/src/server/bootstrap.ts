@@ -139,10 +139,8 @@ import {
   type PaseoToolHostDependencies,
 } from "./agent/tools/paseo-tools.js";
 import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
-import {
-  ProviderSnapshotManager,
-  preloadProviderSnapshots,
-} from "./agent/provider-snapshot-manager.js";
+import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
+import { preloadProviderSnapshots } from "./agent/provider-snapshot-manager.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
 import { WorkspaceReconciliationService } from "./workspace-reconciliation-service.js";
 import { FileBackedProjectRegistry, FileBackedWorkspaceRegistry } from "./workspace-registry.js";
@@ -893,16 +891,20 @@ export async function createPaseoDaemon(
     workspaceGitService,
     logger,
   });
-  const providerSnapshotLogger = logger.child({ module: "provider-snapshot-manager" });
-  const providerSnapshotManager = new ProviderSnapshotManager({
-    logger: providerSnapshotLogger,
-    runtimeSettings: config.agentProviderSettings,
-    providerOverrides: config.providerOverrides,
-    workspaceGitService,
-    managedProcesses,
-    isDev: config.isDev === true,
-    extraClients: config.agentClients,
+  const agentProviderRuntime = await createAgentProviderRuntime({
+    paseoHome: config.paseoHome,
+    logger,
+    snapshotManager: {
+      refreshTimeoutMs: config.providerCatalogRefreshTimeoutMs,
+      runtimeSettings: config.agentProviderSettings,
+      providerOverrides: config.providerOverrides,
+      workspaceGitService,
+      managedProcesses,
+      isDev: config.isDev === true,
+      extraClients: config.agentClients,
+    },
   });
+  const providerSnapshotManager = agentProviderRuntime.snapshotManager;
   daemonConfigStore.onFieldChange("catalogRefreshTimeoutMs", (value) => {
     providerSnapshotManager.setRefreshTimeoutMs(typeof value === "number" ? value : undefined);
   });
@@ -1435,10 +1437,16 @@ export async function createPaseoDaemon(
   });
   const createAgentToolCatalog = (runtime: PaseoToolRuntimeContext) =>
     createPaseoToolCatalog(createAgentToolHostDependencies(runtime));
+  const setAgentProviderToolsEnabled = (enabled: boolean) => {
+    agentProviderRuntime.setPaseoToolCatalog(enabled ? createAgentToolCatalog({}) : null);
+  };
+  let mcpEnabled = config.mcpEnabled ?? true;
   agentManager.setPaseoToolCatalogFactory(createAgentToolCatalog);
   agentManager.setPaseoToolsEnabled(config.mcpInjectIntoAgents !== false);
+  setAgentProviderToolsEnabled(
+    areAgentProviderToolsEnabled(mcpEnabled, config.mcpInjectIntoAgents !== false),
+  );
 
-  let mcpEnabled = config.mcpEnabled ?? true;
   let agentMcpBaseUrl: string | null = null;
   {
     const agentMcpRoute = "/mcp/agents";
@@ -1609,10 +1617,14 @@ export async function createPaseoDaemon(
               const inject = daemonConfigStore.get().mcp.injectIntoAgents !== false;
               agentManager.setMcpBaseUrl(mcpEnabled && inject ? mcpBaseUrl : null);
               agentManager.setPaseoToolsEnabled(mcpEnabled && inject);
+              setAgentProviderToolsEnabled(areAgentProviderToolsEnabled(mcpEnabled, inject));
             });
             daemonConfigStore.onFieldChange("mcp.injectIntoAgents", (value) => {
               agentManager.setMcpBaseUrl(mcpEnabled && value ? mcpBaseUrl : null);
               agentManager.setPaseoToolsEnabled(mcpEnabled && value !== false);
+              setAgentProviderToolsEnabled(
+                areAgentProviderToolsEnabled(mcpEnabled, value !== false),
+              );
             });
             daemonConfigStore.onFieldChange("appendSystemPrompt", (value) => {
               agentManager.setAppendSystemPrompt(typeof value === "string" ? value : "");
@@ -1776,16 +1788,21 @@ export async function createPaseoDaemon(
         logger.warn({ err: error }, "Provider snapshot preload failed");
       });
     } catch (error) {
-      try {
-        await pluginRuntime.stopAllPlugins();
-      } catch (cleanupError) {
-        logger.error({ err: cleanupError }, "守护进程启动失败后停止插件失败");
-      }
-      try {
-        await serviceProxy.stopStandalone();
-      } catch (cleanupError) {
-        logger.error({ err: cleanupError }, "守护进程启动失败后停止服务代理失败");
-      }
+      await stopAfterFailedDaemonStart(
+        () => pluginRuntime.stopAllPlugins(),
+        "守护进程启动失败后停止插件失败",
+        logger,
+      );
+      await stopAfterFailedDaemonStart(
+        () => serviceProxy.stopStandalone(),
+        "守护进程启动失败后停止服务代理失败",
+        logger,
+      );
+      await stopAfterFailedDaemonStart(
+        () => agentProviderRuntime.shutdown(),
+        "守护进程启动失败后停止智能体提供方运行时失败",
+        logger,
+      );
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -1808,7 +1825,7 @@ export async function createPaseoDaemon(
     await agentManager.flushForShutdown().catch(() => undefined);
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
-    await providerSnapshotManager.shutdown();
+    await agentProviderRuntime.shutdown();
     terminalManager.killAll();
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
@@ -1846,6 +1863,22 @@ export async function createPaseoDaemon(
     stop,
     getListenTarget: () => boundListenTarget,
   };
+}
+
+async function stopAfterFailedDaemonStart(
+  stop: () => Promise<void>,
+  failureMessage: string,
+  logger: Logger,
+): Promise<void> {
+  try {
+    await stop();
+  } catch (error) {
+    logger.error({ err: error }, failureMessage);
+  }
+}
+
+function areAgentProviderToolsEnabled(mcpEnabled: boolean, injectIntoAgents: boolean): boolean {
+  return mcpEnabled && injectIntoAgents;
 }
 
 async function closeAllAgents(logger: Logger, agentManager: AgentManager): Promise<void> {

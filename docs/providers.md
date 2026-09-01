@@ -40,7 +40,9 @@ OMP supports native Paseo host tools. The adapter registers the full caller-scop
 
 Pi RPC extension UI dialog requests (`select`, `input`, `editor`, `confirm`) are bridged into Paseo question permissions and answered with `extension_ui_response`. Pi extensions such as `ask_user` may chain dialogs: for example, a `select` can be followed by an optional-comment `input`. When an `ask_user` tool call declares `allowComment: true`, Paseo presents the selection and optional comment as one question permission, answers Pi's initial `select` immediately, then auto-answers the follow-up optional `input` with the comment the user already supplied (or an empty string). Preserve placeholders and optional/skip semantics for standalone optional inputs so the app can still distinguish "skip this optional input" from "cancel the whole dialog." Fire-and-forget extension UI requests such as notifications are intentionally ignored by the provider adapter unless Paseo grows first-class UI for them.
 
-OpenCode MCP injection is dynamic and session-scoped. Call OpenCode's `mcp.add` endpoint with the MCP server config and do not follow it with `mcp.connect`; `connect` only toggles MCP servers already present in OpenCode's own config. New OpenCode versions return `McpServerNotFoundError`/404 for `connect` after a dynamic add because the server is not config-backed, while older versions silently swallowed the same missing-config path.
+OpenCode 1 把 MCP 与进程环境放在会话边界之外。Paseo 因此让普通智能体共享一个 OpenCode 服务，并通过 `OPENCODE_CONFIG_CONTENT` 安装由守护进程持有的插件。插件会针对每个 OpenCode 会话，从守护进程的私有回环桥接中读取该智能体准确的环境和按调用者隔离的 Paseo 工具目录。桥接上下文只驻留在守护进程内存中，并在 Paseo 会话关闭时删除；按内容寻址的插件产物不包含会话数据或密钥。
+
+带自定义环境变量或用户配置 MCP 服务的智能体继续使用独立 OpenCode 服务。在 OpenCode 能把这些值作为会话私有配置之前，必须保留这层隔离。自定义 MCP 使用 `mcp.add` 配置；不要随后调用只会切换配置文件内服务的 `mcp.connect`。
 
 OpenCode owns user message IDs. Do not pass Paseo-generated IDs to OpenCode prompt APIs; let OpenCode create `msg*` IDs and record the user timeline item from the `message.updated` event.
 

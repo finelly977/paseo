@@ -74,8 +74,10 @@ import {
   OPENCODE_EVENT_STREAM_READY_TIMEOUT_MS,
   OpenCodeServerManager,
   OPENCODE_SERVER_STARTUP_TIMEOUT_MS,
+  type OpenCodeServerAcquisition,
   type OpenCodeServerManagerLike,
 } from "./opencode/server-manager.js";
+import type { OpenCodeBridge } from "./opencode/bridge.js";
 import {
   OpenCodeEventConsumer,
   type OpenCodeEventStreamDiagnostics,
@@ -325,6 +327,16 @@ function resolveOpenCodePermissionReply(
 }
 
 type OpenCodeAgentConfig = AgentSessionConfig & { provider: "opencode" };
+
+const OPENCODE_SESSION_ENV_KEYS = new Set(["PASEO_AGENT_ID", "PASEO_AGENT_CWD"]);
+
+function requiresDedicatedOpenCodeServer(
+  config: OpenCodeAgentConfig,
+  launchContext?: AgentLaunchContext,
+): boolean {
+  if (config.mcpServers && Object.keys(config.mcpServers).length > 0) return true;
+  return Object.keys(launchContext?.env ?? {}).some((key) => !OPENCODE_SESSION_ENV_KEYS.has(key));
+}
 type OpenCodeMessageRole = "user" | "assistant";
 type OpenCodePersistedSession = OpenCodeSession | OpenCodeGlobalSession;
 
@@ -1320,6 +1332,7 @@ interface OpenCodeAgentClientDeps {
   createClient?: OpenCodeClientFactory;
   resolveHomeDir?: () => string;
   managedProcesses?: ManagedProcessRegistry;
+  bridge?: OpenCodeBridge;
 }
 
 type OpenCodeClientFactory = (options: { baseUrl: string; directory: string }) => OpencodeClient;
@@ -1330,7 +1343,7 @@ function createSdkOpenCodeClient(options: { baseUrl: string; directory: string }
 
 export class OpenCodeAgentClient implements AgentClient {
   readonly provider = "opencode" as const;
-  readonly capabilities = OPENCODE_CAPABILITIES;
+  readonly capabilities: AgentCapabilityFlags;
   readonly resolveCreateConfig = resolveOpenCodeCreateConfig;
   readonly isCreateConfigUnattended = isOpenCodeCreateConfigUnattended;
 
@@ -1340,6 +1353,7 @@ export class OpenCodeAgentClient implements AgentClient {
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly modelContextWindows = new Map<string, number>();
+  private readonly bridge?: OpenCodeBridge;
 
   constructor(
     logger: Logger,
@@ -1347,6 +1361,11 @@ export class OpenCodeAgentClient implements AgentClient {
     deps: OpenCodeAgentClientDeps = {},
   ) {
     this.logger = logger.child({ module: "agent", provider: "opencode" });
+    this.bridge = deps.bridge;
+    this.capabilities = {
+      ...OPENCODE_CAPABILITIES,
+      ...(this.bridge ? { supportsNativePaseoTools: true } : {}),
+    };
     this.runtimeSettings = runtimeSettings;
     this.createOpenCodeClient = deps.createClient ?? createSdkOpenCodeClient;
     this.serverManager =
@@ -1361,6 +1380,9 @@ export class OpenCodeAgentClient implements AgentClient {
             logger: eventLogger,
             createClient: (baseUrl) => this.createOpenCodeClient({ baseUrl, directory: "" }),
           }),
+        decorateServerEnv: this.bridge
+          ? (env) => this.bridge?.decorateServerEnv(env) ?? env
+          : undefined,
       });
     this.resolveHomeDir = deps.resolveHomeDir ?? resolveOpenCodeHomeDir;
   }
@@ -1371,9 +1393,7 @@ export class OpenCodeAgentClient implements AgentClient {
     options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
     const openCodeConfig = this.assertConfig(config);
-    const acquisition = launchContext?.env
-      ? await this.serverManager.acquireDedicated(launchContext.env)
-      : await this.serverManager.acquireCurrent();
+    const acquisition = await this.acquireServer(openCodeConfig, launchContext);
     const { url } = acquisition.server;
     const client = this.createOpenCodeClient({
       baseUrl: url,
@@ -1399,6 +1419,7 @@ export class OpenCodeAgentClient implements AgentClient {
       }
 
       await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
+      const unbindBridge = this.bindBridgeSession(session.id, launchContext);
 
       return new OpenCodeAgentSession(
         openCodeConfig,
@@ -1411,6 +1432,8 @@ export class OpenCodeAgentClient implements AgentClient {
         options?.persistSession,
         launchContext?.agentId,
         url,
+        false,
+        unbindBridge,
       );
     } catch (error) {
       await acquisition.release();
@@ -1441,10 +1464,7 @@ export class OpenCodeAgentClient implements AgentClient {
       ? this.serverManager.acquireExisting(registeredServerUrl)
       : null;
     const acquisition =
-      registeredAcquisition ??
-      (launchContext?.env
-        ? await this.serverManager.acquireDedicated(launchContext.env)
-        : await this.serverManager.acquireCurrent());
+      registeredAcquisition ?? (await this.acquireServer(openCodeConfig, launchContext));
     const { url } = acquisition.server;
     const client = this.createOpenCodeClient({
       baseUrl: url,
@@ -1453,6 +1473,7 @@ export class OpenCodeAgentClient implements AgentClient {
 
     try {
       await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
+      const unbindBridge = this.bindBridgeSession(handle.sessionId, launchContext);
 
       return new OpenCodeAgentSession(
         openCodeConfig,
@@ -1466,11 +1487,36 @@ export class OpenCodeAgentClient implements AgentClient {
         launchContext?.agentId,
         url,
         registeredAcquisition !== null,
+        unbindBridge,
       );
     } catch (error) {
       await acquisition.release();
       throw error;
     }
+  }
+
+  private acquireServer(
+    config: OpenCodeAgentConfig,
+    launchContext?: AgentLaunchContext,
+  ): Promise<OpenCodeServerAcquisition> {
+    if (!this.bridge || requiresDedicatedOpenCodeServer(config, launchContext)) {
+      return launchContext?.env
+        ? this.serverManager.acquireDedicated(launchContext.env)
+        : this.serverManager.acquireCurrent();
+    }
+    return this.serverManager.acquireCurrent();
+  }
+
+  private bindBridgeSession(
+    sessionId: string,
+    launchContext?: AgentLaunchContext,
+  ): (() => void) | undefined {
+    if (!this.bridge || !launchContext) return undefined;
+    return this.bridge.bindSession({
+      sessionId,
+      env: launchContext.env ?? {},
+      tools: launchContext.paseoTools,
+    });
   }
 
   async fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
@@ -1479,7 +1525,6 @@ export class OpenCodeAgentClient implements AgentClient {
       : await this.serverManager.acquireCurrent();
     const { url } = acquisition.server;
     const isGlobalCatalog = options.scope === "global";
-
     try {
       // OpenCode treats the catalog directory as a workspace. The global catalog
       // is not a project, so use the neutral OpenCode home instead of user home.
@@ -3090,6 +3135,7 @@ class OpenCodeAgentSession implements AgentSession {
   private readonly unrelatedSessionIds = new Set<string>();
   private selectedModelContextWindowMaxTokens: number | undefined;
   private releaseServer: (() => Promise<void>) | null;
+  private releaseBridge: (() => void) | null;
   private ingress = Promise.resolve();
   private gapRepairRevision = 0;
   private recoveryAbortController = new AbortController();
@@ -3109,6 +3155,7 @@ class OpenCodeAgentSession implements AgentSession {
     private readonly agentId?: string,
     private readonly serverUrl?: string,
     private readonly externallyDriven = false,
+    releaseBridge?: () => void,
   ) {
     this.config = config;
     this.client = client;
@@ -3118,6 +3165,7 @@ class OpenCodeAgentSession implements AgentSession {
     this.currentMode = normalizeOpenCodeModeId(config.modeId);
     this.autoAcceptEnabled = isOpenCodeAutoAcceptEnabled(config);
     this.releaseServer = releaseServer ?? null;
+    this.releaseBridge = releaseBridge ?? null;
     this.persistSession = persistSession;
     this.selectedModelContextWindowMaxTokens = this.resolveConfiguredModelContextWindowMaxTokens(
       config.model,
@@ -4650,6 +4698,8 @@ class OpenCodeAgentSession implements AgentSession {
       await this.deleteProviderSessionIfEphemeral();
       this.turnState = { status: "idle" };
     } finally {
+      this.releaseBridge?.();
+      this.releaseBridge = null;
       await this.releaseServer?.();
       this.releaseServer = null;
     }
