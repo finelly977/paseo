@@ -4,6 +4,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Copy,
   Download,
+  ExternalLink,
   FileText,
   FolderOpen,
   MessageSquarePlus,
@@ -39,6 +40,8 @@ interface FileActionsMenuProps {
   fileExists?: boolean;
   onOpenFile?: () => void;
   onOpenInFileManager?: () => void;
+  onOpenInEditor?: () => void;
+  editorTargetName?: string;
   onCopyPath?: () => void;
   onDownload?: () => void;
   onAddToChat?: () => void;
@@ -74,6 +77,8 @@ export function FileActionsMenu({
   fileExists = true,
   onOpenFile,
   onOpenInFileManager,
+  onOpenInEditor,
+  editorTargetName,
   onCopyPath,
   onDownload,
   onAddToChat,
@@ -106,6 +111,15 @@ export function FileActionsMenu({
         testID: testIDPrefix ? `${testIDPrefix}-open-in-file-manager` : undefined,
       });
     }
+    if (fileKind === "directory" && onOpenInEditor && editorTargetName) {
+      next.push({
+        key: "open-in-editor",
+        label: t("workspace.fileActions.openIn", { target: editorTargetName }),
+        icon: ExternalLink,
+        onSelect: onOpenInEditor,
+        testID: testIDPrefix ? `${testIDPrefix}-open-in-editor` : undefined,
+      });
+    }
     if (onCopyPath) {
       next.push({
         key: "copy-path",
@@ -135,10 +149,12 @@ export function FileActionsMenu({
   }, [
     fileExists,
     fileKind,
+    editorTargetName,
     onAddToChat,
     onCopyPath,
     onDownload,
     onOpenFile,
+    onOpenInEditor,
     onOpenInFileManager,
     t,
     testIDPrefix,

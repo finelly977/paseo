@@ -290,6 +290,7 @@ export const ptBR: TranslationResources = {
       forkMissingWorkspace: "Este agente não está em um workspace.",
       forkFailed: "Falha ao bifurcar o chat",
       openFile: "Abrir arquivo",
+      openIn: "Abrir no {{target}}",
       copied: "Copiado",
     },
     attachments: {

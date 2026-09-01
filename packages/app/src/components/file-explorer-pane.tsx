@@ -51,6 +51,7 @@ import {
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
+import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -79,6 +80,8 @@ interface TreeRowItemProps {
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void;
   onOpenInFileManager?: (path: string) => void;
+  onOpenInEditor?: (path: string) => void;
+  editorTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
   testID?: string;
@@ -110,6 +113,8 @@ function TreeRowItem({
   onEntryPress,
   onCopyPath,
   onOpenInFileManager,
+  onOpenInEditor,
+  editorTargetName,
   onDownloadEntry,
   onAddToChat,
   testID,
@@ -147,6 +152,10 @@ function TreeRowItem({
   const handleOpenInFileManager = useCallback(() => {
     onOpenInFileManager?.(entry.path);
   }, [entry.path, onOpenInFileManager]);
+
+  const handleOpenInEditor = useCallback(() => {
+    onOpenInEditor?.(entry.path);
+  }, [entry.path, onOpenInEditor]);
 
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(entry.path);
@@ -196,6 +205,8 @@ function TreeRowItem({
       <FileActionsMenu
         fileKind={entry.kind}
         onOpenInFileManager={onOpenInFileManager ? handleOpenInFileManager : undefined}
+        onOpenInEditor={isDirectory && onOpenInEditor ? handleOpenInEditor : undefined}
+        editorTargetName={editorTargetName}
         onCopyPath={handleCopy}
         onDownload={handleDownload}
         onAddToChat={onAddToChat ? handleAddToChat : undefined}
@@ -229,6 +240,10 @@ export function FileExplorerPane({
   const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
     workspacePath: normalizedWorkspaceRoot,
     isLocalExecution: isLocalDaemon,
+  });
+  const openDirectoryInEditor = useOpenDirectoryInEditor({
+    serverId,
+    workspaceDirectory: normalizedWorkspaceRoot,
   });
   const workspaceStateKey = useMemo(
     () =>
@@ -373,6 +388,11 @@ export function FileExplorerPane({
       void openInFileManager(absolutePath);
     },
     [normalizedWorkspaceRoot, openInFileManager],
+  );
+
+  const handleOpenInEditor = useCallback(
+    (path: string) => openDirectoryInEditor?.open(path),
+    [openDirectoryInEditor],
   );
 
   const handleDownloadEntry = useCallback(
@@ -557,6 +577,8 @@ export function FileExplorerPane({
         onEntryPress={handleEntryPress}
         onCopyPath={handleCopyPath}
         onOpenInFileManager={canOpenInFileManager ? handleOpenInFileManager : undefined}
+        onOpenInEditor={openDirectoryInEditor ? handleOpenInEditor : undefined}
+        editorTargetName={openDirectoryInEditor?.targetName}
         onDownloadEntry={handleDownloadEntry}
         onAddToChat={onAddToChat}
       />
@@ -565,12 +587,14 @@ export function FileExplorerPane({
       expandedPaths,
       handleEntryPress,
       handleCopyPath,
+      handleOpenInEditor,
       handleOpenInFileManager,
       handleDownloadEntry,
       isDirectoryLoading,
       selectedEntryPath,
       onAddToChat,
       canOpenInFileManager,
+      openDirectoryInEditor,
       serverId,
       workspaceId,
     ],
@@ -882,6 +906,8 @@ function TreeRowDispatcher({
   onEntryPress,
   onCopyPath,
   onOpenInFileManager,
+  onOpenInEditor,
+  editorTargetName,
   onDownloadEntry,
   onAddToChat,
 }: {
@@ -894,6 +920,8 @@ function TreeRowDispatcher({
   onEntryPress: (entry: ExplorerEntry) => void;
   onCopyPath: (path: string) => void | Promise<void>;
   onOpenInFileManager?: (path: string) => void;
+  onOpenInEditor?: (path: string) => void;
+  editorTargetName?: string;
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
 }) {
@@ -916,6 +944,8 @@ function TreeRowDispatcher({
       onEntryPress={onEntryPress}
       onCopyPath={onCopyPath}
       onOpenInFileManager={onOpenInFileManager}
+      onOpenInEditor={onOpenInEditor}
+      editorTargetName={editorTargetName}
       onDownloadEntry={onDownloadEntry}
       onAddToChat={onAddToChat}
       testID={`file-explorer-row-${info.index}`}

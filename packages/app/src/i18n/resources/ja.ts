@@ -290,6 +290,7 @@ export const ja: TranslationResources = {
       forkMissingWorkspace: "このエージェントはワークスペース内にありません。",
       forkFailed: "チャットのフォークに失敗しました",
       openFile: "ファイルを開く",
+      openIn: "{{target}}で開く",
       copied: "コピーしました",
     },
     attachments: {

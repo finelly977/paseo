@@ -287,6 +287,7 @@ export const ar: TranslationResources = {
       forkMissingWorkspace: "هذا الوكيل ليس في مساحة عمل.",
       forkFailed: "فشل تفريع المحادثة",
       openFile: "افتح الملف",
+      openIn: "فتح في {{target}}",
       copied: "منقول",
     },
     attachments: {
