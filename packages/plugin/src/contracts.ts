@@ -32,7 +32,15 @@ export interface PluginHostProps {
   };
 }
 
-export interface PluginSurfaceProps extends PluginHostProps {}
+interface PluginNavigableHostProps extends PluginHostProps {
+  /** 由客户端宿主管理的导航能力；旧宿主不提供时，插件必须隐藏依赖它的操作。 */
+  readonly navigation?: {
+    readonly openAgent: (input: { readonly agentId: string }) => void;
+    readonly openWorkspace: (input: { readonly workspaceId: string }) => void;
+  };
+}
+
+export interface PluginSurfaceProps extends PluginNavigableHostProps {}
 
 export interface PluginIconProps {
   name: string;
@@ -88,12 +96,12 @@ interface PluginWorkspacePanelBase {
   locations?: readonly PluginPanelLocation[];
 }
 
-export interface PluginWorkspacePanelProps extends PluginHostProps {
+export interface PluginWorkspacePanelProps extends PluginNavigableHostProps {
   context: "workspace";
   workspaceId: string;
 }
 
-export interface PluginAgentPanelProps extends PluginHostProps {
+export interface PluginAgentPanelProps extends PluginNavigableHostProps {
   context: "agent";
   workspaceId: string;
   agentId: string;
