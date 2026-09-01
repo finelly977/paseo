@@ -66,8 +66,9 @@ The workspace navigation helper inspects the mounted navigation state to make
 that decision; if no host route is mounted yet, it falls back to ordinary route
 navigation.
 
-Those hidden entries are not harmless: composer floating panels can measure
-against the wrong deck and disappear offscreen.
+这些隐藏项并非没有影响：输入框浮动面板可能依据错误的页面组测量，最终移出可视区域。
+对有意在隐藏时保持挂载的组件，应遵循
+[常驻面板的尺寸测量规则](coding-standards.md#常驻面板的尺寸测量)。
 
 Hidden host routes may keep their local params while an app-wide route is
 foregrounded. Active-workspace observers must prefer the current pathname and

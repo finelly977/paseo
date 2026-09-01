@@ -17,6 +17,7 @@ import { parser as yamlParser } from "@lezer/yaml";
 import { csharpLanguage } from "@replit/codemirror-lang-csharp";
 import { parser as elixirParser } from "lezer-elixir";
 import type { Parser } from "@lezer/common";
+import { astroParser } from "./astro/parser.js";
 
 function language(parser: Parser): Language {
   return new Language(defineLanguageFacet(), parser);
@@ -48,6 +49,8 @@ const languagesByExtension: Record<string, Language> = {
   // HTML
   html: language(htmlParser),
   htm: language(htmlParser),
+  // Astro
+  astro: language(astroParser),
   // XML
   xml: language(xmlParser),
   // Java

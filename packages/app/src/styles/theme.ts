@@ -154,6 +154,7 @@ const lightSemanticColors = {
   surfaceDiffEmpty: "#f6f6f6", // Empty side of split diff rows, between surface1 and surface2 and biased toward surface2
   surfaceSidebar: "#f4f4f5", // Sidebar background (darker than main)
   surfaceSidebarHover: "#e9e9ec", // Sidebar hover (darker in light mode)
+  surfaceSidebarSelected: "#e4e4e7", // 选中工作区，与 surface3 保持一致
   surfaceWorkspace: "#ffffff", // Workspace main background
 
   // Text
@@ -282,6 +283,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
     surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surface1,
+    surfaceSidebarSelected: tint.surface3,
     surfaceWorkspace: tint.surface0,
     foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,

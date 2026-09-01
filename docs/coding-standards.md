@@ -94,6 +94,14 @@ For testing rules, see [testing.md](testing.md).
 - Use stable ids for `key`, never array index for reorderable/filterable lists.
 - Context for stable values (theme, auth). Store with selectors for state that changes.
 
+### 常驻面板的尺寸测量
+
+未激活的常驻面板使用 `display: none`，DOM 和布局接口会报告零宽高。非正数尺寸表示界面没有参与渲染，不能把它当作有效的紧凑布局。
+
+- 任一测量维度为非正数时，暂停所有基于几何尺寸的状态更新；在界面重新报告正数尺寸前保留最后一次有效状态。
+- 在所有触发方式共用的测量边界落实该规则。只保护 `onLayout` 或 `ResizeObserver` 回调，仍会让副作用、内容变化和主动重测发布隐藏状态下的无效尺寸。
+- 通过真实常驻界面测试隐藏后重新显示的过程。只在布局稳定后断言，无法发现重新显示最初几帧绘制了陈旧尺寸的问题。
+
 ## Naming
 
 - Names describe meaning, not mechanics. `submitForm` over `handleOnClickButtonSubmit`. `running` over `filteredArrayOfRunningAgents`.

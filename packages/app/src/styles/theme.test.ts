@@ -40,4 +40,9 @@ describe("默认 Dark 主题", () => {
     expect(REGISTERED_THEMES.pluginLight).toBe(lightTheme);
     expect(REGISTERED_THEMES.pluginDark).toBe(darkTheme);
   });
+
+  test("浅色主题的工作区选中背景与侧栏底色可区分", () => {
+    expect(lightTheme.colors.surfaceSidebarSelected).toBe(lightTheme.colors.surface3);
+    expect(lightTheme.colors.surfaceSidebarSelected).not.toBe(lightTheme.colors.surfaceSidebar);
+  });
 });

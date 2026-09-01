@@ -517,6 +517,14 @@ describe("checkout git utilities", () => {
     expect(message).toBe("update file");
   });
 
+  it("遵循仓库的提交签名配置", async () => {
+    execFileSync("git", ["config", "commit.gpgsign", "true"], { cwd: repoDir });
+    execFileSync("git", ["config", "gpg.program", process.execPath], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "signed\n");
+
+    await expect(commitAll(repoDir, "signed update")).rejects.toThrow("failed to sign the data");
+  });
+
   it("returns complete staged and unstaged state for a worktree refresh", async () => {
     writeFileSync(join(repoDir, "file.txt"), "updated\n");
     writeFileSync(join(repoDir, "staged.txt"), "staged\n");
@@ -3146,6 +3154,21 @@ const x = 1;
 
     await expect(mergeToBase(repoDir, { baseRef: "main" })).rejects.toBeInstanceOf(
       MergeConflictError,
+    );
+  });
+
+  it("压缩合并也遵循仓库的提交签名配置", async () => {
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "feature.txt"), "feature\n");
+    execFileSync("git", ["add", "feature.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "feature commit"], {
+      cwd: repoDir,
+    });
+    execFileSync("git", ["config", "commit.gpgsign", "true"], { cwd: repoDir });
+    execFileSync("git", ["config", "gpg.program", process.execPath], { cwd: repoDir });
+
+    await expect(mergeToBase(repoDir, { baseRef: "main", mode: "squash" })).rejects.toThrow(
+      "failed to sign the data",
     );
   });
 
