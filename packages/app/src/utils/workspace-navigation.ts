@@ -10,7 +10,6 @@ function layoutStoreDeps() {
   const store = useWorkspaceLayoutStore.getState();
   return {
     openTabFocused: store.openTabFocused,
-    pinAgent: store.pinAgent,
   };
 }
 

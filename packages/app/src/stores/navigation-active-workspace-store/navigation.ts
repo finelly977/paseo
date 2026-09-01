@@ -34,6 +34,7 @@ export interface NavigateToWorkspaceDeps extends PrepareWorkspaceTabDeps {
   getSessionWorkspaces: (serverId: string) => Map<string, WorkspaceDescriptor> | null | undefined;
   getSessionAgents: (serverId: string) => Iterable<Agent>;
   getOpenWorkspaceTabTargets: (workspaceKey: string) => readonly WorkspaceTabTarget[];
+  isWorkspaceLayoutHydrated: () => boolean;
   rememberLastWorkspace: (selection: ActiveWorkspaceSelection) => void;
   navigateToRoute: (route: string) => void;
 }
@@ -105,8 +106,11 @@ export function navigateToWorkspace(
     workspaces,
     workspaceId: input.workspaceId,
   });
+  const shouldDeferAgentOpen = Boolean(
+    input.target?.kind === "agent" && (!resolvedWorkspaceId || !deps.isWorkspaceLayoutHydrated()),
+  );
   if (input.target) {
-    if (resolvedWorkspaceId || input.target.kind !== "agent") {
+    if (!shouldDeferAgentOpen) {
       prepareWorkspaceTab({ ...input, target: input.target }, deps);
     }
   } else {
@@ -137,7 +141,7 @@ export function navigateToWorkspace(
   }
 
   const route =
-    input.target?.kind === "agent" && !resolvedWorkspaceId
+    input.target?.kind === "agent" && shouldDeferAgentOpen
       ? buildHostWorkspaceOpenRoute(
           input.serverId,
           input.workspaceId,

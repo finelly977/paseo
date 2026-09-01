@@ -1664,14 +1664,14 @@ describe("workspace-layout-store actions", () => {
     expect(state.getWorkspaceTabs(workspaceKey).map((tab) => tab.tabId)).toEqual(["agent_agent-1"]);
   });
 
-  it("pinning an agent clears hidden intent", () => {
+  it("opening and pinning an agent atomically clears hidden intent", () => {
     const workspaceKey = createWorkspaceKey();
     const store = workspaceLayoutStore.getState();
 
     store.hideAgent(workspaceKey, "agent-1");
     expect(workspaceLayoutStore.getState().hiddenAgentIdsByWorkspace[workspaceKey]).toBeDefined();
 
-    store.pinAgent(workspaceKey, "agent-1");
+    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "agent-1" }, { pin: true });
 
     const state = workspaceLayoutStore.getState();
     expect(state.hiddenAgentIdsByWorkspace[workspaceKey]).toBeUndefined();
@@ -1682,8 +1682,7 @@ describe("workspace-layout-store actions", () => {
     const workspaceKey = createWorkspaceKey();
     const store = workspaceLayoutStore.getState();
 
-    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "archived-agent" });
-    store.pinAgent(workspaceKey, "archived-agent");
+    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "archived-agent" }, { pin: true });
     store.reconcileTabs(workspaceKey, {
       agentsHydrated: true,
       terminalsHydrated: true,
@@ -1722,8 +1721,7 @@ describe("workspace-layout-store actions", () => {
 
     expect(store.getWorkspaceTabs(workspaceKey).map((tab) => tab.tabId)).toEqual([]);
 
-    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "archived-agent" });
-    store.pinAgent(workspaceKey, "archived-agent");
+    store.openTabFocused(workspaceKey, { kind: "agent", agentId: "archived-agent" }, { pin: true });
     store.reconcileTabs(workspaceKey, {
       agentsHydrated: true,
       terminalsHydrated: true,

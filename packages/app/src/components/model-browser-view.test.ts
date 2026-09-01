@@ -3,7 +3,11 @@ import type {
   ProviderSelectionModelRow,
   ProviderSelectorProvider,
 } from "@/provider-selection/provider-selection";
-import { resolveInitialModelBrowserView, resolveModelBrowserAllView } from "./model-browser-view";
+import {
+  resolveInitialModelBrowserView,
+  resolveModelBrowserAllView,
+  resolveModelBrowserScrolling,
+} from "./model-browser-view";
 
 function provider(
   id: string,
@@ -90,6 +94,20 @@ describe("model browser initial view", () => {
         hasProfiles: false,
       }),
     ).toEqual({ kind: "all" });
+  });
+});
+
+describe("model browser scrolling", () => {
+  it("uses the bottom sheet scroll owner on compact native layouts", () => {
+    expect(resolveModelBrowserScrolling({ isNative: true, isCompact: true })).toBe("sheet");
+  });
+
+  it("lets iPad wide layouts own their popout scrolling", () => {
+    expect(resolveModelBrowserScrolling({ isNative: true, isCompact: false })).toBe("independent");
+  });
+
+  it("keeps web and desktop popouts independent", () => {
+    expect(resolveModelBrowserScrolling({ isNative: false, isCompact: false })).toBe("independent");
   });
 });
 

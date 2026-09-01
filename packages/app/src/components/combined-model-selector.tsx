@@ -8,6 +8,8 @@ import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Combobox, type ComboboxOption, type ComboboxProps } from "@/components/ui/combobox";
 import { ModelBrowser, ModelProviderGlyph, useModelBrowser } from "@/components/model-browser";
+import { resolveModelBrowserScrolling } from "@/components/model-browser-view";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import type { ProviderSelectorProvider } from "@/provider-selection/provider-selection";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -83,6 +85,8 @@ export function CombinedModelSelector({
   toolbar,
 }: CombinedModelSelectorProps) {
   const { t } = useTranslation();
+  const isCompact = useIsCompactFormFactor();
+  const modelBrowserScrolling = resolveModelBrowserScrolling({ isNative, isCompact });
   const anchorRef = useRef<View>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isContentReady, setIsContentReady] = useState(isWeb);
@@ -176,7 +180,7 @@ export function CombinedModelSelector({
       onEditProfiles={onEditProfiles ? handleEditProfiles : undefined}
       onRetryProvider={onRetryProvider}
       isRetryingProvider={isRetryingProvider}
-      scrolling={isWeb ? "independent" : "sheet"}
+      scrolling={modelBrowserScrolling}
     />
   ) : (
     <View style={styles.sheetLoadingState}>

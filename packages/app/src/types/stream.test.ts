@@ -1114,6 +1114,30 @@ describe("stream reducer canonical tool calls", () => {
     ]);
   });
 
+  it("treats a replacement task list as new work instead of reopened work", () => {
+    const state = hydrateStreamState([
+      {
+        event: todoTimeline([
+          { id: "0", text: "Finish old work", completed: true, status: "completed" },
+          { id: "1", text: "Verify old work", completed: true, status: "completed" },
+        ]),
+        timestamp: new Date("2025-01-01T10:50:00Z"),
+      },
+      {
+        event: todoTimeline([
+          { id: "0", text: "Investigate unrelated bug", completed: false, status: "in_progress" },
+          { id: "1", text: "Write unrelated test", completed: false, status: "pending" },
+        ]),
+        timestamp: new Date("2025-01-01T10:51:00Z"),
+      },
+    ]);
+
+    expect(state.flatMap((item) => (item.kind === "todo_list" ? [item.activity] : []))).toEqual([
+      { type: "created", count: 2 },
+      { type: "started", task: "Investigate unrelated bug" },
+    ]);
+  });
+
   it("groups consecutive initial Claude TaskCreate snapshots", () => {
     const state = hydrateStreamState([
       {

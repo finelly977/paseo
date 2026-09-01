@@ -75,7 +75,11 @@ interface WorkspaceLayoutStore {
   pendingAgentIdsByWorkspace: Record<string, Set<string>>;
   hiddenAgentIdsByWorkspace: Record<string, Set<string>>;
   focusRestorationByWorkspace: Record<string, WorkspaceFocusRestorationState>;
-  openTabFocused: (workspaceKey: string, target: WorkspaceTabTarget) => string | null;
+  openTabFocused: (
+    workspaceKey: string,
+    target: WorkspaceTabTarget,
+    options?: { pin?: boolean },
+  ) => string | null;
   openChildTabFocused: (
     workspaceKey: string,
     target: WorkspaceTabTarget,
@@ -323,7 +327,7 @@ export function createWorkspaceLayoutStore(
         pendingAgentIdsByWorkspace: {},
         hiddenAgentIdsByWorkspace: {},
         focusRestorationByWorkspace: {},
-        openTabFocused: (workspaceKey, target) => {
+        openTabFocused: (workspaceKey, target, options) => {
           const normalizedWorkspaceKey = trimNonEmpty(workspaceKey);
           const normalizedTarget = normalizeWorkspaceTabTarget(target);
           if (!normalizedWorkspaceKey || !normalizedTarget) {
@@ -336,6 +340,7 @@ export function createWorkspaceLayoutStore(
             now: Date.now(),
           });
 
+          const shouldPinAgent = options?.pin === true && normalizedTarget.kind === "agent";
           set((state) => ({
             ...withoutFocusRestoration(state, normalizedWorkspaceKey),
             hiddenAgentIdsByWorkspace:
@@ -346,6 +351,20 @@ export function createWorkspaceLayoutStore(
                     normalizedWorkspaceKey,
                     normalizedTarget.agentId,
                   ),
+            pinnedAgentIdsByWorkspace: shouldPinAgent
+              ? addAgentIdToWorkspaceSet(
+                  state.pinnedAgentIdsByWorkspace,
+                  normalizedWorkspaceKey,
+                  normalizedTarget.agentId,
+                )
+              : state.pinnedAgentIdsByWorkspace,
+            pendingAgentIdsByWorkspace: shouldPinAgent
+              ? addAgentIdToWorkspaceSet(
+                  state.pendingAgentIdsByWorkspace,
+                  normalizedWorkspaceKey,
+                  normalizedTarget.agentId,
+                )
+              : state.pendingAgentIdsByWorkspace,
             layoutByWorkspace: {
               ...state.layoutByWorkspace,
               [normalizedWorkspaceKey]: result.layout,

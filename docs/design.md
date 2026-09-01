@@ -30,6 +30,8 @@ Before adding a new component, read `components/ui/`. The primitive usually exis
 
 Hierarchy is conveyed through weight and color, not size. Most labels, titles, and hints across the app are `fontSize.base` or `fontSize.xs`. The distinction between a row's primary line and its secondary line is `foreground` versus `foregroundMuted`.
 
+二开使用一套统一的界面与对话字号，默认值为 16 像素；“外观”设置中的界面字号会同步缩放标题、消息正文、输入框和常驻面板，不另设只对移动端生效的正文字号。用户显式选择的字号始终优先，代码字号继续独立配置。
+
 Weight has three tiers, applied by role:
 
 - **Screen titles** — the title at the top of a screen — use `<ScreenTitle>` (`packages/app/src/components/headers/screen-title.tsx`), which renders `fontSize.base` at weight `400` on compact and `300` on desktop. Top-of-screen titles are lighter on desktop, not heavier. The workspace screen header follows the same rule (`packages/app/src/screens/workspace/workspace-screen.tsx`).
