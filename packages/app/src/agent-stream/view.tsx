@@ -49,6 +49,7 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useSessionStore } from "@/stores/session-store";
+import { useRevealedText } from "@/hooks/use-revealed-text";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
 import { useSettings } from "@/hooks/use-settings";
@@ -981,15 +982,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderThoughtItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "thought" }>) => {
         return (
-          <ToolCallSlot
+          <ThoughtSlot
             itemId={item.id}
             onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
-            toolName="thinking"
-            args={item.text}
-            status={item.status === "ready" ? "completed" : "executing"}
+            text={item.text}
+            status={item.status}
             isLastInSequence={layoutItem.isLastInToolSequence}
             defaultExpanded={autoExpandReasoning}
-            forceInline={autoExpandReasoning}
           />
         );
       },
@@ -1558,6 +1557,39 @@ interface ToolCallSlotProps extends Omit<
 > {
   itemId: string;
   onInlineDetailsExpandedChangeByItemId: (itemId: string, expanded: boolean) => void;
+}
+
+interface ThoughtSlotProps {
+  itemId: string;
+  onInlineDetailsExpandedChangeByItemId: (itemId: string, expanded: boolean) => void;
+  text: string;
+  status: Extract<StreamItem, { kind: "thought" }>["status"];
+  isLastInSequence: boolean;
+  defaultExpanded: boolean;
+}
+
+// 推理文字与助手正文使用同一套稳定显示节奏。
+function ThoughtSlot({
+  itemId,
+  onInlineDetailsExpandedChangeByItemId,
+  text,
+  status,
+  isLastInSequence,
+  defaultExpanded,
+}: ThoughtSlotProps) {
+  const revealedText = useRevealedText(text, status === "ready" ? "complete" : "streaming");
+  return (
+    <ToolCallSlot
+      itemId={itemId}
+      onInlineDetailsExpandedChangeByItemId={onInlineDetailsExpandedChangeByItemId}
+      toolName="thinking"
+      args={revealedText}
+      status={status === "ready" ? "completed" : "executing"}
+      isLastInSequence={isLastInSequence}
+      defaultExpanded={defaultExpanded}
+      forceInline={defaultExpanded}
+    />
+  );
 }
 
 function ToolCallSlot({

@@ -14,6 +14,7 @@ import {
   reduceStreamUpdate,
 } from "@/types/stream";
 
+// 待提交事件的最长等待时间；通常由帧回调先执行，无绘制发生时由此兜底。
 const AGENT_STREAM_REDUCER_FLUSH_DELAY_MS = 16 * 3;
 
 // ---------------------------------------------------------------------------
@@ -1632,12 +1633,50 @@ export interface CreateSessionAgentStreamReducerQueueInput {
   transformTimelineItem?: TimelineItemTransform;
 }
 
+interface ScheduledReducerFlush {
+  frameId: number | null;
+  timerId: ReturnType<typeof setTimeout>;
+}
+
+const scheduledReducerFlushes = new Map<number, ScheduledReducerFlush>();
+let nextScheduledReducerFlushId = 1;
+
+function clearScheduledReducerFlush(handle: ScheduledReducerFlush): void {
+  if (handle.frameId !== null) {
+    cancelAnimationFrame(handle.frameId);
+  }
+  clearTimeout(handle.timerId);
+}
+
+// 在帧边界提交增量，让文字更新与绘制同步，而不是跟随会漂移的任意定时器。隐藏标签页不会
+// 执行帧回调，因此同时安排定时器；无绘制发生时由定时器推进仓库。
 function scheduleAgentStreamReducerFlush(callback: () => void): number {
-  return setTimeout(callback, AGENT_STREAM_REDUCER_FLUSH_DELAY_MS) as unknown as number;
+  const id = nextScheduledReducerFlushId;
+  nextScheduledReducerFlushId += 1;
+
+  const run = () => {
+    const handle = scheduledReducerFlushes.get(id);
+    if (!handle) {
+      return;
+    }
+    scheduledReducerFlushes.delete(id);
+    clearScheduledReducerFlush(handle);
+    callback();
+  };
+
+  const timerId = setTimeout(run, AGENT_STREAM_REDUCER_FLUSH_DELAY_MS);
+  const frameId = typeof requestAnimationFrame === "function" ? requestAnimationFrame(run) : null;
+  scheduledReducerFlushes.set(id, { frameId, timerId });
+  return id;
 }
 
 function cancelAgentStreamReducerFlush(id: number) {
-  clearTimeout(id);
+  const handle = scheduledReducerFlushes.get(id);
+  if (!handle) {
+    return;
+  }
+  scheduledReducerFlushes.delete(id);
+  clearScheduledReducerFlush(handle);
 }
 
 export function createSessionAgentStreamReducerQueue(

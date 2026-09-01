@@ -25,6 +25,7 @@ export interface AgentStreamCoalescerFlush {
 export interface AgentStreamCoalescerOptions {
   windowMs?: number;
   timers: AgentStreamCoalescerTimers;
+  now?: () => number;
   onFlush: (payload: AgentStreamCoalescerFlush) => void;
 }
 
@@ -51,6 +52,7 @@ interface PendingAgentStreamBuffer {
   toolCallEntryIndexes: Map<string, number>;
   timer: ReturnType<typeof setTimeout> | null;
   flushing: boolean;
+  lastFlushAt: number | null;
 }
 
 function isCoalescableTimelineEvent(event: AgentStreamEvent): event is CoalescableTimelineEvent {
@@ -88,10 +90,12 @@ export class AgentStreamCoalescer {
   private readonly onFlush: (payload: AgentStreamCoalescerFlush) => void;
   private readonly timers: AgentStreamCoalescerTimers;
   private readonly windowMs: number;
+  private readonly now: () => number;
 
   constructor(options: AgentStreamCoalescerOptions) {
     this.windowMs = options.windowMs ?? AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS;
     this.timers = options.timers;
+    this.now = options.now ?? Date.now;
     this.onFlush = options.onFlush;
   }
 
@@ -112,7 +116,15 @@ export class AgentStreamCoalescer {
       return true;
     }
 
+    // 空闲窗口后的首个事件立即刷新，避免回合首个字符完整等待一个窗口；持续突发仍交给
+    // 尾沿定时器，保持每个窗口最多一批，行为与 TerminalOutputCoalescer 一致。
     if (!buffer.timer) {
+      const elapsed =
+        buffer.lastFlushAt === null ? Number.POSITIVE_INFINITY : this.now() - buffer.lastFlushAt;
+      if (elapsed >= this.windowMs) {
+        this.flushBuffer(agentId);
+        return true;
+      }
       this.scheduleFlush(buffer);
     }
 
@@ -150,6 +162,7 @@ export class AgentStreamCoalescer {
       toolCallEntryIndexes: new Map(),
       timer: null,
       flushing: false,
+      lastFlushAt: null,
     };
     this.buffers.set(agentId, buffer);
     return buffer;
@@ -221,6 +234,7 @@ export class AgentStreamCoalescer {
     buffer.entries = [];
     buffer.toolCallEntryIndexes.clear();
     buffer.flushing = true;
+    buffer.lastFlushAt = this.now();
 
     try {
       for (const entry of this.collapseEntries(entries)) {

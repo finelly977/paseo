@@ -397,6 +397,30 @@ describe("MockLoadTestAgentClient", () => {
     unsubscribe();
   });
 
+  test("uses one continuous assistant stream for bursty rendering measurements", async () => {
+    vi.useFakeTimers();
+    const client = new MockLoadTestAgentClient();
+    const session = await client.createSession({
+      provider: "mock",
+      cwd: process.cwd(),
+      model: "bursty-stream",
+    });
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    await session.startTurn("Measure paced rendering.");
+    await vi.advanceTimersByTimeAsync(0);
+
+    const timelineItems = events.flatMap((event) =>
+      event.type === "timeline" ? [event.item] : [],
+    );
+    expect(timelineItems.filter((item) => item.type === "assistant_message")).not.toHaveLength(0);
+    expect(
+      timelineItems.filter((item) => item.type === "reasoning" || item.type === "tool_call"),
+    ).toEqual([]);
+    await session.interrupt();
+    unsubscribe();
+  });
   test("agent manager coalesces adjacent assistant tokens into fewer messages", async () => {
     vi.useFakeTimers();
     const workdir = mkdtempSync(join(tmpdir(), "paseo-mock-load-test-"));
@@ -445,11 +469,11 @@ describe("MockLoadTestAgentClient", () => {
         .reduce((max, length) => Math.max(max, length), 0);
       expect(longestMessage).toBeGreaterThan(20);
 
-      // First message includes the cycle header.
-      expect(assistantMessages[0]).toMatchObject({
-        type: "assistant_message",
-        text: expect.stringContaining("## Cycle 1"),
-      });
+      // 周期标题位于流开头；合并器先单独发出突发首词元，因此标题可能跨前两条消息。
+      const assistantText = assistantMessages
+        .map((item) => (item.type === "assistant_message" ? item.text : ""))
+        .join("");
+      expect(assistantText).toContain("## Cycle 1");
 
       // Tool calls land in expected order at least once.
       const runningTools = toolCalls

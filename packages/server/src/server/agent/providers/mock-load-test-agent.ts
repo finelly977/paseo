@@ -91,6 +91,20 @@ const MODELS: AgentModelDefinition[] = [
   },
   {
     provider: MOCK_LOAD_TEST_PROVIDER_ID,
+    id: "bursty-stream",
+    label: "突发流",
+    description:
+      "以不均匀突发和空闲间隔输出词元，复现真实模型的成块到达方式，用于测量流式显示平滑度。",
+    metadata: {
+      durationMs: 60_000,
+      intervalMs: 0,
+      burstMinTokens: 1,
+      burstMaxTokens: 40,
+      burstGapMs: 90,
+    },
+  },
+  {
+    provider: MOCK_LOAD_TEST_PROVIDER_ID,
     id: "ten-second-stream",
     label: "Ten second stream",
     description: "Fast realistic stream for tests and smoke checks.",
@@ -112,6 +126,26 @@ const MODELS: AgentModelDefinition[] = [
   },
 ];
 
+/**
+ * 突发输出会连续发送一批词元后进入空闲，而不是每个间隔只发一个。真实模型常以这种方式
+ * 到达，客户端的节奏显示正是为了平滑它；批次大小由确定性生成器给出，保证可复现。
+ */
+interface BurstProfile {
+  minTokens: number;
+  maxTokens: number;
+  gapMs: number;
+}
+
+function nextBurstSize(profile: BurstProfile, sequence: number): number {
+  // 对批次序号做确定性散列，不使用 Math.random，保证每次运行可复现。
+  let hash = (sequence + 1) * 2654435761;
+  hash ^= hash >>> 15;
+  hash = Math.imul(hash, 2246822519);
+  hash ^= hash >>> 13;
+  const span = profile.maxTokens - profile.minTokens + 1;
+  return profile.minTokens + ((hash >>> 0) % span);
+}
+
 interface ActiveTurn {
   turnId: string;
   assistantMessageId: string;
@@ -126,6 +160,8 @@ interface ActiveTurn {
   queue: CycleEvent[];
   emittedTokens: number;
   turnStarted: boolean;
+  burst: BurstProfile | null;
+  burstIndex: number;
 }
 
 type CycleEvent =
@@ -245,15 +281,28 @@ function resolveModelProfile(modelId: string | null | undefined): {
   modelId: string;
   durationMs: number;
   intervalMs: number;
+  burst: BurstProfile | null;
 } {
   const model = MODELS.find((entry) => entry.id === modelId) ?? MODELS[0];
   const metadata = model.metadata ?? {};
+  const burstMinTokens =
+    typeof metadata.burstMinTokens === "number" ? metadata.burstMinTokens : null;
+  const burstMaxTokens =
+    typeof metadata.burstMaxTokens === "number" ? metadata.burstMaxTokens : null;
   return {
     modelId: model.id,
     durationMs:
       typeof metadata.durationMs === "number" ? metadata.durationMs : MOCK_LOAD_TEST_DURATION_MS,
     intervalMs:
       typeof metadata.intervalMs === "number" ? metadata.intervalMs : MOCK_LOAD_TEST_INTERVAL_MS,
+    burst:
+      burstMinTokens !== null && burstMaxTokens !== null
+        ? {
+            minTokens: Math.max(1, burstMinTokens),
+            maxTokens: Math.max(Math.max(1, burstMinTokens), burstMaxTokens),
+            gapMs: typeof metadata.burstGapMs === "number" ? metadata.burstGapMs : 90,
+          }
+        : null,
   };
 }
 
@@ -543,6 +592,12 @@ function buildCycleQueue(turnId: string, cycle: number): CycleEvent[] {
   return queue;
 }
 
+function buildBurstyStreamQueue(cycle: number): CycleEvent[] {
+  return tokenize(
+    [buildIntroParagraph(cycle), buildMidParagraph(), buildClosingParagraph()].join("\n\n"),
+  ).map((text) => ({ kind: "assistant_token", text }));
+}
+
 function createToolCall(input: {
   callId: string;
   name: string;
@@ -719,6 +774,8 @@ export class MockLoadTestAgentSession implements AgentSession {
       queue: [],
       emittedTokens: 0,
       turnStarted: false,
+      burst: profile.burst,
+      burstIndex: 0,
     };
     this.activeTurn = turn;
     if (this.remainingPromptRejections > 0) {
@@ -1401,17 +1458,24 @@ export class MockLoadTestAgentSession implements AgentSession {
       return;
     }
 
-    if (turn.queue.length === 0) {
-      turn.cycle += 1;
-      turn.queue = buildCycleQueue(turn.turnId, turn.cycle);
-    }
+    const eventsThisTick = turn.burst ? nextBurstSize(turn.burst, turn.burstIndex) : 1;
+    turn.burstIndex += 1;
 
-    const event = turn.queue.shift();
-    if (event) {
+    for (let emitted = 0; emitted < eventsThisTick; emitted += 1) {
+      if (turn.queue.length === 0) {
+        turn.cycle += 1;
+        turn.queue = turn.burst
+          ? buildBurstyStreamQueue(turn.cycle)
+          : buildCycleQueue(turn.turnId, turn.cycle);
+      }
+      const event = turn.queue.shift();
+      if (!event) {
+        break;
+      }
       this.dispatchCycleEvent(turn, event);
     }
 
-    this.schedule(turn, turn.intervalMs);
+    this.schedule(turn, turn.burst ? turn.burst.gapMs : turn.intervalMs);
   }
 
   private dispatchCycleEvent(turn: ActiveTurn, event: CycleEvent): void {
