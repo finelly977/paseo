@@ -14,8 +14,10 @@ export interface PendingForegroundRun {
   token: string;
   kind: "foreground";
   stagedEvents: AgentStreamEvent[];
-  turnId: string | null;
-  started: boolean;
+  start:
+    | { status: "pending" }
+    | { status: "started"; turnId: string }
+    | { status: "failed"; error: string };
   settled: boolean;
   settledPromise: Promise<void>;
   resolveSettled: () => void;
@@ -64,6 +66,13 @@ export class AgentRunState {
     return this.runs.has(agentId);
   }
 
+  getTurnId(agentId: string): string | null {
+    const run = this.runs.get(agentId);
+    if (!run) return null;
+    if (run.kind === "autonomous") return run.turnId;
+    return run.start.status === "started" ? run.start.turnId : null;
+  }
+
   trackAutonomousRun(agentId: string, turnId: string | null): TrackedAgentRun {
     const current = this.runs.get(agentId);
     if (current) {
@@ -80,7 +89,10 @@ export class AgentRunState {
     if (!run) {
       return;
     }
-    if (run.kind === "foreground" && (run.turnId === null || run.turnId !== turnId)) {
+    if (
+      run.kind === "foreground" &&
+      (run.start.status !== "started" || run.start.turnId !== turnId)
+    ) {
       return;
     }
     if (
@@ -262,16 +274,14 @@ export class ForegroundTurnStream {
 function createPendingForegroundRun(): PendingForegroundRun {
   return createTrackedRun({
     kind: "foreground",
-    turnId: null,
-    started: false,
+    start: { status: "pending" },
     stagedEvents: [],
   });
 }
 
 function createTrackedRun(input: {
   kind: "foreground";
-  turnId: null;
-  started: false;
+  start: PendingForegroundRun["start"];
   stagedEvents: AgentStreamEvent[];
 }): PendingForegroundRun;
 function createTrackedRun(input: {
@@ -283,8 +293,7 @@ function createTrackedRun(
   input:
     | {
         kind: "foreground";
-        turnId: null;
-        started: false;
+        start: PendingForegroundRun["start"];
         stagedEvents: AgentStreamEvent[];
       }
     | { kind: "autonomous"; turnId: string | null; started: true },
