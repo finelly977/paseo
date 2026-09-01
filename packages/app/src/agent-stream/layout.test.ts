@@ -301,7 +301,7 @@ describe("layoutStream", () => {
     expect(assistantRow.frameOrder).toBe("footer-then-content");
   });
 
-  it("keeps an accepted steer inline while its canonical turn is active", () => {
+  it("starts a separate visible turn for an accepted steer while its native turn is active", () => {
     const assistant = { ...assistantMessage("a1", 2), turnId: "turn-1" };
     const steer = {
       ...userMessage("u2", 3),
@@ -314,7 +314,7 @@ describe("layoutStream", () => {
       tail: [{ ...userMessage("u1", 1), turnId: "turn-1" }, assistant, steer],
       timingIds: [assistant.id],
     });
-    expect(footerOwners(layout)).toEqual([]);
+    expect(footerOwners(layout)).toEqual([assistant.id]);
   });
 
   it("keeps forward stream content before its completed footer", () => {

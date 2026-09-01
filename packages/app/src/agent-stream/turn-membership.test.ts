@@ -89,7 +89,7 @@ describe("canonical turn membership", () => {
     );
   });
 
-  it("keeps an explicit historical steer in its provider turn when legacy rows have no turn ID", () => {
+  it("starts a new visible turn for an explicit historical steer", () => {
     const previous: StreamItem = {
       kind: "assistant_message",
       id: "preface",
@@ -104,7 +104,7 @@ describe("canonical turn membership", () => {
       turnRole: "steer",
     };
 
-    expect(continuesTurn(previous, steer)).toBe(true);
+    expect(continuesTurn(previous, steer)).toBe(false);
   });
 
   it("treats a user message without a role as a new turn even when Codex reused its turn ID", () => {
@@ -124,6 +124,8 @@ describe("canonical turn membership", () => {
         runningTool("sleep", 2, turnId),
         user("hello", 3, turnId, "steer"),
       ],
+      [],
+      3,
     ],
     [
       "Codex",
@@ -133,23 +135,28 @@ describe("canonical turn membership", () => {
         runningTool("sleep", 3, turnId),
         user("hello", 4, turnId, "steer"),
       ],
+      ["preface"],
+      4,
     ],
-  ] as const)("keeps %s-shaped active steers in one visible turn", (_provider, build) => {
-    const turnId = "turn-1";
-    const active = layoutFor(build(turnId), true);
+  ] as const)(
+    "starts a new visible turn for a %s-shaped active steer",
+    (_provider, build, previousFooterIds, steerSecond) => {
+      const turnId = "turn-1";
+      const active = layoutFor([...build(turnId)], true);
 
-    expect(completedFooterIds(active.layout)).toEqual([]);
-    expect(active.model.turnTiming.runningStartedAt).toEqual(at(1));
+      expect(completedFooterIds(active.layout)).toEqual(previousFooterIds);
+      expect(active.model.turnTiming.runningStartedAt).toEqual(at(steerSecond));
 
-    const completedItems = [...build(turnId), assistant("done", 9, turnId)];
-    const completed = layoutFor(completedItems, false);
-    expect(completedFooterIds(completed.layout)).toEqual(["done"]);
-    expect(completed.model.turnTiming.byAssistantId.get("done")).toMatchObject({
-      startedAt: at(1),
-      completedAt: at(9),
-      durationMs: 8000,
-    });
-  });
+      const completedItems = [...build(turnId), assistant("done", 9, turnId)];
+      const completed = layoutFor(completedItems, false);
+      expect(completedFooterIds(completed.layout)).toEqual([...previousFooterIds, "done"]);
+      expect(completed.model.turnTiming.byAssistantId.get("done")).toMatchObject({
+        startedAt: at(steerSecond),
+        completedAt: at(9),
+        durationMs: (9 - steerSecond) * 1000,
+      });
+    },
+  );
 
   it("splits persisted prompts without roles when an old Codex runtime reused its local turn ID", () => {
     const reusedTurnId = "codex-turn-0";
