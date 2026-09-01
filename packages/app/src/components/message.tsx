@@ -120,7 +120,7 @@ import {
   AttachmentLabel,
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
-import { AttachmentLightbox } from "@/components/attachment-lightbox";
+import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import {
   mergeResolvedProviderUserImages,
   resolveProviderUserImage,
@@ -571,6 +571,10 @@ export const UserMessage = memo(function UserMessage({
   const [isHovered, setIsHovered] = useState(false);
   const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);
   const handleLightboxClose = useCallback(() => setLightboxMetadata(null), []);
+  const lightboxSource = useMemo<ImageLightboxSource | null>(
+    () => (lightboxMetadata ? { type: "attachment", metadata: lightboxMetadata } : null),
+    [lightboxMetadata],
+  );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
   const restoredProviderImages = useResolvedProviderUserImages(providerImages);
@@ -744,7 +748,7 @@ export const UserMessage = memo(function UserMessage({
           </View>
         ) : null}
       </View>
-      <AttachmentLightbox metadata={lightboxMetadata} onClose={handleLightboxClose} />
+      <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
     </View>
   );
 });
@@ -1034,6 +1038,9 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
     setLoadState({ status: "error" });
   }, []);
   const { t } = useTranslation();
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const openViewer = useCallback(() => setViewerOpen(true), []);
+  const closeViewer = useCallback(() => setViewerOpen(false), []);
   const surfaceStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
       assistantMessageStylesheet.imageSurface,
@@ -1052,6 +1059,16 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
     [surfaceStyle],
   );
   const imageSource = useMemo(() => ({ uri }), [uri]);
+  const lightboxSource = useMemo<ImageLightboxSource | null>(() => {
+    if (!viewerOpen || loadState.status !== "ready") {
+      return null;
+    }
+    return {
+      type: "uri",
+      uri,
+      contentSize: { width: loadState.aspectRatio, height: 1 },
+    };
+  }, [loadState, uri, viewerOpen]);
 
   if (loadState.status !== "ready") {
     return (
@@ -1070,7 +1087,12 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
 
   return (
     <View style={frameStyle}>
-      <View style={surfaceStyle}>
+      <Pressable
+        accessibilityLabel={t("composer.attachments.openImage")}
+        accessibilityRole="button"
+        onPress={openViewer}
+        style={surfaceStyle}
+      >
         <Image
           source={imageSource}
           style={assistantMessageStylesheet.image}
@@ -1078,7 +1100,8 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
           accessibilityLabel={alt}
           onError={handleImageError}
         />
-      </View>
+      </Pressable>
+      <AttachmentLightbox source={lightboxSource} onClose={closeViewer} />
     </View>
   );
 });

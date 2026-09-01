@@ -8,13 +8,7 @@ import React, {
 } from "react";
 import type { DaemonClient, FileReadResult } from "@getpaseo/client/internal/daemon-client";
 import type { FileVersion } from "@getpaseo/protocol/messages";
-import {
-  ActivityIndicator,
-  Image as RNImage,
-  ScrollView as RNScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, ScrollView as RNScrollView, Text, View } from "react-native";
 import { StyleSheet, UnistylesRuntime } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -40,6 +34,7 @@ import { FileEditorView } from "./editor/view";
 import { FileSourceView } from "./source/view";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
+import { ZoomableImage } from "@/components/zoomable-viewport/image";
 
 interface FilePreviewBodyProps {
   preview: ExplorerFile | null;
@@ -168,11 +163,6 @@ function FilePreviewBody({
 
   const previewScrollRef = useRef<RNScrollView>(null);
 
-  const imageSource = useMemo(
-    () => (imagePreviewUri ? { uri: imagePreviewUri } : null),
-    [imagePreviewUri],
-  );
-
   if (isLoading && !preview) {
     return (
       <View style={styles.centerState}>
@@ -225,22 +215,7 @@ function FilePreviewBody({
       );
     }
 
-    return (
-      <View style={styles.previewScrollContainer}>
-        <RNScrollView
-          ref={previewScrollRef}
-          style={styles.previewContent}
-          contentContainerStyle={styles.previewImageScrollContent}
-          showsVerticalScrollIndicator
-        >
-          <RNImage
-            source={imageSource ?? undefined}
-            style={styles.previewImage}
-            resizeMode="contain"
-          />
-        </RNScrollView>
-      </View>
-    );
+    return <ZoomableImage uri={imagePreviewUri} testID="image-file-preview" />;
   }
 
   return (
@@ -700,15 +675,5 @@ const styles = StyleSheet.create((theme) => ({
   previewContent: {
     flex: 1,
     minHeight: 0,
-  },
-  previewImageScrollContent: {
-    flexGrow: 1,
-    padding: theme.spacing[4],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  previewImage: {
-    width: "100%",
-    height: 420,
   },
 }));
