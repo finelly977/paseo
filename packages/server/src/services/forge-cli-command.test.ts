@@ -176,3 +176,47 @@ describe("createCachedCliPathResolver", () => {
     expect(calls).toBe(1);
   });
 });
+
+describe("createForgeCliRunner.normalizeError", () => {
+  it("preserves partial stdout and the original failure as the cause", () => {
+    class TestCommandError extends Error {
+      readonly stdout?: string;
+      override readonly cause?: unknown;
+
+      constructor(params: { stdout?: string; cause?: unknown }) {
+        super("command failed");
+        if (params.stdout !== undefined) {
+          this.stdout = params.stdout;
+        }
+        if (params.cause !== undefined) {
+          this.cause = params.cause;
+        }
+      }
+    }
+
+    const runner = createForgeCliRunner({
+      binary: "forge-cli",
+      envOverlay: {},
+      timeoutMs: 1_000,
+      isAuthFailureText: () => false,
+      errorClasses: {
+        isAlreadyClassified: () => false,
+        isCommandError: (error): error is TestCommandError => error instanceof TestCommandError,
+        createAuthError: () => new Error("auth failed"),
+        createMissingError: () => new Error("missing"),
+        createCommandError: (params) => new TestCommandError(params),
+      },
+    });
+    const rawError = Object.assign(new Error("GraphQL alias failed"), {
+      code: 1,
+      stderr: "partial GraphQL failure",
+      stdout: '{"data":{"t0":{}}}',
+    });
+
+    const normalized = runner.normalizeError(rawError, { args: ["api"], cwd: "/repo" });
+
+    expect(normalized).toBeInstanceOf(TestCommandError);
+    expect((normalized as TestCommandError).stdout).toBe('{"data":{"t0":{}}}');
+    expect((normalized as TestCommandError).cause).toBe(rawError);
+  });
+});

@@ -107,6 +107,16 @@ const FAILED_CHECK_JOB_LIMIT = 5;
 export const GITHUB_POLL_FAST_INTERVAL_MS = 20_000;
 export const GITHUB_POLL_SLOW_INTERVAL_MS = 120_000;
 export const GITHUB_POLL_ERROR_BACKOFF_CAP_MS = 300_000;
+// The PR status poller batches every due target into aliased GraphQL queries
+// instead of one `gh pr view` + facts query per workspace. Cost scales with the
+// GraphQL point budget (5,000/hour), so the batch size and the shared poll time
+// grid below exist to keep a many-workspace daemon from exhausting the quota
+// machine-wide (issues #3587 / #2470).
+export const GITHUB_POLL_BATCH_MAX = 25;
+export const GITHUB_POLL_ALIGNMENT_MS = 5_000;
+const GITHUB_GRAPHQL_RESERVE_RATIO = 0.4;
+const GITHUB_GRAPHQL_RESET_GRACE_MS = 1_000;
+const BATCH_PR_CANDIDATE_LIMIT = 10;
 const GITHUB_ENV = {
   GIT_TERMINAL_PROMPT: "0",
 } as const;
@@ -601,6 +611,334 @@ query PullRequestTimeline($owner: String!, $name: String!, $number: Int!) {
   }
 }`;
 
+const BatchPollPrNodeSchema = z.object({
+  number: z.number(),
+  url: z.string(),
+  title: z.string(),
+  state: z.string(),
+  isDraft: z.boolean(),
+  baseRefName: z.string(),
+  headRefName: z.string(),
+  headRefOid: z.string(),
+  mergedAt: z.string().nullable(),
+  mergeable: z.enum(["MERGEABLE", "CONFLICTING", "UNKNOWN"]),
+  reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
+  headRepositoryOwner: z.object({ login: z.string() }).nullable(),
+  mergeStateStatus: z.string().nullable(),
+  autoMergeRequest: z
+    .object({
+      enabledAt: z.string().nullable(),
+      mergeMethod: z.string().nullable(),
+      enabledBy: z.object({ login: z.string().nullable() }).nullable(),
+    })
+    .nullable(),
+  viewerCanEnableAutoMerge: z.boolean(),
+  viewerCanDisableAutoMerge: z.boolean(),
+  viewerCanMergeAsAdmin: z.boolean(),
+  viewerCanUpdateBranch: z.boolean(),
+  isMergeQueueEnabled: z.boolean(),
+  isInMergeQueue: z.boolean(),
+});
+
+const BatchPollRepositorySchema = z.object({
+  owner: z.object({ login: z.string() }),
+  isFork: z.boolean(),
+  parent: z.object({ owner: z.object({ login: z.string() }), name: z.string() }).nullable(),
+  autoMergeAllowed: z.boolean(),
+  mergeCommitAllowed: z.boolean(),
+  squashMergeAllowed: z.boolean(),
+  rebaseMergeAllowed: z.boolean(),
+  viewerDefaultMergeMethod: z.string().nullable(),
+  pullRequests: z.object({ nodes: z.array(BatchPollPrNodeSchema) }),
+});
+
+const GitHubGraphqlRateLimitSchema = z.object({
+  limit: z.number(),
+  remaining: z.number(),
+  resetAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), {
+    message: "resetAt must be a valid timestamp",
+  }),
+});
+
+const GitHubRateLimitResponseSchema = z.object({
+  resources: z.object({
+    graphql: z.object({
+      remaining: z.number(),
+      reset: z.number(),
+    }),
+  }),
+});
+
+const BatchChecksCommitSchema = z.object({
+  commit: z.object({
+    statusCheckRollup: z
+      .object({
+        contexts: z.object({ nodes: z.array(z.unknown()) }),
+      })
+      .nullable(),
+  }),
+});
+
+const BatchChecksRepositorySchema = z.object({
+  pullRequest: z
+    .object({
+      commits: z.object({ nodes: z.array(BatchChecksCommitSchema) }),
+    })
+    .nullable(),
+});
+
+// GraphQL CheckRun nodes carry the workflow name behind
+// checkSuite.workflowRun.workflow.name; the gh CLI flattens it to workflowName.
+// Batch results are remapped to the CLI shape so parseStatusCheckRollup stays
+// the single rollup parser for both paths.
+const BatchCheckRunContextSchema = z.object({
+  __typename: z.literal("CheckRun"),
+  databaseId: z.number().nullable().optional(),
+  name: z.string(),
+  status: z.string().nullable().optional(),
+  conclusion: z.string().nullable().optional(),
+  detailsUrl: z.string().nullable().optional(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  checkSuite: z
+    .object({
+      workflowRun: z
+        .object({
+          databaseId: z.number().nullable().optional(),
+          workflow: z.object({ name: z.string().nullable().optional() }).nullable().optional(),
+        })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
+});
+
+type BatchPollPrNode = z.infer<typeof BatchPollPrNodeSchema>;
+type BatchPollRepository = z.infer<typeof BatchPollRepositorySchema>;
+
+const BATCH_PR_STATUS_FRAGMENT = `
+fragment PaseoPollPullRequest on PullRequest {
+  number
+  url
+  title
+  state
+  isDraft
+  baseRefName
+  headRefName
+  headRefOid
+  mergedAt
+  mergeable
+  reviewDecision
+  headRepositoryOwner {
+    login
+  }
+  mergeStateStatus
+  autoMergeRequest {
+    enabledAt
+    mergeMethod
+    enabledBy {
+      login
+    }
+  }
+  viewerCanEnableAutoMerge
+  viewerCanDisableAutoMerge
+  viewerCanMergeAsAdmin
+  viewerCanUpdateBranch
+  isMergeQueueEnabled
+  isInMergeQueue
+}`;
+
+function batchAlias(index: number): string {
+  return `t${index}`;
+}
+
+// GraphQL string literals share JSON's escaping rules.
+function graphqlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function buildBatchPullRequestStatusQuery(
+  entries: Array<{ owner: string; name: string; headRef: string }>,
+): string {
+  const aliases = entries.map(
+    (entry, index) => `  ${batchAlias(index)}: repository(owner: ${graphqlString(
+      entry.owner,
+    )}, name: ${graphqlString(entry.name)}) {
+    owner {
+      login
+    }
+    isFork
+    parent {
+      owner {
+        login
+      }
+      name
+    }
+    autoMergeAllowed
+    mergeCommitAllowed
+    squashMergeAllowed
+    rebaseMergeAllowed
+    viewerDefaultMergeMethod
+    pullRequests(headRefName: ${graphqlString(
+      entry.headRef,
+    )}, first: ${BATCH_PR_CANDIDATE_LIMIT}, orderBy: {field: CREATED_AT, direction: DESC}) {
+      nodes {
+        ...PaseoPollPullRequest
+      }
+    }
+  }`,
+  );
+  return `query PaseoBatchPullRequestStatus {
+  rateLimit {
+    limit
+    remaining
+    resetAt
+  }
+${aliases.join("\n")}
+}\n${BATCH_PR_STATUS_FRAGMENT}`;
+}
+
+function buildBatchPullRequestChecksQuery(
+  entries: Array<{ owner: string; name: string; number: number }>,
+): string {
+  const aliases = entries.map(
+    (entry, index) => `  ${batchAlias(index)}: repository(owner: ${graphqlString(
+      entry.owner,
+    )}, name: ${graphqlString(entry.name)}) {
+    pullRequest(number: ${entry.number}) {
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              contexts(first: 100) {
+                nodes {
+                  __typename
+                  ... on CheckRun {
+                    databaseId
+                    name
+                    status
+                    conclusion
+                    detailsUrl
+                    startedAt
+                    completedAt
+                    checkSuite {
+                      workflowRun {
+                        databaseId
+                        workflow {
+                          name
+                        }
+                      }
+                    }
+                  }
+                  ... on StatusContext {
+                    context
+                    state
+                    targetUrl
+                    createdAt
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }`,
+  );
+  return `query PaseoBatchPullRequestChecks {
+  rateLimit {
+    limit
+    remaining
+    resetAt
+  }
+${aliases.join("\n")}
+}`;
+}
+
+function toBatchStatusCheckRollupNode(node: unknown): unknown {
+  const parsed = BatchCheckRunContextSchema.safeParse(node);
+  if (!parsed.success) {
+    // StatusContext nodes already match the CLI rollup shape.
+    return node;
+  }
+  const { checkSuite, ...rest } = parsed.data;
+  return {
+    ...rest,
+    workflowName: checkSuite?.workflowRun?.workflow?.name ?? null,
+    checkSuite: { workflowRun: { databaseId: checkSuite?.workflowRun?.databaseId ?? null } },
+  };
+}
+
+function extractGraphqlBatchAliases(body: unknown): Record<string, unknown> | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+  const data = (body as Record<string, unknown>).data;
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  return data as Record<string, unknown>;
+}
+
+function parseGraphqlBatchAliases(
+  stdout: string,
+  context: { args: string[]; cwd: string },
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (error) {
+    throw new GitHubCommandError({
+      ...context,
+      exitCode: null,
+      stderr: `GitHub batch GraphQL response is not valid JSON (${stdout.length} bytes)`,
+      cause: error,
+    });
+  }
+  const aliases = extractGraphqlBatchAliases(parsed);
+  if (!aliases) {
+    throw new GitHubCommandError({
+      ...context,
+      exitCode: null,
+      stderr: "GitHub batch GraphQL response is missing its data object",
+    });
+  }
+  return aliases;
+}
+
+// gh exits non-zero when any aliased sub-query errors but still prints the
+// response body, so the healthy aliases in a batch are recoverable.
+function extractGraphqlBatchAliasesFromError(error: unknown): Record<string, unknown> | null {
+  if (!(error instanceof GitHubCommandError) || !error.stdout) {
+    return null;
+  }
+  try {
+    return extractGraphqlBatchAliases(JSON.parse(error.stdout));
+  } catch {
+    return null;
+  }
+}
+
+function parseGraphqlBatchRateLimit(
+  aliases: Record<string, unknown>,
+  context: { args: string[]; cwd: string },
+): z.infer<typeof GitHubGraphqlRateLimitSchema> | null {
+  if (aliases.rateLimit === undefined) {
+    return null;
+  }
+  const parsed = GitHubGraphqlRateLimitSchema.safeParse(aliases.rateLimit);
+  if (!parsed.success) {
+    throw new GitHubCommandError({
+      ...context,
+      exitCode: null,
+      stderr: "GitHub batch GraphQL response contains an invalid rateLimit object",
+      cause: parsed.error,
+    });
+  }
+  return parsed.data;
+}
+
 interface CacheEntry {
   value: unknown;
   expiresAt: number;
@@ -617,6 +955,13 @@ interface GitHubServiceDependencies {
    * call routes to the workspace's instance instead of github.com.
    */
   resolveRepoHost: (cwd: string) => Promise<string | null>;
+  /**
+   * owner/name slug for a workspace, resolved offline from the origin remote.
+   * Batched PR status polls need the repository identity up front (GraphQL
+   * repository(owner:, name:) aliases), unlike `gh pr view` which resolves it
+   * per invocation.
+   */
+  resolveRepoSlug: (cwd: string) => Promise<string | null>;
 }
 
 export interface GitHubCommandRunnerOptions {
@@ -677,6 +1022,30 @@ export class GitHubCommandError extends ForgeCommandError {
   }
 }
 
+class GitHubGraphqlPollPausedError extends Error {
+  readonly remaining: number;
+  readonly resetAt: string;
+
+  constructor(params: { remaining: number; resetAt: string }) {
+    super(`GitHub GraphQL polling paused until ${params.resetAt}`);
+    this.name = "GitHubGraphqlPollPausedError";
+    this.remaining = params.remaining;
+    this.resetAt = params.resetAt;
+  }
+}
+
+class GitHubGraphqlRateLimitResetError extends Error {
+  readonly pollError: unknown;
+  override readonly cause: unknown;
+
+  constructor(pollError: unknown, cause: unknown) {
+    super("GitHub polling was rate-limited and the GraphQL reset time could not be loaded");
+    this.name = "GitHubGraphqlRateLimitResetError";
+    this.pollError = pollError;
+    this.cause = cause;
+  }
+}
+
 export class GitHubEnterpriseHostProbeError extends Error {
   readonly host: string;
   override readonly cause: Error;
@@ -695,6 +1064,7 @@ interface CreateGitHubServiceOptions {
   resolveGhPath?: () => Promise<string | null>;
   now?: () => number;
   resolveRepoHost?: (cwd: string) => Promise<string | null>;
+  resolveRepoSlug?: (cwd: string) => Promise<string | null>;
 }
 
 type PullRequestCheckRunNode = z.infer<typeof PullRequestCheckRunNodeSchema>;
@@ -720,11 +1090,43 @@ interface GitHubPollTarget {
   headSha?: string;
   headRepositoryOwner?: string;
   retainCount: number;
-  timer: NodeJS.Timeout | null;
+  /** Absolute due time on the shared poll grid; null while a poll is in flight. */
+  nextDueAt: number | null;
+  /**
+   * When the in-flight poll cycle became due. The next cycle is anchored here
+   * rather than at completion time so slow requests don't drift the poll grid.
+   */
+  pollCycleStartedAt: number | null;
   latestStatus: CurrentPullRequestStatus | null;
   consecutiveErrors: number;
   callbacks: Set<(status: CurrentPullRequestStatus | null) => void>;
   errorCallbacks: Set<(error: unknown) => void>;
+}
+
+interface GitHubBatchPollEntry {
+  target: GitHubPollTarget;
+  host: string;
+  originOwner: string;
+  originName: string;
+  owner: string;
+  name: string;
+  headRepositoryOwner?: string;
+}
+
+interface PendingBatchPullRequestChecks {
+  entry: GitHubBatchPollEntry;
+  node: BatchPollPrNode;
+  repository: BatchPollRepository;
+}
+
+interface GitHubBatchQueryResponse {
+  aliases: Record<string, unknown>;
+}
+
+interface GitHubBatchDistribution {
+  pendingChecks: PendingBatchPullRequestChecks[];
+  legacyFallback: GitHubPollTarget[];
+  redirected: GitHubBatchPollEntry[];
 }
 
 interface ResolvedPullRequestCandidate {
@@ -739,19 +1141,49 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     runner: options.runner ?? runGhCommand,
     resolveGhPath: options.resolveGhPath ?? resolveGhPath,
     now: options.now ?? Date.now,
-    resolveRepoHost: options.resolveRepoHost ?? resolveGitHubEnterpriseHost,
+    // 注入命令运行器只用于不接触本机 Git 的单元测试；生产实例始终从
+    // 工作区远端解析主机与仓库标识，解析失败会保持失败而不是伪装成 github.com。
+    resolveRepoHost:
+      options.resolveRepoHost ?? (options.runner ? async () => null : resolveGitHubEnterpriseHost),
+    resolveRepoSlug:
+      options.resolveRepoSlug ?? (options.runner ? async () => null : resolveGitHubSlugFromOrigin),
   };
   // A resolved enterprise host is cached permanently; a null resolution (no
   // host, or the auth probe said no) expires so `gh auth login --hostname`
-  // run after the first probe is picked up without a daemon restart.
+  // run after the first probe is picked up without a daemon restart. The
+  // `resolved` marker survives a TTL refresh so poll batching can keep using
+  // the last known host synchronously while the refresh is in flight.
   const repoHostByCwd = new Map<
     string,
-    { promise: Promise<string | null>; expiresAt: number | null }
+    {
+      promise: Promise<string | null>;
+      expiresAt: number | null;
+      resolved?: { value: string | null };
+    }
+  >();
+  // owner/name from the origin remote, cached until invalidate() (which fires
+  // on remote changes) so batched polls can group targets synchronously. Null
+  // resolutions expire like the host cache's so transient git failures don't
+  // permanently degrade a cwd to per-target polling.
+  const repoSlugByCwd = new Map<
+    string,
+    {
+      promise: Promise<string | null>;
+      expiresAt: number | null;
+      resolved?: { value: string | null };
+    }
   >();
   const cache = new Map<string, CacheEntry>();
   const inFlight = new Map<string, InFlightCacheEntry>();
   const pollTargets = new Map<string, GitHubPollTarget>();
   const checkLogTailCache = new Map<string, { logTail: string; logTruncated: boolean }>();
+  const pollRepositoryRedirects = new Map<
+    string,
+    { owner: string; name: string; headRepositoryOwner: string }
+  >();
+  const pollPausedUntilByHost = new Map<string, number>();
+  const rateLimitResetLoads = new Map<string, Promise<number>>();
+  let githubPollTimer: NodeJS.Timeout | null = null;
   let api!: GitHubService;
 
   async function cached<T>(params: {
@@ -815,8 +1247,11 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       .resolveRepoHost(cwd)
       .then((host) => {
         const current = repoHostByCwd.get(cwd);
-        if (host === null && current?.promise === pending) {
-          current.expiresAt = deps.now() + REPO_HOST_NULL_TTL_MS;
+        if (current?.promise === pending) {
+          current.resolved = { value: host };
+          if (host === null) {
+            current.expiresAt = deps.now() + REPO_HOST_NULL_TTL_MS;
+          }
         }
         return host;
       })
@@ -826,8 +1261,68 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         }
         throw error;
       });
-    repoHostByCwd.set(cwd, { promise: pending, expiresAt: null });
+    repoHostByCwd.set(cwd, {
+      promise: pending,
+      expiresAt: null,
+      ...(cachedHost?.resolved ? { resolved: cachedHost.resolved } : {}),
+    });
     return pending;
+  }
+
+  function peekRepoHost(cwd: string): { settled: boolean; value: string | null } {
+    const entry = repoHostByCwd.get(cwd);
+    if (!entry) {
+      return { settled: false, value: null };
+    }
+    return entry.resolved
+      ? { settled: true, value: entry.resolved.value }
+      : { settled: false, value: null };
+  }
+
+  function resolveRepoSlugCached(cwd: string): Promise<string | null> {
+    const cachedSlug = repoSlugByCwd.get(cwd);
+    if (cachedSlug && (cachedSlug.expiresAt === null || deps.now() < cachedSlug.expiresAt)) {
+      return cachedSlug.promise;
+    }
+    // A null slug expires: resolveRepoSlug also returns null for transient git
+    // failures (lock contention, timeout), and a permanent null would silently
+    // pin this cwd to the legacy per-target poll path. The `resolved` marker
+    // survives the refresh so batching keeps the last known slug meanwhile.
+    const entry: {
+      promise: Promise<string | null>;
+      expiresAt: number | null;
+      resolved?: { value: string | null };
+    } = {
+      promise: deps.resolveRepoSlug(cwd).then((slug) => {
+        if (repoSlugByCwd.get(cwd) === entry) {
+          entry.resolved = { value: slug };
+          if (slug === null) {
+            entry.expiresAt = deps.now() + REPO_HOST_NULL_TTL_MS;
+          }
+        }
+        return slug;
+      }),
+      expiresAt: null,
+      ...(cachedSlug?.resolved ? { resolved: cachedSlug.resolved } : {}),
+    };
+    entry.promise = entry.promise.catch((error: unknown) => {
+      if (repoSlugByCwd.get(cwd) === entry) {
+        repoSlugByCwd.delete(cwd);
+      }
+      throw error;
+    });
+    repoSlugByCwd.set(cwd, entry);
+    return entry.promise;
+  }
+
+  function peekRepoSlug(cwd: string): { settled: boolean; value: string | null } {
+    const entry = repoSlugByCwd.get(cwd);
+    if (!entry) {
+      return { settled: false, value: null };
+    }
+    return entry.resolved
+      ? { settled: true, value: entry.resolved.value }
+      : { settled: false, value: null };
   }
 
   async function run(args: string[], runOptions: GitHubCommandRunnerOptions): Promise<string> {
@@ -923,14 +1418,594 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
     if (target.retainCount <= 0) {
       return;
     }
-    if (target.timer) {
-      clearTimeout(target.timer);
+    const now = deps.now();
+    const baseline = target.pollCycleStartedAt ?? now;
+    target.pollCycleStartedAt = null;
+    const pauseUntil = getPollPauseUntil(target.cwd);
+    if (delayMs <= 0) {
+      target.nextDueAt = Math.max(now, pauseUntil);
+      armGitHubPollTimer();
+      return;
+    }
+    // Non-immediate polls snap to a shared time grid so targets converge on the
+    // same tick and one batched GraphQL request covers all of them. The next
+    // cycle anchors at the previous cycle's due time so slow requests don't
+    // drift the grid — but when the cycle overran its slot entirely, re-anchor
+    // at completion: scheduling in the past would poll back-to-back precisely
+    // when GitHub is slow or erroring.
+    const dueAt = alignGitHubPollTime(baseline + delayMs);
+    const nextDueAt = dueAt >= now ? dueAt : alignGitHubPollTime(now + delayMs);
+    target.nextDueAt = Math.max(nextDueAt, pauseUntil);
+    armGitHubPollTimer();
+  }
+
+  function getPollPauseUntil(cwd: string): number {
+    const host = peekRepoHost(cwd);
+    if (!host.settled) {
+      return 0;
+    }
+    const key = host.value ?? "";
+    const pauseUntil = pollPausedUntilByHost.get(key) ?? 0;
+    if (pauseUntil <= deps.now()) {
+      pollPausedUntilByHost.delete(key);
+      return 0;
+    }
+    return pauseUntil;
+  }
+
+  function alignGitHubPollTime(dueAt: number): number {
+    return Math.ceil(dueAt / GITHUB_POLL_ALIGNMENT_MS) * GITHUB_POLL_ALIGNMENT_MS;
+  }
+
+  function armGitHubPollTimer(): void {
+    let earliest: number | null = null;
+    for (const target of pollTargets.values()) {
+      if (target.retainCount <= 0 || target.nextDueAt === null) {
+        continue;
+      }
+      if (earliest === null || target.nextDueAt < earliest) {
+        earliest = target.nextDueAt;
+      }
+    }
+    if (githubPollTimer) {
+      clearTimeout(githubPollTimer);
+      githubPollTimer = null;
+    }
+    if (earliest === null) {
+      return;
+    }
+    githubPollTimer = setTimeout(
+      () => {
+        githubPollTimer = null;
+        void flushDueGitHubPolls();
+      },
+      Math.max(0, earliest - deps.now()),
+    );
+  }
+
+  async function flushDueGitHubPolls(): Promise<void> {
+    const now = deps.now();
+    const due: GitHubPollTarget[] = [];
+    for (const target of pollTargets.values()) {
+      if (target.retainCount > 0 && target.nextDueAt !== null && target.nextDueAt <= now) {
+        target.nextDueAt = null;
+        target.pollCycleStartedAt = now;
+        due.push(target);
+      }
+    }
+    armGitHubPollTimer();
+    if (due.length === 0) {
+      return;
     }
 
-    target.timer = setTimeout(() => {
-      target.timer = null;
-      void runGitHubPoll(target);
-    }, delayMs);
+    const legacyTargets: GitHubPollTarget[] = [];
+    const batchGroups = new Map<string, GitHubBatchPollEntry[]>();
+    for (const target of due) {
+      if (target.retainCount <= 0) {
+        continue;
+      }
+      const host = peekRepoHost(target.cwd);
+      const slug = peekRepoSlug(target.cwd);
+      if (!host.settled || !slug.settled) {
+        target.pollCycleStartedAt = null;
+        void resolveGitHubPollTargetIdentity(target);
+        continue;
+      }
+      const [owner, name, extra] = slug.value?.split("/") ?? [];
+      // A cwd with no origin slug polls through the legacy per-target path;
+      // batch grouping needs a complete owner/name identity.
+      if (!owner || !name || extra !== undefined) {
+        legacyTargets.push(target);
+        continue;
+      }
+      const key = host.value ?? "";
+      const group = batchGroups.get(key) ?? [];
+      group.push({
+        target,
+        host: key,
+        originOwner: owner,
+        originName: name,
+        owner,
+        name,
+      });
+      batchGroups.set(key, group);
+    }
+
+    await Promise.all([
+      ...legacyTargets.map((target) => runGitHubPoll(target)),
+      ...[...batchGroups.values()].map((group) => runGitHubPollGroup(group, now)),
+    ]);
+  }
+
+  async function resolveGitHubPollTargetIdentity(target: GitHubPollTarget): Promise<void> {
+    const [host, slug] = await Promise.allSettled([
+      resolveRepoHostCached(target.cwd),
+      resolveRepoSlugCached(target.cwd),
+    ]);
+    if (target.retainCount <= 0 || target.nextDueAt !== null) {
+      return;
+    }
+    if (host.status === "rejected") {
+      updatePollTargetAfterError(target, host.reason);
+      return;
+    }
+    if (slug.status === "rejected") {
+      // 仓库标识读取失败时，原有单仓库查询仍能从工作目录恢复完整状态；
+      // 只有这条恢复路径也失败，才把本轮作为错误上报。
+      await runGitHubPoll(target);
+      return;
+    }
+    // 使用非零延迟重新加入共享轮询栅格，让同一批完成解析的工作区合并查询。
+    scheduleGitHubPollAfter(target, 1);
+  }
+
+  async function runGitHubPollGroup(
+    entries: GitHubBatchPollEntry[],
+    startedAt: number,
+  ): Promise<void> {
+    for (let start = 0; start < entries.length; start += GITHUB_POLL_BATCH_MAX) {
+      const chunk = entries.slice(start, start + GITHUB_POLL_BATCH_MAX);
+      if ((pollPausedUntilByHost.get(chunk[0]?.host ?? "") ?? 0) > deps.now()) {
+        return;
+      }
+      await runGitHubPollBatch(chunk, startedAt);
+    }
+  }
+
+  function pauseGitHubPollsAtReserve(
+    host: string,
+    rateLimit: z.infer<typeof GitHubGraphqlRateLimitSchema>,
+  ): boolean {
+    if (rateLimit.remaining > rateLimit.limit * GITHUB_GRAPHQL_RESERVE_RATIO) {
+      return false;
+    }
+    const resetAt = Date.parse(rateLimit.resetAt);
+    pauseGitHubPollHostUntil(host, resetAt + GITHUB_GRAPHQL_RESET_GRACE_MS);
+    return true;
+  }
+
+  function pauseGitHubPollHostUntil(host: string, pauseUntil: number): void {
+    if (pauseUntil <= deps.now()) {
+      return;
+    }
+    const currentPause = pollPausedUntilByHost.get(host) ?? 0;
+    pollPausedUntilByHost.set(host, Math.max(currentPause, pauseUntil));
+    for (const target of pollTargets.values()) {
+      const targetHost = peekRepoHost(target.cwd);
+      if (!targetHost.settled || (targetHost.value ?? "") !== host) {
+        continue;
+      }
+      target.pollCycleStartedAt = null;
+      target.nextDueAt = Math.max(target.nextDueAt ?? 0, pauseUntil);
+    }
+    armGitHubPollTimer();
+  }
+
+  async function pauseGitHubPollsAfterRateLimit(
+    entry: GitHubBatchPollEntry,
+    error: unknown,
+  ): Promise<boolean> {
+    if (!isGitHubRateLimitError(error)) {
+      return false;
+    }
+    const resetAt = await loadGitHubGraphqlResetAt(entry);
+    pauseGitHubPollHostUntil(entry.host, resetAt + GITHUB_GRAPHQL_RESET_GRACE_MS);
+    return true;
+  }
+
+  function loadGitHubGraphqlResetAt(entry: GitHubBatchPollEntry): Promise<number> {
+    const existing = rateLimitResetLoads.get(entry.host);
+    if (existing) {
+      return existing;
+    }
+    const pending = runGhJson(
+      ["api", "rate_limit"],
+      { cwd: entry.target.cwd },
+      GitHubRateLimitResponseSchema,
+      "{}",
+    )
+      .then((response) => response.resources.graphql.reset * 1_000)
+      .finally(() => {
+        if (rateLimitResetLoads.get(entry.host) === pending) {
+          rateLimitResetLoads.delete(entry.host);
+        }
+      });
+    rateLimitResetLoads.set(entry.host, pending);
+    return pending;
+  }
+
+  async function runGitHubPollBatch(
+    entries: GitHubBatchPollEntry[],
+    startedAt: number,
+  ): Promise<void> {
+    const addressedEntries = entries.map(addressGitHubBatchEntry);
+    const firstEntry = addressedEntries[0];
+    if (!firstEntry) {
+      return;
+    }
+    const query = buildBatchPullRequestStatusQuery(
+      addressedEntries.map((entry) => ({
+        owner: entry.owner,
+        name: entry.name,
+        headRef: entry.target.headRef,
+      })),
+    );
+    const args = ["api", "graphql", "-f", `query=${query}`];
+    const response = await loadGitHubPollBatchResponse({
+      entries: addressedEntries,
+      firstEntry,
+      args,
+    });
+    if (!response) {
+      return;
+    }
+    let rateLimit: z.infer<typeof GitHubGraphqlRateLimitSchema> | null;
+    try {
+      rateLimit = parseGraphqlBatchRateLimit(response.aliases, {
+        args,
+        cwd: firstEntry.target.cwd,
+      });
+    } catch (error) {
+      reportGitHubBatchError(addressedEntries, error);
+      return;
+    }
+    if (rateLimit && pauseGitHubPollsAtReserve(firstEntry.host, rateLimit)) {
+      const error = new GitHubGraphqlPollPausedError(rateLimit);
+      reportGitHubBatchError(addressedEntries, error);
+      return;
+    }
+
+    const distribution = distributeGitHubPollBatch({
+      entries: addressedEntries,
+      aliases: response.aliases,
+      args,
+      startedAt,
+    });
+    if (distribution.pendingChecks.length > 0) {
+      await loadBatchPullRequestChecks(distribution.pendingChecks, startedAt);
+    }
+    await Promise.all(distribution.legacyFallback.map((target) => runGitHubPoll(target)));
+    if (distribution.redirected.length > 0) {
+      await runGitHubPollBatch(distribution.redirected, startedAt);
+    }
+  }
+
+  async function loadGitHubPollBatchResponse(input: {
+    entries: GitHubBatchPollEntry[];
+    firstEntry: GitHubBatchPollEntry;
+    args: string[];
+  }): Promise<GitHubBatchQueryResponse | null> {
+    try {
+      const stdout = await run(input.args, { cwd: input.firstEntry.target.cwd });
+      return {
+        aliases: parseGraphqlBatchAliases(stdout, {
+          args: input.args,
+          cwd: input.firstEntry.target.cwd,
+        }),
+      };
+    } catch (error) {
+      let isPaused: boolean;
+      try {
+        isPaused = await pauseGitHubPollsAfterRateLimit(input.firstEntry, error);
+      } catch (resetError) {
+        reportGitHubBatchError(
+          input.entries,
+          new GitHubGraphqlRateLimitResetError(error, resetError),
+        );
+        return null;
+      }
+      const partial = extractGraphqlBatchAliasesFromError(error);
+      if (isPaused || !partial) {
+        reportGitHubBatchError(input.entries, error);
+        return null;
+      }
+      return { aliases: partial };
+    }
+  }
+
+  function reportGitHubBatchError(entries: GitHubBatchPollEntry[], error: unknown): void {
+    for (const entry of entries) {
+      updatePollTargetAfterError(entry.target, error);
+    }
+  }
+
+  function distributeGitHubPollBatch(input: {
+    entries: GitHubBatchPollEntry[];
+    aliases: Record<string, unknown>;
+    args: string[];
+    startedAt: number;
+  }): GitHubBatchDistribution {
+    const distribution: GitHubBatchDistribution = {
+      pendingChecks: [],
+      legacyFallback: [],
+      redirected: [],
+    };
+    for (const [index, entry] of input.entries.entries()) {
+      const aliasValue = input.aliases[batchAlias(index)];
+      const repository = aliasValue ? BatchPollRepositorySchema.safeParse(aliasValue) : null;
+      if (!repository?.success) {
+        updatePollTargetAfterError(
+          entry.target,
+          new GitHubCommandError({
+            args: input.args,
+            cwd: entry.target.cwd,
+            exitCode: null,
+            stderr: `GitHub batch PR status response is missing repository ${entry.owner}/${entry.name}`,
+          }),
+        );
+        continue;
+      }
+      if (repository.data.isFork && repository.data.parent) {
+        const forkOwner = repository.data.owner?.login ?? entry.owner;
+        pollRepositoryRedirects.set(batchRepositoryRedirectKey(entry), {
+          owner: repository.data.parent.owner.login,
+          name: repository.data.parent.name,
+          headRepositoryOwner: forkOwner,
+        });
+        distribution.redirected.push(entry);
+        continue;
+      }
+      const node = selectBatchPollNode(entry, repository.data);
+      if (!node) {
+        // Legacy fallback covers the two ways "no match" can be wrong: a fork
+        // whose PR lives in the parent repository, and a full candidate page —
+        // ten newer same-named fork PRs can crowd the checkout's own PR out of
+        // the first:N window, so absence is only conclusive on a partial page.
+        if (
+          repository.data.isFork ||
+          repository.data.pullRequests.nodes.length >= BATCH_PR_CANDIDATE_LIMIT
+        ) {
+          distribution.legacyFallback.push(entry.target);
+        } else {
+          finalizeBatchPollTarget({
+            entry,
+            node: null,
+            repository: repository.data,
+            rollup: null,
+            startedAt: input.startedAt,
+          });
+        }
+        continue;
+      }
+      distribution.pendingChecks.push({
+        entry,
+        node,
+        repository: repository.data,
+      });
+    }
+    return distribution;
+  }
+
+  function addressGitHubBatchEntry(entry: GitHubBatchPollEntry): GitHubBatchPollEntry {
+    const redirect = pollRepositoryRedirects.get(batchRepositoryRedirectKey(entry));
+    return redirect
+      ? {
+          ...entry,
+          owner: redirect.owner,
+          name: redirect.name,
+          headRepositoryOwner: redirect.headRepositoryOwner,
+        }
+      : entry;
+  }
+
+  function batchRepositoryRedirectKey(entry: GitHubBatchPollEntry): string {
+    return `${entry.host}\n${entry.originOwner}/${entry.originName}`;
+  }
+
+  function selectBatchPollNode(
+    entry: GitHubBatchPollEntry,
+    repository: BatchPollRepository,
+  ): BatchPollPrNode | null {
+    // Prefer the canonical owner from the response: the origin slug can carry
+    // stale casing or a pre-transfer owner that repository() redirects from.
+    const selfOwner = (repository.owner?.login ?? entry.owner).toLowerCase();
+    const headRepositoryOwner = entry.target.headRepositoryOwner ?? entry.headRepositoryOwner;
+    const nodeByCandidate = new Map<ResolvedPullRequestCandidate, BatchPollPrNode>();
+    const candidates: ResolvedPullRequestCandidate[] = [];
+    for (const node of repository.pullRequests.nodes) {
+      const candidate = toCurrentPullRequestCandidate(
+        toBatchCurrentPullRequestItem(node, undefined),
+        entry.target.headRef,
+      );
+      if (!candidate) {
+        continue;
+      }
+      // pullRequests(headRefName:) also matches forks whose branch shares the
+      // name. Without a fork-owner hint the workspace branch lives in this
+      // repository, so only self-owned heads are real candidates (mirrors
+      // `gh pr view` resolving the current branch's own PR).
+      if (!headRepositoryOwner && candidate.headRepositoryOwner?.toLowerCase() !== selfOwner) {
+        continue;
+      }
+      nodeByCandidate.set(candidate, node);
+      candidates.push(candidate);
+    }
+    const match = pickPullRequestCandidate({
+      candidates,
+      headRef: entry.target.headRef,
+      headSha: entry.target.headSha,
+      headRepositoryOwner,
+    });
+    return match ? (nodeByCandidate.get(match) ?? null) : null;
+  }
+
+  async function loadBatchPullRequestChecks(
+    pending: PendingBatchPullRequestChecks[],
+    startedAt: number,
+  ): Promise<void> {
+    const firstItem = pending[0];
+    if (!firstItem) {
+      return;
+    }
+    const query = buildBatchPullRequestChecksQuery(
+      pending.map((item) => ({
+        owner: item.entry.owner,
+        name: item.entry.name,
+        number: item.node.number,
+      })),
+    );
+    const args = ["api", "graphql", "-f", `query=${query}`];
+    let aliasData: Record<string, unknown>;
+    try {
+      const responseStdout = await run(args, { cwd: firstItem.entry.target.cwd });
+      aliasData = parseGraphqlBatchAliases(responseStdout, {
+        args,
+        cwd: firstItem.entry.target.cwd,
+      });
+    } catch (error) {
+      let isPaused: boolean;
+      try {
+        isPaused = await pauseGitHubPollsAfterRateLimit(firstItem.entry, error);
+      } catch (resetError) {
+        const combinedError = new GitHubGraphqlRateLimitResetError(error, resetError);
+        for (const item of pending) {
+          updatePollTargetAfterError(item.entry.target, combinedError);
+        }
+        return;
+      }
+      if (isPaused) {
+        for (const item of pending) {
+          updatePollTargetAfterError(item.entry.target, error);
+        }
+        return;
+      }
+      const partial = extractGraphqlBatchAliasesFromError(error);
+      if (!partial) {
+        for (const item of pending) {
+          updatePollTargetAfterError(item.entry.target, error);
+        }
+        return;
+      }
+      aliasData = partial;
+    }
+
+    let rateLimit: z.infer<typeof GitHubGraphqlRateLimitSchema> | null;
+    try {
+      rateLimit = parseGraphqlBatchRateLimit(aliasData, {
+        args,
+        cwd: firstItem.entry.target.cwd,
+      });
+    } catch (error) {
+      for (const item of pending) {
+        updatePollTargetAfterError(item.entry.target, error);
+      }
+      return;
+    }
+    if (rateLimit) {
+      pauseGitHubPollsAtReserve(firstItem.entry.host, rateLimit);
+    }
+
+    for (const [index, item] of pending.entries()) {
+      const aliasValue = aliasData[batchAlias(index)];
+      const parsed = aliasValue ? BatchChecksRepositorySchema.safeParse(aliasValue) : null;
+      if (!parsed?.success || !parsed.data.pullRequest) {
+        updatePollTargetAfterError(
+          item.entry.target,
+          new GitHubCommandError({
+            args,
+            cwd: item.entry.target.cwd,
+            exitCode: null,
+            stderr: `GitHub batch PR checks response is missing ${item.entry.owner}/${item.entry.name}#${item.node.number}`,
+          }),
+        );
+        continue;
+      }
+      const contexts =
+        parsed.data.pullRequest.commits.nodes[0]?.commit.statusCheckRollup?.contexts.nodes ?? [];
+      const rollup = contexts.map(toBatchStatusCheckRollupNode);
+      finalizeBatchPollTarget({
+        entry: item.entry,
+        node: item.node,
+        repository: item.repository,
+        rollup,
+        startedAt,
+      });
+    }
+  }
+
+  function finalizeBatchPollTarget(input: {
+    entry: GitHubBatchPollEntry;
+    node: BatchPollPrNode | null;
+    repository: BatchPollRepository;
+    rollup: unknown[] | null;
+    /** When this poll cycle became due; cache writes newer than this win. */
+    startedAt: number;
+  }): void {
+    const { entry, node, repository } = input;
+    let status: CurrentPullRequestStatus | null = null;
+    if (node) {
+      const facts: GitHubPullRequestStatusFacts = {
+        mergeStateStatus: node.mergeStateStatus ?? null,
+        autoMergeRequest: toGitHubAutoMergeRequest(node.autoMergeRequest),
+        viewerCanEnableAutoMerge: node.viewerCanEnableAutoMerge ?? false,
+        viewerCanDisableAutoMerge: node.viewerCanDisableAutoMerge ?? false,
+        viewerCanMergeAsAdmin: node.viewerCanMergeAsAdmin ?? false,
+        viewerCanUpdateBranch: node.viewerCanUpdateBranch ?? false,
+        repository: toGitHubRepositoryMergePolicy(repository),
+        isMergeQueueEnabled: node.isMergeQueueEnabled ?? false,
+        isInMergeQueue: node.isInMergeQueue ?? false,
+      };
+      const built = toCurrentPullRequestStatus(
+        toBatchCurrentPullRequestItem(node, input.rollup ?? undefined),
+        entry.target.headRef,
+      );
+      status = built ? { ...built, forgeSpecific: { forge: "github", ...facts } } : null;
+    }
+    const cacheKey = buildCacheKey({
+      cwd: entry.target.cwd,
+      method: "getCurrentPullRequestStatus",
+      args: {
+        headRef: entry.target.headRef,
+        headSha: entry.target.headSha,
+        headRepositoryOwner: entry.target.headRepositoryOwner,
+      },
+    });
+    // A direct or forced read can finish between this batch becoming due and
+    // its checks query returning. Its cache write is newer than this cycle, so
+    // converge on it instead of overwriting fresher data with the batch's.
+    const existing = cache.get(cacheKey);
+    if (existing && existing.expiresAt - ttlMs > input.startedAt) {
+      updatePollTargetAfterSuccess({
+        cwd: entry.target.cwd,
+        headRef: entry.target.headRef,
+        headSha: entry.target.headSha,
+        headRepositoryOwner: entry.target.headRepositoryOwner,
+        status: existing.value as CurrentPullRequestStatus | null,
+        notify: true,
+      });
+      return;
+    }
+    // Mirror the cached() write of getCurrentPullRequestStatus so direct reads
+    // between polls reuse the batch result instead of spawning gh again.
+    cache.set(cacheKey, { value: status, cwd: entry.target.cwd, expiresAt: deps.now() + ttlMs });
+    updatePollTargetAfterSuccess({
+      cwd: entry.target.cwd,
+      headRef: entry.target.headRef,
+      headSha: entry.target.headSha,
+      headRepositoryOwner: entry.target.headRepositoryOwner,
+      status,
+      notify: true,
+    });
   }
 
   async function runGitHubPoll(target: GitHubPollTarget): Promise<void> {
@@ -943,19 +2018,24 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         reason: "self-heal-github",
       });
     } catch (error) {
-      target.consecutiveErrors += 1;
-      for (const callback of target.errorCallbacks) {
-        callback(error);
-      }
-      scheduleGitHubPoll(target);
+      updatePollTargetAfterError(target, error);
     }
   }
 
-  function closeGitHubPollTarget(target: GitHubPollTarget): void {
-    if (target.timer) {
-      clearTimeout(target.timer);
-      target.timer = null;
+  function updatePollTargetAfterError(target: GitHubPollTarget, error: unknown): void {
+    if (target.retainCount <= 0) {
+      return;
     }
+    target.consecutiveErrors += 1;
+    for (const callback of target.errorCallbacks) {
+      callback(error);
+    }
+    scheduleGitHubPoll(target);
+  }
+
+  function closeGitHubPollTarget(target: GitHubPollTarget): void {
+    target.nextDueAt = null;
+    target.pollCycleStartedAt = null;
     target.retainCount = 0;
     target.callbacks.clear();
     target.errorCallbacks.clear();
@@ -1429,7 +2509,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       // transient `gh repo view` failure can't block PR creation on github.com.
       // `gh repo view` is the fallback: it auto-routes to the cwd remote's host
       // (covering GitHub Enterprise Server) and survives a renamed repo.
-      let slug = await resolveGitHubSlugFromOrigin(input.cwd);
+      let slug = await resolveRepoSlugCached(input.cwd);
       if (!slug) {
         const repoView = await getGitHubRepoView({ cwd: input.cwd, run });
         slug =
@@ -1518,13 +2598,20 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
           headSha: input.headSha,
           headRepositoryOwner: input.headRepositoryOwner,
           retainCount: 0,
-          timer: null,
+          nextDueAt: null,
+          pollCycleStartedAt: null,
           latestStatus: null,
           consecutiveErrors: 0,
           callbacks: new Set(),
           errorCallbacks: new Set(),
         };
         pollTargets.set(key, target);
+        // 预热只提前填充共享缓存；真正的首轮刷新仍负责报告解析失败。
+        // allSettled 确保用户在首轮刷新前取消订阅时也不会留下未处理拒绝。
+        void Promise.allSettled([
+          resolveRepoHostCached(input.cwd),
+          resolveRepoSlugCached(input.cwd),
+        ]);
       }
 
       const isNewlyRetained = target.retainCount === 0;
@@ -1560,6 +2647,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
           }
           closeGitHubPollTarget(target);
           pollTargets.delete(key);
+          armGitHubPollTimer();
         },
       };
     },
@@ -1577,16 +2665,24 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
           inFlight.delete(key);
         }
       }
-      // Drop the cached host so a changed remote re-resolves GH_HOST instead of
-      // routing later gh calls to the previous instance.
+      // Drop the cached host and slug so a changed remote re-resolves GH_HOST
+      // and the batch-poll repository identity instead of reusing stale ones.
       repoHostByCwd.delete(input.cwd);
+      repoSlugByCwd.delete(input.cwd);
     },
 
     dispose() {
+      if (githubPollTimer) {
+        clearTimeout(githubPollTimer);
+        githubPollTimer = null;
+      }
       for (const target of pollTargets.values()) {
         closeGitHubPollTarget(target);
       }
       pollTargets.clear();
+      pollRepositoryRedirects.clear();
+      pollPausedUntilByHost.clear();
+      rateLimitResetLoads.clear();
     },
   };
 
@@ -1880,6 +2976,15 @@ function isStatusCheckRollupPermissionError(error: unknown): boolean {
   return error.stderr.toLowerCase().includes("statuscheckrollup");
 }
 
+function isGitHubRateLimitError(error: unknown): boolean {
+  return (
+    error instanceof GitHubCommandError &&
+    /(?:rate limit|rate_limit).*(?:exceed|exhaust)|(?:exceed|exhaust).*rate limit/i.test(
+      error.stderr,
+    )
+  );
+}
+
 async function resolveCurrentPullRequestView(options: {
   cwd: string;
   headRef: string;
@@ -2062,17 +3167,8 @@ async function runCurrentPullRequestStatusCommand(options: {
 }
 
 async function resolveGitHubSlugFromOrigin(cwd: string): Promise<string | null> {
-  let stdout: string;
-  try {
-    ({ stdout } = await runGitCommand(["config", "--get", "remote.origin.url"], {
-      cwd,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-      timeout: GIT_ORIGIN_URL_READ_TIMEOUT_MS,
-    }));
-  } catch {
-    return null;
-  }
-  return parseGitHubRemoteUrl(stdout.trim())?.repo ?? null;
+  const remoteUrl = await readOriginRemoteUrl(cwd);
+  return remoteUrl ? (parseGitHubRemoteUrl(remoteUrl)?.repo ?? null) : null;
 }
 
 async function getGitHubRepoView(options: {
@@ -2179,6 +3275,29 @@ function toGitHubRepositoryMergePolicy(
     squashMergeAllowed: repository.squashMergeAllowed ?? false,
     rebaseMergeAllowed: repository.rebaseMergeAllowed ?? false,
     viewerDefaultMergeMethod: repository.viewerDefaultMergeMethod ?? null,
+  };
+}
+
+// Reshape a batched GraphQL PR node into the gh CLI JSON shape so candidate
+// picking and status construction stay shared with the per-target path.
+function toBatchCurrentPullRequestItem(
+  node: BatchPollPrNode,
+  statusCheckRollup: unknown[] | undefined,
+): CurrentPullRequestStatusItem {
+  return {
+    number: node.number,
+    url: node.url,
+    title: node.title,
+    state: node.state,
+    isDraft: node.isDraft ?? false,
+    baseRefName: node.baseRefName,
+    headRefName: node.headRefName,
+    ...(node.headRefOid ? { headRefOid: node.headRefOid } : {}),
+    mergedAt: node.mergedAt ?? null,
+    ...(statusCheckRollup ? { statusCheckRollup } : {}),
+    reviewDecision: node.reviewDecision,
+    mergeable: node.mergeable,
+    headRepositoryOwner: node.headRepositoryOwner,
   };
 }
 
@@ -2820,18 +3939,11 @@ function toCurrentPullRequestStatus(
 }
 
 async function resolveGitHubEnterpriseHost(cwd: string): Promise<string | null> {
-  let stdout: string;
-  try {
-    ({ stdout } = await runGitCommand(["config", "--get", "remote.origin.url"], {
-      cwd,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-      timeout: 5_000,
-    }));
-  } catch {
+  const remoteUrl = await readOriginRemoteUrl(cwd);
+  if (!remoteUrl) {
     return null;
   }
-
-  const location = parseGitRemoteLocation(stdout.trim());
+  const location = parseGitRemoteLocation(remoteUrl);
   if (!location) {
     return null;
   }
@@ -2856,6 +3968,20 @@ async function resolveGitHubEnterpriseHost(cwd: string): Promise<string | null> 
   throw new GitHubAuthenticationError({
     stderr: `GitHub CLI is not authenticated for host ${host}`,
   });
+}
+
+async function readOriginRemoteUrl(cwd: string): Promise<string | null> {
+  const result = await runGitCommand(["config", "--get", "remote.origin.url"], {
+    cwd,
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+    timeout: GIT_ORIGIN_URL_READ_TIMEOUT_MS,
+    acceptExitCodes: [0, 1],
+  });
+  if (result.exitCode === 1) {
+    return null;
+  }
+  const remoteUrl = result.stdout.trim();
+  return remoteUrl.length > 0 ? remoteUrl : null;
 }
 
 function parseGitHubPullRequestRepo(url: string): { owner: string; name: string } | null {
