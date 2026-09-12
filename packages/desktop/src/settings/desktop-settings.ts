@@ -214,13 +214,6 @@ function coerceDocument(input: unknown): PersistedDesktopSettingsDocument {
 
   return {
     ...document,
-    settings: {
-      ...document.settings,
-      daemon: {
-        ...document.settings.daemon,
-        keepRunningAfterQuit: DEFAULT_DESKTOP_SETTINGS.daemon.keepRunningAfterQuit,
-      },
-    },
     migrations: { ...document.migrations, daemonStopOnQuitDefaultApplied: true },
   };
 }

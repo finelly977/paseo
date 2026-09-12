@@ -3833,7 +3833,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
   }
 
-  private async loadPersistedHistory(): Promise<void> {
+  private async loadPersistedHistory(threadResponse?: CodexThreadRollbackResponse): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const client = this.client;
     const threadId = this.currentThreadId;
@@ -3841,8 +3841,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     const history = await loadCodexThreadHistoryTimeline({
       threadId,
       cwd: this.config.cwd ?? null,
-      requestThread: (threadIdToRead) => {
-        return readCodexThread(client, threadIdToRead);
+      requestThread: async (threadIdToRead) => {
+        return threadResponse ?? readCodexThread(client, threadIdToRead);
       },
     });
     const { timeline, subAgentRoutes } = history;
@@ -4065,6 +4065,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
     applyApprovalsReviewerParam(params, preset);
 
+    if (options?.clientMessageId) {
+      params.clientUserMessageId = options.clientMessageId;
+    }
     if (this.config.model) {
       params.model = this.config.model;
     }
@@ -4817,12 +4820,12 @@ export class CodexAppServerAgentSession implements AgentSession {
       threadId: this.currentThreadId,
       messageId: input.messageId,
       userMessageTurns: this.codexUserMessageTurns(),
-      setThreadId: async (threadId) => {
+      setThreadId: async (threadId, history) => {
         this.currentThreadId = threadId;
         this.cachedRuntimeInfo = null;
         this.persistedHistory = [];
         this.historyPending = false;
-        await this.loadPersistedHistory();
+        await this.loadPersistedHistory(history);
       },
     });
   }

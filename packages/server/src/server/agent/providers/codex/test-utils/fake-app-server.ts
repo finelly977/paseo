@@ -186,7 +186,9 @@ export function createFakeCodexAppServer(
         },
       };
     },
-    "thread/read": () => ({ thread: { turns: [] } }),
+    "thread/read": (params) => ({
+      thread: { id: toJsonObject(params).threadId, historyMode: "legacy", turns: [] },
+    }),
     ...handlers,
   };
   const messages: JsonObject[] = [];

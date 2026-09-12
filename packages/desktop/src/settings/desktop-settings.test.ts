@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { stopDesktopManagedDaemonOnQuitIfNeeded } from "../daemon/quit-lifecycle";
 import {
   DEFAULT_DESKTOP_SETTINGS,
   type DesktopSettings,
@@ -84,7 +85,7 @@ describe("desktop-settings", () => {
       notifications: { playSound: true },
       daemon: {
         manageBuiltInDaemon: true,
-        keepRunningAfterQuit: DEFAULT_DESKTOP_SETTINGS.daemon.keepRunningAfterQuit,
+        keepRunningAfterQuit: false,
       },
     });
   });
@@ -246,6 +247,42 @@ describe("desktop-settings", () => {
 
     expect(settings.daemon.keepRunningAfterQuit).toBe(false);
   });
+
+  it.each([undefined, false])(
+    "迁移标记为 %s 时仍按已有选择停止守护进程",
+    async (migrationApplied) => {
+      const userDataPath = await createTempUserDataDir();
+      directories.add(userDataPath);
+      await writeFile(
+        settingsFilePath(userDataPath),
+        JSON.stringify({
+          version: 1,
+          settings: {
+            releaseChannel: "stable",
+            daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: false },
+          },
+          migrations: {
+            legacyRendererSettingsImported: true,
+            daemonStopOnQuitDefaultApplied: migrationApplied,
+          },
+        }),
+      );
+      const events: string[] = [];
+      const stopped = await stopDesktopManagedDaemonOnQuitIfNeeded({
+        settingsStore: createDesktopSettingsStore({ userDataPath }),
+        isDesktopManagedDaemonRunning: () => true,
+        showShutdownFeedback: () => events.push("feedback"),
+        stopDaemon: async () => {
+          events.push("stop");
+        },
+      });
+
+      expect(stopped).toBe(true);
+      expect(events).toEqual(["feedback", "stop"]);
+      const reloaded = await createDesktopSettingsStore({ userDataPath }).get();
+      expect(reloaded.daemon.keepRunningAfterQuit).toBe(false);
+    },
+  );
 
   it("migrates desktop-owned values from legacy renderer settings once", async () => {
     const userDataPath = await createTempUserDataDir();

@@ -1623,6 +1623,121 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
+  test("分页会话立即中断后可按客户端消息回退，保留旧历史并继续同一会话", async () => {
+    const retainedTurn = {
+      id: "turn-first",
+      itemsView: "full",
+      items: [
+        {
+          type: "userMessage",
+          id: "codex-first",
+          clientId: "client-first",
+          content: [{ type: "text", text: "保留第一轮" }],
+        },
+        { type: "agentMessage", id: "answer-first", text: "第一轮答复" },
+      ],
+    };
+    const appServer = createFakeCodexAppServer({
+      "turn/interrupt": async () => ({}),
+      "thread/read": async (params) => {
+        expect(params).toEqual({ threadId: "thread-1", includeTurns: false });
+        return { thread: { id: "thread-1", historyMode: "paginated" } };
+      },
+      "thread/turns/list": async (params) => {
+        if (typeof params !== "object" || params === null || !("cursor" in params)) {
+          throw new Error("Missing history cursor");
+        }
+        if (params.cursor === "retained-tail") {
+          return { data: [retainedTurn], nextCursor: null };
+        }
+        expect(params.cursor).toBeNull();
+        return {
+          data: [
+            {
+              id: "turn-interrupted",
+              itemsView: "full",
+              items: [
+                { type: "userMessage", id: "codex-interrupted", clientId: "client-interrupted" },
+              ],
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+      "thread/revert": async (params) => {
+        expect(params).toEqual({ threadId: "thread-1", beforeTurnId: "turn-interrupted" });
+        return {
+          thread: { id: "thread-1", historyMode: "paginated", turns: [] },
+          turnsBackwardsCursor: "retained-tail",
+          itemsBackwardsCursor: null,
+        };
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace/project" }),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+    );
+
+    await session.startTurn("保留第一轮", { clientMessageId: "client-first" });
+    emitCodexUserMessage(appServer, { id: "codex-first", text: "保留第一轮" });
+    appServer.completeTurn();
+    await session.startTurn("立即撤回", { clientMessageId: "client-interrupted" });
+    appServer.startsTurn({ threadId: "thread-1", turnId: "turn-interrupted" });
+    await session.interrupt();
+    appServer.completeTurn({ status: "interrupted" });
+
+    await session.revertConversation({ messageId: "client-interrupted" });
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(history).toEqual([
+      {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "user_message",
+          messageId: "codex-first",
+          clientMessageId: "client-first",
+          text: "保留第一轮",
+          turnRole: "start",
+        },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        item: {
+          type: "assistant_message",
+          messageId: "answer-first",
+          text: "第一轮答复",
+        },
+      },
+    ]);
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({ sessionId: "thread-1" });
+    await session.startTurn("回退后继续", { clientMessageId: "client-after" });
+    appServer.completeTurn();
+
+    expect(
+      appServer
+        .requests()
+        .filter((request) => request.method === "turn/start")
+        .map((request) => request.params),
+    ).toMatchObject([
+      { threadId: "thread-1", clientUserMessageId: "client-first" },
+      { threadId: "thread-1", clientUserMessageId: "client-interrupted" },
+      { threadId: "thread-1", clientUserMessageId: "client-after" },
+    ]);
+    expect(
+      appServer
+        .requests()
+        .filter((request) => ["thread/rollback", "thread/fork"].includes(String(request.method))),
+    ).toEqual([]);
+    appServer.assertNoErrors();
+    await session.close();
+  });
+
   test("立即中断时即使尚未收到原生用户消息，也能按客户端消息标识回退", async () => {
     const appServer = createFakeCodexAppServer({
       "turn/interrupt": () => ({}),
