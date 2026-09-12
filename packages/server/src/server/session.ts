@@ -4766,6 +4766,7 @@ export class Session {
 
     return {
       id: workspace.workspaceId,
+      createdAt: workspace.createdAt,
       projectId: workspace.projectId,
       projectDisplayName: resolvedProjectRecord
         ? resolveProjectDisplayName(resolvedProjectRecord)
@@ -4852,6 +4853,7 @@ export class Session {
     const projectRecord = await this.projectRegistry.get(result.workspace.projectId);
     return {
       id: result.workspace.workspaceId,
+      createdAt: result.workspace.createdAt,
       projectId: result.workspace.projectId,
       projectDisplayName: projectRecord
         ? resolveProjectDisplayName(projectRecord)

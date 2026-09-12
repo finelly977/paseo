@@ -3639,6 +3639,8 @@ export const WorkspaceGitHubRuntimePayloadSchema = z
 export const WorkspaceDescriptorPayloadSchema = z
   .object({
     id: z.string(),
+    // COMPAT(workspaceCreatedAt): 二开 0.2.2 于 2026-09-12 加入，2027-03-12 后移除旧主机缺字段兼容。
+    createdAt: z.string().nullable().optional(),
     projectId: z.string(),
     projectDisplayName: z.string(),
     // COMPAT(projectCustomName): added in v0.1.76, drop the optional gate when floor >= v0.1.76.

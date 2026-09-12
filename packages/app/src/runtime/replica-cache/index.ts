@@ -190,6 +190,8 @@ const WorkspaceGitRuntimeSchema = z
 
 const StoredWorkspaceSchema = z.strictObject({
   id: z.string(),
+  // COMPAT(workspaceCreatedAt): 二开 0.2.2 于 2026-09-12 加入，2027-03-12 后移除旧副本缺字段兼容。
+  createdAt: IsoDateSchema.nullable().optional(),
   projectId: z.string(),
   projectDisplayName: z.string(),
   projectCustomName: z.string().nullable(),
@@ -477,6 +479,7 @@ function deserializeAgent(serverId: string, stored: StoredAgent): Agent {
 function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
   return {
     id: workspace.id,
+    createdAt: workspace.createdAt?.toISOString() ?? null,
     projectId: workspace.projectId,
     projectDisplayName: workspace.projectDisplayName,
     projectCustomName: workspace.projectCustomName ?? null,

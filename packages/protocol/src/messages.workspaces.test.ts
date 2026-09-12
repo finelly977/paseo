@@ -8,6 +8,7 @@ import {
   WorkspaceDescriptorPayloadSchema,
   WorkspaceScriptPayloadSchema,
 } from "./messages.js";
+import { validateWSOutboundMessage } from "./validation/ws-outbound.js";
 
 describe("workspace message schemas", () => {
   test("parses fetch_workspaces_request", () => {
@@ -524,6 +525,42 @@ describe("workspace message schemas", () => {
         archivingAt,
       }).archivingAt,
     ).toBe(archivingAt);
+  });
+
+  test("工作区描述保留加入时间并接受缺少该字段的旧消息", () => {
+    const workspace = {
+      id: "workspace-created",
+      projectId: "project-created",
+      projectDisplayName: "项目",
+      projectRootPath: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "会话",
+      status: "done",
+      activityAt: null,
+      scripts: [],
+    };
+    const createdAt = "2026-09-12T08:00:00.000Z";
+
+    expect(WorkspaceDescriptorPayloadSchema.parse({ ...workspace, createdAt }).createdAt).toBe(
+      createdAt,
+    );
+    expect(WorkspaceDescriptorPayloadSchema.parse(workspace).createdAt).toBeUndefined();
+    expect(
+      WorkspaceDescriptorPayloadSchema.parse({ ...workspace, createdAt: null }).createdAt,
+    ).toBeNull();
+    expect(
+      validateWSOutboundMessage({
+        type: "session",
+        message: {
+          type: "workspace_update",
+          payload: { kind: "upsert", workspace: { ...workspace, createdAt } },
+        },
+      }),
+    ).toMatchObject({
+      success: true,
+      data: { message: { payload: { workspace: { createdAt } } } },
+    });
   });
 
   // The protocol `statusEnteredAt` field is optional and defaults to null.

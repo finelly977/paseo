@@ -27,6 +27,11 @@ interface WorkspaceStructureSession {
   workspaces: Iterable<WorkspaceDescriptor>;
 }
 
+interface WorkspaceStructureItem {
+  workspaceKey: string;
+  addedAt: Date | null;
+}
+
 interface ProjectDraft {
   projectKey: string;
   projectName: string;
@@ -34,12 +39,7 @@ interface ProjectDraft {
   projectKind: WorkspaceDescriptor["projectKind"];
   iconWorkingDir: string;
   hosts: Map<string, WorkspaceStructureHostPlacement>;
-  workspaces: Array<{
-    workspaceId: string;
-    workspaceName: string;
-    workspaceKey: string;
-    activityAt: Date | null;
-  }>;
+  workspaces: WorkspaceStructureItem[];
 }
 
 /** The single app boundary that turns host-local projects into grouped display projects. */
@@ -75,10 +75,9 @@ export function buildWorkspaceStructureProjects(input: {
       const projectKey = viewKeyByServerProjectId.get(session.serverId)?.get(workspace.projectId);
       if (!projectKey) continue;
       byProject.get(projectKey)?.workspaces.push({
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
         workspaceKey: `${session.serverId}:${workspace.id}`,
-        activityAt: workspace.activityAt,
+        // COMPAT(workspaceCreatedAt): 二开 0.2.2 于 2026-09-12 加入，2027-03-12 后删除旧主机时间回退。
+        addedAt: workspace.createdAt ?? workspace.activityAt,
       });
     }
   }
@@ -152,17 +151,10 @@ function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
 }
 
 function compareWorkspaceStructureItems(
-  left: { workspaceId: string; workspaceName: string; activityAt: Date | null },
-  right: { workspaceId: string; workspaceName: string; activityAt: Date | null },
+  left: WorkspaceStructureItem,
+  right: WorkspaceStructureItem,
 ): number {
-  const leftActivity = left.activityAt?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const rightActivity = right.activityAt?.getTime() ?? Number.NEGATIVE_INFINITY;
-  return (
-    rightActivity - leftActivity ||
-    left.workspaceName.localeCompare(right.workspaceName, undefined, {
-      numeric: true,
-      sensitivity: "base",
-    }) ||
-    left.workspaceId.localeCompare(right.workspaceId, undefined, { sensitivity: "base" })
-  );
+  const leftAddedAt = left.addedAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const rightAddedAt = right.addedAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+  return rightAddedAt - leftAddedAt || left.workspaceKey.localeCompare(right.workspaceKey);
 }

@@ -105,6 +105,7 @@ export interface Agent {
 
 export interface WorkspaceDescriptor {
   id: string;
+  createdAt: Date | null;
   projectId: string;
   projectDisplayName: string;
   projectCustomName?: string | null;
@@ -130,6 +131,10 @@ export interface WorkspaceDescriptor {
 export function normalizeWorkspaceDescriptor(
   payload: WorkspaceDescriptorPayload,
 ): WorkspaceDescriptor {
+  const createdAt = payload.createdAt == null ? null : new Date(payload.createdAt);
+  if (createdAt !== null && Number.isNaN(createdAt.getTime())) {
+    throw new Error(`工作区 ${payload.id} 的加入时间无效: ${payload.createdAt}`);
+  }
   const statusEnteredAtRaw = payload.statusEnteredAt;
   const statusEnteredAt: Date | null =
     typeof statusEnteredAtRaw === "string" && statusEnteredAtRaw.length > 0
@@ -139,6 +144,7 @@ export function normalizeWorkspaceDescriptor(
     payload.activityAt === null ? null : parseWorkspaceActivityAt(payload.id, payload.activityAt);
   return {
     id: normalizeWorkspaceOpaqueId(payload.id) ?? payload.id,
+    createdAt,
     projectId: payload.projectId,
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,

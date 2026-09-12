@@ -19,6 +19,7 @@ function createWorkspaceDescriptor(): WorkspaceDescriptor {
     archivingAt: null,
     statusEnteredAt: null,
     activityAt: null,
+    createdAt: null,
   };
 }
 

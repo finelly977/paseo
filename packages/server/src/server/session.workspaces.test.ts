@@ -3821,6 +3821,7 @@ test("create paseo worktree response preserves an explicit non-Git project", asy
   expect(response?.payload.error).toBeNull();
   expect(response?.payload.workspace).toMatchObject({
     projectId: explicitProject.projectId,
+    createdAt,
     projectDisplayName: explicitProject.displayName,
     projectRootPath: explicitProject.rootPath,
     projectKind: "non_git",
@@ -3977,10 +3978,26 @@ test("open_project_request registers a workspace before any agent exists", async
   const registeredWorkspace = Array.from(workspaces.values()).find(
     (workspace) => workspace.cwd === REPO_CWD,
   );
-  expect(registeredWorkspace).toBeTruthy();
+  if (!registeredWorkspace) throw new Error("新工作区尚未登记");
   const response = findByType(emitted, "open_project_response");
   expect(response?.payload.error).toBeNull();
-  expect(response?.payload.workspace?.id).toBe(registeredWorkspace?.workspaceId);
+  expect(response?.payload.workspace).toMatchObject({
+    id: registeredWorkspace.workspaceId,
+    createdAt: registeredWorkspace.createdAt,
+  });
+
+  await session.handleMessage({
+    type: "fetch_workspaces_request",
+    requestId: "req-workspaces-created",
+    page: { limit: 100 },
+  });
+  const directory = findByType(emitted, "fetch_workspaces_response");
+  expect(directory?.payload.entries).toEqual([
+    expect.objectContaining({
+      id: registeredWorkspace.workspaceId,
+      createdAt: registeredWorkspace.createdAt,
+    }),
+  ]);
 });
 
 test("import_agent_request registers a workspace for a never-seen cwd", async () => {

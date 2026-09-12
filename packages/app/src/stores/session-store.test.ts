@@ -20,6 +20,7 @@ function createWorkspace(
 ): WorkspaceDescriptor {
   return {
     id: input.id,
+    createdAt: input.createdAt ?? null,
     projectId: input.projectId ?? "project-1",
     projectDisplayName: input.projectDisplayName ?? "Project 1",
     projectCustomName: input.projectCustomName ?? null,
@@ -364,6 +365,34 @@ describe("normalizeWorkspaceDescriptor", () => {
     );
     expect(() => normalizeWorkspaceDescriptor({ ...payload, activityAt: "not-a-date" })).toThrow(
       "最近活动时间无效",
+    );
+  });
+
+  it("保留真实加入时间，旧消息标记为未知，非法时间明确报错", () => {
+    const payload: WorkspaceDescriptorPayload = {
+      id: "workspace-created",
+      projectId: "project-created",
+      projectDisplayName: "项目",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "新会话",
+      archivingAt: null,
+      status: "done",
+      statusEnteredAt: null,
+      activityAt: null,
+      scripts: [],
+    };
+    const createdAt = "2026-09-12T08:00:00.000Z";
+
+    expect(normalizeWorkspaceDescriptor({ ...payload, createdAt }).createdAt).toEqual(
+      new Date(createdAt),
+    );
+    expect(normalizeWorkspaceDescriptor(payload).createdAt).toBeNull();
+    expect(normalizeWorkspaceDescriptor({ ...payload, createdAt: null }).createdAt).toBeNull();
+    expect(() => normalizeWorkspaceDescriptor({ ...payload, createdAt: "invalid" })).toThrow(
+      "加入时间无效",
     );
   });
 

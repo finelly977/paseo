@@ -31,6 +31,7 @@ function createWorkspace(
 ): WorkspaceDescriptor {
   return {
     id: input.id,
+    createdAt: input.createdAt ?? null,
     projectId: input.projectId ?? "project-1",
     projectDisplayName: input.projectDisplayName ?? "Project 1",
     projectRootPath: input.projectRootPath ?? "/repo",
@@ -488,6 +489,42 @@ describe("workspace structure composition", () => {
     expect(compose("added")).toEqual(["project-b", "project-a"]);
     expect(compose("name")).toEqual(["project-a", "project-b"]);
     expect(compose("custom")).toEqual(["project-a", "project-b"]);
+  });
+
+  it("新会话立即置顶且不打乱已有会话的手动顺序", () => {
+    initializeWorkspaces([
+      createWorkspace({
+        id: "old",
+        name: "A 旧会话",
+        createdAt: new Date("2026-09-10T08:00:00.000Z"),
+      }),
+      createWorkspace({
+        id: "new",
+        name: "M 新会话",
+        createdAt: new Date("2026-09-12T08:00:00.000Z"),
+      }),
+      createWorkspace({
+        id: "middle",
+        name: "Z 较早会话",
+        createdAt: new Date("2026-09-11T08:00:00.000Z"),
+      }),
+    ]);
+    const projects = selectWorkspaceStructureProjects(useSessionStore.getState(), [SERVER_ID]);
+    const result = composeWorkspaceStructure({
+      projects,
+      projectAddedOrder: ["project-1"],
+      projectOrder: [],
+      workspaceOrderByScope: {
+        "project-1": ["test-server:old", "test-server:middle"],
+      },
+      projectSortMode: "added",
+    });
+
+    expect(result.projects[0].workspaceKeys).toEqual([
+      "test-server:new",
+      "test-server:old",
+      "test-server:middle",
+    ]);
   });
 });
 

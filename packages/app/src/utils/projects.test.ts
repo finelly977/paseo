@@ -27,6 +27,7 @@ function workspace(id: string, projectId: string, root: string): WorkspaceDescri
     status: "done",
     statusEnteredAt: null,
     activityAt: null,
+    createdAt: null,
     archivingAt: null,
     diffStat: null,
     scripts: [],

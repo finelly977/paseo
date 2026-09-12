@@ -26,6 +26,7 @@ function workspace(
 ): WorkspaceDescriptor {
   return {
     id,
+    createdAt: null,
     projectId,
     projectDisplayName: "acme/app",
     projectCustomName: null,
@@ -44,6 +45,73 @@ function workspace(
 }
 
 describe("buildWorkspaceStructureProjects", () => {
+  test("新加入的会话按加入时间置顶，不按名称或最近活动插到旧会话中间", () => {
+    const oldWorkspace = {
+      ...workspace("old", "prj_a", "/a/app", new Date("2026-09-12T12:00:00.000Z")),
+      name: "A 旧会话",
+      createdAt: new Date("2026-09-10T08:00:00.000Z"),
+    };
+    const newWorkspace = {
+      ...workspace("new", "prj_a", "/a/app"),
+      name: "M 新会话",
+      createdAt: new Date("2026-09-12T08:00:00.000Z"),
+    };
+    const middleWorkspace = {
+      ...workspace("middle", "prj_a", "/a/app"),
+      name: "Z 较早会话",
+      createdAt: new Date("2026-09-11T08:00:00.000Z"),
+    };
+    const result = buildWorkspaceStructureProjects({
+      sessions: [
+        {
+          serverId: "host-a",
+          projects: [project({ id: "prj_a", key: "project-a", root: "/a/app" })],
+          workspaces: [oldWorkspace, newWorkspace, middleWorkspace],
+        },
+      ],
+    });
+
+    expect(result[0].workspaceKeys).toEqual(["host-a:new", "host-a:middle", "host-a:old"]);
+  });
+
+  test("相同加入时间保持稳定顺序，改名和继续对话不会重新排列", () => {
+    const createdAt = new Date("2026-09-12T08:00:00.000Z");
+    const firstWorkspace = {
+      ...workspace("a", "prj_a", "/a/app"),
+      name: "Z 会话",
+      createdAt,
+    };
+    const secondWorkspace = {
+      ...workspace("b", "prj_a", "/a/app"),
+      name: "A 会话",
+      createdAt,
+    };
+    function workspaceKeys(workspaces: WorkspaceDescriptor[]) {
+      return buildWorkspaceStructureProjects({
+        sessions: [
+          {
+            serverId: "host-a",
+            projects: [project({ id: "prj_a", key: "project-a", root: "/a/app" })],
+            workspaces,
+          },
+        ],
+      })[0].workspaceKeys;
+    }
+
+    expect(workspaceKeys([secondWorkspace, firstWorkspace])).toEqual(["host-a:a", "host-a:b"]);
+    expect(
+      workspaceKeys([
+        firstWorkspace,
+        {
+          ...secondWorkspace,
+          name: "新标题",
+          status: "running",
+          activityAt: new Date("2026-09-12T12:00:00.000Z"),
+        },
+      ]),
+    ).toEqual(["host-a:a", "host-a:b"]);
+  });
+
   test("groups the same project key across hosts and keeps host-local ids", () => {
     const key = "remote:github.com/acme/app";
     const result = buildWorkspaceStructureProjects({

@@ -21,6 +21,7 @@ function workspace(input: {
     archivingAt: null,
     statusEnteredAt: null,
     activityAt: null,
+    createdAt: null,
     diffStat: null,
     scripts: input.scripts ?? [],
   };

@@ -317,6 +317,7 @@ function createLegacyWorkspace(
     workspaceDirectory;
   return {
     id: workspaceDirectory,
+    createdAt: null,
     projectId: entry.project.projectKey,
     projectDisplayName: entry.project.projectName,
     projectCustomName: null,

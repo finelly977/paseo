@@ -37,6 +37,7 @@ function workspace(
 ): WorkspaceDescriptorPayload {
   return {
     id,
+    createdAt: "2026-07-18T08:00:00.000Z",
     projectId,
     projectDisplayName: "Paseo",
     projectRootPath: workspaceDirectory,
@@ -250,6 +251,9 @@ describe("ReplicaCache", () => {
     expect(Array.from(session?.projects.keys() ?? [])).toEqual(["project-1"]);
     expect(session?.agents.get("agent-1")?.updatedAt).toBeInstanceOf(Date);
     expect(session?.workspaces.get("workspace-1")?.statusEnteredAt).toBeInstanceOf(Date);
+    expect(session?.workspaces.get("workspace-1")?.createdAt).toEqual(
+      new Date("2026-07-18T08:00:00.000Z"),
+    );
 
     expect(session?.agentStreamTail.get("agent-1")).toEqual([message("message-1", "Cached")]);
     // 副本只用于连接前展示，不声明自己是权威历史；连接后仍按设置重新加载。
