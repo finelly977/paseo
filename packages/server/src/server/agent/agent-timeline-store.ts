@@ -176,6 +176,20 @@ export class InMemoryAgentTimelineStore {
     return row ? cloneRow(row) : null;
   }
 
+  resolveProviderMessageId(agentId: string, messageId: string): string {
+    for (const row of this.requireState(agentId).rows) {
+      const item = row.item;
+      if (
+        item.type === "user_message" &&
+        (item.messageId === messageId || item.clientMessageId === messageId)
+      ) {
+        return row.providerMessageId ?? item.messageId ?? messageId;
+      }
+    }
+    // 导入历史可直接使用原生标识，不要求存在客户端消息映射。
+    return messageId;
+  }
+
   enrichSubmittedUserMessage(
     agentId: string,
     clientMessageId: string,

@@ -54,7 +54,7 @@ A steering adapter also owes its interrupt: stopping a turn must discard the ste
 
 `SteerActiveTurnOptions.clearPendingPermissions` 把权限释放纳入提供方契约。提供方接受带该选项的追加消息时，必须先可靠排入消息，再拒绝阻塞消息送达的权限申请，并在追加消息被读取后停止权限清理；未携带该选项的追加消息保持权限申请不变。被拒绝的计划仍保留在时间线中，因为待处理权限卡片此前是其文本的唯一副本。
 
-Rewind accepts the canonical wire `messageId` and resolves it to the provider identity before calling the adapter. A submitted prompt cannot be rewound until its provider echo supplies that identity.
+回退请求使用界面中的规范 `messageId`。管理器先在当前会话的权威时间线中按 `messageId` 或 `clientMessageId` 精确定位用户消息，再使用该行的 `providerMessageId` 调用提供方的对话、文件或组合回退。直接使用原生标识的导入历史和旧消息保持原有路径；不得按消息正文或邻近回合猜测目标。映射必须在运行时释放和历史恢复后继续有效，不能为了调用原生回退而改写界面消息标识。
 
 Submitted user-message wire items carry the same Paseo ID in `messageId` and `clientMessageId`. Provider adapters attach `clientMessageId` only to the echo for that foreground submission; provider history and externally initiated user rows do not have a Paseo client ID.
 

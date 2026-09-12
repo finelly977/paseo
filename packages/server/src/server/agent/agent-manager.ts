@@ -2899,11 +2899,12 @@ export class AgentManager {
 
     const lock = this.runs.createPendingRun(agentId);
     try {
+      const providerMessageId = this.timelineStore.resolveProviderMessageId(agentId, messageId);
       this.logger.info(
-        { agentId, provider: agent.provider, messageId, mode },
+        { agentId, provider: agent.provider, messageId, providerMessageId, mode },
         "agent.rewind.start",
       );
-      await invokeRewindCapability(agent.session, { messageId, mode });
+      await invokeRewindCapability(agent.session, { messageId: providerMessageId, mode });
       if (mode !== "files") {
         await this.hydrateTimelineFromProvider(agentId, {
           force: true,

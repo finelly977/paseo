@@ -61,6 +61,7 @@
 - Codex 回合被提交成功后立即记录 Paseo 客户端消息与原生用户回合的对应关系；即使用户在原生用户消息事件返回前立刻中断，也能直接回退刚发送的消息，无需重新加载会话。原生消息稍后到达时会并入同一回合，不会导致回退范围多算一次。
 - Codex 在失败回合后直接重试或完成回退后重新发送时，新回合会清除上一回合遗留的错误状态，再等待本次原生回合确认；不会先误报“智能体启动失败”，随后又在后台继续运行。新回合自身确实启动失败时仍显示本次真实错误。
 - Claude 使用原生分支能力创建回退后的新会话，并把回退前的原会话标记为已归档，避免原分支继续出现在正常导入列表中。
+- Claude 的对话、文件和组合回退会先把界面中的 Paseo 消息标识解析为当前会话已记录的原生消息标识，再交给提供方执行。该映射随权威时间线持久保存，失败回合或重新打开的老会话也能定位原消息；不按相同正文猜测目标，不改写界面消息标识，也不跨会话查找。
 - Claude 的“同时回退对话和文件”仍先执行文件检查点回退，再切换到新的会话分支。
 - 对话回退会把目标用户消息的文本和图片一起恢复到输入框；重新发送成功后会再次确认清空输入内容和附件，避免已发送内容残留。
 - 对话回退或同时回退会在提供方操作完成后一次性替换权威时间线版本，不再把长历史逐行重放给新客户端；发起回退的界面直接读取最新尾部，其他正在查看同一会话的界面收到版本通知后也丢弃旧游标并读取权威尾部。较新的替换会废弃仍在途的旧读取，读取失败进入现有历史同步错误与重试流程，不会停留在看似成功的陈旧历史。旧客户端仍接收兼容重放，回退响应只返回发起请求的连接；这套投递差异不改变 Codex 原地回退、Claude 分支回退及文本与图片恢复行为。
@@ -70,6 +71,7 @@
 - `packages/server/src/server/agent/providers/codex/rewind.ts`
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
 - `packages/server/src/server/agent/agent-manager.ts`
+- `packages/server/src/server/agent/agent-timeline-store.ts`
 - `packages/server/src/server/agent/providers/claude/rewind.ts`
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/app/src/components/rewind/`
