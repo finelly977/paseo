@@ -632,6 +632,7 @@ let buffer = "";
 
 function resultFor(method, params) {
   if (method === "initialize") return {};
+  if (method === "config/read") return { config: {} };
   if (method === "collaborationMode/list") return { data: [] };
   if (method === "skills/list") {
     const cwds = params && params.cwds;
@@ -685,6 +686,178 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test.each([
+    { name: "新建", handle: null, method: "thread/start" },
+    { name: "恢复", handle: { sessionId: "thread-1" }, method: "thread/resume" },
+  ])("$name 会话使用独立桌面工具配置并保留原有 MCP", async ({ handle, method }) => {
+    const appServer = createFakeCodexAppServer();
+    const inputs: Record<string, unknown>[] = [];
+    let disposed = 0;
+    const desktopConfig = { "mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY": "独立管道" };
+    const session = new CodexAppServerAgentSession(
+      createConfig({ mcpServers: { project: { type: "stdio", command: "project-tools" } } }),
+      handle,
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools({ overrides }) {
+          inputs.push(overrides);
+          return {
+            config: desktopConfig,
+            handleNotification() {},
+            async dispose() {
+              disposed++;
+            },
+          };
+        },
+      },
+    );
+    try {
+      await session.startTurn("验证会话配置");
+      expect(inputs).toEqual([{ mcp_servers: { project: { command: "project-tools" } } }]);
+      expect(appServer.requests()).toContainEqual(
+        expect.objectContaining({
+          method,
+          params: expect.objectContaining({
+            config: {
+              mcp_servers: { project: { command: "project-tools" } },
+              ...desktopConfig,
+            },
+          }),
+        }),
+      );
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+      await session.close();
+    }
+    expect(disposed).toBe(1);
+  });
+
+  test("恢复线程失败后释放已取得的桌面工具租约", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () => Promise.reject(new Error("恢复失败")),
+    });
+    let disposed = 0;
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools() {
+          return {
+            config: {},
+            handleNotification() {},
+            async dispose() {
+              disposed++;
+            },
+          };
+        },
+      },
+    );
+    await expect(session.connect()).rejects.toThrow("恢复失败");
+    await session.close();
+    expect(disposed).toBe(1);
+    appServer.assertNoErrors();
+  });
+
+  test("Codex 异常退出会释放桌面组件且不会重复释放", async () => {
+    const appServer = createFakeCodexAppServer();
+    const released = Promise.withResolvers<void>();
+    let disposed = 0;
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools() {
+          return {
+            config: {},
+            handleNotification() {},
+            async dispose() {
+              disposed++;
+              released.resolve();
+            },
+          };
+        },
+      },
+    );
+    await session.connect();
+    appServer.disconnect();
+    await released.promise;
+    await session.close();
+    expect(disposed).toBe(1);
+  });
+
+  test("真实传输收到的回合通知会转交桌面工具生命周期", async () => {
+    const appServer = createFakeCodexAppServer();
+    const completed = Promise.withResolvers<void>();
+    const methods: string[] = [];
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools() {
+          return {
+            config: {},
+            handleNotification(method) {
+              methods.push(method);
+              if (method === "turn/completed") completed.resolve();
+            },
+            async dispose() {},
+          };
+        },
+      },
+    );
+    try {
+      await session.startTurn("验证清理通知");
+      appServer.startsTurn({ threadId: "thread-1", turnId: "turn-1" });
+      appServer.completeTurn({ status: "interrupted" });
+      await completed.promise;
+      expect(methods).toEqual(["turn/started", "turn/completed"]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("初始化期间关闭会话不会遗留随后才准备好的桌面组件", async () => {
+    const appServer = createFakeCodexAppServer();
+    const started = Promise.withResolvers<void>();
+    const ready = Promise.withResolvers<void>();
+    let disposed = 0;
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      null,
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools() {
+          started.resolve();
+          await ready.promise;
+          return {
+            config: {},
+            handleNotification() {},
+            async dispose() {
+              disposed++;
+            },
+          };
+        },
+      },
+    );
+    const connecting = session.connect();
+    const failure = expect(connecting).rejects.toThrow("closed while desktop tools were starting");
+    await started.promise;
+    await session.close();
+    ready.resolve();
+    await failure;
+    expect(disposed).toBe(1);
+    expect(appServer.requests().filter((request) => request.method === "thread/start")).toEqual([]);
+  });
+
   test("getAvailableModes includes auto-review when the Codex version supports it", async () => {
     const session = createSession({}, { autoReviewEnabled: true });
 
@@ -1964,7 +2137,6 @@ describe("Codex app-server provider", () => {
         return { config: {} };
       },
       "config/read": () => {
-        threadRequests.push("config/read");
         return { config: {} };
       },
       "model/list": () => {

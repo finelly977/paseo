@@ -518,3 +518,18 @@
 - `packages/server/src/server/hub/`
 - `packages/server/src/server/session.ts`
 - `packages/server/src/server/websocket-server.ts`
+
+### 25. Windows Codex 桌面工具由 Paseo 独立托管
+
+- 已通过官方 App 安装并启用 Computer Use 或 Chrome 插件的 Windows 用户，可以让 Paseo 的 Codex 会话使用独立执行宿主，不必由 Codex App 主进程维持桌面控制管道。官方安装文件、Node 运行时、SDK、登录状态及 Chrome 扩展仍是前提；Paseo 不复制专有实现、不自动安装插件，也不启动隐藏的 Codex App。
+- Computer Use 按需使用官方配套 Node 加载 SDK 并启动原生组件，数据目录、授权请求和物理 Escape 停止机制保持原样。Chrome 沿用官方扩展及原生宿主连接，不提供依赖 Codex App 的内置浏览器。
+- 配置覆盖仅作用于当前 Codex 运行实例；保留原有工具限制和可用界面，不改写用户全局配置、官方插件缓存或权限。用户明确覆盖相关 MCP/插件、禁用服务，以及非 Windows 或非 App 管道型配置时，不自动接管。
+- 回合完成和中断时主动调用官方工具清理接口，按会话与回合关闭原生组件；关闭、初始化失败和异常退出时释放其拥有的运行时。共享管道通过引用计数回收，旧回合、旧连接和另一会话的清理不会误停当前回合；组件启动期间取消操作也不会在启动完成后继续执行。
+
+主要涉及：
+
+- `packages/server/src/server/agent/providers/codex/desktop-tools.ts`
+- `packages/server/src/server/agent/providers/codex/desktop-tools-bridge.ts`
+- `packages/server/src/server/agent/providers/codex/desktop-tools-helper.ts`
+- `packages/server/src/server/agent/providers/codex/desktop-tools-host.ts`
+- `packages/server/src/server/agent/providers/codex-app-server-agent.ts`

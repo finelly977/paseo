@@ -239,6 +239,21 @@ requires_openai_auth = false
 - To run multiple endpoints side-by-side, define multiple entries that each extend `"codex"` with different IDs, labels, and env. Each appears as its own provider in the app.
 - If you only want to override the binary (e.g. a nightly Codex build) without changing the endpoint, omit `OPENAI_BASE_URL` and use `command` instead — see [Custom binary for a provider](#custom-binary-for-a-provider).
 
+### Windows 上独立托管官方桌面工具
+
+Paseo 的 Codex 提供方可以自行托管已安装的官方 Computer Use 与 Chrome 工具运行时，不启动或隐藏整个 Codex App。它使用官方 SDK 和可执行文件，不复制专有实现，也不把技能替换成另一套浏览器自动化工具。
+
+**前提：** 先通过 Codex App 安装、启用所需插件并完成运行时准备；Chrome 还需要已安装的官方扩展和已注册的原生宿主。Paseo 不负责首次安装、登录或代替用户授权，也不会自动开启已关闭的插件。仍需保留官方 App 安装目录及其下载的运行时，不能在体验成功后直接卸载这些组件。
+
+每次新建或恢复 Codex 运行实例时，Paseo 读取其有效配置，只接管 Windows 上由 App 配置的原生管道型 Node REPL：
+
+- Computer Use 通过 Paseo 自有命名管道连接独立 SDK 宿主。首次操作时，宿主使用官方配套 Node 启动，并由官方 `WindowsHelperTransport` 启动原生组件；组件使用宿主的父进程标识，Codex 数据目录、原生审批和物理 Escape 停止语义均保留。
+- Chrome 继续通过官方浏览器 SDK 连接扩展宿主；扩展宿主由 Chrome 启动，不由 Paseo 冒充或抢占。独立模式不提供 Codex App 内置的 `iab` 浏览器。
+- 会话配置只替换 Node REPL 的环境变量。统一工具插件的原 MCP 服务在该会话中关闭，并按原工具限制和界面配置注册同名服务；不改写全局 `config.toml` 或官方插件缓存。明确自定义相关 MCP 或插件覆盖的会话保留用户配置，不自动接管。
+- Paseo 根据回合完成与中断通知调用官方 `turn_ended`，并按会话和回合回收本次原生控制组件，不依赖 CLI 是否加载了插件结束钩子。会话退出、初始化失败和异常断连也会释放租约；多个会话共享同一运行时的管道，旧连接及迟到的清理通知不会关闭其他回合。
+
+macOS、Linux 和非 App 管道型配置保持原有行为。运行时缺失、配置结构不合法或服务启动失败会明确报告，不会降级为跳过认证、自动批准或直接调用未受管理的桌面控制组件。官方 App 更新可能改变这些本地接口；排查时应先核对有效 MCP 配置和实际进程归属，不能只凭工具目录中出现技能名称判断执行宿主是否正常。
+
 ---
 
 ## Multiple profiles for the same provider

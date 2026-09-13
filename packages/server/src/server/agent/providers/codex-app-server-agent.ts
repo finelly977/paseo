@@ -83,6 +83,7 @@ import {
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import { connectCodexDesktopTools, type CodexDesktopTools } from "./codex/desktop-tools.js";
 import {
   CODEX_MODEL_CAPACITY_MESSAGE,
   isCodexModelCapacityMessage,
@@ -256,6 +257,7 @@ interface CodexAppServerClientLike {
 }
 
 interface CodexAppServerAgentDeps {
+  connectDesktopTools?: typeof connectCodexDesktopTools;
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   customProvider?: {
     id: string;
@@ -3436,6 +3438,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     cancelRequested: boolean;
   } | null = null;
   private client: CodexAppServerClient | null = null;
+  private desktopTools: CodexDesktopTools | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private activeForegroundTurnId: string | null = null;
   private activeClientMessageId: string | null = null;
@@ -3568,12 +3571,29 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.client = null;
       this.handleUnexpectedTermination(error);
     });
-    client.setNotificationHandler((method, params) => this.handleNotification(method, params));
+    client.setNotificationHandler((method, params) => {
+      if (this.client !== client) return;
+      this.desktopTools?.handleNotification(method, params);
+      this.handleNotification(method, params);
+    });
     this.registerRequestHandlers();
 
     try {
-      await this.client.request("initialize", buildCodexAppServerInitializeParams());
-      this.client.notify("initialized", {});
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+
+      const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
+      const desktopTools = await connectDesktopTools({
+        client,
+        cwd: this.config.cwd,
+        overrides: this.buildCodexInnerConfig() ?? {},
+        logger: this.logger,
+      });
+      if (this.client !== client) {
+        await desktopTools?.dispose();
+        throw new Error("Codex session closed while desktop tools were starting");
+      }
+      this.desktopTools = desktopTools;
 
       await this.loadCollaborationModes();
       await this.loadSkills();
@@ -3585,10 +3605,14 @@ export class CodexAppServerAgentSession implements AgentSession {
         await this.loadPersistedHistory();
       }
 
+      if (this.client !== client) {
+        throw new Error("Codex session closed while connecting");
+      }
       this.connected = true;
     } catch (error) {
       try {
-        await this.close();
+        if (this.client === client) await this.close();
+        else await client.dispose();
       } catch (closeError) {
         this.logger.warn(
           { err: closeError, connectError: error },
@@ -4262,7 +4286,20 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
+  private async releaseTerminatedDesktopTools(desktopTools: CodexDesktopTools): Promise<void> {
+    try {
+      await desktopTools.dispose();
+    } catch (error) {
+      this.logger.error({ err: error }, "Failed to release desktop tools after Codex exited");
+    }
+  }
+
   private handleUnexpectedTermination(error: Error): void {
+    const desktopTools = this.desktopTools;
+    this.desktopTools = null;
+    if (desktopTools) {
+      void this.releaseTerminatedDesktopTools(desktopTools);
+    }
     this.connected = false;
     const startOwnsFailure = this.pendingForegroundStart !== null;
     const hasActiveRootTurn =
@@ -4900,13 +4937,20 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.capacityRetryInFlight = false;
     this.suppressNextRetriedUserMessage = false;
     this.resetTurnTrackingState();
-    if (this.client) {
-      await this.client.dispose();
-    }
+    const client = this.client;
+    const desktopTools = this.desktopTools;
     this.client = null;
+    this.desktopTools = null;
     this.connected = false;
     this.currentThreadId = null;
     this.currentTurnId = null;
+    const cleanup = await Promise.allSettled([client?.dispose(), desktopTools?.dispose()]);
+    const failures: unknown[] = cleanup.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Failed to close Codex and its desktop tools");
   }
 
   async listCommands(): Promise<AgentSlashCommand[]> {
@@ -5201,6 +5245,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (this.deps.customCodexConfig) {
       Object.assign(innerConfig, this.deps.customCodexConfig);
     }
+    if (this.desktopTools) Object.assign(innerConfig, this.desktopTools.config);
     return Object.keys(innerConfig).length > 0 ? innerConfig : null;
   }
 
