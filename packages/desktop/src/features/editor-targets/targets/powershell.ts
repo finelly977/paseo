@@ -1,9 +1,9 @@
 import type { EditorTarget, EditorTargetRuntime } from "../target.js";
 
-// Windows PowerShell（5.1）随系统安装在 System32，通常也位于 PATH 中；
-// 绝对路径候选项用于覆盖 PATH 被精简的环境。
+// 优先使用 PowerShell 7；绝对路径候选项用于覆盖桌面应用 PATH 被精简的环境。
+// 只有找不到 pwsh 时才回退到系统自带的 Windows PowerShell 5.1。
 function commands(runtime: EditorTargetRuntime): string[] {
-  const candidates = ["powershell.exe", "powershell", "pwsh.exe", "pwsh"];
+  const candidates = ["pwsh.exe", "pwsh"];
   const programFiles = runtime.env.ProgramFiles ?? runtime.env.ProgramW6432;
   if (programFiles) {
     candidates.push(`${programFiles}/PowerShell/7/pwsh.exe`);
@@ -11,6 +11,7 @@ function commands(runtime: EditorTargetRuntime): string[] {
   if (runtime.env.LOCALAPPDATA) {
     candidates.push(`${runtime.env.LOCALAPPDATA}/Programs/PowerShell/7/pwsh.exe`);
   }
+  candidates.push("powershell.exe", "powershell");
   const systemRoot = runtime.env.SystemRoot ?? runtime.env.SYSTEMROOT ?? runtime.env.windir;
   if (systemRoot) {
     candidates.push(`${systemRoot}/System32/WindowsPowerShell/v1.0/powershell.exe`);

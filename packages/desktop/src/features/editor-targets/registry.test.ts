@@ -343,8 +343,9 @@ describe("editor target registry", () => {
     expect(windowsTargets.map((target) => target.id)).toEqual(["explorer"]);
   });
 
-  it("在 Windows 工作区目录中打开 PowerShell", async () => {
+  it("同时安装 PowerShell 7 和 Windows PowerShell 时优先打开 PowerShell 7", async () => {
     const runtime = new FakeEditorTargets("win32");
+    runtime.installCommand("pwsh.exe", "C:/Program Files/PowerShell/7/pwsh.exe");
     runtime.installCommand(
       "powershell.exe",
       "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
@@ -357,6 +358,24 @@ describe("editor target registry", () => {
       kind: "terminal",
       icon: { kind: "symbol", name: "terminal" },
     });
+
+    await powershellTarget.launch({ workspacePath: "C:/repo" }, runtime);
+
+    expect(runtime.windowsConsoleLaunches).toEqual([
+      {
+        command: "C:/Program Files/PowerShell/7/pwsh.exe",
+        args: ["-NoLogo", "-NoExit"],
+        cwd: "C:/repo",
+      },
+    ]);
+  });
+
+  it("未安装 PowerShell 7 时仍可打开 Windows PowerShell", async () => {
+    const runtime = new FakeEditorTargets("win32");
+    runtime.installCommand(
+      "powershell.exe",
+      "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    );
 
     await powershellTarget.launch({ workspacePath: "C:/repo" }, runtime);
 

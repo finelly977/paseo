@@ -45,6 +45,8 @@ The first load of an agent without a local cursor is different: it fetches a bou
 
 到达历史起点阈值时只加载一页更早内容，并保持当前可见内容锚点。游标推进本身不会连续触发下一页；只有新页面仍不足以填满视口或历史尚未脱离起点时，才在同一次加载操作中继续分页，直到填满视口或耗尽历史。
 
+桌面端的已完成过程会在渲染后折叠，因此最新尾页的源记录虽然很多，可见高度仍可能只剩一两个回合入口。如果折叠后的内容短到无法形成超过历史起点阈值的滚动范围，网页视口必须主动请求更早一页；每次内容几何实际变化后才允许继续请求，直到用户可以正常向上滚动或历史耗尽。相同内容与几何只能自动请求一次，避免失败时循环请求；点击索引和用户滚动仍可显式重试。
+
 ## Durable item anchors
 
 Provider message IDs are not guaranteed for every displayed item. Paseo-generated system errors are one example. Rendered item indices are not durable either because pagination and projection can merge source rows.

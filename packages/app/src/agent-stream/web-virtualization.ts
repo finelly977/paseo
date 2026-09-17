@@ -54,6 +54,28 @@ export function shouldAdjustScrollForMeasuredItem(input: {
   return input.distanceFromBottom > input.bottomThreshold && input.itemStart < input.scrollOffset;
 }
 
+export function shouldAutoLoadOlderHistory(input: {
+  historyStartReady: boolean;
+  isAuthoritativeHistoryReady: boolean;
+  hasOlderHistory: boolean;
+  isLoadingOlderHistory: boolean;
+  clientHeight: number;
+  scrollHeight: number;
+  historyStartThreshold: number;
+}): boolean {
+  if (
+    !input.historyStartReady ||
+    !input.isAuthoritativeHistoryReady ||
+    !input.hasOlderHistory ||
+    input.isLoadingOlderHistory ||
+    input.clientHeight <= 0
+  ) {
+    return false;
+  }
+
+  return input.scrollHeight - input.clientHeight <= input.historyStartThreshold;
+}
+
 export function estimateStreamItemHeight(
   item: StreamItem,
   messageParagraphSpacing?: number,

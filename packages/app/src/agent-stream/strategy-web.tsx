@@ -10,7 +10,11 @@ import React, {
 } from "react";
 import { ActivityIndicator } from "react-native";
 import { measureElement as measureVirtualElement, useVirtualizer } from "@tanstack/react-virtual";
-import { estimateStreamItemHeight, shouldAdjustScrollForMeasuredItem } from "./web-virtualization";
+import {
+  estimateStreamItemHeight,
+  shouldAdjustScrollForMeasuredItem,
+  shouldAutoLoadOlderHistory,
+} from "./web-virtualization";
 import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
@@ -143,6 +147,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const pendingAutoScrollTimeoutRef = useRef<number | null>(null);
   const pendingItemJumpFrameRef = useRef<number | null>(null);
   const historyStartReadyRef = useRef(false);
+  const lastAutoHistoryBackfillSignatureRef = useRef<string | null>(null);
   const shouldUseVirtualizer = segments.historyVirtualized.length > 0;
   const {
     renderHistoryVirtualizedRow,
@@ -322,7 +327,54 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
   }, [cancelPendingStickToBottom, hasOlderHistory, onNearHistoryStart, updateScrollMetrics]);
 
+  const autoLoadOlderHistoryIfViewportIsTooShort = useCallback(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (
+      !scrollContainer ||
+      !shouldAutoLoadOlderHistory({
+        historyStartReady: historyStartReadyRef.current,
+        isAuthoritativeHistoryReady,
+        hasOlderHistory,
+        isLoadingOlderHistory,
+        clientHeight: scrollContainer.clientHeight,
+        scrollHeight: scrollContainer.scrollHeight,
+        historyStartThreshold: HISTORY_START_THRESHOLD_PX,
+      })
+    ) {
+      return;
+    }
+
+    const signature = [
+      segments.historyVirtualized[0]?.id ?? "",
+      segments.historyVirtualized.at(-1)?.id ?? "",
+      segments.historyVirtualized.length,
+      segments.historyMounted[0]?.id ?? "",
+      segments.historyMounted.at(-1)?.id ?? "",
+      segments.historyMounted.length,
+      segments.liveHead[0]?.id ?? "",
+      segments.liveHead.at(-1)?.id ?? "",
+      segments.liveHead.length,
+      scrollContainer.clientHeight,
+      scrollContainer.scrollHeight,
+    ].join(":");
+    if (lastAutoHistoryBackfillSignatureRef.current === signature) {
+      return;
+    }
+
+    lastAutoHistoryBackfillSignatureRef.current = signature;
+    onNearHistoryStart();
+  }, [
+    hasOlderHistory,
+    isAuthoritativeHistoryReady,
+    isLoadingOlderHistory,
+    onNearHistoryStart,
+    segments.historyMounted,
+    segments.historyVirtualized,
+    segments.liveHead,
+  ]);
+
   useEffect(() => {
+    lastAutoHistoryBackfillSignatureRef.current = null;
     const frame = window.requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
     });
@@ -331,6 +383,13 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       historyStartReadyRef.current = false;
     };
   }, [props.agentId]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(autoLoadOlderHistoryIfViewportIsTooShort);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [autoLoadOlderHistoryIfViewportIsTooShort]);
 
   useLayoutEffect(() => {
     if (!isActivationReady) {
@@ -404,6 +463,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     updateScrollMetrics();
     const observer = new ResizeObserver(() => {
       updateScrollMetrics();
+      autoLoadOlderHistoryIfViewportIsTooShort();
       if (!followOutputRef.current) {
         return;
       }
@@ -416,7 +476,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     return () => {
       observer.disconnect();
     };
-  }, [scheduleStickToBottom, updateScrollMetrics]);
+  }, [autoLoadOlderHistoryIfViewportIsTooShort, scheduleStickToBottom, updateScrollMetrics]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -428,6 +488,19 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       if (event.deltaY < 0) {
         pendingUserScrollUpIntentRef.current = true;
         cancelPendingStickToBottom();
+        if (
+          shouldAutoLoadOlderHistory({
+            historyStartReady: historyStartReadyRef.current,
+            isAuthoritativeHistoryReady,
+            hasOlderHistory,
+            isLoadingOlderHistory,
+            clientHeight: scrollContainer.clientHeight,
+            scrollHeight: scrollContainer.scrollHeight,
+            historyStartThreshold: HISTORY_START_THRESHOLD_PX,
+          })
+        ) {
+          onNearHistoryStart();
+        }
       }
     };
     const handlePointerDown = () => {
@@ -480,7 +553,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       scrollContainer.removeEventListener("touchend", handleTouchEnd);
       scrollContainer.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [cancelPendingStickToBottom, handleDomScroll]);
+  }, [
+    cancelPendingStickToBottom,
+    handleDomScroll,
+    hasOlderHistory,
+    isAuthoritativeHistoryReady,
+    isLoadingOlderHistory,
+    onNearHistoryStart,
+  ]);
 
   const contentContainerStyle = useMemo((): CSSProperties => {
     return {

@@ -11,6 +11,7 @@ import {
   findMountedWindowStart,
   getWebMountedRecentStreamItems,
   getWebPartialVirtualizationThreshold,
+  shouldAutoLoadOlderHistory,
   shouldAdjustScrollForMeasuredItem,
   splitWebVirtualizedHistory,
   type IndexedStreamItem,
@@ -142,6 +143,55 @@ describe("shouldAdjustScrollForMeasuredItem", () => {
         bottomThreshold: 64,
       }),
     ).toBe(false);
+  });
+});
+
+describe("shouldAutoLoadOlderHistory", () => {
+  it("在折叠后的首屏无法形成有效上翻距离时补载旧历史", () => {
+    expect(
+      shouldAutoLoadOlderHistory({
+        historyStartReady: true,
+        isAuthoritativeHistoryReady: true,
+        hasOlderHistory: true,
+        isLoadingOlderHistory: false,
+        clientHeight: 800,
+        scrollHeight: 860,
+        historyStartThreshold: 96,
+      }),
+    ).toBe(true);
+  });
+
+  it("已有足够上翻距离时等待用户滚动，不主动突破有界首屏", () => {
+    expect(
+      shouldAutoLoadOlderHistory({
+        historyStartReady: true,
+        isAuthoritativeHistoryReady: true,
+        hasOlderHistory: true,
+        isLoadingOlderHistory: false,
+        clientHeight: 800,
+        scrollHeight: 1_200,
+        historyStartThreshold: 96,
+      }),
+    ).toBe(false);
+  });
+
+  it("在视口隐藏、历史未就绪或请求进行中时不补载", () => {
+    const readyInput = {
+      historyStartReady: true,
+      isAuthoritativeHistoryReady: true,
+      hasOlderHistory: true,
+      isLoadingOlderHistory: false,
+      clientHeight: 800,
+      scrollHeight: 860,
+      historyStartThreshold: 96,
+    };
+
+    expect(shouldAutoLoadOlderHistory({ ...readyInput, clientHeight: 0 })).toBe(false);
+    expect(shouldAutoLoadOlderHistory({ ...readyInput, isAuthoritativeHistoryReady: false })).toBe(
+      false,
+    );
+    expect(shouldAutoLoadOlderHistory({ ...readyInput, isLoadingOlderHistory: true })).toBe(false);
+    expect(shouldAutoLoadOlderHistory({ ...readyInput, hasOlderHistory: false })).toBe(false);
   });
 });
 
