@@ -19,7 +19,7 @@ function makeWorkspace(id: string, statusBucket: SidebarWorkspaceEntry["statusBu
   };
   const entry: SidebarWorkspaceEntry = {
     ...placement,
-    agentId: null,
+    providerSessionId: null,
     agentProvider: null,
     title: null,
     currentBranch: null,

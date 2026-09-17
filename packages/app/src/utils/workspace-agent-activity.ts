@@ -4,6 +4,7 @@ import { deriveSidebarStateBucket } from "./sidebar-agent-state";
 
 export interface WorkspaceAgentActivity {
   agentId: string;
+  providerSessionId: string | null;
   provider: Agent["provider"];
   status: WorkspaceDescriptor["status"];
   enteredAt: Date | null;
@@ -37,6 +38,7 @@ export function buildWorkspaceAgentActivityIndex(
     });
     activityByWorkspaceId.set(agent.workspaceId, {
       agentId: agent.id,
+      providerSessionId: agent.runtimeInfo?.sessionId ?? agent.persistence?.sessionId ?? null,
       provider: agent.provider,
       status,
       enteredAt,
@@ -44,20 +46,34 @@ export function buildWorkspaceAgentActivityIndex(
   }
 
   for (const [workspaceId, activity] of activityByWorkspaceId) {
-    const previousActivity = previous?.get(workspaceId);
-    if (
-      previousActivity?.agentId === activity.agentId &&
-      previousActivity.provider === activity.provider &&
-      previousActivity.status === activity.status
-    ) {
-      activityByWorkspaceId.set(workspaceId, previousActivity);
-    }
+    activityByWorkspaceId.set(
+      workspaceId,
+      preserveStableWorkspaceAgentActivity(activity, previous?.get(workspaceId)),
+    );
   }
 
   if (previous && areWorkspaceAgentActivityIndexesIdentical(previous, activityByWorkspaceId)) {
     return previous instanceof Map ? previous : new Map(previous);
   }
   return activityByWorkspaceId;
+}
+
+function preserveStableWorkspaceAgentActivity(
+  activity: WorkspaceAgentActivity,
+  previous: WorkspaceAgentActivity | undefined,
+): WorkspaceAgentActivity {
+  if (
+    !previous ||
+    previous.agentId !== activity.agentId ||
+    previous.provider !== activity.provider ||
+    previous.status !== activity.status
+  ) {
+    return activity;
+  }
+  if (previous.providerSessionId === activity.providerSessionId) {
+    return previous;
+  }
+  return { ...activity, enteredAt: previous.enteredAt };
 }
 
 function areWorkspaceAgentActivityIndexesIdentical(

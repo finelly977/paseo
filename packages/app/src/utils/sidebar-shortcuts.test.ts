@@ -30,7 +30,7 @@ function workspace(input: {
     projectKind: "git",
     workspaceKind: "checkout",
     name: input.name,
-    agentId: null,
+    providerSessionId: null,
     agentProvider: null,
     title: null,
     currentBranch: null,

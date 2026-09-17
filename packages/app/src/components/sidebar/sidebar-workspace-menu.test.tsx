@@ -65,7 +65,7 @@ describe("SidebarWorkspaceMenu", () => {
     render(
       <SidebarWorkspaceMenu
         workspaceKey="server-1:workspace-1"
-        sessionId="agent-session-42"
+        sessionId="codex-thread-42"
         onArchive={noop}
       />,
     );
@@ -75,7 +75,7 @@ describe("SidebarWorkspaceMenu", () => {
     );
 
     await waitFor(() => {
-      expect(setStringAsyncMock).toHaveBeenCalledWith("agent-session-42");
+      expect(setStringAsyncMock).toHaveBeenCalledWith("codex-thread-42");
       expect(copiedToastMock).toHaveBeenCalledOnce();
     });
   });

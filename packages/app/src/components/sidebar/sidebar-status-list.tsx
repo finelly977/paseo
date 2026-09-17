@@ -729,7 +729,7 @@ function StatusWorkspaceRowInner({
                 {shouldRenderActionSlot ? (
                   <StatusWorkspaceActionSlot
                     workspace={workspace}
-                    sessionId={workspace.agentId}
+                    sessionId={workspace.providerSessionId}
                     showBase={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
                     showKebab={showKebabInSlot}
                     onMenuOpenChange={revalidateHover}

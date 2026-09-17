@@ -1604,7 +1604,7 @@ function WorkspaceRowWithMenu({
     <>
       <WorkspaceRowInner
         workspace={workspace}
-        sessionId={workspace.agentId}
+        sessionId={workspace.providerSessionId}
         subtitle={subtitle}
         selected={selected}
         shortcutNumber={shortcutNumber}
