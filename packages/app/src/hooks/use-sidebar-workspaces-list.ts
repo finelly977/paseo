@@ -14,7 +14,6 @@ import {
 } from "./sidebar-workspaces-view-model";
 
 export {
-  appendMissingOrderKeys,
   applyStoredOrdering,
   buildSidebarProjectsFromHostProjects,
   buildSidebarProjectsFromStructure,

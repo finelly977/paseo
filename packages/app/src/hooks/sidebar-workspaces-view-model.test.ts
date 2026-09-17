@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
 import {
-  appendMissingOrderKeys,
   prependMissingOrderKeys,
   applyStoredOrdering,
   buildSidebarWorkspaceEntries,
@@ -175,28 +174,6 @@ describe("applyStoredOrdering", () => {
     });
 
     expect(result).toBe(baseline);
-  });
-});
-
-describe("appendMissingOrderKeys", () => {
-  it("appends unseen keys while preserving existing order", () => {
-    const result = appendMissingOrderKeys({
-      currentOrder: ["project-b", "project-a"],
-      visibleKeys: ["project-a", "project-b", "project-c"],
-    });
-
-    expect(result).toEqual(["project-b", "project-a", "project-c"]);
-  });
-
-  it("returns the same array when there are no unseen keys", () => {
-    const currentOrder = ["project-a", "project-b"];
-
-    const result = appendMissingOrderKeys({
-      currentOrder,
-      visibleKeys: ["project-b", "project-a"],
-    });
-
-    expect(result).toBe(currentOrder);
   });
 });
 
@@ -539,7 +516,7 @@ describe("computeSidebarOrderUpdates", () => {
     expect(updates).toEqual({ projectAddedOrder: null, projectOrder: null, workspaceOrders: [] });
   });
 
-  it("appends unseen projects and places unseen sessions before the saved order", () => {
+  it("places newly added projects and sessions before the saved custom order", () => {
     const projects = [
       sidebarProject({ projectKey: "project-a", workspaceKeys: ["ws-1", "ws-2"] }),
       sidebarProject({ projectKey: "project-b", workspaceKeys: ["ws-3"] }),
@@ -552,8 +529,8 @@ describe("computeSidebarOrderUpdates", () => {
       getWorkspaceOrder: (projectKey) => (projectKey === "project-a" ? ["srv:ws-1"] : []),
     });
 
-    expect(updates.projectAddedOrder).toEqual(["project-a", "project-b"]);
-    expect(updates.projectOrder).toEqual(["project-a", "project-b"]);
+    expect(updates.projectAddedOrder).toEqual(["project-b", "project-a"]);
+    expect(updates.projectOrder).toEqual(["project-b", "project-a"]);
     expect(updates.workspaceOrders).toEqual([
       { projectKey: "project-a", order: ["srv:ws-2", "srv:ws-1"] },
     ]);

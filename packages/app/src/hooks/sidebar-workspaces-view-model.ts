@@ -465,23 +465,6 @@ export function applyStoredOrdering<T>(input: {
   return ordered;
 }
 
-export function appendMissingOrderKeys(input: {
-  currentOrder: string[];
-  visibleKeys: string[];
-}): string[] {
-  if (input.visibleKeys.length === 0) {
-    return input.currentOrder;
-  }
-
-  const existingKeys = new Set(input.currentOrder);
-  const missingKeys = input.visibleKeys.filter((key) => !existingKeys.has(key));
-  if (missingKeys.length === 0) {
-    return input.currentOrder;
-  }
-
-  return [...input.currentOrder, ...missingKeys];
-}
-
 export function prependMissingOrderKeys(input: {
   currentOrder: string[];
   visibleKeys: string[];
@@ -516,13 +499,13 @@ export function computeSidebarOrderUpdates(input: {
   }
 
   const visibleProjectKeys = input.projects.map((project) => project.projectKey);
-  const nextProjectAddedOrder = appendMissingOrderKeys({
+  const nextProjectAddedOrder = prependMissingOrderKeys({
     currentOrder: input.persistedProjectAddedOrder,
     visibleKeys: visibleProjectKeys,
   });
   const projectAddedOrder =
     nextProjectAddedOrder === input.persistedProjectAddedOrder ? null : nextProjectAddedOrder;
-  const nextProjectOrder = appendMissingOrderKeys({
+  const nextProjectOrder = prependMissingOrderKeys({
     currentOrder: input.persistedProjectOrder,
     visibleKeys: visibleProjectKeys,
   });
