@@ -328,7 +328,7 @@ export function buildFeatureRequestKey(request: AgentProfileFeatureRequest | nul
 function buildSubmitValue(state: AgentProfileFormState): AgentProfileValue | null {
   const name = state.name.trim();
   const notes = state.notes.trim();
-  if (!name || !state.provider) {
+  if (!state.provider) {
     return null;
   }
   return {
@@ -479,10 +479,7 @@ export function openAgentProfileForm(snapshot: AgentProfileFormSnapshot): AgentP
         hasProvider && (thinking.length > 0 || Boolean(withOptions.thinkingOptionId)),
       showFeaturesField: hasProvider && features.length > 0,
     };
-    const canSubmit =
-      withOptions.name.trim().length > 0 &&
-      withOptions.provider.length > 0 &&
-      !withOptions.isSubmitting;
+    const canSubmit = withOptions.provider.length > 0 && !withOptions.isSubmitting;
     const resolved: AgentProfileFormState = { ...withOptions, disclosure, canSubmit };
     return { ...resolved, submitValue: canSubmit ? buildSubmitValue(resolved) : null };
   }

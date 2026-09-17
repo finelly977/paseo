@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **二开说明：** 当前检出目录是 [finelly977/paseo](https://github.com/finelly977/paseo)，它是 [getpaseo/paseo](https://github.com/getpaseo/paseo) 的下游二开。代理身份、远端配置、二开功能清单维护规则和上游同步策略见 [AGENTS.md](AGENTS.md)。用户要求合并原作者最新版时，默认使用最新的**已发布版本**（包括 beta），除非用户明确要求，否则不得使用未发布的 `upstream/main`。
+> **二开说明：** 当前检出目录是 [finelly977/paseo](https://github.com/finelly977/paseo)，它是 [getpaseo/paseo](https://github.com/getpaseo/paseo) 的独立二开。代理身份、远端配置、二开功能清单维护规则和上游情报评估策略见 [AGENTS.md](AGENTS.md)。本项目不再跟随、合并或挑选原作者代码；上游只用于查看新功能，以及验证二开是否也存在上游修复的缺陷。
 
 Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移动应用。它把真实开发环境放进口袋，并直接连接用户本机，代码始终保留在用户自己的设备上。
 
@@ -28,7 +28,7 @@ Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移�
 
 | 文档                                                               | 内容                                                                                |
 | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [docs/fork-features.md](docs/fork-features.md)                     | 当前有效的二开功能和与上游的行为差异；上游同步和二开交付前必须审计                  |
+| [docs/fork-features.md](docs/fork-features.md)                     | 当前有效的二开功能和与上游的行为差异；上游情报评估和二开交付前必须审计              |
 | [docs/product.md](docs/product.md)                                 | Paseo 是什么、面向谁、未来方向                                                      |
 | [docs/architecture.md](docs/architecture.md)                       | 系统设计、包分层、WebSocket 协议、智能体生命周期和数据流                            |
 | [docs/agent-lifecycle.md](docs/agent-lifecycle.md)                 | 智能体状态、父子关系、归档语义、标签与归档的区别、子智能体轨道                      |

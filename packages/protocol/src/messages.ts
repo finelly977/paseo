@@ -224,6 +224,7 @@ export type TerminalProfile = z.infer<typeof TerminalProfileSchema>;
 export const AgentProfileSchema = z
   .object({
     id: z.string(),
+    /** Optional custom label; an empty string tells clients to display the selected model name. */
     name: z.string(),
     /** A key into the client's icon registry, not a glyph. Unknown keys draw the default. */
     icon: z.string().optional(),

@@ -2283,8 +2283,8 @@ export const ja: TranslationResources = {
         newProfile: "新しいプロファイル",
         editProfile: "プロファイルを編集",
         editProfileTitle: "エージェントプロファイルを編集",
-        nameLabel: "名前",
-        namePlaceholder: "UI作業",
+        nameLabel: "名前（任意）",
+        namePlaceholder: "空欄の場合はモデル名を使用",
         iconLabel: "アイコン",
         noIcon: "なし",
         providerLabel: "プロバイダー",
@@ -2310,6 +2310,7 @@ export const ja: TranslationResources = {
         removeConfirmMessage: '"{{name}}"を削除しますか？',
         moveUp: "上に移動",
         moveDown: "下に移動",
+        reorder: "ドラッグして並べ替え",
       },
       daemon: {
         rename: {

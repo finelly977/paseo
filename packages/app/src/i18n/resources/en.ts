@@ -2274,8 +2274,8 @@ export const en = {
         newProfile: "New profile",
         editProfile: "Edit profile",
         editProfileTitle: "Edit agent profile",
-        nameLabel: "Name",
-        namePlaceholder: "UI work",
+        nameLabel: "Name (optional)",
+        namePlaceholder: "Uses the model name when blank",
         iconLabel: "Icon",
         noIcon: "None",
         providerLabel: "Provider",
@@ -2301,6 +2301,7 @@ export const en = {
         removeConfirmMessage: 'Remove "{{name}}"?',
         moveUp: "Move up",
         moveDown: "Move down",
+        reorder: "Drag to reorder",
       },
       daemon: {
         rename: {

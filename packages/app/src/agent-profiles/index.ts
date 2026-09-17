@@ -1,6 +1,7 @@
 /**
- * Agent profiles: named bundles of composer settings (provider, model, mode,
+ * Agent profiles: saved bundles of composer settings (provider, model, mode,
  * thinking option, feature values, notes) stored host-wide in daemon config.
+ * A custom name is optional; unnamed profiles display their selected model.
  *
  * Four capabilities leave this module — managing the list in settings, reading
  * it, pinning it to the model picker, and drawing a profile's glyph. Everything

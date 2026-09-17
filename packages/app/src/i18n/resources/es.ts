@@ -2320,8 +2320,8 @@ export const es: TranslationResources = {
         newProfile: "Nuevo perfil",
         editProfile: "Editar perfil",
         editProfileTitle: "Editar perfil de agente",
-        nameLabel: "Nombre",
-        namePlaceholder: "Trabajo de UI",
+        nameLabel: "Nombre (opcional)",
+        namePlaceholder: "Usa el nombre del modelo si se deja vacío",
         iconLabel: "Icono",
         noIcon: "Ninguno",
         providerLabel: "Proveedor",
@@ -2347,6 +2347,7 @@ export const es: TranslationResources = {
         removeConfirmMessage: '¿Eliminar "{{name}}"?',
         moveUp: "Mover hacia arriba",
         moveDown: "Mover hacia abajo",
+        reorder: "Arrastrar para reordenar",
       },
       daemon: {
         rename: {

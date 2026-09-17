@@ -10,7 +10,7 @@ import { useToast } from "@/contexts/toast-context";
 import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { materializeAgentProfile, toAgentConfigApply } from "./materialize-profile";
-import { buildAgentProfileTags } from "./profile-summary";
+import { buildAgentProfileSummaryTags, resolveAgentProfileDisplayName } from "./profile-summary";
 import { useAgentProfiles } from "./use-agent-profiles";
 
 /** The draft composer's own setters. Applying a profile drives them like a user would. */
@@ -98,8 +98,8 @@ export function useAgentProfilePicker(
         provider: profile.provider,
         icon: profile.icon ?? "",
         color: profile.color ?? "",
-        name: profile.name,
-        summary: buildAgentProfileTags({ profile, entries, formatFeatureCount })
+        name: resolveAgentProfileDisplayName({ profile, entries }),
+        summary: buildAgentProfileSummaryTags({ profile, entries, formatFeatureCount })
           .map((tag) => tag.label)
           .join(" · "),
       })),

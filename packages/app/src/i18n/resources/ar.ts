@@ -2264,8 +2264,8 @@ export const ar: TranslationResources = {
         newProfile: "ملف تعريف جديد",
         editProfile: "تعديل الملف",
         editProfileTitle: "تعديل ملف تعريف الوكيل",
-        nameLabel: "الاسم",
-        namePlaceholder: "عمل الواجهة",
+        nameLabel: "الاسم (اختياري)",
+        namePlaceholder: "يُستخدم اسم النموذج عند تركه فارغًا",
         iconLabel: "الأيقونة",
         noIcon: "بلا",
         providerLabel: "المزود",
@@ -2290,6 +2290,7 @@ export const ar: TranslationResources = {
         removeConfirmMessage: 'إزالة "{{name}}"؟',
         moveUp: "نقل لأعلى",
         moveDown: "نقل لأسفل",
+        reorder: "اسحب لإعادة الترتيب",
       },
       daemon: {
         rename: {

@@ -15,6 +15,35 @@ function findEntry(
 }
 
 /**
+ * A custom label wins. An unnamed profile follows its selected model so changing
+ * the model also changes the label without writing a generated name to config.
+ * Offline and retired catalog entries remain readable through their stored ids.
+ */
+export function resolveAgentProfileDisplayName(input: {
+  profile: AgentProfile;
+  entries: readonly ProviderSnapshotEntry[] | undefined;
+}): string {
+  const customName = input.profile.name.trim();
+  if (customName) {
+    return customName;
+  }
+
+  const entry = findEntry(input.entries ?? [], input.profile.provider);
+  const modelId = input.profile.model?.trim();
+  if (modelId) {
+    return entry?.models?.find((candidate) => candidate.id === modelId)?.label.trim() || modelId;
+  }
+
+  const defaultModel =
+    entry?.models?.find((candidate) => candidate.isDefault) ?? entry?.models?.[0];
+  if (defaultModel) {
+    return defaultModel.label.trim() || defaultModel.id;
+  }
+
+  return entry?.label?.trim() || input.profile.provider;
+}
+
+/**
  * The one-line résumé of a profile in the settings list. Every label falls back
  * to the stored id: a row must stay readable on a host whose provider catalog
  * is offline, or that no longer ships the model the profile names.
@@ -53,4 +82,12 @@ export function buildAgentProfileTags(input: {
   }
 
   return tags;
+}
+
+/** Avoid repeating the model in the subtitle when it already supplies the title. */
+export function buildAgentProfileSummaryTags(
+  input: Parameters<typeof buildAgentProfileTags>[0],
+): AgentProfileTag[] {
+  const tags = buildAgentProfileTags(input);
+  return input.profile.name.trim() ? tags : tags.filter((tag) => tag.id !== "model");
 }

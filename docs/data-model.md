@@ -199,7 +199,7 @@ snapshot so a mixed edit can apply its live subset and still name the paths that
     git: { maxProcessesPerSecond: number, maxProcessConcurrency: number },
     appendSystemPrompt: string,    // appended to supported provider system/developer prompts
     terminalProfiles: TerminalProfile[],  // named shell commands; omitted means DEFAULT_TERMINAL_PROFILES
-    agentProfiles: AgentProfile[],        // named agent launch bundles; omitted means none
+    agentProfiles: AgentProfile[],        // saved agent launch bundles; omitted means none
     cors: { allowedOrigins: string[] },
     relay: { enabled: boolean, endpoint: string, publicEndpoint: string, useTls: boolean, publicUseTls: boolean },
     auth: { password: string }    // bcrypt hash, optional
@@ -261,6 +261,11 @@ and remove. List order is the display order.
 Absent and empty mean different things for terminal profiles — omitting the key falls back to
 `DEFAULT_TERMINAL_PROFILES`, while `[]` means the user removed them all. Agent profiles have no
 defaults, so both mean none.
+
+`AgentProfile.name` is a custom label, not an identity field. An empty string means “follow the
+selected model”: clients display the catalog's model label, fall back to the stored model id when
+the catalog is unavailable, and finally fall back to the provider label. Reordering the settings
+list immediately writes the complete array in its new display order.
 
 `PersistedConfigSchema` parses strictly, so a daemon that predates a field drops it on write
 rather than storing something it cannot describe. That is why the client gates the agent profiles

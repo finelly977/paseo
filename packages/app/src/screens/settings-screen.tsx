@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -81,6 +82,7 @@ import { PairLinkModal } from "@/components/pair-link-modal";
 import { KeyboardShortcutsSection } from "@/screens/settings/keyboard-shortcuts-section";
 import { EditorSection } from "@/screens/settings/editor-section";
 import { Button } from "@/components/ui/button";
+import { isNative } from "@/constants/platform";
 import { CommunityLinks } from "@/components/community-links";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -1630,9 +1632,18 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
           titleAccessory={detailHeader?.titleAccessory}
           onBack={detailBackHandler}
         />
-        <ScrollView style={styles.scrollView} contentContainerStyle={insetBottomStyle}>
-          <View style={styles.content}>{content}</View>
-        </ScrollView>
+        {isNative ? (
+          <NestableScrollContainer
+            style={styles.scrollView}
+            contentContainerStyle={insetBottomStyle}
+          >
+            <View style={styles.content}>{content}</View>
+          </NestableScrollContainer>
+        ) : (
+          <ScrollView style={styles.scrollView} contentContainerStyle={insetBottomStyle}>
+            <View style={styles.content}>{content}</View>
+          </ScrollView>
+        )}
         {addHostModals}
       </View>
     );
@@ -1664,9 +1675,18 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               left={desktopDetailHeaderLeft}
               leftStyle={desktopStyles.detailLeft}
             />
-            <ScrollView style={styles.scrollView} contentContainerStyle={insetBottomStyle}>
-              <View style={styles.content}>{content}</View>
-            </ScrollView>
+            {isNative ? (
+              <NestableScrollContainer
+                style={styles.scrollView}
+                contentContainerStyle={insetBottomStyle}
+              >
+                <View style={styles.content}>{content}</View>
+              </NestableScrollContainer>
+            ) : (
+              <ScrollView style={styles.scrollView} contentContainerStyle={insetBottomStyle}>
+                <View style={styles.content}>{content}</View>
+              </ScrollView>
+            )}
           </View>
         </WindowChromeRegion>
       </View>

@@ -2303,8 +2303,8 @@ export const ptBR: TranslationResources = {
         newProfile: "Novo perfil",
         editProfile: "Editar perfil",
         editProfileTitle: "Editar perfil de agente",
-        nameLabel: "Nome",
-        namePlaceholder: "Trabalho de UI",
+        nameLabel: "Nome (opcional)",
+        namePlaceholder: "Usa o nome do modelo quando deixado em branco",
         iconLabel: "Ícone",
         noIcon: "Nenhum",
         providerLabel: "Provedor",
@@ -2330,6 +2330,7 @@ export const ptBR: TranslationResources = {
         removeConfirmMessage: 'Remover "{{name}}"?',
         moveUp: "Mover para cima",
         moveDown: "Mover para baixo",
+        reorder: "Arraste para reordenar",
       },
       daemon: {
         rename: {

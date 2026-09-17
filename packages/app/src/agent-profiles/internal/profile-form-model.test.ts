@@ -88,15 +88,16 @@ describe("openAgentProfileForm", () => {
     expect(optionValues(model.getState().providerOptions)).toEqual(["claude", "codex"]);
   });
 
-  it("requires a name and a provider before it can submit", () => {
+  it("allows an empty name once a provider and model are selected", () => {
     const model = openWithCatalog({ mode: "create" });
-
-    model.setName("UI work");
-    expect(model.getState().canSubmit).toBe(false);
 
     selectClaude(model);
     expect(model.getState().canSubmit).toBe(true);
-    expect(model.getState().submitValue).toMatchObject({ name: "UI work", provider: "claude" });
+    expect(model.getState().submitValue).toMatchObject({
+      name: "",
+      provider: "claude",
+      model: "claude-opus-5",
+    });
   });
 
   it("omits blank text fields from the submitted value but never a selection", () => {

@@ -4882,6 +4882,38 @@ describe("agent profile listing MCP tool", () => {
     expect(response.structuredContent).toEqual({ profiles });
   });
 
+  it("uses the stored model id as the name of an unnamed profile", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      daemonConfigStore: daemonConfigStoreStub([
+        {
+          id: "unnamed-review",
+          name: "",
+          provider: "codex",
+          model: "gpt-6-astra",
+        },
+      ]),
+      logger,
+    });
+    const tool = registeredTool(server, "list_profiles");
+
+    const response = await tool.handler({});
+
+    expect(response.structuredContent).toEqual({
+      profiles: [
+        {
+          id: "unnamed-review",
+          name: "gpt-6-astra",
+          provider: "codex",
+          model: "gpt-6-astra",
+        },
+      ],
+    });
+  });
+
   it("returns an empty array when no profiles are configured", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const server = await createAgentMcpServer({

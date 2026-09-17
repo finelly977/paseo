@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import { AgentProfileSchema } from "@getpaseo/protocol/messages";
+import { AgentProfileSchema, type AgentProfile } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -144,6 +144,16 @@ export interface PaseoToolHostDependencies {
   enableVoiceTools?: boolean;
   voiceOnly?: boolean;
   logger: Logger;
+}
+
+function resolveListedAgentProfile(profile: AgentProfile): AgentProfile {
+  if (profile.name.trim()) {
+    return profile;
+  }
+  return {
+    ...profile,
+    name: profile.model?.trim() || profile.provider.trim(),
+  };
 }
 
 function parseTimestamp(value: string | null | undefined): number {
@@ -2922,7 +2932,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "List agent profiles",
       description:
-        "List agent profiles: named provider/model/mode bundles a human configured for specific " +
+        "List agent profiles: saved provider/model/mode bundles a human configured for specific " +
         "kinds of work. Read each profile's `notes` to pick the one that fits the task you're " +
         "delegating, then copy its `provider`, `model`, `modeId`, `thinkingOptionId`, and " +
         "`featureValues` into create_agent (there is no `profile` parameter). Returns an empty " +
@@ -2933,7 +2943,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async () => {
-      const profiles = daemonConfigStore?.get().agentProfiles ?? [];
+      const profiles = (daemonConfigStore?.get().agentProfiles ?? []).map(
+        resolveListedAgentProfile,
+      );
       return {
         content: [],
         structuredContent: ensureValidJson({ profiles }),

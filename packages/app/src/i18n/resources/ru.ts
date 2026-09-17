@@ -2305,8 +2305,8 @@ export const ru: TranslationResources = {
         newProfile: "Новый профиль",
         editProfile: "Изменить профиль",
         editProfileTitle: "Изменить профиль агента",
-        nameLabel: "Имя",
-        namePlaceholder: "Работа над UI",
+        nameLabel: "Имя (необязательно)",
+        namePlaceholder: "Если поле пустое, используется название модели",
         iconLabel: "Значок",
         noIcon: "Нет",
         providerLabel: "Провайдер",
@@ -2332,6 +2332,7 @@ export const ru: TranslationResources = {
         removeConfirmMessage: "Удалить «{{name}}»?",
         moveUp: "Переместить вверх",
         moveDown: "Переместить вниз",
+        reorder: "Перетащите, чтобы изменить порядок",
       },
       daemon: {
         rename: {

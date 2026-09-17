@@ -2239,8 +2239,8 @@ export const zhCN: TranslationResources = {
         newProfile: "新建配置",
         editProfile: "编辑配置",
         editProfileTitle: "编辑 Agent 配置",
-        nameLabel: "名称",
-        namePlaceholder: "UI 工作",
+        nameLabel: "名称（可选）",
+        namePlaceholder: "留空时使用 Model 名称",
         iconLabel: "图标",
         noIcon: "无",
         providerLabel: "Provider",
@@ -2265,6 +2265,7 @@ export const zhCN: TranslationResources = {
         removeConfirmMessage: "移除「{{name}}」？",
         moveUp: "上移",
         moveDown: "下移",
+        reorder: "拖动调整顺序",
       },
       daemon: {
         rename: {

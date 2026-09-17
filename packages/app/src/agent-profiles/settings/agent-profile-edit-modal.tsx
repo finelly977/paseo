@@ -236,7 +236,11 @@ function OpenAgentProfileEditModal({
               <FormTextInput
                 initialValue={profile?.name ?? ""}
                 onChangeText={model.setName}
-                placeholder={t("settings.host.agentProfiles.namePlaceholder")}
+                placeholder={
+                  state.modelDisplay?.label ??
+                  state.providerDisplay?.label ??
+                  t("settings.host.agentProfiles.namePlaceholder")
+                }
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!state.isSubmitting}
