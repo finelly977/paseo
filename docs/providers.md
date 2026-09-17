@@ -56,6 +56,8 @@ A steering adapter also owes its interrupt: stopping a turn must discard the ste
 
 回退请求使用界面中的规范 `messageId`。管理器先在当前会话的权威时间线中按 `messageId` 或 `clientMessageId` 精确定位用户消息，再使用该行的 `providerMessageId` 调用提供方的对话、文件或组合回退。直接使用原生标识的导入历史和旧消息保持原有路径；不得按消息正文或邻近回合猜测目标。映射必须在运行时释放和历史恢复后继续有效，不能为了调用原生回退而改写界面消息标识。
 
+Codex 分页会话的回退依赖原生历史索引中的记录位置。原始 JSONL 被外部改写或缩短后，即使消息仍可显示，索引中的字节偏移也可能已经失效；`durable rollout shrank before projection` 必须作为数据一致性故障处理，不能当作网络瞬断自动重试，也不能改走分叉或传统计数回退。诊断先只读比较索引与原始记录，在独立副本验证恢复方案。实际索引修复必须先释放受影响线程、备份相关数据并取得用户授权，仅处理该线程的派生索引，不删除会话正文或清空全局索引；不能在仍写入该线程的智能体中执行自我修复。
+
 Submitted user-message wire items carry the same Paseo ID in `messageId` and `clientMessageId`. Provider adapters attach `clientMessageId` only to the echo for that foreground submission; provider history and externally initiated user rows do not have a Paseo client ID.
 
 Provider adapters must terminalize every transient timeline row before emitting the turn's terminal event. Codex may omit the completed `contextCompaction` item when a turn ends during compaction, so its adapter closes any pending root compaction before forwarding `turn_completed`, `turn_failed`, or `turn_canceled`. A terminal turn must never leave the client showing an operation as still loading.

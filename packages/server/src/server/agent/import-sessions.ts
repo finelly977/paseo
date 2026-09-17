@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Logger } from "pino";
+import { stat } from "node:fs/promises";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "@getpaseo/protocol/agent-title-limits";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import type {
@@ -22,6 +23,11 @@ import type {
 } from "@getpaseo/protocol/messages";
 import { getParentAgentIdFromLabels, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { createRealpathAwarePathMatcher } from "../../utils/path.js";
+import {
+  buildConfigOverrides,
+  extractTimestamps,
+  toAgentPersistenceHandle,
+} from "../persistence-hooks.js";
 
 type ImportAgentRequestMessage = z.infer<typeof ImportAgentRequestMessageSchema>;
 
@@ -34,6 +40,7 @@ export type ImportSessionAgentManager = AgentLoaderManager &
     | "closeAgent"
     | "getTimeline"
     | "importProviderSession"
+    | "listImportableSessions"
     | "notifyAgentState"
     | "unarchiveSnapshot"
   >;
@@ -164,9 +171,10 @@ export async function listImportableProviderSessions(
       session.provider,
       session.providerHandleId,
     );
-    if (importedHandles.has(providerHandleKey)) {
+    const storedOwner = importedSessions.recordsByHandle.get(providerHandleKey);
+    const relocated = storedOwner && (await isRelocatedProviderSession(storedOwner, session.cwd));
+    if (importedHandles.has(providerHandleKey) && !relocated) {
       filteredAlreadyImportedCount += 1;
-      const storedOwner = importedSessions.recordsByHandle.get(providerHandleKey);
       const titleRepair = buildImportedSessionTitleRepair(
         session,
         storedOwner,
@@ -198,6 +206,32 @@ export async function listImportableProviderSessions(
     filteredAlreadyImportedCount,
     titleRepairs: Array.from(titleRepairs.values()),
   };
+}
+
+async function isRelocatedProviderSession(
+  record: StoredAgentRecord,
+  cwd: string,
+): Promise<boolean> {
+  if (createRealpathAwarePathMatcher(cwd)(record.cwd)) {
+    return false;
+  }
+  try {
+    await stat(record.cwd);
+    return false;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  // 旧目录确实消失且原生会话报告了可用的新目录，才允许恢复已有记录，不猜测目录改名。
+  try {
+    return (await stat(cwd)).isDirectory();
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function buildImportedSessionTitleRepair(
@@ -268,6 +302,10 @@ async function importProviderSessionNow(
     recordMatchesProviderHandle(record, { provider, providerHandleId }),
   );
   const activeRecord = matchingRecords.find((record) => !record.archivedAt);
+  const existingRecord = activeRecord ?? matchingRecords[0];
+  if (existingRecord && (await isRelocatedProviderSession(existingRecord, cwd))) {
+    return restoreRelocatedProviderSession(input, existingRecord, cwd, workspaceId);
+  }
   if (activeRecord) {
     throw new Error(`Provider session is already imported: ${providerHandleId}`);
   }
@@ -319,6 +357,74 @@ async function importProviderSessionNow(
     snapshot,
     timelineSize: input.agentManager.getTimeline(snapshot.id).length,
   };
+}
+
+async function restoreRelocatedProviderSession(
+  input: ImportProviderSessionInput,
+  record: StoredAgentRecord,
+  cwd: string,
+  workspaceId: string,
+): Promise<ImportedProviderSession> {
+  const { agentManager, agentStorage } = input;
+  const sessions = await agentManager.listImportableSessions({
+    providerFilter: new Set([input.request.provider]),
+  });
+  const matchesCwd = createRealpathAwarePathMatcher(cwd);
+  const nativeSession = sessions.find(
+    (session) => recordMatchesProviderHandle(record, session) && matchesCwd(session.cwd),
+  );
+  if (!nativeSession) {
+    throw new Error("原生会话尚未确认新的工作目录，不能迁移已导入会话。");
+  }
+  const persistence = toAgentPersistenceHandle(
+    agentManager.getRegisteredProviderIds(),
+    record.persistence,
+  );
+  if (!persistence) {
+    throw new Error("该会话没有可恢复的原生记录，不能迁移工作目录。");
+  }
+  // 不为了恢复目录而中断会话或替换仍被使用的运行时。
+  if (agentManager.getAgent(record.id)) {
+    throw new Error("请先释放原会话的运行时，再从新目录重新导入。");
+  }
+  try {
+    const snapshot = await agentManager.resumeAgentFromPersistence(
+      persistence,
+      { ...buildConfigOverrides(record), cwd, title: record.title, internal: record.internal },
+      record.id,
+      { ...extractTimestamps(record), workspaceId },
+    );
+    await agentManager.hydrateTimelineFromProvider(record.id);
+    await agentStorage.applySnapshot(snapshot);
+    await unarchiveAgentState(agentStorage, agentManager, record.id);
+    agentManager.notifyAgentState(record.id);
+    return { snapshot, timelineSize: agentManager.getTimeline(record.id).length };
+  } catch (error) {
+    const failures: unknown[] = [error];
+    try {
+      if (agentManager.getAgent(record.id)) {
+        await agentManager.closeAgent(record.id);
+      }
+    } catch (closeError) {
+      failures.push(closeError);
+    }
+    try {
+      await agentStorage.upsert(record);
+    } catch (restoreError) {
+      failures.push(restoreError);
+    }
+    if (failures.length > 1) {
+      const restoreFailure = new AggregateError(
+        failures,
+        "会话目录恢复失败，且未能完整恢复原记录",
+        {
+          cause: error,
+        },
+      );
+      throw restoreFailure;
+    }
+    throw error;
+  }
 }
 
 async function serializeProviderSessionImport<T>(

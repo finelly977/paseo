@@ -1,10 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import { createCodexDesktopHelper } from "./desktop-tools-helper.js";
+import { createCodexDesktopHelper, resolveCodexDesktopHostPath } from "./desktop-tools-helper.js";
 import { DesktopHelperTransportError } from "./desktop-tools-bridge.js";
 
 describe("Codex 桌面 SDK 独立宿主", () => {
@@ -47,6 +48,63 @@ export class WindowsHelperTransport {
     cleanups.push(() => helper.close());
     return { helper, directory };
   }
+
+  test("安装版从磁盘解包目录加载独立宿主，而不是把 ASAR 虚拟路径交给 Node", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "paseo-sdk-host-path-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const relativeDirectory = path.join("node_modules", "@getpaseo", "server");
+    const unpackedDirectory = path.join(directory, "app.asar.unpacked", relativeDirectory);
+    await mkdir(unpackedDirectory, { recursive: true });
+    const hostPath = path.join(unpackedDirectory, "desktop-tools-host.bundle.mjs");
+    await writeFile(hostPath, "export {};\n");
+    const helperUrl = pathToFileURL(
+      path.join(directory, "app.asar", relativeDirectory, "desktop-tools-helper.js"),
+    ).href;
+
+    await expect(resolveCodexDesktopHostPath(helperUrl)).resolves.toBe(hostPath);
+  });
+
+  test.each(["dist", "app.asar.backup", "app.asar.unpacked"])(
+    "普通磁盘目录 %s 使用同目录独立宿主，不误改路径中的相似名称",
+    async (name) => {
+      const directory = await mkdtemp(path.join(os.tmpdir(), "paseo-sdk-host-path-"));
+      cleanups.push(() => rm(directory, { recursive: true, force: true }));
+      const runtimeDirectory = path.join(directory, name);
+      await mkdir(runtimeDirectory);
+      const hostPath = path.join(runtimeDirectory, "desktop-tools-host.bundle.mjs");
+      await writeFile(hostPath, "export {};\n");
+      const helperUrl = pathToFileURL(path.join(runtimeDirectory, "desktop-tools-helper.js")).href;
+
+      await expect(resolveCodexDesktopHostPath(helperUrl)).resolves.toBe(hostPath);
+    },
+  );
+
+  test("独立宿主缺失时报告具体路径和原始错误，不回退到仍依赖 ASAR 的旧文件", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "paseo-sdk-host-missing-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    await writeFile(path.join(directory, "desktop-tools-host.js"), "export {};\n");
+    const helperUrl = pathToFileURL(path.join(directory, "desktop-tools-helper.js")).href;
+
+    await expect(resolveCodexDesktopHostPath(helperUrl)).rejects.toMatchObject({
+      name: "CodexDesktopHostUnavailableError",
+      hostPath: path.join(directory, "desktop-tools-host.bundle.mjs"),
+      cause: { code: "ENOENT" },
+    });
+  });
+
+  test("宿主路径指向目录时拒绝启动", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "paseo-sdk-host-directory-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const hostPath = path.join(directory, "desktop-tools-host.bundle.mjs");
+    await mkdir(hostPath);
+    const helperUrl = pathToFileURL(path.join(directory, "desktop-tools-helper.js")).href;
+
+    await expect(resolveCodexDesktopHostPath(helperUrl)).rejects.toMatchObject({
+      name: "CodexDesktopHostUnavailableError",
+      hostPath,
+      cause: { message: "Codex desktop tools host is not a regular file" },
+    });
+  });
 
   test("在干净 Node 子进程中加载 SDK，并使用本会话的数据目录和父进程", async () => {
     const { helper, directory } = await start();

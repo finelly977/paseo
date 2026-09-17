@@ -113,6 +113,19 @@ exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   const arch = ARCH_MAP[context.arch] || process.arch;
 
+  if (platform === "win32") {
+    const hostPath = path.join(
+      context.appOutDir,
+      "resources",
+      "app.asar.unpacked",
+      "node_modules/@getpaseo/server/dist/server/server/agent/providers/codex/desktop-tools-host.bundle.mjs",
+    );
+    const host = fs.statSync(hostPath, { throwIfNoEntry: false });
+    if (!host || !host.isFile()) {
+      throw new Error(`Codex 桌面工具宿主未正确解包，停止生成安装包：${hostPath}`);
+    }
+  }
+
   pruneNativeModules(context.appOutDir, platform, arch);
 
   if (platform === "linux" || platform === "win32") {

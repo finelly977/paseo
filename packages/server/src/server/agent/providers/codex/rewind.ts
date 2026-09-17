@@ -4,7 +4,23 @@ import type {
   CodexThreadRollbackParams,
   CodexThreadRollbackResponse,
 } from "./app-server-transport.js";
-import { parseCodexThreadRollbackResponse } from "./app-server-transport.js";
+import {
+  CodexAppServerRpcError,
+  parseCodexThreadRollbackResponse,
+} from "./app-server-transport.js";
+
+class CodexHistoryProjectionError extends Error {
+  constructor(
+    readonly threadId: string,
+    cause: CodexAppServerRpcError,
+  ) {
+    super(
+      "Codex 原始会话记录与历史索引不一致，无法完成回退。请先释放该会话运行时，备份后修复该会话的原生历史索引；不要反复重试或删除原始会话文件。",
+      { cause },
+    );
+    this.name = "CodexHistoryProjectionError";
+  }
+}
 
 export interface CodexRewindClient {
   rollbackThread?(params: CodexThreadRollbackParams): Promise<CodexThreadRollbackResponse>;
@@ -106,12 +122,24 @@ async function revertPaginatedThread(
   messageId: string,
 ): Promise<CodexThreadRollbackResponse> {
   const beforeTurnId = await findBeforeTurnId(input, messageId);
-  const reverted = ThreadRevertResponseSchema.parse(
-    await input.client.request("thread/revert", {
+  let response: unknown;
+  try {
+    response = await input.client.request("thread/revert", {
       threadId: input.threadId,
       beforeTurnId,
-    }),
-  );
+    });
+  } catch (error) {
+    if (
+      error instanceof CodexAppServerRpcError &&
+      error.code === -32603 &&
+      error.message.includes("durable rollout shrank before projection")
+    ) {
+      // 此错误不能证明原生回退未写入；保留失败，不自动重试，也不改写提供方数据库。
+      throw new CodexHistoryProjectionError(input.threadId, error);
+    }
+    throw error;
+  }
+  const reverted = ThreadRevertResponseSchema.parse(response);
   assertSameThread(input.threadId, reverted.thread.id);
 
   // 新接口只返回元数据，空 turns 不代表历史已清空，必须沿回退响应的游标读取保留内容。

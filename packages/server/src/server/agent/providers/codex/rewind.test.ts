@@ -9,6 +9,7 @@ import {
   type CodexRewindClient,
   revertCodexConversation,
 } from "./rewind.js";
+import { CodexAppServerRpcError } from "./app-server-transport.js";
 
 class FakeCodex implements CodexRewindClient {
   readonly recordedRollbacks: CodexThreadRollbackParams[] = [];
@@ -63,6 +64,51 @@ class ScriptedCodex implements CodexRewindClient {
 }
 
 describe("Codex Rewind", () => {
+  test("原生索引损坏时明确提示恢复索引，保留原错误且不再次执行回退", async () => {
+    const original = new CodexAppServerRpcError(
+      "failed to revert session: thread-store internal error: durable rollout shrank before projection",
+      -32603,
+      undefined,
+    );
+    const codex = new ScriptedCodex([
+      { thread: { id: "source-thread", historyMode: "paginated" } },
+      {
+        data: [
+          {
+            id: "turn-target",
+            itemsView: "full",
+            items: [{ type: "userMessage", id: "user-target" }],
+          },
+        ],
+        nextCursor: null,
+      },
+      original,
+    ]);
+    const restored: string[] = [];
+    await expect(
+      revertCodexConversation({
+        client: codex,
+        threadId: "source-thread",
+        messageId: "user-target",
+        userMessageTurns: new CodexMessageTurns(new Map()),
+        setThreadId: (id) => {
+          restored.push(id);
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "CodexHistoryProjectionError",
+      message: expect.stringContaining("历史索引"),
+      threadId: "source-thread",
+      cause: original,
+    });
+    expect(codex.requests.map((r) => r.method)).toEqual([
+      "thread/read",
+      "thread/turns/list",
+      "thread/revert",
+    ]);
+    expect(restored).toEqual([]);
+  });
+
   test.each(["client-target", "codex-target"])(
     "分页会话按消息 %s 定位原生回合，并完整恢复保留历史",
     async (messageId) => {

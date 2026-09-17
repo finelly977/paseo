@@ -247,10 +247,14 @@ Paseo 的 Codex 提供方可以自行托管已安装的官方 Computer Use 与 C
 
 每次新建或恢复 Codex 运行实例时，Paseo 读取其有效配置，只接管 Windows 上由 App 配置的原生管道型 Node REPL：
 
-- Computer Use 通过 Paseo 自有命名管道连接独立 SDK 宿主。首次操作时，宿主使用官方配套 Node 启动，并由官方 `WindowsHelperTransport` 启动原生组件；组件使用宿主的父进程标识，Codex 数据目录、原生审批和物理 Escape 停止语义均保留。
+- Computer Use 通过 Paseo 自有命名管道连接独立 SDK 宿主。首次操作时，宿主使用官方配套 Node 启动，并由官方 `WindowsHelperTransport` 启动原生组件；组件使用宿主的父进程标识，Codex 数据目录、原生审批和物理 Escape 停止语义均保留。发布版本将宿主及 Zod 等依赖打成自包含文件，桌面安装包将其解包到 `app.asar.unpacked`；外部 Node 不会收到无法读取的 ASAR 虚拟路径，宿主缺失时会明确报告。
 - Chrome 继续通过官方浏览器 SDK 连接扩展宿主；扩展宿主由 Chrome 启动，不由 Paseo 冒充或抢占。独立模式不提供 Codex App 内置的 `iab` 浏览器。
 - 会话配置只替换 Node REPL 的环境变量。统一工具插件的原 MCP 服务在该会话中关闭，并按原工具限制和界面配置注册同名服务；不改写全局 `config.toml` 或官方插件缓存。明确自定义相关 MCP 或插件覆盖的会话保留用户配置，不自动接管。
 - Paseo 根据回合完成与中断通知调用官方 `turn_ended`，并按会话和回合回收本次原生控制组件，不依赖 CLI 是否加载了插件结束钩子。会话退出、初始化失败和异常断连也会释放租约；多个会话共享同一运行时的管道，旧连接及迟到的清理通知不会关闭其他回合。
+
+**认证边界：** Chrome 后端发现成功、工具目录可见或普通 JavaScript 执行成功，都不代表实际浏览器连接已经可用。官方运行时仍通过配置的 `CODEX_CLI_PATH` 和 `CODEX_HOME` 查询认证；不要求 OpenAI 登录的本地转发配置可能使查询返回空认证，API Key 也不能当作 ChatGPT 登录态使用。出现 `Codex auth token is unavailable` 时，需要单独处理工具进程实际使用的登录环境，而不是重复启动宿主。Paseo 当前没有独立的桌面工具登录目录设置，不会自动改写模型路由、切换认证模式、复制凭证或伪造登录状态。不能仅凭更换模型提供方后能读到 API Key，就认定浏览器认证已经满足。
+
+**打包验证：** 服务端 `build:lib` 生成 `desktop-tools-host.bundle.mjs`，不打包官方专有 SDK；Windows 打包钩子检查解包目录内的真实宿主文件，缺失时中止构建。回归测试使用真实 ASAR、Electron 的 Node 模式和独立 Node，覆盖宿主加载、请求和授权转发及退出；测试替换会操作真实桌面的 SDK 端口，不代表已经验证真实浏览器认证。
 
 macOS、Linux 和非 App 管道型配置保持原有行为。运行时缺失、配置结构不合法或服务启动失败会明确报告，不会降级为跳过认证、自动批准或直接调用未受管理的桌面控制组件。官方 App 更新可能改变这些本地接口；排查时应先核对有效 MCP 配置和实际进程归属，不能只凭工具目录中出现技能名称判断执行宿主是否正常。
 

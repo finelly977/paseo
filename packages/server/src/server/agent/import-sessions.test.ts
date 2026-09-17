@@ -220,6 +220,7 @@ test("listImportableProviderSessions filters, sorts, limits, and projects import
     list: async () => [
       {
         provider: "codex",
+        cwd,
         persistence: {
           provider: "codex",
           sessionId: "stored-session",
@@ -325,6 +326,7 @@ test("listImportableProviderSessions 使用旧记录的运行时会话 ID 防重
         {
           id: "legacy-agent",
           provider: "codex",
+          cwd: "/tmp/project",
           persistence: null,
           runtimeInfo: { provider: "codex", sessionId: "already-imported" },
         } as StoredAgentRecord,
@@ -512,6 +514,7 @@ test("listImportableProviderSessions looks past already-imported rows to fill th
       list: async () => [
         {
           provider: "claude",
+          cwd,
           persistence: { provider: "claude", sessionId: "already-imported" },
         } as StoredAgentRecord,
       ],
@@ -770,7 +773,10 @@ class ProviderImportHarness {
   timeline: AgentTimelineItem[] = [];
   activeAgent: ManagedAgent | null = null;
   resumeError: Error | null = null;
+  closeError: Error | null = null;
   resumeAttempts = 0;
+  readonly resumeRequests: unknown[] = [];
+  importableSessions: ManagedImportableProviderSession[] = [];
   private unarchiveWait: Promise<void> | null = null;
   private releaseUnarchive: (() => void) | null = null;
 
@@ -778,6 +784,7 @@ class ProviderImportHarness {
     this.storage = input.storage;
     this.snapshot = input.snapshot;
     this.manager = {
+      listImportableSessions: async () => this.importableSessions,
       importProviderSession: async (request: unknown) => {
         this.freshImports.push(request);
         this.activeAgent = this.snapshot;
@@ -822,11 +829,12 @@ class ProviderImportHarness {
         throw new Error("Stored provider imports must resume their persisted session");
       },
       resumeAgentFromPersistence: async (
-        _handle: unknown,
-        _overrides: unknown,
-        _agentId?: string,
-        _options?: unknown,
+        handle: unknown,
+        overrides: unknown,
+        agentId?: string,
+        options?: unknown,
       ) => {
+        this.resumeRequests.push({ handle, overrides, agentId, options });
         this.resumeAttempts += 1;
         if (this.resumeError) {
           this.activeAgent = this.snapshot;
@@ -839,6 +847,9 @@ class ProviderImportHarness {
       getTimeline: () => this.timeline,
       closeAgent: async (agentId: string) => {
         this.closedAgentIds.push(agentId);
+        if (this.closeError) {
+          throw this.closeError;
+        }
         this.activeAgent = null;
       },
       archiveSnapshot: async (agentId: string, archivedAt: string) => {
@@ -962,6 +973,182 @@ test("importProviderSession rejects a provider session with an active stored own
   ).rejects.toThrow("Provider session is already imported: thread-active");
   expect(harness.freshImports).toEqual([]);
 });
+
+test("目录改名后，原生会话已指向新目录时重新显示导入入口", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "relocated-import-"));
+  importTestDirectories.push(directory);
+  const oldCwd = path.join(directory, "old-name");
+  const cwd = path.join(directory, "new-name");
+  mkdirSync(cwd);
+  const record = makeStoredProviderSession({
+    id: "relocated-agent",
+    cwd: oldCwd,
+    sessionId: "relocated-thread",
+    archivedAt: null,
+  });
+  const session = makeImportableSession({
+    sessionId: "relocated-thread",
+    cwd,
+    lastActivityAt: "2026-09-16T10:00:00.000Z",
+  });
+  const result = await listImportableProviderSessions({
+    request: makeRequest(),
+    agentManager: {
+      listAgents: () => [],
+      listImportableSessions: async () => [session],
+    },
+    agentStorage: { list: async () => [record] },
+    providerSnapshotManager: { getProviderLabel: () => "Codex" },
+  });
+
+  expect(result.entries.map((entry) => entry.providerHandleId)).toEqual(["relocated-thread"]);
+  expect(result.filteredAlreadyImportedCount).toBe(0);
+  expect(result.titleRepairs).toEqual([]);
+});
+
+test.each([null, "2026-04-30T12:00:00.000Z"])(
+  "重新导入改名目录的会话时保留已有会话身份、配置和创建时间（归档：%s）",
+  async (archivedAt) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "relocated-import-"));
+    importTestDirectories.push(directory);
+    const cwd = path.join(directory, "new-name");
+    mkdirSync(cwd);
+    const harness = await ProviderImportHarness.create({ cwd });
+    const original = makeStoredProviderSession({
+      id: harness.snapshot.id,
+      cwd: path.join(directory, "old-name"),
+      sessionId: "thread-imported",
+      title: "用户的原会话名称",
+      archivedAt,
+    });
+    original.config = { model: "selected-model", thinkingOptionId: "high" };
+    await harness.seed(original);
+    harness.importableSessions = [
+      makeImportableSession({
+        sessionId: "thread-imported",
+        cwd,
+        lastActivityAt: "2026-09-16T10:00:00.000Z",
+      }),
+    ];
+
+    const result = await harness.import({ providerHandleId: "thread-imported", cwd });
+
+    expect(result.snapshot.id).toBe(original.id);
+    expect(harness.freshImports).toEqual([]);
+    expect(harness.resumeRequests).toEqual([
+      {
+        handle: original.persistence,
+        overrides: expect.objectContaining({
+          cwd,
+          model: "selected-model",
+          thinkingOptionId: "high",
+          title: original.title,
+        }),
+        agentId: original.id,
+        options: expect.objectContaining({
+          workspaceId: "ws-restored",
+          createdAt: new Date(original.createdAt),
+        }),
+      },
+    ]);
+    expect(await harness.storage.get(original.id)).toMatchObject({
+      id: original.id,
+      cwd,
+      archivedAt: null,
+    });
+  },
+);
+
+test("目录恢复失败且运行时清理失败时报告两个错误，不假装回滚成功", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "relocated-import-rollback-"));
+  importTestDirectories.push(directory);
+  const cwd = path.join(directory, "new-name");
+  mkdirSync(cwd);
+  const harness = await ProviderImportHarness.create({ cwd });
+  const original = makeStoredProviderSession({
+    id: harness.snapshot.id,
+    cwd: path.join(directory, "old-name"),
+    sessionId: "thread-imported",
+    archivedAt: null,
+  });
+  await harness.seed(original);
+  harness.importableSessions = [
+    makeImportableSession({
+      sessionId: "thread-imported",
+      cwd,
+      lastActivityAt: "2026-09-16T10:00:00.000Z",
+    }),
+  ];
+  harness.resumeError = new Error("resume failed");
+  harness.closeError = new Error("close failed");
+
+  await expect(harness.import({ providerHandleId: "thread-imported", cwd })).rejects.toMatchObject({
+    name: "AggregateError",
+    cause: harness.resumeError,
+    errors: [harness.resumeError, harness.closeError],
+  });
+  expect(await harness.storage.get(original.id)).toEqual(original);
+  expect(harness.freshImports).toEqual([]);
+});
+
+test.each(["原目录仍存在", "原生会话未确认", "运行时尚未释放", "恢复失败"])(
+  "目录恢复遇到%s时保留原记录，不创建副本或中断其他运行时",
+  async (scenario) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "relocated-import-failure-"));
+    importTestDirectories.push(directory);
+    const cwd = path.join(directory, "new-name");
+    const oldCwd = path.join(directory, "old-name");
+    mkdirSync(cwd);
+    const harness = await ProviderImportHarness.create({ cwd });
+    const original = makeStoredProviderSession({
+      id: harness.snapshot.id,
+      cwd: oldCwd,
+      sessionId: "thread-imported",
+      archivedAt: null,
+    });
+    await harness.seed(original);
+    harness.importableSessions = [
+      makeImportableSession({
+        sessionId: "thread-imported",
+        cwd,
+        lastActivityAt: "2026-09-16T10:00:00.000Z",
+      }),
+    ];
+    let error: string;
+    let expectedResumeAttempts = 0;
+    let expectedClosedAgentIds: string[] = [];
+    switch (scenario) {
+      case "原目录仍存在":
+        mkdirSync(oldCwd);
+        error = "already imported";
+        break;
+      case "原生会话未确认":
+        harness.importableSessions = [];
+        error = "原生会话尚未确认";
+        break;
+      case "运行时尚未释放":
+        harness.activeAgent = harness.snapshot;
+        error = "请先释放原会话";
+        break;
+      case "恢复失败":
+        harness.resumeError = new Error("resume failed");
+        error = "resume failed";
+        expectedResumeAttempts = 1;
+        expectedClosedAgentIds = [original.id];
+        break;
+      default:
+        throw new Error(`Unknown test scenario: ${scenario}`);
+    }
+
+    await expect(harness.import({ providerHandleId: "thread-imported", cwd })).rejects.toThrow(
+      error,
+    );
+    expect(await harness.storage.get(original.id)).toEqual(original);
+    expect(harness.resumeAttempts).toBe(expectedResumeAttempts);
+    expect(harness.closedAgentIds).toEqual(expectedClosedAgentIds);
+    expect(harness.freshImports).toEqual([]);
+  },
+);
 
 test("importProviderSession restores an archived session as the same standalone agent", async () => {
   const harness = await ProviderImportHarness.create({ sessionId: "thread-archived" });

@@ -19,6 +19,7 @@ files:
   - "!node_modules/@getpaseo/server/dist/server/web-ui/**"
 asarUnpack:
   - dist/daemon/node-entrypoint-runner.js
+  - node_modules/@getpaseo/server/dist/server/server/agent/providers/codex/desktop-tools-host.bundle.mjs
   - node_modules/@getpaseo/server/dist/server/terminal/shell-integration/**/*
 extraResources:
   - from: ../app/dist
