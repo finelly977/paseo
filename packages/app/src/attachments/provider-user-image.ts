@@ -1,10 +1,13 @@
 import type { AgentUserMessageImage } from "@getpaseo/protocol/agent-types";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { getRasterImageMimeTypeFromPath } from "@/attachments/file-types";
-import { persistAttachmentFromFileUri } from "@/attachments/service";
-import { createPreviewAttachmentId } from "@/attachments/utils";
+import { persistAttachmentFromBytes } from "@/attachments/service";
+import { createPreviewAttachmentId, getFileNameFromPath } from "@/attachments/utils";
 
 const resolvedImages = new Map<string, Promise<AttachmentMetadata>>();
+
+type ProviderUserImageClient = Pick<DaemonClient, "readFile">;
 
 export function mergeResolvedProviderUserImages(
   existing: readonly AttachmentMetadata[],
@@ -21,22 +24,28 @@ export function mergeResolvedProviderUserImages(
   return merged;
 }
 
-export function resolveProviderUserImage(
-  image: AgentUserMessageImage,
-): Promise<AttachmentMetadata> {
+export function resolveProviderUserImage(input: {
+  image: AgentUserMessageImage;
+  serverId: string;
+  client: ProviderUserImageClient;
+}): Promise<AttachmentMetadata> {
+  const { image, serverId, client } = input;
   const mimeType = image.mimeType ?? getRasterImageMimeTypeFromPath(image.path) ?? "image/jpeg";
-  const key = `${image.path}\0${mimeType}`;
+  const key = `${serverId}\0${image.path}\0${mimeType}`;
   const existing = resolvedImages.get(key);
   if (existing) {
     return existing;
   }
 
-  const id = `provider_${createPreviewAttachmentId({ mimeType, path: image.path })}`;
-  const pending = persistAttachmentFromFileUri({
-    uri: image.path,
-    mimeType,
-    id,
-  });
+  const id = `provider_${createPreviewAttachmentId({ mimeType, path: key })}`;
+  const pending = client.readFile(image.path, ".").then((file) =>
+    persistAttachmentFromBytes({
+      bytes: file.bytes,
+      mimeType,
+      fileName: getFileNameFromPath(image.path),
+      id,
+    }),
+  );
   const tracked = pending.finally(() => {
     resolvedImages.delete(key);
   });

@@ -467,7 +467,11 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
   );
 }
 
-function useResolvedProviderUserImages(images: readonly AgentUserMessageImage[]): {
+function useResolvedProviderUserImages(
+  images: readonly AgentUserMessageImage[],
+  serverId: string | undefined,
+  client: DaemonClient | null | undefined,
+): {
   images: UserMessageImageAttachment[];
   isLoading: boolean;
   failed: boolean;
@@ -480,12 +484,27 @@ function useResolvedProviderUserImages(images: readonly AgentUserMessageImage[])
       setStatus("idle");
       return;
     }
+    if (!serverId || !client) {
+      setResolved([]);
+      setStatus("loading");
+      return;
+    }
+    const resolvedServerId = serverId;
+    const resolvedClient = client;
     let cancelled = false;
     setStatus("loading");
 
     async function restoreImages() {
       try {
-        const next = await Promise.all(images.map(resolveProviderUserImage));
+        const next = await Promise.all(
+          images.map((image) =>
+            resolveProviderUserImage({
+              image,
+              serverId: resolvedServerId,
+              client: resolvedClient,
+            }),
+          ),
+        );
         if (cancelled) return;
         setResolved(next);
         setStatus("ready");
@@ -501,7 +520,7 @@ function useResolvedProviderUserImages(images: readonly AgentUserMessageImage[])
     return () => {
       cancelled = true;
     };
-  }, [images]);
+  }, [client, images, serverId]);
 
   return { images: resolved, isLoading: status === "loading", failed: status === "failed" };
 }
@@ -576,7 +595,7 @@ export const UserMessage = memo(function UserMessage({
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const hasText = message.trim().length > 0;
-  const restoredProviderImages = useResolvedProviderUserImages(providerImages);
+  const restoredProviderImages = useResolvedProviderUserImages(providerImages, serverId, client);
   const allImages = useMemo(
     () => mergeResolvedProviderUserImages(images, restoredProviderImages.images),
     [images, restoredProviderImages.images],
