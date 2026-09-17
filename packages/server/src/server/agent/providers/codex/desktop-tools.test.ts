@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../../test-utils/test-logger.js";
-import { acquireCodexDesktopTools } from "./desktop-tools.js";
+import { acquireCodexDesktopTools, resolveCodexDesktopCliPath } from "./desktop-tools.js";
 import type { DesktopToolTurn, startCodexDesktopBridge } from "./desktop-tools-bridge.js";
 
 const logger = createTestLogger();
@@ -38,9 +38,18 @@ describe("Codex 独立桌面工具配置", () => {
     );
     const moduleDirectory = path.join(home, "node_modules");
     const sdkPath = path.join(moduleDirectory, "@oai/sky");
+    const codexCliPath = path.join(home, "codex.exe");
+    const nodeReplPath = path.join(home, "node_repl.exe");
+    const chromePluginPath = path.join(home, "plugins/cache/openai-bundled/chrome/latest");
+    const browserServicePath = path.join(chromePluginPath, "scripts/browser-service.mjs");
+    const installScriptPath = path.join(chromePluginPath, "scripts/installManifest.mjs");
     const helperName =
       process.arch === "arm64" ? "codex-computer-use-arm64.exe" : "codex-computer-use.exe";
     const files = [
+      codexCliPath,
+      nodeReplPath,
+      browserServicePath,
+      installScriptPath,
       path.join(sdkPath, "package.json"),
       path.join(sdkPath, "bin/windows", helperName),
       path.join(
@@ -61,7 +70,7 @@ describe("Codex 独立桌面工具配置", () => {
       SKY_CUA_NATIVE_PIPE_DIRECTORY: "old-app-pipe",
       BROWSER_USE_AVAILABLE_BACKENDS: "chrome,iab",
       BROWSER_USE_CODEX_APP_VERSION: "26.908.40834",
-      CODEX_CLI_PATH: path.join(home, "codex.exe"),
+      CODEX_CLI_PATH: codexCliPath,
     };
     const cua = {
       command: "node.exe",
@@ -82,11 +91,15 @@ describe("Codex 独立桌面工具配置", () => {
         [CHROME_PLUGIN]: { enabled: true },
         [CUA_PLUGIN]: { enabled: true },
       },
-      mcp_servers: { node_repl: { command: "node_repl.exe", enabled: true, env } },
+      mcp_servers: { node_repl: { command: nodeReplPath, enabled: true, env } },
     };
     const starts: Parameters<typeof startCodexDesktopBridge>[0][] = [];
     const endedTurns: DesktopToolTurn[] = [];
     const requests: ToolRequest[] = [];
+    const nativeHostInstalls: Array<{
+      installScriptPath: string;
+      runtimePaths: Record<string, string>;
+    }> = [];
     let stops = 0;
     const options = {
       platform: "win32" as const,
@@ -100,6 +113,9 @@ describe("Codex 独立桌面工具配置", () => {
           if (method === "mcpServer/tool/call") return { content: [], isError: false };
           throw new Error(`Unexpected request: ${method}`);
         },
+      },
+      async installChromeNativeHost(script: string, runtimePaths: Record<string, string>) {
+        nativeHostInstalls.push({ installScriptPath: script, runtimePaths });
       },
       async startBridge(input: Parameters<typeof startCodexDesktopBridge>[0]) {
         starts.push(input);
@@ -124,6 +140,10 @@ describe("Codex 独立桌面工具配置", () => {
       home,
       pluginPath,
       sdkPath,
+      codexCliPath,
+      nodeReplPath,
+      browserServicePath,
+      installScriptPath,
       configuration,
       cua,
       writePlugin,
@@ -132,9 +152,41 @@ describe("Codex 独立桌面工具配置", () => {
       starts,
       requests,
       endedTurns,
+      nativeHostInstalls,
       stopCount: () => stops,
     };
   }
+
+  test("Codex 更新后从当前 npm 启动器解析新的原生 CLI，不沿用失效的哈希路径", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "paseo-codex-cli-"));
+    cleanups.push(() => rm(home, { recursive: true, force: true }));
+    const launcher = path.join(home, "bin", "codex.cmd");
+    const nativeCli = path.join(
+      home,
+      "bin",
+      "node_modules",
+      "@openai",
+      "codex",
+      "node_modules",
+      "@openai",
+      process.arch === "arm64" ? "codex-win32-arm64" : "codex-win32-x64",
+      "vendor",
+      process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc",
+      "bin",
+      "codex.exe",
+    );
+    await mkdir(path.dirname(nativeCli), { recursive: true });
+    await Promise.all([writeFile(launcher, ""), writeFile(nativeCli, "")]);
+
+    await expect(
+      resolveCodexDesktopCliPath({
+        launchCommand: launcher,
+        configuredPath: path.join(home, "Codex", "bin", "old-hash", "codex.exe"),
+        platform: "win32",
+        arch: process.arch,
+      }),
+    ).resolves.toBe(nativeCli);
+  });
 
   test("会话独立接管管道，保留工具限制且不修改官方配置文件", async () => {
     const f = await fixture();
@@ -146,8 +198,10 @@ describe("Codex 独立桌面工具配置", () => {
       "mcp_servers.node_repl.env": {
         SKY_CUA_NATIVE_PIPE_DIRECTORY: "paseo-owned-pipe",
         BROWSER_USE_AVAILABLE_BACKENDS: "chrome",
-        NODE_REPL_TRUSTED_SERVICES:
-          '{"browser":"@oai/browser-desktop/service","sky":"@oai/sky/service"}',
+        NODE_REPL_TRUSTED_SERVICES: JSON.stringify({
+          browser: f.browserServicePath,
+          sky: "@oai/sky/service",
+        }),
       },
       "mcp_servers.cua_repl": {
         enabled_tools: ["js", "js_reset", "turn_ended"],
@@ -161,6 +215,16 @@ describe("Codex 独立桌面工具配置", () => {
       "plugins.unified-computer-use@openai-bundled.mcp_servers.cua_repl.enabled": false,
     });
     expect(await readFile(f.pluginPath, "utf8")).toBe(original);
+    expect(f.nativeHostInstalls).toEqual([
+      {
+        installScriptPath: f.installScriptPath,
+        runtimePaths: {
+          codexCliPath: f.codexCliPath,
+          nodePath: process.execPath,
+          nodeReplPath: f.nodeReplPath,
+        },
+      },
+    ]);
     expect(f.configuration.mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY).toBe(
       "old-app-pipe",
     );
@@ -169,6 +233,68 @@ describe("Codex 独立桌面工具配置", () => {
     await second.dispose();
     await second.dispose();
     expect(f.stopCount()).toBe(1);
+  });
+
+  test("会话启动时修复 Codex 与 Chrome 更新后失效的运行路径", async () => {
+    const f = await fixture();
+    const launcher = path.join(f.home, "npm", "codex.cmd");
+    const nativeCli = path.join(
+      f.home,
+      "npm",
+      "node_modules",
+      "@openai",
+      "codex",
+      "node_modules",
+      "@openai",
+      process.arch === "arm64" ? "codex-win32-arm64" : "codex-win32-x64",
+      "vendor",
+      process.arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc",
+      "bin",
+      "codex.exe",
+    );
+    await mkdir(path.dirname(nativeCli), { recursive: true });
+    await Promise.all([writeFile(launcher, ""), writeFile(nativeCli, "")]);
+    f.configuration.mcp_servers.node_repl.env.CODEX_CLI_PATH = path.join(
+      f.home,
+      "Codex/bin/removed-hash/codex.exe",
+    );
+    f.configuration.mcp_servers.node_repl.env.NODE_REPL_TRUSTED_SERVICES = JSON.stringify({
+      browser: path.join(f.home, "plugins/cache/openai-bundled/browser/removed/service.mjs"),
+    });
+    f.options.codexLaunchCommand = launcher;
+
+    const tools = await f.acquire();
+
+    expect(tools.config).toMatchObject({
+      "mcp_servers.node_repl.env": {
+        CODEX_CLI_PATH: nativeCli,
+        NODE_REPL_TRUSTED_SERVICES: JSON.stringify({
+          browser: f.browserServicePath,
+          sky: "@oai/sky/service",
+        }),
+      },
+      "mcp_servers.cua_repl": {
+        env: {
+          CODEX_CLI_PATH: nativeCli,
+          NODE_REPL_TRUSTED_SERVICES: JSON.stringify({ browser: f.browserServicePath }),
+        },
+      },
+    });
+    expect(f.nativeHostInstalls[0]?.runtimePaths.codexCliPath).toBe(nativeCli);
+  });
+
+  test("Chrome 原生宿主注册失败会明确报错，并允许下次启动重试", async () => {
+    const f = await fixture();
+    let attempts = 0;
+    f.options.installChromeNativeHost = async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("注册失败");
+    };
+
+    await expect(f.acquire()).rejects.toThrow("注册失败");
+    expect(f.starts).toHaveLength(0);
+    await f.acquire();
+    expect(attempts).toBe(2);
   });
 
   test.each(["linux", "darwin"] as const)("%s 不启用 Windows 桌面组件", async (platform) => {
@@ -258,7 +384,7 @@ describe("Codex 独立桌面工具配置", () => {
     expect(f.starts).toHaveLength(0);
     expect(tools.config).toMatchObject({
       "mcp_servers.node_repl.env": {
-        NODE_REPL_TRUSTED_SERVICES: '{"browser":"@oai/browser-desktop/service"}',
+        NODE_REPL_TRUSTED_SERVICES: JSON.stringify({ browser: f.browserServicePath }),
         BROWSER_USE_AVAILABLE_BACKENDS: "chrome",
       },
       "mcp_servers.cua_repl": { env: { CUA_REPL_ENABLED_SURFACES: "browser" } },
@@ -276,6 +402,7 @@ describe("Codex 独立桌面工具配置", () => {
       },
       "mcp_servers.cua_repl": { enabled: false, env: { CUA_REPL_ENABLED_SURFACES: "" } },
     });
+    expect(f.nativeHostInstalls).toHaveLength(0);
   });
 
   test("按运行时声明的目录顺序定位 SDK，不假定它总在第一项", async () => {
@@ -297,11 +424,11 @@ describe("Codex 独立桌面工具配置", () => {
     expect(f.starts).toHaveLength(0);
   });
 
-  test("非法受信任服务配置不回退为空对象，并释放宿主", async () => {
+  test("非法受信任服务配置不回退为空对象，且不启动宿主", async () => {
     const f = await fixture();
     f.configuration.mcp_servers.node_repl.env.NODE_REPL_TRUSTED_SERVICES = "not-json";
     await expect(f.acquire()).rejects.toThrow(SyntaxError);
-    expect(f.stopCount()).toBe(1);
+    expect(f.stopCount()).toBe(0);
   });
 
   test("不重新提交 config/read 的归一化空值，避免破坏 Codex 的 TOML 解析", async () => {

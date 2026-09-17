@@ -12,6 +12,7 @@ import {
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import { z } from "zod";
+import type { CodexProviderInjection } from "@getpaseo/protocol/messages";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
 
 import {
@@ -122,6 +123,7 @@ export type AgentRunCancellationResult =
 interface PreparedSessionConfig {
   storedConfig: AgentSessionConfig;
   launchConfig: AgentSessionConfig;
+  launchEnv?: Record<string, string>;
 }
 
 interface NormalizeConfigOptions {
@@ -139,6 +141,41 @@ function formatProviderList(providers: readonly string[]): string {
   return providers.length > 0 ? providers.join(", ") : "none";
 }
 
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function applyCodexProviderInjection(
+  config: AgentSessionConfig,
+  injection: CodexProviderInjection,
+): AgentSessionConfig {
+  if (config.provider !== "codex") {
+    throw new Error("Codex 服务商注入只能用于 Codex 会话");
+  }
+
+  const existingCodexConfig = config.extra?.codex ?? {};
+  const existingDefinitionsValue = existingCodexConfig.model_providers;
+  if (existingDefinitionsValue !== undefined && !isMetadataRecord(existingDefinitionsValue)) {
+    throw new Error("Codex 会话中的 model_providers 必须是对象");
+  }
+  const existingDefinitions = existingDefinitionsValue ?? {};
+
+  return {
+    ...config,
+    extra: {
+      ...config.extra,
+      codex: {
+        ...existingCodexConfig,
+        model_provider: injection.modelProvider,
+        model_providers: {
+          ...existingDefinitions,
+          [injection.modelProvider]: injection.definition,
+        },
+      },
+    },
+  };
+}
+
 function buildStoredAgentConfig(record: StoredAgentRecord): AgentSessionConfig {
   const config: AgentSessionConfig = {
     provider: record.provider,
@@ -154,6 +191,9 @@ function buildStoredAgentConfig(record: StoredAgentRecord): AgentSessionConfig {
   }
   if (record.config.featureValues != null) {
     config.featureValues = record.config.featureValues;
+  }
+  if (record.config.codexProviderInjectionId != null) {
+    config.codexProviderInjectionId = record.config.codexProviderInjectionId;
   }
   if (record.config.extra != null) config.extra = record.config.extra;
   if (record.config.systemPrompt != null) {
@@ -262,6 +302,7 @@ export interface AgentManagerOptions {
   paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   appendSystemPrompt?: string;
+  resolveCodexProviderInjection?: (id: string) => CodexProviderInjection | null;
   agentStreamCoalesceWindowMs?: number;
   durableTimelineCoalesceWindowMs?: number;
   durableTimelineTimers?: DurableTimelineTimers;
@@ -700,6 +741,7 @@ export class AgentManager {
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
+  private readonly resolveCodexProviderInjection?: AgentManagerOptions["resolveCodexProviderInjection"];
   private acceptingAgentRegistrations = true;
 
   constructor(options: AgentManagerOptions) {
@@ -712,6 +754,7 @@ export class AgentManager {
     this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
+    this.resolveCodexProviderInjection = options.resolveCodexProviderInjection;
     this.logger = options.logger.child({ module: "agent", component: "agent-manager" });
     this.durableTimelineBuffer = this.createDurableTimelineBuffer(options);
     this.rescueTimeouts = {
@@ -1156,10 +1199,10 @@ export class AgentManager {
     this.assertAcceptingAgentRegistrations();
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     await this.deleteAgentState(resolvedAgentId);
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(
+    const { storedConfig, launchConfig, launchEnv } = await this.prepareSessionConfig(
       config,
       resolvedAgentId,
-      options?.env,
+      options.env,
     );
     this.requireEnabledProvider(storedConfig.provider);
     const client = await this.requireAvailableClient({
@@ -1169,7 +1212,7 @@ export class AgentManager {
       resolvedAgentId,
       client,
       storedConfig.cwd,
-      options?.env,
+      launchEnv,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const createOptions = this.buildCreateSessionOptions(options);
@@ -1237,7 +1280,7 @@ export class AgentManager {
       ...overrides,
       provider: handle.provider,
     } as AgentSessionConfig;
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(
+    const { storedConfig, launchConfig, launchEnv } = await this.prepareSessionConfig(
       mergedConfig,
       resolvedAgentId,
     );
@@ -1249,7 +1292,12 @@ export class AgentManager {
         `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
       );
     }
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, storedConfig.cwd);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      storedConfig.cwd,
+      launchEnv,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const session = await client.resumeSession(
       handle,
@@ -1291,7 +1339,7 @@ export class AgentManager {
       throw new Error(`Provider '${input.provider}' does not support importing sessions`);
     }
 
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(
+    const { storedConfig, launchConfig, launchEnv } = await this.prepareSessionConfig(
       {
         provider: input.provider,
         cwd: input.cwd,
@@ -1299,7 +1347,12 @@ export class AgentManager {
       },
       resolvedAgentId,
     );
-    const launchContext = await this.buildLaunchContext(resolvedAgentId, client, storedConfig.cwd);
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      storedConfig.cwd,
+      launchEnv,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const imported = await client.importSession(
       {
@@ -1383,8 +1436,16 @@ export class AgentManager {
       ...overrides,
       provider,
     } as AgentSessionConfig;
-    const { storedConfig, launchConfig } = await this.prepareSessionConfig(refreshConfig, agentId);
-    const launchContext = await this.buildLaunchContext(agentId, client, storedConfig.cwd);
+    const { storedConfig, launchConfig, launchEnv } = await this.prepareSessionConfig(
+      refreshConfig,
+      agentId,
+    );
+    const launchContext = await this.buildLaunchContext(
+      agentId,
+      client,
+      storedConfig.cwd,
+      launchEnv,
+    );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
 
     // Codex app-server 的持久化线程只允许一个活动写入者。启动新的 app-server
@@ -4875,7 +4936,7 @@ export class AgentManager {
     env?: Record<string, string>,
   ): Promise<PreparedSessionConfig> {
     const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), { env });
-    const launchConfig = this.applyDaemonAppendSystemPrompt(
+    let launchConfig = this.applyDaemonAppendSystemPrompt(
       withRuntimePaseoMcpServer({
         config: storedConfig,
         agentId,
@@ -4883,7 +4944,23 @@ export class AgentManager {
         mcpAuthToken: this.mcpAuthToken,
       }),
     );
-    return { storedConfig, launchConfig };
+    let launchEnv = env;
+    if (storedConfig.codexProviderInjectionId) {
+      if (!this.resolveCodexProviderInjection) {
+        throw new Error("当前守护进程未配置 Codex 服务商注入解析器");
+      }
+      const injection = this.resolveCodexProviderInjection(storedConfig.codexProviderInjectionId);
+      if (!injection) {
+        throw new Error(`未找到 Codex 服务商注入配置：${storedConfig.codexProviderInjectionId}`);
+      }
+      launchConfig = applyCodexProviderInjection(launchConfig, injection);
+      launchEnv = { ...env, ...injection.env };
+    }
+    return {
+      storedConfig,
+      launchConfig,
+      ...(launchEnv ? { launchEnv } : {}),
+    };
   }
 
   private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {

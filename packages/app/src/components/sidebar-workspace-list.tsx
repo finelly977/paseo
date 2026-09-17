@@ -125,6 +125,7 @@ import { openExternalUrl } from "@/utils/open-external-url";
 import { requireWorkspaceDirectory } from "@/utils/workspace-directory";
 import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
 import { useAgentInitialization } from "@/hooks/use-agent-initialization";
+import { useCodexProviderInjections } from "@/codex-provider-injections/use-codex-provider-injections";
 import {
   getCurrentProjectRemoveReadiness,
   removeProjectFromHosts,
@@ -317,6 +318,9 @@ interface WorkspaceRowInnerProps {
   isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
+  codexProviderInjections?: readonly { id: string; name: string }[];
+  applyingCodexProviderInjectionId?: string | null;
+  onApplyCodexProviderInjection?: (injectionId: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
 }
 
@@ -680,6 +684,9 @@ function WorkspaceRowRightGroup({
   isReleasingAgentRuntime,
   onRemoveAgent,
   isRemovingAgent,
+  codexProviderInjections,
+  applyingCodexProviderInjectionId,
+  onApplyCodexProviderInjection,
 }: {
   workspace: SidebarWorkspaceEntry;
   sessionId: string | null;
@@ -705,6 +712,9 @@ function WorkspaceRowRightGroup({
   isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
+  codexProviderInjections?: readonly { id: string; name: string }[];
+  applyingCodexProviderInjectionId?: string | null;
+  onApplyCodexProviderInjection?: (injectionId: string) => void;
 }) {
   const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
@@ -752,6 +762,9 @@ function WorkspaceRowRightGroup({
                 isReleasingAgentRuntime={isReleasingAgentRuntime}
                 onRemoveAgent={onRemoveAgent}
                 isRemovingAgent={isRemovingAgent}
+                codexProviderInjections={codexProviderInjections}
+                applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+                onApplyCodexProviderInjection={onApplyCodexProviderInjection}
                 openInFileManagerPath={workspacePath}
               />
             ) : null}
@@ -1197,6 +1210,9 @@ function WorkspaceRowInner({
   isReleasingAgentRuntime,
   onRemoveAgent,
   isRemovingAgent,
+  codexProviderInjections,
+  applyingCodexProviderInjectionId,
+  onApplyCodexProviderInjection,
   reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
   const isCompact = useIsCompactFormFactor();
@@ -1304,6 +1320,9 @@ function WorkspaceRowInner({
                   isReleasingAgentRuntime={isReleasingAgentRuntime}
                   onRemoveAgent={onRemoveAgent}
                   isRemovingAgent={isRemovingAgent}
+                  codexProviderInjections={codexProviderInjections}
+                  applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+                  onApplyCodexProviderInjection={onApplyCodexProviderInjection}
                 />
               </SidebarWorkspaceRowContent>
             </Pressable>
@@ -1314,6 +1333,9 @@ function WorkspaceRowInner({
   );
 }
 
+// 现有 workspace 生命周期操作已接近仓库的复杂度阈值；服务商注入会再增加一个
+// 独立异步操作，因此在拆分此组件前保留明确的复杂度豁免。
+// eslint-disable-next-line complexity
 function WorkspaceRowWithMenu({
   workspace,
   subtitle,
@@ -1367,6 +1389,11 @@ function WorkspaceRowWithMenu({
     (state) =>
       state.sessions[workspace.serverId]?.serverInfo?.features?.agentRuntimeRelease === true,
   );
+  const supportsCodexProviderInjection = useSessionStore(
+    (state) =>
+      state.sessions[workspace.serverId]?.serverInfo?.features?.codexProviderInjection === true,
+  );
+  const { injections: codexProviderInjections } = useCodexProviderInjections(workspace.serverId);
   const hostClient = getHostRuntimeStore().getClient(workspace.serverId);
   const { refreshAgent } = useAgentInitialization({
     serverId: workspace.serverId,
@@ -1375,6 +1402,9 @@ function WorkspaceRowWithMenu({
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
   const [isReleasingAgentRuntime, setIsReleasingAgentRuntime] = useState(false);
   const [isRemovingAgent, setIsRemovingAgent] = useState(false);
+  const [applyingCodexProviderInjectionId, setApplyingCodexProviderInjectionId] = useState<
+    string | null
+  >(null);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
   const redirectAfterArchive = useCallback(() => {
@@ -1533,6 +1563,48 @@ function WorkspaceRowWithMenu({
     workspaceAgent,
   ]);
 
+  const handleApplyCodexProviderInjection = useCallback(
+    async (injectionId: string) => {
+      if (applyingCodexProviderInjectionId) return;
+      if (!supportsCodexProviderInjection) {
+        toast.error(t("sidebar.workspace.codexProviderInjections.updateHost"));
+        return;
+      }
+      if (!workspaceAgent || !hostClient) {
+        toast.error(t("sidebar.workspace.toasts.hostDisconnected"));
+        return;
+      }
+      setApplyingCodexProviderInjectionId(injectionId);
+      try {
+        const result = await hostClient.applyCodexProviderInjection(workspaceAgent.id, injectionId);
+        toast.show(
+          t(
+            result.action === "started"
+              ? "sidebar.workspace.codexProviderInjections.started"
+              : "sidebar.workspace.codexProviderInjections.reloaded",
+          ),
+          { variant: "success" },
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.workspace.codexProviderInjections.failed"),
+        );
+      } finally {
+        setApplyingCodexProviderInjectionId(null);
+      }
+    },
+    [
+      applyingCodexProviderInjectionId,
+      hostClient,
+      supportsCodexProviderInjection,
+      t,
+      toast,
+      workspaceAgent,
+    ],
+  );
+
   const handleRemoveAgent = useCallback(async () => {
     if (isRemovingAgent) {
       return;
@@ -1636,6 +1708,15 @@ function WorkspaceRowWithMenu({
         isReleasingAgentRuntime={isReleasingAgentRuntime}
         onRemoveAgent={workspaceAgent ? handleRemoveAgent : undefined}
         isRemovingAgent={isRemovingAgent}
+        codexProviderInjections={
+          workspaceAgent?.provider === "codex" && supportsCodexProviderInjection
+            ? (codexProviderInjections ?? [])
+            : undefined
+        }
+        applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+        onApplyCodexProviderInjection={
+          workspaceAgent?.provider === "codex" ? handleApplyCodexProviderInjection : undefined
+        }
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <AdaptiveRenameModal

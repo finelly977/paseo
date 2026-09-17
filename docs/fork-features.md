@@ -196,6 +196,7 @@
 - Codex 因所选模型容量已满而结束回合时不会立即按失败结束：已经产生有效答复时自动追加“继续”，只有容量提示而没有有效答复时原地回退最新原生回合并重发原用户消息。自动恢复期间不显示容量提示、不重复显示重发的用户消息，也不会触发失败通知；只有自动恢复自身失败后才按真实错误结束。
 - 重新进入 Codex 老会话时，用户消息中的图片包装路径不会再显示成正文；图片会作为结构化历史附件按需恢复，并可在回退后重新发送。提供方历史图片使用稳定的附件标识和主机持久目录；客户端通过会话所属主机读取图片字节后再写入本地附件存储，因此连接 Ubuntu 等远程主机时不会把远端绝对路径误当成本机文件。不同主机上的相同路径彼此隔离；主机尚未连接时等待连接，不提前显示永久失败。客户端内存裁剪或附件回收可以正常清理副本，重新打开时会从保留的历史源文件重建，不再永久引用已经删除的灰色占位附件。恢复后的历史图片继续使用与新附件和助手正文图片相同的灯箱，可缩放、平移、复位并稳定关闭；接入灯箱不会绕过二开的附件持久化与历史源文件恢复链路。
 - Codex 权限选择器支持“自定义 (config.toml)”模式，实际读取并应用用户配置中的审批策略、审批人、沙盒类型、额外可写目录和工作区网络权限；配置结构非法时明确报错，不会静默退回默认权限。
+- Host 的 Agent 设置支持保存多个有序的 Codex 服务商注入配置，每项包含显示名称、`model_provider` 标识、原生 `model_providers` 定义、可选默认模型及仅供该运行时使用的环境变量。Codex 会话菜单按保存顺序列出这些配置；尚未加载的会话会携带注入配置直接恢复或启动，已加载的会话会先完整释放旧 app-server 再恢复同一原生线程。选择结果随 Paseo 会话持久化，后续自动恢复继续使用同一配置；配置被删除后会明确报错，不会静默回退到其他服务商或用户全局配置。
 - 侧边栏中只有一个根智能体的工作区提供“重新加载”“释放运行时”和“移除”操作。重新加载会关闭当前运行实例、复用原生会话句柄并重新读取完整历史，不创建新的 Paseo 会话；对于带持久化线程的 Codex 会话，会先完整释放旧运行时再恢复原线程，避免同一线程同时存在多个活动写入者。恢复失败时会保持为已关闭状态，用户修复配置后可以再次加载。
 - 释放运行时会在确认后只关闭目标会话的智能体运行实例及其拥有的子进程，保留 Paseo 会话、对话记录、错误信息、工作区与原生会话句柄；不会归档或移除会话，不会级联关闭其他 Paseo 会话，之后继续对话时恢复同一原生会话。错误中断的会话不会因此被自动释放，仍由用户自行决定何时释放。
 - 普通 OpenCode 会话复用守护进程内的共享辅助服务，减少多会话同时打开时重复的 OpenCode 和 Node.js 进程。每个会话的环境、Paseo 工具目录和权限请求仍由私有回环桥接按原生会话标识隔离；带额外环境变量或自定义 MCP 服务的会话继续使用独立辅助进程。释放、归档或移除一个普通 OpenCode 会话只解除该会话的桥接绑定，不会停止或串改其他会话；守护进程关闭时才统一释放共享服务。
@@ -206,6 +207,7 @@
 主要涉及：
 
 - `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/app/src/codex-provider-injections/`
 - `packages/server/src/server/agent/providers/codex/capacity-retry.ts`
 - `packages/protocol/src/provider-manifest.ts`
 - `packages/app/src/agent-stream/provider-image-message.tsx`
@@ -218,6 +220,7 @@
 - `packages/app/src/utils/aggregate-agents.ts`
 - `packages/app/src/components/sidebar-workspace-list.tsx`
 - `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx`
+- `packages/app/src/components/sidebar/sidebar-status-list.tsx`
 - `packages/app/src/hooks/sidebar-workspaces-view-model.ts`
 - `packages/server/src/server/session.ts`
 - `packages/server/src/server/websocket-server.ts`
@@ -531,9 +534,10 @@
 
 ### 25. Windows Codex 桌面工具由 Paseo 独立托管
 
-- 已通过官方 App 安装并启用 Computer Use 或 Chrome 插件的 Windows 用户，可以让 Paseo 的 Codex 会话使用独立执行宿主，不必由 Codex App 主进程维持桌面控制管道。官方安装文件、Node 运行时、SDK、登录状态及 Chrome 扩展仍是前提；Paseo 不复制专有实现、不自动安装插件，也不启动隐藏的 Codex App。
+- 已通过官方 App 完成首次安装并启用 Computer Use 或 Chrome 插件的 Windows 用户，可以让 Paseo 的 Codex 会话使用独立执行宿主，日常使用不必打开或由 Codex App 主进程维持桌面控制管道。官方安装文件、Node 运行时、SDK、登录状态及 Chrome 扩展仍是前提；Paseo 不复制专有实现、不下载专有插件，也不启动隐藏的 Codex App。
 - Computer Use 按需使用官方配套 Node 加载 SDK 并启动原生组件，数据目录、授权请求和物理 Escape 停止机制保持原样。宿主及其普通依赖构建为自包含文件，桌面安装包显式解包到磁盘；外部 Node 不读取 ASAR 虚拟路径，打包时和启动前均检查宿主文件，缺失则明确失败。
-- Chrome 沿用官方扩展及原生宿主连接，不提供依赖 Codex App 的内置浏览器。后端发现和普通脚本成功不代表浏览器认证成功；实际连接仍依赖工具所用 Codex 环境的有效登录。本地转发配置可能返回空认证，API Key 不等于 ChatGPT 登录态；当前没有独立工具登录目录设置，不自动切换模型路由或认证模式。
+- Codex 或插件更新后，Paseo 从会话实际使用的启动命令重新解析 npm 原生 CLI，并从 Chrome 插件的 `latest` 目录解析浏览器服务，不沿用 App 配置中的失效哈希路径；Chrome Native Messaging Host 由官方插件安装器幂等注册或刷新，同一路径组合在守护进程生命周期内只准备一次。Chrome 仍沿用官方扩展及原生宿主连接，不提供依赖 Codex App 的内置浏览器。
+- 后端发现和普通脚本成功不代表浏览器认证成功；实际连接仍依赖工具所用 Codex 环境的有效登录。本地转发配置可能返回空认证，API Key 不等于 ChatGPT 登录态；当前没有独立工具登录目录设置，不自动切换模型路由或认证模式。
 - 配置覆盖仅作用于当前 Codex 运行实例；保留原有工具限制和可用界面，不改写用户全局配置、官方插件缓存或权限。用户明确覆盖相关 MCP/插件、禁用服务，以及非 Windows 或非 App 管道型配置时，不自动接管。
 - 回合完成和中断时主动调用官方工具清理接口，按会话与回合关闭原生组件；关闭、初始化失败和异常退出时释放其拥有的运行时。共享管道通过引用计数回收，旧回合、旧连接和另一会话的清理不会误停当前回合；组件启动期间取消操作也不会在启动完成后继续执行。
 

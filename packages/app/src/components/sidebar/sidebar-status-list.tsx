@@ -48,6 +48,8 @@ import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pi
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSidebarListSpacing } from "@/components/sidebar/sidebar-list-spacing";
 import { resolveSidebarHostLabel } from "@/hooks/use-sidebar-workspaces-list";
+import { useSessionStore } from "@/stores/session-store";
+import { useCodexProviderInjections } from "@/codex-provider-injections/use-codex-provider-injections";
 
 // Themed icon wrappers
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -493,6 +495,25 @@ function StatusWorkspaceRowWithMenu({
   const toast = useToast();
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [applyingCodexProviderInjectionId, setApplyingCodexProviderInjectionId] = useState<
+    string | null
+  >(null);
+  const workspaceAgent = useSessionStore((state) => {
+    const session = state.sessions[workspace.serverId];
+    if (!session) return null;
+    const agents = Array.from(session.agents.values()).filter(
+      (agent) =>
+        agent.workspaceId === workspace.workspaceId &&
+        agent.parentAgentId === null &&
+        !agent.archivedAt,
+    );
+    return agents.length === 1 ? agents[0] : null;
+  });
+  const supportsCodexProviderInjection = useSessionStore(
+    (state) =>
+      state.sessions[workspace.serverId]?.serverInfo?.features?.codexProviderInjection === true,
+  );
+  const { injections: codexProviderInjections } = useCodexProviderInjections(workspace.serverId);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
 
   const redirectAfterArchive = useCallback(() => {
@@ -572,6 +593,37 @@ function StatusWorkspaceRowWithMenu({
       toast.error(error instanceof Error ? error.message : "Failed to mark workspace as read");
     });
   }, [clearAttention, toast]);
+  const handleApplyCodexProviderInjection = useCallback(
+    async (injectionId: string) => {
+      if (applyingCodexProviderInjectionId) return;
+      const client = getHostRuntimeStore().getClient(workspace.serverId);
+      if (!workspaceAgent || !client) {
+        toast.error(t("sidebar.workspace.toasts.hostDisconnected"));
+        return;
+      }
+      setApplyingCodexProviderInjectionId(injectionId);
+      try {
+        const result = await client.applyCodexProviderInjection(workspaceAgent.id, injectionId);
+        toast.show(
+          t(
+            result.action === "started"
+              ? "sidebar.workspace.codexProviderInjections.started"
+              : "sidebar.workspace.codexProviderInjections.reloaded",
+          ),
+          { variant: "success" },
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t("sidebar.workspace.codexProviderInjections.failed"),
+        );
+      } finally {
+        setApplyingCodexProviderInjectionId(null);
+      }
+    },
+    [applyingCodexProviderInjectionId, t, toast, workspace.serverId, workspaceAgent],
+  );
 
   useKeyboardActionHandler({
     handlerId: `workspace-archive-${workspace.workspaceKey}`,
@@ -616,6 +668,15 @@ function StatusWorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        codexProviderInjections={
+          workspaceAgent?.provider === "codex" && supportsCodexProviderInjection
+            ? (codexProviderInjections ?? [])
+            : undefined
+        }
+        applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+        onApplyCodexProviderInjection={
+          workspaceAgent?.provider === "codex" ? handleApplyCodexProviderInjection : undefined
+        }
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <AdaptiveRenameModal
@@ -651,6 +712,9 @@ function StatusWorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  codexProviderInjections,
+  applyingCodexProviderInjectionId,
+  onApplyCodexProviderInjection,
   reserveIdleStatusIndicatorSpace = true,
 }: {
   workspace: SidebarWorkspaceEntry;
@@ -671,6 +735,9 @@ function StatusWorkspaceRowInner({
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  codexProviderInjections?: readonly { id: string; name: string }[];
+  applyingCodexProviderInjectionId?: string | null;
+  onApplyCodexProviderInjection?: (injectionId: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
 }) {
   const isTouchPlatform = platformIsNative;
@@ -735,6 +802,9 @@ function StatusWorkspaceRowInner({
                     onMenuOpenChange={revalidateHover}
                     isPinned={isPinned}
                     onTogglePin={onTogglePin}
+                    codexProviderInjections={codexProviderInjections}
+                    applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+                    onApplyCodexProviderInjection={onApplyCodexProviderInjection}
                     onCopyPath={onCopyPath}
                     onCopyBranchName={onCopyBranchName}
                     onRename={onRename}
@@ -772,6 +842,9 @@ function StatusWorkspaceActionSlot({
   archiveStatus,
   archivePendingLabel,
   archiveShortcutKeys,
+  codexProviderInjections,
+  applyingCodexProviderInjectionId,
+  onApplyCodexProviderInjection,
 }: {
   workspace: SidebarWorkspaceEntry;
   sessionId: string | null;
@@ -789,6 +862,9 @@ function StatusWorkspaceActionSlot({
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
   archiveShortcutKeys?: ShortcutKey[][] | null;
+  codexProviderInjections?: readonly { id: string; name: string }[];
+  applyingCodexProviderInjectionId?: string | null;
+  onApplyCodexProviderInjection?: (injectionId: string) => void;
 }) {
   return (
     <SidebarWorkspaceTrailingActionSlot>
@@ -817,6 +893,9 @@ function StatusWorkspaceActionSlot({
             archiveShortcutKeys={archiveShortcutKeys}
             isPinned={isPinned}
             onTogglePin={onTogglePin}
+            codexProviderInjections={codexProviderInjections}
+            applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
+            onApplyCodexProviderInjection={onApplyCodexProviderInjection}
           />
         ) : null}
       </SidebarWorkspaceTrailingActionOverlay>

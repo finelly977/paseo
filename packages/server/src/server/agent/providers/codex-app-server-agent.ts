@@ -248,6 +248,19 @@ const CODEX_MODES: AgentMode[] = [
 
 const DEFAULT_CODEX_MODE_ID = "auto";
 
+export function resolveCodexModelProvider(
+  config: Record<string, unknown> | null,
+): string | undefined {
+  const value = config?.model_provider;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error("Codex config.model_provider 必须是非空字符串");
+  }
+  return value;
+}
+
 interface CodexAppServerClientLike {
   request(method: string, params?: unknown): Promise<unknown>;
   forkThread?(params: CodexThreadForkParams): Promise<CodexThreadForkResponse>;
@@ -258,6 +271,7 @@ interface CodexAppServerClientLike {
 
 interface CodexAppServerAgentDeps {
   connectDesktopTools?: typeof connectCodexDesktopTools;
+  resolveCodexLaunchCommand?: () => Promise<string>;
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   customProvider?: {
     id: string;
@@ -3583,11 +3597,13 @@ export class CodexAppServerAgentSession implements AgentSession {
       client.notify("initialized", {});
 
       const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
+      const codexLaunchCommand = await this.deps.resolveCodexLaunchCommand?.();
       const desktopTools = await connectDesktopTools({
         client,
         cwd: this.config.cwd,
         overrides: this.buildCodexInnerConfig() ?? {},
         logger: this.logger,
+        codexLaunchCommand,
       });
       if (this.client !== client) {
         await desktopTools?.dispose();
@@ -3943,6 +3959,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     const codexConfig = this.buildCodexInnerConfig();
     if (codexConfig) {
       params.config = codexConfig;
+    }
+    const modelProvider = resolveCodexModelProvider(codexConfig);
+    if (modelProvider) {
+      params.modelProvider = modelProvider;
     }
     try {
       const loaded = toObjectRecord(await this.client.request("thread/loaded/list", {}));
@@ -5176,12 +5196,14 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
     const sandbox = this.config.sandboxMode ?? preset.sandbox;
     const innerConfig = this.buildCodexInnerConfig();
+    const modelProvider = resolveCodexModelProvider(innerConfig);
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
     );
     const params: Record<string, unknown> = {
       model,
+      ...(modelProvider ? { modelProvider } : {}),
       cwd: this.config.cwd ?? null,
       approvalPolicy,
       sandbox,
@@ -7185,6 +7207,9 @@ export class CodexAppServerAgentClient implements AgentClient {
   private sessionDeps(): CodexAppServerAgentDeps {
     return {
       ...this.deps,
+      resolveCodexLaunchCommand:
+        this.deps.resolveCodexLaunchCommand ??
+        (async () => (await resolveCodexLaunchPrefix(this.runtimeSettings)).command),
       customCodexConfig: buildCodexCustomProviderConfig(
         this.runtimeSettings,
         this.deps.customProvider,

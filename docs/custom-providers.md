@@ -239,16 +239,54 @@ requires_openai_auth = false
 - To run multiple endpoints side-by-side, define multiple entries that each extend `"codex"` with different IDs, labels, and env. Each appears as its own provider in the app.
 - If you only want to override the binary (e.g. a nightly Codex build) without changing the endpoint, omit `OPENAI_BASE_URL` and use `command` instead — see [Custom binary for a provider](#custom-binary-for-a-provider).
 
+### 按会话动态注入 Codex 服务商
+
+如果只需要让某个 Codex 会话切换端点，而不想创建独立的 Paseo 提供方，请打开**设置 → Host → Agents → Codex 服务商注入**。每个条目把一个 Codex `model_provider` 标识映射到原生服务商定义及可选的进程环境变量：
+
+```json
+{
+  "daemon": {
+    "codexProviderInjections": [
+      {
+        "id": "internal_gateway",
+        "name": "Internal gateway",
+        "modelProvider": "internal_gateway",
+        "model": "gpt-5.4",
+        "definition": {
+          "name": "Internal gateway",
+          "base_url": "https://gateway.example.com/v1",
+          "wire_api": "responses",
+          "env_key": "INTERNAL_GATEWAY_KEY",
+          "requires_openai_auth": false
+        },
+        "env": {
+          "INTERNAL_GATEWAY_KEY": "sk-..."
+        }
+      }
+    ]
+  }
+}
+```
+
+然后打开 Codex 会话菜单，在**注入 Codex 服务商**下选择一个条目。Paseo 会同时通过 Codex app-server 顶层的 `modelProvider` 字段和 `config.model_provider` 发送同一个标识，并把 `definition` 写入 `config.model_providers[modelProvider]`。
+
+- `modelProvider` 可以与用户全局 Codex 配置中已经使用的标识相同。多个注入条目也可以复用同一标识，因为一个会话每次只会物化当前选中的定义。不要在 `definition` 内重复填写 `model_provider`；该对象只对应 `[model_providers.<id>]` 表。
+- 尚未加载或已经释放运行时的会话会立即携带所选注入配置启动。已经加载的会话会完整重新加载，因为 Codex 不能原地切换已加载线程的服务商。
+- Paseo 会话只保存所选条目 ID；凭据和服务商定义保留在守护进程配置中，仅在运行时启动时解析。
+- 如果删除仍被会话选中的条目，该会话下次启动会明确失败，不能静默回退到其他端点。
+- 此功能适合按会话切换。如果端点需要作为新会话和 Agent 配置档案中的普通提供方选项出现，应使用继承 `codex` 的自定义提供方。
+
 ### Windows 上独立托管官方桌面工具
 
 Paseo 的 Codex 提供方可以自行托管已安装的官方 Computer Use 与 Chrome 工具运行时，不启动或隐藏整个 Codex App。它使用官方 SDK 和可执行文件，不复制专有实现，也不把技能替换成另一套浏览器自动化工具。
 
-**前提：** 先通过 Codex App 安装、启用所需插件并完成运行时准备；Chrome 还需要已安装的官方扩展和已注册的原生宿主。Paseo 不负责首次安装、登录或代替用户授权，也不会自动开启已关闭的插件。仍需保留官方 App 安装目录及其下载的运行时，不能在体验成功后直接卸载这些组件。
+**前提：** 首次仍要通过 Codex App 安装、启用所需插件并完成运行时准备；Chrome 还需要安装官方扩展。Paseo 不负责下载专有运行时、首次登录或代替用户授权，也不会自动开启已关闭的插件。首次准备完成后，日常使用 Computer Use 或 Chrome 不要求 Codex App 保持打开；仍需保留官方 App 安装目录及其下载的运行时，不能在体验成功后直接卸载这些组件。
 
 每次新建或恢复 Codex 运行实例时，Paseo 读取其有效配置，只接管 Windows 上由 App 配置的原生管道型 Node REPL：
 
 - Computer Use 通过 Paseo 自有命名管道连接独立 SDK 宿主。首次操作时，宿主使用官方配套 Node 启动，并由官方 `WindowsHelperTransport` 启动原生组件；组件使用宿主的父进程标识，Codex 数据目录、原生审批和物理 Escape 停止语义均保留。发布版本将宿主及 Zod 等依赖打成自包含文件，桌面安装包将其解包到 `app.asar.unpacked`；外部 Node 不会收到无法读取的 ASAR 虚拟路径，宿主缺失时会明确报告。
-- Chrome 继续通过官方浏览器 SDK 连接扩展宿主；扩展宿主由 Chrome 启动，不由 Paseo 冒充或抢占。独立模式不提供 Codex App 内置的 `iab` 浏览器。
+- Paseo 不信任 App 写入配置的易失哈希路径。每次启动 Codex 运行实例时，它会从该会话实际使用的 Codex 启动命令重新解析 npm 原生 CLI，并从 Chrome 插件的 `latest` 目录解析浏览器服务；旧版本目录被更新移除后，不需要手工修改 `config.toml`。找不到与当前启动器匹配的原生 CLI 时明确失败，不能回退到另一个可能使用不同版本或登录环境的 Codex。
+- Chrome 继续通过官方浏览器 SDK 连接扩展宿主；Paseo 会用官方插件自带的安装器幂等注册或刷新 Native Messaging Host，同一组运行路径在一个守护进程生命周期内只执行一次。扩展宿主仍由 Chrome 启动，Paseo 不冒充或抢占；独立模式不提供 Codex App 内置的 `iab` 浏览器。
 - 会话配置只替换 Node REPL 的环境变量。统一工具插件的原 MCP 服务在该会话中关闭，并按原工具限制和界面配置注册同名服务；不改写全局 `config.toml` 或官方插件缓存。明确自定义相关 MCP 或插件覆盖的会话保留用户配置，不自动接管。
 - Paseo 根据回合完成与中断通知调用官方 `turn_ended`，并按会话和回合回收本次原生控制组件，不依赖 CLI 是否加载了插件结束钩子。会话退出、初始化失败和异常断连也会释放租约；多个会话共享同一运行时的管道，旧连接及迟到的清理通知不会关闭其他回合。
 

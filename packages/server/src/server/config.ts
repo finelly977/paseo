@@ -508,6 +508,7 @@ function resolveProfileLists(persisted: ReturnType<typeof loadPersistedConfig>) 
   return {
     terminalProfiles: persisted.daemon?.terminalProfiles,
     agentProfiles: persisted.daemon?.agentProfiles,
+    codexProviderInjections: persisted.daemon?.codexProviderInjections,
   };
 }
 
@@ -560,6 +561,7 @@ export function resolveConfigFromPersisted(
     appendSystemPrompt,
     terminalProfiles,
     agentProfiles,
+    codexProviderInjections,
     hostnames,
     trustedProxies,
     appBaseUrl,
@@ -605,6 +607,7 @@ export function resolveConfigFromPersisted(
     appendSystemPrompt,
     terminalProfiles,
     agentProfiles,
+    codexProviderInjections,
     pluginsEnabled: persisted.pluginsEnabled ?? false,
     plugins: persisted.plugins,
     mcpDebug: env.MCP_DEBUG === "1",

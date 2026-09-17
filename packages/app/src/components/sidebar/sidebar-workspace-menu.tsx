@@ -13,6 +13,7 @@ import {
   Pin,
   PinOff,
   RotateCw,
+  ServerCog,
   Unplug,
 } from "lucide-react-native";
 import { isNative, isWeb } from "@/constants/platform";
@@ -22,6 +23,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -42,6 +45,7 @@ const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedEyeOff = withUnistyles(EyeOff);
 const ThemedRotateCw = withUnistyles(RotateCw);
+const ThemedServerCog = withUnistyles(ServerCog);
 const ThemedUnplug = withUnistyles(Unplug);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
@@ -55,6 +59,39 @@ const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorM
 const removeLeadingIcon = <ThemedEyeOff size={14} uniProps={foregroundMutedColorMapping} />;
 const reloadLeadingIcon = <ThemedRotateCw size={14} uniProps={foregroundMutedColorMapping} />;
 const releaseRuntimeLeadingIcon = <ThemedUnplug size={14} uniProps={foregroundMutedColorMapping} />;
+const providerInjectionLeadingIcon = (
+  <ThemedServerCog size={14} uniProps={foregroundMutedColorMapping} />
+);
+
+export interface CodexProviderInjectionMenuItem {
+  id: string;
+  name: string;
+}
+
+function CodexProviderInjectionItem({
+  injection,
+  applying,
+  onApply,
+}: {
+  injection: CodexProviderInjectionMenuItem;
+  applying: boolean;
+  onApply: (injectionId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(() => onApply(injection.id), [injection.id, onApply]);
+  return (
+    <DropdownMenuItem
+      leading={providerInjectionLeadingIcon}
+      onSelect={handleSelect}
+      status={applying ? "pending" : "idle"}
+      pendingLabel={t("sidebar.workspace.codexProviderInjections.applying", {
+        name: injection.name,
+      })}
+    >
+      {injection.name}
+    </DropdownMenuItem>
+  );
+}
 
 function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return (
@@ -86,6 +123,9 @@ interface SidebarWorkspaceMenuProps {
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
   openInFileManagerPath?: string | null;
+  codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
+  applyingCodexProviderInjectionId?: string | null;
+  onApplyCodexProviderInjection?: (injectionId: string) => void;
 }
 
 export function SidebarWorkspaceMenu({
@@ -109,6 +149,9 @@ export function SidebarWorkspaceMenu({
   onRemoveAgent,
   isRemovingAgent,
   openInFileManagerPath,
+  codexProviderInjections,
+  applyingCodexProviderInjectionId,
+  onApplyCodexProviderInjection,
 }: SidebarWorkspaceMenuProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -203,6 +246,23 @@ export function SidebarWorkspaceMenu({
           >
             {t("workspace.tabs.menu.reloadAgent")}
           </DropdownMenuItem>
+        ) : null}
+        {codexProviderInjections?.length && onApplyCodexProviderInjection ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>
+              {t("sidebar.workspace.codexProviderInjections.label")}
+            </DropdownMenuLabel>
+            {codexProviderInjections.map((injection) => (
+              <CodexProviderInjectionItem
+                key={injection.id}
+                injection={injection}
+                applying={applyingCodexProviderInjectionId === injection.id}
+                onApply={onApplyCodexProviderInjection}
+              />
+            ))}
+            <DropdownMenuSeparator />
+          </>
         ) : null}
         {onReleaseAgentRuntime ? (
           <DropdownMenuItem

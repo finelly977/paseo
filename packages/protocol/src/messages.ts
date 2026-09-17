@@ -267,6 +267,46 @@ export const PluginSourceSchema = z.discriminatedUnion("source", [DirectoryPlugi
 
 export type PluginSource = z.infer<typeof PluginSourceSchema>;
 
+export const CodexProviderInjectionSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    modelProvider: z.string().trim().min(1),
+    model: z.string().trim().min(1).optional(),
+    definition: z
+      .record(z.string(), z.unknown())
+      .refine((value) => Object.keys(value).length > 0, "Provider definition cannot be empty"),
+    env: z.record(z.string().min(1), z.string()).optional(),
+  })
+  .strict();
+
+export type CodexProviderInjection = z.infer<typeof CodexProviderInjectionSchema>;
+
+export const CodexProviderInjectionsSchema = z
+  .array(CodexProviderInjectionSchema)
+  .superRefine((entries, ctx) => {
+    const seenIds = new Set<string>();
+    for (const [index, entry] of entries.entries()) {
+      if (seenIds.has(entry.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "id"],
+          message: `Duplicate Codex provider injection id: ${entry.id}`,
+        });
+      }
+      seenIds.add(entry.id);
+
+      if (Object.hasOwn(entry.definition, "model_provider")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "definition", "model_provider"],
+          message:
+            "Codex provider definition must not contain model_provider; use the modelProvider field",
+        });
+      }
+    }
+  });
+
 export const MutableDaemonConfigSchema = z
   .object({
     mcp: z
@@ -300,6 +340,7 @@ export const MutableDaemonConfigSchema = z
     appendSystemPrompt: z.string().default(""),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
     agentProfiles: z.array(AgentProfileSchema).optional(),
+    codexProviderInjections: CodexProviderInjectionsSchema.optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
   })
@@ -328,6 +369,7 @@ export const MutableDaemonConfigPatchSchema = z
     appendSystemPrompt: z.string().optional(),
     terminalProfiles: z.array(TerminalProfileSchema).optional(),
     agentProfiles: z.array(AgentProfileSchema).optional(),
+    codexProviderInjections: CodexProviderInjectionsSchema.optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
   })
@@ -505,6 +547,7 @@ const AgentSessionConfigSchema = z.object({
   sandboxMode: z.string().optional(),
   networkAccess: z.boolean().optional(),
   webSearch: z.boolean().optional(),
+  codexProviderInjectionId: z.string().trim().min(1).optional(),
   extra: z
     .object({
       codex: z.record(z.string(), z.unknown()).optional(),
@@ -1798,6 +1841,23 @@ export const AgentConfigApplyResponseMessageSchema = z.object({
   payload: AgentActionResponsePayloadSchema,
 });
 
+export const AgentCodexProviderInjectionApplyRequestMessageSchema = z.object({
+  type: z.literal("agent.codex_provider_injection.apply.request"),
+  agentId: z.string(),
+  injectionId: z.string().trim().min(1),
+  requestId: z.string(),
+});
+
+export const AgentCodexProviderInjectionApplyResponseMessageSchema = z.object({
+  type: z.literal("agent.codex_provider_injection.apply.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    injectionId: z.string(),
+    action: z.enum(["started", "reloaded"]),
+  }),
+});
+
 export const AgentDetachRequestMessageSchema = z.object({
   type: z.literal("agent.detach.request"),
   agentId: z.string(),
@@ -2972,6 +3032,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingRequestMessageSchema,
   SetAgentFeatureRequestMessageSchema,
   AgentConfigApplyRequestMessageSchema,
+  AgentCodexProviderInjectionApplyRequestMessageSchema,
   AgentDetachRequestMessageSchema,
   AgentRewindRequestMessageSchema,
   AgentPermissionResponseMessageSchema,
@@ -3375,6 +3436,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
+        // COMPAT(codexProviderInjection): 二开于 2026-09-17 新增，2027-03-17 后移除能力门控。
+        codexProviderInjection: z.boolean().optional(),
       })
       .optional(),
   })
@@ -6140,6 +6203,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SetAgentThinkingResponseMessageSchema,
   SetAgentFeatureResponseMessageSchema,
   AgentConfigApplyResponseMessageSchema,
+  AgentCodexProviderInjectionApplyResponseMessageSchema,
   AgentDetachResponseMessageSchema,
   AgentRemoveResponseSchema,
   AgentRuntimeReleaseResponseSchema,
@@ -6341,6 +6405,9 @@ export type SetAgentModelResponseMessage = z.infer<typeof SetAgentModelResponseM
 export type SetAgentThinkingResponseMessage = z.infer<typeof SetAgentThinkingResponseMessageSchema>;
 export type SetAgentFeatureResponseMessage = z.infer<typeof SetAgentFeatureResponseMessageSchema>;
 export type AgentConfigApplyResponseMessage = z.infer<typeof AgentConfigApplyResponseMessageSchema>;
+export type AgentCodexProviderInjectionApplyResponseMessage = z.infer<
+  typeof AgentCodexProviderInjectionApplyResponseMessageSchema
+>;
 export type AgentDetachResponseMessage = z.infer<typeof AgentDetachResponseMessageSchema>;
 export type AgentRewindResponseMessage = z.infer<typeof AgentRewindResponseMessageSchema>;
 export type UpdateAgentResponseMessage = z.infer<typeof UpdateAgentResponseMessageSchema>;
@@ -6503,6 +6570,9 @@ export type SetAgentModelRequestMessage = z.infer<typeof SetAgentModelRequestMes
 export type SetAgentThinkingRequestMessage = z.infer<typeof SetAgentThinkingRequestMessageSchema>;
 export type SetAgentFeatureRequestMessage = z.infer<typeof SetAgentFeatureRequestMessageSchema>;
 export type AgentConfigApplyRequestMessage = z.infer<typeof AgentConfigApplyRequestMessageSchema>;
+export type AgentCodexProviderInjectionApplyRequestMessage = z.infer<
+  typeof AgentCodexProviderInjectionApplyRequestMessageSchema
+>;
 export type AgentDetachRequestMessage = z.infer<typeof AgentDetachRequestMessageSchema>;
 export type AgentPermissionResponseMessage = z.infer<typeof AgentPermissionResponseMessageSchema>;
 export type GitAiGenerateCommitMessageRequest = z.infer<

@@ -691,7 +691,7 @@ describe("Codex app-server provider", () => {
     { name: "恢复", handle: { sessionId: "thread-1" }, method: "thread/resume" },
   ])("$name 会话使用独立桌面工具配置并保留原有 MCP", async ({ handle, method }) => {
     const appServer = createFakeCodexAppServer();
-    const inputs: Record<string, unknown>[] = [];
+    const inputs: Array<{ overrides: Record<string, unknown>; codexLaunchCommand?: string }> = [];
     let disposed = 0;
     const desktopConfig = { "mcp_servers.node_repl.env.SKY_CUA_NATIVE_PIPE_DIRECTORY": "独立管道" };
     const session = new CodexAppServerAgentSession(
@@ -700,8 +700,11 @@ describe("Codex app-server provider", () => {
       createTestLogger(),
       async () => appServer.child,
       {
-        async connectDesktopTools({ overrides }) {
-          inputs.push(overrides);
+        async resolveCodexLaunchCommand() {
+          return "C:\\npm\\codex.cmd";
+        },
+        async connectDesktopTools({ overrides, codexLaunchCommand }) {
+          inputs.push({ overrides, codexLaunchCommand });
           return {
             config: desktopConfig,
             handleNotification() {},
@@ -714,7 +717,12 @@ describe("Codex app-server provider", () => {
     );
     try {
       await session.startTurn("验证会话配置");
-      expect(inputs).toEqual([{ mcp_servers: { project: { command: "project-tools" } } }]);
+      expect(inputs).toEqual([
+        {
+          overrides: { mcp_servers: { project: { command: "project-tools" } } },
+          codexLaunchCommand: "C:\\npm\\codex.cmd",
+        },
+      ]);
       expect(appServer.requests()).toContainEqual(
         expect.objectContaining({
           method,
@@ -732,6 +740,47 @@ describe("Codex app-server provider", () => {
       await session.close();
     }
     expect(disposed).toBe(1);
+  });
+
+  test.each([
+    { handle: null, method: "thread/start" },
+    { handle: { sessionId: "thread-1" }, method: "thread/resume" },
+  ])("$method 同时发送注入的 modelProvider 和 config", async ({ handle, method }) => {
+    const appServer = createFakeCodexAppServer();
+    const session = new CodexAppServerAgentSession(
+      createConfig({
+        extra: {
+          codex: {
+            model_provider: "proxy_api",
+            model_providers: {
+              proxy_api: { name: "Proxy API", base_url: "https://proxy.example/v1" },
+            },
+          },
+        },
+      }),
+      handle,
+      createTestLogger(),
+      async () => appServer.child,
+      {
+        async connectDesktopTools() {
+          return null;
+        },
+      },
+    );
+    try {
+      await session.startTurn("验证动态服务商");
+      expect(appServer.requests()).toContainEqual(
+        expect.objectContaining({
+          method,
+          params: expect.objectContaining({
+            modelProvider: "proxy_api",
+            config: expect.objectContaining({ model_provider: "proxy_api" }),
+          }),
+        }),
+      );
+    } finally {
+      await session.close();
+    }
   });
 
   test("恢复线程失败后释放已取得的桌面工具租约", async () => {

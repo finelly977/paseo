@@ -319,6 +319,9 @@ function buildSerializableConfig(config: AgentSessionConfig): SerializableAgentC
       serializable.featureValues = featureValues;
     }
   }
+  if (config.codexProviderInjectionId) {
+    serializable.codexProviderInjectionId = config.codexProviderInjectionId;
+  }
   const extra = sanitizeMetadata(config.extra);
   if (extra !== undefined) {
     serializable.extra = extra;

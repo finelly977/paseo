@@ -3301,6 +3301,31 @@ export class DaemonClient {
     return payload.notice ?? null;
   }
 
+  async applyCodexProviderInjection(
+    agentId: string,
+    injectionId: string,
+  ): Promise<{ action: "started" | "reloaded" }> {
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.codex_provider_injection.apply.request",
+      agentId,
+      injectionId,
+      requestId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.codex_provider_injection.apply.response") {
+          return null;
+        }
+        return msg.payload.requestId === requestId ? msg.payload : null;
+      },
+    });
+    return { action: payload.action };
+  }
+
   async restartServer(reason?: string, requestId?: string): Promise<RestartRequestedStatusPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({

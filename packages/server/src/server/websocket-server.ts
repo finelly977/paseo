@@ -1750,6 +1750,8 @@ export class VoiceAssistantWebSocketServer {
         agentProfiles: true,
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: true,
+        // COMPAT(codexProviderInjection): 二开于 2026-09-17 新增，2027-03-17 后移除能力门控。
+        codexProviderInjection: true,
       },
     };
   }

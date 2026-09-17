@@ -3408,6 +3408,85 @@ test("createAgent passes daemon launch env through the provider launch context",
   });
 });
 
+test("createAgent resolves a Codex provider injection into runtime config and env", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-codex-injection-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+
+  class CaptureClient extends TestAgentClient {
+    lastConfig: AgentSessionConfig | null = null;
+    lastLaunchContext: AgentLaunchContext | undefined;
+
+    override async createSession(config: AgentSessionConfig, context?: AgentLaunchContext) {
+      this.lastConfig = config;
+      this.lastLaunchContext = context;
+      return new TestAgentSession(config);
+    }
+  }
+
+  const client = new CaptureClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    resolveCodexProviderInjection: (id) =>
+      id === "proxy"
+        ? {
+            id,
+            name: "Proxy",
+            modelProvider: "proxy_api",
+            definition: {
+              name: "Proxy API",
+              base_url: "https://proxy.example/v1",
+              env_key: "PROXY_API_KEY",
+              wire_api: "responses",
+            },
+            env: { PROXY_API_KEY: "secret" },
+          }
+        : null,
+  });
+
+  const snapshot = await manager.createAgent(
+    { provider: "codex", cwd: workdir, codexProviderInjectionId: "proxy" },
+    undefined,
+    { workspaceId: undefined },
+  );
+
+  expect(client.lastConfig).toMatchObject({
+    codexProviderInjectionId: "proxy",
+    extra: {
+      codex: {
+        model_provider: "proxy_api",
+        model_providers: {
+          proxy_api: { base_url: "https://proxy.example/v1", env_key: "PROXY_API_KEY" },
+        },
+      },
+    },
+  });
+  expect(client.lastLaunchContext?.env).toMatchObject({
+    PROXY_API_KEY: "secret",
+    PASEO_AGENT_ID: snapshot.id,
+    PASEO_AGENT_CWD: workdir,
+  });
+  expect((await storage.get(snapshot.id))?.config?.codexProviderInjectionId).toBe("proxy");
+});
+
+test("createAgent fails when a selected Codex provider injection was removed", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-missing-codex-injection-"));
+  const manager = new AgentManager({
+    clients: { codex: new TestAgentClient() },
+    logger,
+    resolveCodexProviderInjection: () => null,
+  });
+
+  await expect(
+    manager.createAgent(
+      { provider: "codex", cwd: workdir, codexProviderInjectionId: "missing" },
+      undefined,
+      { workspaceId: undefined },
+    ),
+  ).rejects.toThrow("未找到 Codex 服务商注入配置：missing");
+});
+
 test("createAgent passes persistSession to provider create options", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storagePath = join(workdir, "agents");

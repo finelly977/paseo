@@ -21,6 +21,13 @@ the agent runs through `ensureAgentLoaded()`, which resumes the durable provider
 same Paseo agent ID. Provider history is not appended again when the canonical timeline is already
 primed.
 
+Codex 服务商注入属于 Paseo 会话的持久配置。创建或恢复提供方运行时之前，
+`AgentManager.prepareSessionConfig()` 会从守护进程的当前配置解析所选条目，只把
+`model_provider` / `model_providers` 写入本次启动配置，并且只把条目中的环境变量加入
+该运行时的启动上下文。智能体记录仅保存注入条目 ID。向已关闭智能体应用选择时，先
+更新记录再调用 `ensureAgentLoaded()`；向已加载智能体应用选择时，调用
+`reloadAgentSession()` 关闭旧 Codex app-server，再恢复同一个持久线程。
+
 The daemon collects an eligible idle runtime after two minutes and sweeps every 15 seconds. Only
 unarchived, non-internal agents that are exactly `idle`, have no active or pending run, replacement,
 or permission, and have not been activated during the idle window are eligible. `running`,

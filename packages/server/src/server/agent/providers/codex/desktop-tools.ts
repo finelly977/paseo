@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -12,6 +13,7 @@ import {
 } from "./desktop-tools-bridge.js";
 import type { CodexAppServerClient } from "./app-server-transport.js";
 import { createCodexDesktopHelper } from "./desktop-tools-helper.js";
+import { findExecutable } from "../../../../executable-resolution/executable-resolution.js";
 
 const COMPUTER_PLUGIN = "computer-use@openai-bundled";
 const CHROME_PLUGIN = "chrome@openai-bundled";
@@ -65,6 +67,7 @@ interface SharedBridge {
   closing: Promise<void> | null;
 }
 const bridges = new Map<string, SharedBridge>();
+const nativeHostInstallations = new Map<string, Promise<void>>();
 
 export interface CodexDesktopTools {
   config: Record<string, unknown>;
@@ -78,7 +81,219 @@ interface DesktopToolsOptions {
   configuration: unknown;
   overrides: Record<string, unknown>;
   logger: Logger;
+  codexLaunchCommand?: string;
   startBridge?: typeof startCodexDesktopBridge;
+  installChromeNativeHost?: ChromeNativeHostInstaller;
+}
+
+interface ChromeNativeHostRuntimePaths {
+  codexCliPath: string;
+  nodePath: string;
+  nodeReplPath: string;
+}
+
+type ChromeNativeHostInstaller = (
+  installScriptPath: string,
+  runtimePaths: ChromeNativeHostRuntimePaths,
+) => Promise<void>;
+
+interface ResolveCodexDesktopCliPathOptions {
+  launchCommand?: string;
+  configuredPath: string;
+  platform: NodeJS.Platform;
+  arch: string;
+}
+
+async function firstAccessibleFile(candidates: Iterable<string>): Promise<string | null> {
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+  }
+  return null;
+}
+
+export async function resolveCodexDesktopCliPath({
+  launchCommand,
+  configuredPath,
+  platform,
+  arch,
+}: ResolveCodexDesktopCliPathOptions): Promise<string> {
+  if (platform !== "win32") return configuredPath;
+  let target: { packageName: string; triple: string };
+  if (arch === "arm64") {
+    target = {
+      packageName: "codex-win32-arm64",
+      triple: "aarch64-pc-windows-msvc",
+    };
+  } else if (arch === "x64") {
+    target = {
+      packageName: "codex-win32-x64",
+      triple: "x86_64-pc-windows-msvc",
+    };
+  } else {
+    throw new Error(`Codex 桌面工具不支持当前 Windows 架构：${arch}`);
+  }
+
+  const candidates = new Set<string>();
+  if (launchCommand) {
+    if (path.extname(launchCommand).toLowerCase() === ".exe") candidates.add(launchCommand);
+    const launcherDirectory = path.dirname(launchCommand);
+    const packageRoots = [
+      path.join(launcherDirectory, "node_modules", "@openai", "codex"),
+      path.resolve(launcherDirectory, ".."),
+    ];
+    for (const packageRoot of packageRoots) {
+      const executableParts = ["vendor", target.triple, "bin", "codex.exe"];
+      candidates.add(
+        path.join(packageRoot, "node_modules", "@openai", target.packageName, ...executableParts),
+      );
+      candidates.add(
+        path.join(
+          path.dirname(path.dirname(packageRoot)),
+          "@openai",
+          target.packageName,
+          ...executableParts,
+        ),
+      );
+      candidates.add(path.join(packageRoot, ...executableParts));
+    }
+  }
+  candidates.add(configuredPath);
+  const resolved = await firstAccessibleFile(candidates);
+  if (resolved !== null) return resolved;
+  throw new Error(
+    "未找到当前 Codex CLI 的原生可执行文件；请检查 Paseo 的 Codex 命令配置或重新安装 Codex CLI",
+  );
+}
+
+async function resolveExecutablePath(command: string): Promise<string> {
+  if (path.isAbsolute(command)) {
+    const resolved = await firstAccessibleFile([command]);
+    if (resolved !== null) return resolved;
+  } else {
+    const resolved = await findExecutable(command);
+    if (resolved !== null) return resolved;
+  }
+  throw new Error(`未找到 Codex 桌面工具运行文件：${command}`);
+}
+
+interface ChromePluginRuntime {
+  browserServicePath: string;
+  installScriptPath: string;
+}
+
+async function resolveChromePluginRuntime(codexHome: string): Promise<ChromePluginRuntime> {
+  const root = path.join(codexHome, "plugins", "cache", "openai-bundled", "chrome");
+  const candidates = [path.join(root, "latest")];
+  try {
+    const versions = (await readdir(root, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && entry.name !== "latest")
+      .map((entry) => entry.name)
+      .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
+    candidates.push(...versions.map((version) => path.join(root, version)));
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
+  for (const directory of candidates) {
+    const browserServicePath = path.join(directory, "scripts", "browser-service.mjs");
+    const installScriptPath = path.join(directory, "scripts", "installManifest.mjs");
+    if ((await firstAccessibleFile([browserServicePath])) === null) continue;
+    if ((await firstAccessibleFile([installScriptPath])) === null) continue;
+    return { browserServicePath, installScriptPath };
+  }
+  throw new Error("未找到 Codex Chrome 插件运行时，请先安装并启用官方 Chrome 插件");
+}
+
+async function installOfficialChromeNativeHost(
+  installScriptPath: string,
+  runtimePaths: ChromeNativeHostRuntimePaths,
+): Promise<void> {
+  const loaded: unknown = await import(pathToFileURL(installScriptPath).href);
+  if (
+    typeof loaded !== "object" ||
+    loaded === null ||
+    !("install" in loaded) ||
+    typeof loaded.install !== "function"
+  ) {
+    throw new Error(`Codex Chrome 插件安装脚本未导出 install：${installScriptPath}`);
+  }
+  await loaded.install({ appServerRuntimePaths: runtimePaths });
+}
+
+async function ensureChromeNativeHost(
+  installScriptPath: string,
+  runtimePaths: ChromeNativeHostRuntimePaths,
+  installer: ChromeNativeHostInstaller,
+): Promise<void> {
+  const installIdentity = await realpath(installScriptPath);
+  const key = [
+    installIdentity,
+    runtimePaths.codexCliPath,
+    runtimePaths.nodePath,
+    runtimePaths.nodeReplPath,
+  ]
+    .map((value) => path.resolve(value).toLowerCase())
+    .join("\0");
+  let installation = nativeHostInstallations.get(key);
+  if (!installation) {
+    installation = installer(installScriptPath, runtimePaths).catch((error) => {
+      if (nativeHostInstallations.get(key) === installation) nativeHostInstallations.delete(key);
+      throw error;
+    });
+    nativeHostInstallations.set(key, installation);
+  }
+  await installation;
+}
+
+async function prepareDesktopRuntime(
+  options: DesktopToolsOptions,
+  source: z.infer<typeof StdioSchema>,
+  chrome: boolean,
+): Promise<{ source: z.infer<typeof StdioSchema>; browserServicePath: string | null }> {
+  const configuredCli = requiredEnv(source.env, "CODEX_CLI_PATH");
+  const codexCliPath = await resolveCodexDesktopCliPath({
+    launchCommand: options.codexLaunchCommand,
+    configuredPath: configuredCli,
+    platform: options.platform,
+    arch: process.arch,
+  });
+  const env: Record<string, string> = { ...source.env, CODEX_CLI_PATH: codexCliPath };
+  if (!chrome) return { source: { ...source, env }, browserServicePath: null };
+
+  const runtime = await resolveChromePluginRuntime(requiredEnv(env, "CODEX_HOME"));
+  const services = ServicesSchema.parse(JSON.parse(requiredEnv(env, "NODE_REPL_TRUSTED_SERVICES")));
+  services.browser = runtime.browserServicePath;
+  env.NODE_REPL_TRUSTED_SERVICES = JSON.stringify(services);
+  const nodePath = await resolveExecutablePath(requiredEnv(env, "NODE_REPL_NODE_PATH"));
+  const nodeReplPath = await resolveExecutablePath(source.command);
+  await ensureChromeNativeHost(
+    runtime.installScriptPath,
+    { codexCliPath, nodePath, nodeReplPath },
+    options.installChromeNativeHost ?? installOfficialChromeNativeHost,
+  );
+  return {
+    source: { ...source, command: nodeReplPath, env },
+    browserServicePath: runtime.browserServicePath,
+  };
+}
+
+function replaceBrowserService(
+  source: Record<string, string>,
+  browserServicePath: string | null,
+): Record<string, string> {
+  if (browserServicePath === null) return source;
+  const services = ServicesSchema.parse(
+    JSON.parse(requiredEnv(source, "NODE_REPL_TRUSTED_SERVICES")),
+  );
+  services.browser = browserServicePath;
+  return {
+    ...source,
+    NODE_REPL_TRUSTED_SERVICES: JSON.stringify(services),
+  };
 }
 
 function hasDesktopOverride(overrides: Record<string, unknown>): boolean {
@@ -142,7 +357,7 @@ async function acquireBridge(options: DesktopToolsOptions, env: Record<string, s
     sdk,
     "dist/project/cua/sky_js/src/targets/windows/internal/helper_transport.js",
   );
-  await Promise.all([access(helperPath), access(modulePath), access(nodePath)]);
+  await Promise.all([access(helperPath), access(modulePath), access(nodePath), access(cli)]);
   const key = [home, helperPath, cli, nodePath]
     .map((file) => path.resolve(file).toLowerCase())
     .join("\0");
@@ -240,6 +455,7 @@ interface DesktopConnectionOptions {
   cwd: string | undefined;
   overrides: Record<string, unknown>;
   logger: Logger;
+  codexLaunchCommand?: string;
 }
 
 export async function connectCodexDesktopTools(
@@ -254,6 +470,7 @@ export async function connectCodexDesktopTools(
     configuration: parsed.config,
     overrides: options.overrides,
     logger: options.logger,
+    codexLaunchCommand: options.codexLaunchCommand,
   });
 }
 
@@ -287,7 +504,9 @@ export async function acquireCodexDesktopTools(
   if (options.platform !== "win32" || hasDesktopOverride(options.overrides)) return null;
   const runtime = selectDesktopRuntime(options.configuration);
   if (runtime === null) return null;
-  const { source, computer, chrome, unified } = runtime;
+  const { computer, chrome, unified } = runtime;
+  const prepared = await prepareDesktopRuntime(options, runtime.source, chrome);
+  const source = prepared.source;
   const bridge = computer ? await acquireBridge(options, source.env) : null;
   try {
     const pipePath = bridge?.pipePath ?? null;
@@ -314,8 +533,12 @@ export async function acquireCodexDesktopTools(
           if (surface === "browser") return chrome;
           throw new Error(`Unsupported Codex desktop surface: ${surface}`);
         });
+      const cuaSource = replaceBrowserService(
+        { ...cua.env, CODEX_CLI_PATH: source.env.CODEX_CLI_PATH },
+        prepared.browserServicePath,
+      );
       const cuaEnv = runtimeEnv({
-        source: cua.env,
+        source: cuaSource,
         computer: surfaces.includes("computer"),
         chrome: surfaces.includes("browser"),
         pipePath,

@@ -490,6 +490,11 @@ export interface AgentSessionConfig {
   sandboxMode?: string;
   networkAccess?: boolean;
   webSearch?: boolean;
+  /**
+   * 当前会话选择的守护进程级 Codex 服务商注入。服务商定义与凭据保留在
+   * 守护进程配置中，仅在启动 Codex 运行时时解析。
+   */
+  codexProviderInjectionId?: string;
   extra?: {
     codex?: AgentMetadata;
     claude?: AgentMetadata;

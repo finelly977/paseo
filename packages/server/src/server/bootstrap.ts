@@ -412,6 +412,7 @@ export interface PaseoDaemonConfig {
   appendSystemPrompt?: string;
   terminalProfiles?: TerminalProfile[];
   agentProfiles?: AgentProfile[];
+  codexProviderInjections?: MutableDaemonConfig["codexProviderInjections"];
   providerCatalogRefreshTimeoutMs?: number;
   pluginsEnabled?: boolean;
   plugins?: Record<string, PluginSource>;
@@ -575,6 +576,10 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
 
   if (config.agentProfiles !== undefined) {
     initialConfig.agentProfiles = config.agentProfiles;
+  }
+
+  if (config.codexProviderInjections !== undefined) {
+    initialConfig.codexProviderInjections = config.codexProviderInjections;
   }
 
   return initialConfig;
@@ -923,6 +928,8 @@ export async function createPaseoDaemon(
     providerDefinitions: initialAgentManagerState.providerDefinitions,
     registry: agentStorage,
     appendSystemPrompt: config.appendSystemPrompt,
+    resolveCodexProviderInjection: (id) =>
+      daemonConfigStore.get().codexProviderInjections?.find((entry) => entry.id === id) ?? null,
     onWorkspaceStateMayHaveChanged: ({ cwd }) => {
       workspaceGitService.onWorkspaceStateMayHaveChanged(cwd);
     },

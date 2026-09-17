@@ -2275,6 +2275,8 @@ export class Session {
         return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
       case "agent.config.apply.request":
         return this.agentConfigSession.handleAgentConfigApplyRequest(msg);
+      case "agent.codex_provider_injection.apply.request":
+        return this.handleCodexProviderInjectionApplyRequest(msg);
       case "get_daemon_config_request":
         this.emit({
           type: "get_daemon_config_response",
@@ -3837,6 +3839,84 @@ export class Session {
           timestamp: new Date(),
           type: "error",
           content: `Failed to refresh agent: ${message}`,
+        },
+      });
+    }
+  }
+
+  private async handleCodexProviderInjectionApplyRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.codex_provider_injection.apply.request" }>,
+  ): Promise<void> {
+    const { agentId, injectionId, requestId } = msg;
+    try {
+      const injection = this.daemonConfigStore
+        .get()
+        .codexProviderInjections?.find((entry) => entry.id === injectionId);
+      if (!injection) {
+        throw new Error(`未找到 Codex 服务商注入配置：${injectionId}`);
+      }
+
+      const liveAgent = this.agentManager.getAgent(agentId);
+      const record = await this.agentStorage.get(agentId);
+      const provider = liveAgent?.provider ?? record?.provider;
+      if (!provider) {
+        throw new Error(`未找到会话：${agentId}`);
+      }
+      if (provider !== "codex") {
+        throw new Error("Codex 服务商注入只能用于 Codex 会话");
+      }
+
+      const overrides: Partial<AgentSessionConfig> = {
+        codexProviderInjectionId: injection.id,
+        ...(injection.model ? { model: injection.model } : {}),
+      };
+      let snapshot: ManagedAgent;
+      let action: "started" | "reloaded";
+      if (liveAgent) {
+        snapshot = await this.agentManager.reloadAgentSession(agentId, overrides);
+        action = "reloaded";
+      } else {
+        if (!record) {
+          throw new Error(`未找到会话：${agentId}`);
+        }
+        const nextRecord: StoredAgentRecord = {
+          ...record,
+          updatedAt: new Date().toISOString(),
+          config: {
+            ...record.config,
+            codexProviderInjectionId: injection.id,
+            ...(injection.model ? { model: injection.model } : {}),
+          },
+        };
+        await this.agentStorage.upsert(nextRecord);
+        snapshot = await ensureAgentLoaded(agentId, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          broadcastTimeline: true,
+          logger: this.sessionLogger,
+        });
+        action = "started";
+      }
+
+      await this.agentStorage.applySnapshot(snapshot);
+      await this.agentUpdates.forwardLiveAgent(snapshot);
+      this.emit({
+        type: "agent.codex_provider_injection.apply.response",
+        payload: { requestId, agentId, injectionId, action },
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      this.sessionLogger.error(
+        { err: error, agentId, injectionId },
+        "Failed to apply Codex provider injection",
+      );
+      this.emit({
+        type: "rpc_error",
+        payload: {
+          requestId,
+          requestType: msg.type,
+          error: message,
+          code: "codex_provider_injection_failed",
         },
       });
     }

@@ -604,6 +604,11 @@ export interface AgentSessionConfig {
   sandboxMode?: string;
   networkAccess?: boolean;
   webSearch?: boolean;
+  /**
+   * 当前会话选择的守护进程级 Codex 服务商注入。运行时配置和环境变量
+   * 在会话启动时解析。
+   */
+  codexProviderInjectionId?: string;
   extra?: {
     codex?: AgentMetadata;
     claude?: Partial<ClaudeAgentOptions>;
