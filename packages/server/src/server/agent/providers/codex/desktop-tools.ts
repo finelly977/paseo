@@ -1,7 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { access, readFile, readdir, realpath } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { access, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -14,10 +16,12 @@ import {
 import type { CodexAppServerClient } from "./app-server-transport.js";
 import { createCodexDesktopHelper } from "./desktop-tools-helper.js";
 import { findExecutable } from "../../../../executable-resolution/executable-resolution.js";
+import { resolvePaseoHome } from "../../../paseo-home.js";
 
 const COMPUTER_PLUGIN = "computer-use@openai-bundled";
 const CHROME_PLUGIN = "chrome@openai-bundled";
 const CUA_PLUGIN = "unified-computer-use@openai-bundled";
+const execFileAsync = promisify(execFile);
 const ConfigurationSchema = z
   .object({
     mcp_servers: z.record(z.string(), z.unknown()).optional(),
@@ -82,9 +86,19 @@ interface DesktopToolsOptions {
   overrides: Record<string, unknown>;
   logger: Logger;
   codexLaunchCommand?: string;
+  runtimeDirectory?: string;
+  resolveSystemProxy?: SystemProxyResolver;
+  inheritedEnvironment?: NodeJS.ProcessEnv;
   startBridge?: typeof startCodexDesktopBridge;
   installChromeNativeHost?: ChromeNativeHostInstaller;
 }
+
+interface SystemProxySettings {
+  http: string;
+  https: string;
+}
+
+type SystemProxyResolver = () => Promise<SystemProxySettings | null>;
 
 interface ChromeNativeHostRuntimePaths {
   codexCliPath: string;
@@ -168,6 +182,122 @@ export async function resolveCodexDesktopCliPath({
   throw new Error(
     "未找到当前 Codex CLI 的原生可执行文件；请检查 Paseo 的 Codex 命令配置或重新安装 Codex CLI",
   );
+}
+
+async function materializeCodexDesktopAuthLauncher(
+  nativeCliPath: string,
+  runtimeDirectory: string,
+): Promise<string> {
+  if (nativeCliPath.includes('"')) {
+    throw new Error(`Codex CLI 路径包含 Windows 启动器无法处理的双引号：${nativeCliPath}`);
+  }
+  const escapedCliPath = nativeCliPath.replaceAll("%", "%%");
+  const content = `@echo off\r\n"${escapedCliPath}" -c model_provider="openai" %*\r\n`;
+  const digest = createHash("sha256").update(content).digest("hex").slice(0, 16);
+  const directory = path.join(runtimeDirectory, "codex-desktop-tools");
+  const launcherPath = path.join(directory, `codex-openai-auth-${digest}.cmd`);
+  await mkdir(directory, { recursive: true });
+  try {
+    await writeFile(launcherPath, content, { flag: "wx" });
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+    const existing = await readFile(launcherPath, "utf8");
+    if (existing !== content) {
+      throw new Error(`Paseo Codex 桌面工具启动器内容不匹配：${launcherPath}`, {
+        cause: error,
+      });
+    }
+  }
+  return launcherPath;
+}
+
+function normalizeProxyUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Windows 系统代理地址为空");
+  const candidate = /^[a-z][a-z\d+.-]*:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const parsed = new URL(candidate);
+  if (!parsed.hostname) {
+    throw new Error(`Windows 系统代理地址无效：${trimmed}`);
+  }
+  return parsed.toString().replace(/\/$/u, "");
+}
+
+function parseWindowsProxyServer(value: string): SystemProxySettings {
+  if (!value.includes("=")) {
+    const proxy = normalizeProxyUrl(value);
+    return { http: proxy, https: proxy };
+  }
+  const entries = new Map<string, string>();
+  for (const segment of value.split(";")) {
+    const separator = segment.indexOf("=");
+    if (separator < 1) throw new Error(`Windows 系统代理配置无效：${value}`);
+    const protocol = segment.slice(0, separator).trim().toLowerCase();
+    const address = segment.slice(separator + 1).trim();
+    if (protocol === "http" || protocol === "https") {
+      entries.set(protocol, normalizeProxyUrl(address));
+    }
+  }
+  const http = entries.get("http") ?? entries.get("https");
+  const https = entries.get("https") ?? entries.get("http");
+  if (!http || !https) throw new Error(`Windows 系统代理未提供 HTTP/HTTPS 地址：${value}`);
+  return { http, https };
+}
+
+async function resolveWindowsSystemProxy(): Promise<SystemProxySettings | null> {
+  const { stdout } = await execFileAsync(
+    "reg.exe",
+    ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"],
+    { encoding: "utf8", timeout: 5000, windowsHide: true },
+  );
+  const enabled = /^\s*ProxyEnable\s+REG_DWORD\s+(?<value>0x[\da-f]+|\d+)\s*$/imu.exec(stdout);
+  if (!enabled?.groups || Number.parseInt(enabled.groups.value, 0) === 0) return null;
+  const server = /^\s*ProxyServer\s+REG_\w+\s+(?<value>.+?)\s*$/imu.exec(stdout);
+  if (!server?.groups) throw new Error("Windows 已启用系统代理，但没有 ProxyServer 配置");
+  return parseWindowsProxyServer(server.groups.value);
+}
+
+const PROXY_ENV_NAMES = [
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "all_proxy",
+] as const;
+
+function hasProxyEnvironment(env: NodeJS.ProcessEnv | Record<string, string>): boolean {
+  return PROXY_ENV_NAMES.some((name) => Boolean(env[name]?.trim()));
+}
+
+function copyProxyEnvironment(
+  target: Record<string, string>,
+  source: NodeJS.ProcessEnv | Record<string, string>,
+): Record<string, string> {
+  const result = { ...target };
+  for (const name of PROXY_ENV_NAMES) {
+    const value = source[name];
+    if (value) result[name] = value;
+  }
+  return result;
+}
+
+async function applyDesktopNetworkEnvironment(
+  source: Record<string, string>,
+  inherited: NodeJS.ProcessEnv,
+  resolver: SystemProxyResolver,
+  logger: Logger,
+): Promise<Record<string, string>> {
+  if (hasProxyEnvironment(source)) return source;
+  if (hasProxyEnvironment(inherited)) return copyProxyEnvironment(source, inherited);
+  let proxy: SystemProxySettings | null;
+  try {
+    proxy = await resolver();
+  } catch (error) {
+    logger.warn({ err: error }, "Failed to read Windows system proxy for Codex desktop tools");
+    return source;
+  }
+  if (proxy === null) return source;
+  return { ...source, HTTP_PROXY: proxy.http, HTTPS_PROXY: proxy.https };
 }
 
 async function resolveExecutablePath(command: string): Promise<string> {
@@ -255,13 +385,22 @@ async function prepareDesktopRuntime(
   chrome: boolean,
 ): Promise<{ source: z.infer<typeof StdioSchema>; browserServicePath: string | null }> {
   const configuredCli = requiredEnv(source.env, "CODEX_CLI_PATH");
-  const codexCliPath = await resolveCodexDesktopCliPath({
+  const nativeCodexCliPath = await resolveCodexDesktopCliPath({
     launchCommand: options.codexLaunchCommand,
     configuredPath: configuredCli,
     platform: options.platform,
     arch: process.arch,
   });
-  const env: Record<string, string> = { ...source.env, CODEX_CLI_PATH: codexCliPath };
+  const codexCliPath = await materializeCodexDesktopAuthLauncher(
+    nativeCodexCliPath,
+    options.runtimeDirectory ?? path.join(resolvePaseoHome(), "runtime"),
+  );
+  const env = await applyDesktopNetworkEnvironment(
+    { ...source.env, CODEX_CLI_PATH: codexCliPath },
+    options.inheritedEnvironment ?? process.env,
+    options.resolveSystemProxy ?? resolveWindowsSystemProxy,
+    options.logger,
+  );
   if (!chrome) return { source: { ...source, env }, browserServicePath: null };
 
   const runtime = await resolveChromePluginRuntime(requiredEnv(env, "CODEX_HOME"));
@@ -525,16 +664,22 @@ export async function acquireCodexDesktopTools(
       const raw: unknown = JSON.parse(await readFile(pluginPath, "utf8"));
       const plugin = z.object({ mcpServers: z.object({ cua_repl: StdioSchema }) }).parse(raw);
       const cua = plugin.mcpServers.cua_repl;
-      const surfaces = requiredEnv(cua.env, "CUA_REPL_ENABLED_SURFACES")
+      const configuredSurfaces = requiredEnv(cua.env, "CUA_REPL_ENABLED_SURFACES")
         .split(",")
         .map((surface) => surface.trim())
-        .filter((surface) => {
-          if (surface === "computer") return computer;
-          if (surface === "browser") return chrome;
+        .filter(Boolean);
+      for (const surface of configuredSurfaces) {
+        if (surface !== "computer" && surface !== "browser") {
           throw new Error(`Unsupported Codex desktop surface: ${surface}`);
-        });
+        }
+      }
+      const surfaces = configuredSurfaces.filter(
+        (surface) => (surface === "computer" && computer) || (surface === "browser" && chrome),
+      );
+      if (chrome && !surfaces.includes("browser")) surfaces.push("browser");
+      if (computer && !surfaces.includes("computer")) surfaces.push("computer");
       const cuaSource = replaceBrowserService(
-        { ...cua.env, CODEX_CLI_PATH: source.env.CODEX_CLI_PATH },
+        copyProxyEnvironment({ ...cua.env, CODEX_CLI_PATH: source.env.CODEX_CLI_PATH }, source.env),
         prepared.browserServicePath,
       );
       const cuaEnv = runtimeEnv({

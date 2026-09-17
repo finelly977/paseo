@@ -106,6 +106,11 @@ describe("Codex 独立桌面工具配置", () => {
       configuration,
       overrides: {},
       logger,
+      runtimeDirectory: path.join(home, "paseo-runtime"),
+      inheritedEnvironment: {},
+      async resolveSystemProxy() {
+        return null;
+      },
       client: {
         async request(method: string, params: unknown) {
           requests.push({ method, params });
@@ -207,7 +212,7 @@ describe("Codex 独立桌面工具配置", () => {
         enabled_tools: ["js", "js_reset", "turn_ended"],
         startup_timeout_sec: 120,
         env: {
-          CUA_REPL_ENABLED_SURFACES: "browser",
+          CUA_REPL_ENABLED_SURFACES: "browser,computer",
           SKY_CUA_NATIVE_PIPE_DIRECTORY: "paseo-owned-pipe",
           BROWSER_USE_AVAILABLE_BACKENDS: "chrome",
         },
@@ -215,11 +220,12 @@ describe("Codex 独立桌面工具配置", () => {
       "plugins.unified-computer-use@openai-bundled.mcp_servers.cua_repl.enabled": false,
     });
     expect(await readFile(f.pluginPath, "utf8")).toBe(original);
+    const desktopEnv = first.config["mcp_servers.node_repl.env"] as Record<string, string>;
     expect(f.nativeHostInstalls).toEqual([
       {
         installScriptPath: f.installScriptPath,
         runtimePaths: {
-          codexCliPath: f.codexCliPath,
+          codexCliPath: desktopEnv.CODEX_CLI_PATH,
           nodePath: process.execPath,
           nodeReplPath: f.nodeReplPath,
         },
@@ -233,6 +239,64 @@ describe("Codex 独立桌面工具配置", () => {
     await second.dispose();
     await second.dispose();
     expect(f.stopCount()).toBe(1);
+  });
+
+  test("桌面工具认证使用独立启动器，不受会话自定义模型服务商影响", async () => {
+    const f = await fixture();
+    const tools = await f.acquire();
+    const env = tools.config["mcp_servers.node_repl.env"] as Record<string, string>;
+
+    expect(path.extname(env.CODEX_CLI_PATH).toLowerCase()).toBe(".cmd");
+    expect(await readFile(env.CODEX_CLI_PATH, "utf8")).toBe(
+      `@echo off\r\n"${f.codexCliPath}" -c model_provider="openai" %*\r\n`,
+    );
+    expect(f.configuration.mcp_servers.node_repl.env.CODEX_CLI_PATH).toBe(f.codexCliPath);
+    expect(f.nativeHostInstalls[0]?.runtimePaths.codexCliPath).toBe(env.CODEX_CLI_PATH);
+  });
+
+  test("桌面工具认证自动沿用 Windows 系统代理", async () => {
+    const f = await fixture();
+    f.options.resolveSystemProxy = async () => ({
+      http: "http://127.0.0.1:10808",
+      https: "http://127.0.0.1:10808",
+    });
+
+    const tools = await f.acquire();
+    expect(tools.config).toMatchObject({
+      "mcp_servers.node_repl.env": {
+        HTTP_PROXY: "http://127.0.0.1:10808",
+        HTTPS_PROXY: "http://127.0.0.1:10808",
+      },
+      "mcp_servers.cua_repl": {
+        env: {
+          HTTP_PROXY: "http://127.0.0.1:10808",
+          HTTPS_PROXY: "http://127.0.0.1:10808",
+        },
+      },
+    });
+  });
+
+  test("用户显式配置的代理优先于 Windows 系统代理", async () => {
+    const f = await fixture();
+    f.configuration.mcp_servers.node_repl.env.HTTP_PROXY = "http://127.0.0.1:2080";
+    f.configuration.mcp_servers.node_repl.env.HTTPS_PROXY = "http://127.0.0.1:2080";
+    f.options.resolveSystemProxy = async () => {
+      throw new Error("显式代理存在时不应读取系统代理");
+    };
+
+    const tools = await f.acquire();
+    expect(tools.config).toMatchObject({
+      "mcp_servers.node_repl.env": {
+        HTTP_PROXY: "http://127.0.0.1:2080",
+        HTTPS_PROXY: "http://127.0.0.1:2080",
+      },
+      "mcp_servers.cua_repl": {
+        env: {
+          HTTP_PROXY: "http://127.0.0.1:2080",
+          HTTPS_PROXY: "http://127.0.0.1:2080",
+        },
+      },
+    });
   });
 
   test("会话启动时修复 Codex 与 Chrome 更新后失效的运行路径", async () => {
@@ -264,10 +328,12 @@ describe("Codex 独立桌面工具配置", () => {
     f.options.codexLaunchCommand = launcher;
 
     const tools = await f.acquire();
+    const desktopEnv = tools.config["mcp_servers.node_repl.env"] as Record<string, string>;
+    const desktopCliPath = desktopEnv.CODEX_CLI_PATH;
 
     expect(tools.config).toMatchObject({
       "mcp_servers.node_repl.env": {
-        CODEX_CLI_PATH: nativeCli,
+        CODEX_CLI_PATH: desktopCliPath,
         NODE_REPL_TRUSTED_SERVICES: JSON.stringify({
           browser: f.browserServicePath,
           sky: "@oai/sky/service",
@@ -275,12 +341,18 @@ describe("Codex 独立桌面工具配置", () => {
       },
       "mcp_servers.cua_repl": {
         env: {
-          CODEX_CLI_PATH: nativeCli,
-          NODE_REPL_TRUSTED_SERVICES: JSON.stringify({ browser: f.browserServicePath }),
+          CODEX_CLI_PATH: desktopCliPath,
+          NODE_REPL_TRUSTED_SERVICES: JSON.stringify({
+            browser: f.browserServicePath,
+            sky: "@oai/sky/service",
+          }),
         },
       },
     });
-    expect(f.nativeHostInstalls[0]?.runtimePaths.codexCliPath).toBe(nativeCli);
+    expect(await readFile(desktopCliPath, "utf8")).toBe(
+      `@echo off\r\n"${nativeCli}" -c model_provider="openai" %*\r\n`,
+    );
+    expect(f.nativeHostInstalls[0]?.runtimePaths.codexCliPath).toBe(desktopCliPath);
   });
 
   test("Chrome 原生宿主注册失败会明确报错，并允许下次启动重试", async () => {
@@ -391,7 +463,7 @@ describe("Codex 独立桌面工具配置", () => {
     });
   });
 
-  test("仅启用 Computer Use 时不会启用浏览器界面", async () => {
+  test("仅启用 Computer Use 时提供原生应用界面而不启用浏览器", async () => {
     const f = await fixture();
     f.configuration.plugins[CHROME_PLUGIN].enabled = false;
     const tools = await f.acquire();
@@ -400,7 +472,7 @@ describe("Codex 独立桌面工具配置", () => {
         NODE_REPL_TRUSTED_SERVICES: '{"sky":"@oai/sky/service"}',
         BROWSER_USE_AVAILABLE_BACKENDS: "",
       },
-      "mcp_servers.cua_repl": { enabled: false, env: { CUA_REPL_ENABLED_SURFACES: "" } },
+      "mcp_servers.cua_repl": { enabled: true, env: { CUA_REPL_ENABLED_SURFACES: "computer" } },
     });
     expect(f.nativeHostInstalls).toHaveLength(0);
   });
