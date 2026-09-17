@@ -418,6 +418,18 @@ export function shouldShowSidebarHostLabels(projects: SidebarProjectEntry[]): bo
   return serverIds.size >= 2;
 }
 
+export function resolveSidebarHostLabel(input: {
+  serverId: string;
+  localDaemonServerId: string | null;
+  showHostLabels: boolean;
+  hostLabelByServerId: ReadonlyMap<string, string>;
+}): string | null {
+  if (!input.showHostLabels || input.serverId === input.localDaemonServerId) {
+    return null;
+  }
+  return input.hostLabelByServerId.get(input.serverId) ?? input.serverId;
+}
+
 export function applyStoredOrdering<T>(input: {
   items: T[];
   storedOrder: string[];

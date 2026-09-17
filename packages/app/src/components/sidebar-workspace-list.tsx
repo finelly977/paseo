@@ -65,6 +65,7 @@ import {
   parseHostWorkspaceRouteFromPathname,
 } from "@/utils/host-routes";
 import {
+  resolveSidebarHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
@@ -1827,6 +1828,7 @@ function ProjectBlock({
   creatingWorkspaceIds,
   activeWorkspaceSelection,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsMultiplicityByServerId,
   supportsPinningByServerId,
@@ -1853,6 +1855,7 @@ function ProjectBlock({
   creatingWorkspaceIds: ReadonlySet<string>;
   activeWorkspaceSelection: ActiveWorkspaceSelection | null;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
@@ -1899,9 +1902,12 @@ function ProjectBlock({
         <MemoWorkspaceRowItem
           workspace={item}
           workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
-          subtitle={
-            showHostLabels ? (hostLabelByServerId.get(item.serverId) ?? item.serverId) : null
-          }
+          subtitle={resolveSidebarHostLabel({
+            serverId: item.serverId,
+            localDaemonServerId,
+            showHostLabels,
+            hostLabelByServerId,
+          })}
           shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
           showShortcutBadge={showShortcutBadges}
           canCopyBranchName={project.projectKind === "git"}
@@ -1925,6 +1931,7 @@ function ProjectBlock({
       activeWorkspaceSelection,
       creatingWorkspaceIds,
       hostLabelByServerId,
+      localDaemonServerId,
       onWorkspacePress,
       selectionEnabled,
       shortcutIndexByWorkspaceKey,
@@ -2100,6 +2107,7 @@ function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlo
     previous.showShortcutBadges === next.showShortcutBadges &&
     previous.shortcutIndexByWorkspaceKey === next.shortcutIndexByWorkspaceKey &&
     previous.hostLabelByServerId === next.hostLabelByServerId &&
+    previous.localDaemonServerId === next.localDaemonServerId &&
     previous.showHostLabels === next.showHostLabels &&
     previous.supportsMultiplicityByServerId === next.supportsMultiplicityByServerId &&
     previous.supportsPinningByServerId === next.supportsPinningByServerId &&
@@ -2239,6 +2247,7 @@ export function SidebarWorkspaceList({
         shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
         onWorkspacePress={onWorkspacePress}
         hostLabelByServerId={hostLabelByServerId}
+        localDaemonServerId={localDaemonServerId}
         showHostLabels={showHostLabels}
         supportsPinningByServerId={supportsPinningByServerId}
         onToggleWorkspacePin={onToggleWorkspacePin}
@@ -2259,6 +2268,7 @@ export function SidebarWorkspaceList({
         parentGestureRef={parentGestureRef}
         pathname={pathname}
         hostLabelByServerId={hostLabelByServerId}
+        localDaemonServerId={localDaemonServerId}
         showHostLabels={showHostLabels}
         supportsMultiplicityByServerId={supportsMultiplicityByServerId}
         supportsPinningByServerId={supportsPinningByServerId}
@@ -2284,6 +2294,7 @@ function SidebarStatusModeWrapper({
   shortcutIndexByWorkspaceKey: _projectShortcutIndex,
   onWorkspacePress,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsPinningByServerId,
   onToggleWorkspacePin,
@@ -2296,6 +2307,7 @@ function SidebarStatusModeWrapper({
   shortcutIndexByWorkspaceKey: Map<string, number>;
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
@@ -2315,6 +2327,7 @@ function SidebarStatusModeWrapper({
       showShortcutBadges={showShortcutBadges}
       onWorkspacePress={onWorkspacePress}
       hostLabelByServerId={hostLabelByServerId}
+      localDaemonServerId={localDaemonServerId}
       showHostLabels={showHostLabels}
       supportsPinningByServerId={supportsPinningByServerId}
       onToggleWorkspacePin={onToggleWorkspacePin}
@@ -2337,6 +2350,7 @@ function ProjectModeList({
   parentGestureRef,
   pathname,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsMultiplicityByServerId,
   supportsPinningByServerId,
@@ -2348,6 +2362,7 @@ function ProjectModeList({
 > & {
   pathname: string;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsMultiplicityByServerId: ReadonlyMap<string, boolean>;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
@@ -2572,6 +2587,7 @@ function ProjectModeList({
           creatingWorkspaceIds={creatingWorkspaceIds}
           activeWorkspaceSelection={activeWorkspaceSelection}
           hostLabelByServerId={hostLabelByServerId}
+          localDaemonServerId={localDaemonServerId}
           showHostLabels={showHostLabels}
           supportsMultiplicityByServerId={supportsMultiplicityByServerId}
           supportsPinningByServerId={supportsPinningByServerId}
@@ -2586,6 +2602,7 @@ function ProjectModeList({
       handleWorktreeCreated,
       handleWorkspaceReorder,
       hostLabelByServerId,
+      localDaemonServerId,
       showHostLabels,
       supportsMultiplicityByServerId,
       supportsPinningByServerId,
@@ -2613,9 +2630,12 @@ function ProjectModeList({
     (workspace: SidebarWorkspacePlacement) => {
       // A hoisted chat loses its project context, so surface the project name (plus
       // host when the sidebar spans multiple hosts) as the subtitle.
-      const hostLabel = showHostLabels
-        ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
-        : null;
+      const hostLabel = resolveSidebarHostLabel({
+        serverId: workspace.serverId,
+        localDaemonServerId,
+        showHostLabels,
+        hostLabelByServerId,
+      });
       return (
         <MemoWorkspaceRowItem
           key={workspace.workspaceKey}
@@ -2638,6 +2658,7 @@ function ProjectModeList({
       activeWorkspaceSelection,
       creatingWorkspaceIds,
       hostLabelByServerId,
+      localDaemonServerId,
       onWorkspacePress,
       selectionEnabled,
       shortcutIndexByWorkspaceKey,

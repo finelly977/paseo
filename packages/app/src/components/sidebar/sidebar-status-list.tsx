@@ -47,6 +47,7 @@ import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar
 import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pin";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSidebarListSpacing } from "@/components/sidebar/sidebar-list-spacing";
+import { resolveSidebarHostLabel } from "@/hooks/use-sidebar-workspaces-list";
 
 // Themed icon wrappers
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -71,6 +72,7 @@ interface StatusWorkspaceListProps {
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
@@ -85,6 +87,7 @@ export function SidebarStatusWorkspaceList({
   showShortcutBadges,
   onWorkspacePress,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsPinningByServerId,
   onToggleWorkspacePin,
@@ -123,9 +126,12 @@ export function SidebarStatusWorkspaceList({
                   workspace={workspace}
                   subtitle={buildStatusRowSubtitle({
                     projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                    hostLabel: showHostLabels
-                      ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
-                      : null,
+                    hostLabel: resolveSidebarHostLabel({
+                      serverId: workspace.serverId,
+                      localDaemonServerId,
+                      showHostLabels,
+                      hostLabelByServerId,
+                    }),
                   })}
                   shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
                   showShortcutBadge={showShortcutBadges}
@@ -154,6 +160,7 @@ export function SidebarStatusWorkspaceList({
         showShortcutBadges={showShortcutBadges}
         onWorkspacePress={onWorkspacePress}
         hostLabelByServerId={hostLabelByServerId}
+        localDaemonServerId={localDaemonServerId}
         showHostLabels={showHostLabels}
         supportsPinningByServerId={supportsPinningByServerId}
         onToggleWorkspacePin={onToggleWorkspacePin}
@@ -194,6 +201,7 @@ function StatusGroupList({
   showShortcutBadges,
   onWorkspacePress,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsPinningByServerId,
   onToggleWorkspacePin,
@@ -205,6 +213,7 @@ function StatusGroupList({
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
@@ -221,6 +230,7 @@ function StatusGroupList({
           showShortcutBadges={showShortcutBadges}
           onWorkspacePress={onWorkspacePress}
           hostLabelByServerId={hostLabelByServerId}
+          localDaemonServerId={localDaemonServerId}
           showHostLabels={showHostLabels}
           supportsPinningByServerId={supportsPinningByServerId}
           onToggleWorkspacePin={onToggleWorkspacePin}
@@ -238,6 +248,7 @@ function StatusGroupRows({
   showShortcutBadges,
   onWorkspacePress,
   hostLabelByServerId,
+  localDaemonServerId,
   showHostLabels,
   supportsPinningByServerId,
   onToggleWorkspacePin,
@@ -249,6 +260,7 @@ function StatusGroupRows({
   showShortcutBadges: boolean;
   onWorkspacePress?: () => void;
   hostLabelByServerId: ReadonlyMap<string, string>;
+  localDaemonServerId: string | null;
   showHostLabels: boolean;
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
@@ -279,9 +291,12 @@ function StatusGroupRows({
               workspace={workspace}
               subtitle={buildStatusRowSubtitle({
                 projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                hostLabel: showHostLabels
-                  ? (hostLabelByServerId.get(workspace.serverId) ?? workspace.serverId)
-                  : null,
+                hostLabel: resolveSidebarHostLabel({
+                  serverId: workspace.serverId,
+                  localDaemonServerId,
+                  showHostLabels,
+                  hostLabelByServerId,
+                }),
               })}
               shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
               showShortcutBadge={showShortcutBadges}

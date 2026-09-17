@@ -10,6 +10,7 @@ import {
   computeSidebarOrderUpdates,
   createSidebarWorkspaceEntry,
   deriveSidebarLoadingState,
+  resolveSidebarHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarProjectEntry,
 } from "./sidebar-workspaces-view-model";
@@ -501,6 +502,35 @@ describe("shouldShowSidebarHostLabels", () => {
     });
 
     expect(shouldShowSidebarHostLabels(projects)).toBe(true);
+  });
+});
+
+describe("resolveSidebarHostLabel", () => {
+  const hostLabels = new Map([
+    ["local-host", "Local workstation"],
+    ["remote-host", "Build server"],
+  ]);
+
+  it("hides the desktop-managed local host label", () => {
+    expect(
+      resolveSidebarHostLabel({
+        serverId: "local-host",
+        localDaemonServerId: "local-host",
+        showHostLabels: true,
+        hostLabelByServerId: hostLabels,
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps remote host labels when the sidebar spans multiple hosts", () => {
+    expect(
+      resolveSidebarHostLabel({
+        serverId: "remote-host",
+        localDaemonServerId: "local-host",
+        showHostLabels: true,
+        hostLabelByServerId: hostLabels,
+      }),
+    ).toBe("Build server");
   });
 });
 

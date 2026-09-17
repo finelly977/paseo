@@ -21,6 +21,7 @@ export {
   buildSidebarWorkspacePlacementModel,
   computeSidebarOrderUpdates,
   deriveSidebarLoadingState,
+  resolveSidebarHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarLoadingState,
   type SidebarOrderUpdates,
