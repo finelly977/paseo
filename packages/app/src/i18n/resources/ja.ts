@@ -1122,6 +1122,7 @@ export const ja: TranslationResources = {
         showMore: "さらに表示",
         showLess: "表示を減らす",
         createWorkspaceFor: "{{projectName}}の新しいワークスペースを作成",
+        copySessionId: "セッション ID をコピー",
         copyPath: "パスをコピー",
         copyBranchName: "ブランチ名をコピー",
         rename: "ワークスペースの名前を変更",
@@ -1159,6 +1160,8 @@ export const ja: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "ワークスペースパスが利用できません",
+        sessionIdCopied: "セッション ID をコピーしました",
+        copySessionIdFailed: "セッション ID のコピーに失敗しました",
         pathCopied: "パスをコピーしました",
         branchNameCopied: "ブランチ名をコピーしました",
         hostDisconnected: "ホストが接続されていません",

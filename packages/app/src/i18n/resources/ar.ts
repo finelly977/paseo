@@ -1112,6 +1112,7 @@ export const ar: TranslationResources = {
         showMore: "عرض المزيد",
         showLess: "عرض أقل",
         createWorkspaceFor: "قم بإنشاء مساحة عمل جديدة لـ{{projectName}}",
+        copySessionId: "نسخ معرّف الجلسة",
         copyPath: "نسخ المسار",
         copyBranchName: "انسخ اسم الفرع",
         rename: "إعادة تسمية مساحة العمل",
@@ -1149,6 +1150,8 @@ export const ar: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "مسار Workspace غير متوفر",
+        sessionIdCopied: "تم نسخ معرّف الجلسة",
+        copySessionIdFailed: "تعذر نسخ معرّف الجلسة",
         pathCopied: "تم نسخ المسار",
         branchNameCopied: "تم نسخ اسم الفرع",
         hostDisconnected: "Host غير متصل",

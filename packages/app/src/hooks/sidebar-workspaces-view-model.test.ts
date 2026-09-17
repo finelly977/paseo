@@ -50,6 +50,26 @@ function workspaceWithForge(forge: string | undefined, prUrl: string): Workspace
 }
 
 describe("createSidebarWorkspaceEntry forge threading", () => {
+  it("projects the represented root agent ID for sidebar session actions", () => {
+    const entry = createSidebarWorkspaceEntry({
+      serverId: "srv",
+      workspace: workspaceWithForge("github", "https://github.com/acme/repo/pull/42"),
+      workspaceAgentActivity: new Map([
+        [
+          "ws-1",
+          {
+            agentId: "agent-42",
+            provider: "codex",
+            status: "done",
+            enteredAt: null,
+          },
+        ],
+      ]),
+    });
+
+    expect(entry.agentId).toBe("agent-42");
+  });
+
   it("threads a gitlab summary forge onto the prHint", () => {
     const entry = createSidebarWorkspaceEntry({
       serverId: "srv",

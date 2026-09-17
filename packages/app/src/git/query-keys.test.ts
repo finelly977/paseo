@@ -2,9 +2,13 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
   checkoutDiffQueryKey,
+  checkoutDiffQueryKeyWhenAvailable,
   checkoutCommitsQueryKey,
+  checkoutCommitsQueryKeyWhenAvailable,
   checkoutPrStatusQueryKey,
+  checkoutPrStatusQueryKeyWhenAvailable,
   checkoutStatusQueryKey,
+  checkoutStatusQueryKeyWhenAvailable,
   invalidateCheckoutGitQueriesForClient,
   invalidateCheckoutGitQueriesForServer,
 } from "@/git/query-keys";
@@ -27,6 +31,30 @@ describe("checkout query keys", () => {
     expect(checkoutDiffQueryKey(serverId, "E:\\repo\\", "uncommitted")).toEqual(
       checkoutDiffQueryKey(serverId, "E:/repo", "uncommitted"),
     );
+  });
+
+  it("工作区路径尚未恢复时禁用界面查询，但实际 Git 操作仍拒绝空路径", () => {
+    expect(checkoutStatusQueryKeyWhenAvailable(serverId, "")).toEqual([
+      "disabledCheckoutQuery",
+      "checkoutStatus",
+      serverId,
+    ]);
+    expect(checkoutPrStatusQueryKeyWhenAvailable(serverId, "   ")).toEqual([
+      "disabledCheckoutQuery",
+      "checkoutPrStatus",
+      serverId,
+    ]);
+    expect(checkoutDiffQueryKeyWhenAvailable(serverId, "", "uncommitted")).toEqual([
+      "disabledCheckoutQuery",
+      "checkoutDiff",
+      serverId,
+    ]);
+    expect(checkoutCommitsQueryKeyWhenAvailable(serverId, "", "auto")).toEqual([
+      "disabledCheckoutQuery",
+      "checkoutCommits",
+      serverId,
+    ]);
+    expect(() => checkoutStatusQueryKey(serverId, "")).toThrow("Git 工作区路径不能为空");
   });
 
   it("invalidates every query for a checkout without touching other checkouts", async () => {

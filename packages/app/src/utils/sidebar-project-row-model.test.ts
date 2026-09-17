@@ -31,6 +31,7 @@ function workspace(overrides: Partial<SidebarWorkspaceEntry> = {}): SidebarWorks
     hasRunningScripts: false,
     statusEnteredAt: null,
     ...overrides,
+    agentId: overrides.agentId ?? null,
     agentProvider: overrides.agentProvider ?? null,
     archivingAt: overrides.archivingAt ?? null,
   };

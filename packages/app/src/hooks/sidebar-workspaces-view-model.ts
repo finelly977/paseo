@@ -34,6 +34,7 @@ export interface SidebarStatusWorkspacePlacement extends SidebarWorkspacePlaceme
 }
 
 export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
+  agentId: string | null;
   agentProvider: Agent["provider"] | null;
   // Raw user-set title (null when the name is derived from branch/directory).
   // Prefills the rename input and signals whether a reset is available.
@@ -160,6 +161,7 @@ export function createSidebarWorkspaceEntry(input: {
     projectKind: input.workspace.projectKind,
     workspaceKind: input.workspace.workspaceKind,
     name: input.workspace.name,
+    agentId: rootAgentActivity?.agentId ?? null,
     agentProvider: rootAgentActivity?.provider ?? null,
     title: input.workspace.title ?? null,
     pinnedAt: input.workspace.pinnedAt,

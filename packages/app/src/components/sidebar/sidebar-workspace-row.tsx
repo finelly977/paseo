@@ -408,6 +408,7 @@ function WorkspaceRowTrailingActions({
             {onArchive ? (
               <SidebarWorkspaceMenu
                 workspaceKey={workspace.workspaceKey}
+                sessionId={workspace.agentId}
                 onOpenChange={onMenuOpenChange}
                 onCopyPath={onCopyPath}
                 onCopyBranchName={onCopyBranchName}

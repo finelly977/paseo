@@ -1100,6 +1100,7 @@ export const zhCN: TranslationResources = {
         showMore: "显示更多",
         showLess: "收起",
         createWorkspaceFor: "为 {{projectName}} 新建 workspace",
+        copySessionId: "复制会话 ID",
         copyPath: "复制路径",
         copyBranchName: "复制分支名称",
         rename: "重命名 workspace",
@@ -1136,6 +1137,8 @@ export const zhCN: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "Workspace 路径不可用",
+        sessionIdCopied: "会话 ID 已复制",
+        copySessionIdFailed: "复制会话 ID 失败",
         pathCopied: "路径已复制",
         branchNameCopied: "分支名称已复制",
         hostDisconnected: "Host 未连接",

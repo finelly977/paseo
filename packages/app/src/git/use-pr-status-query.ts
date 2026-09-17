@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
-import { checkoutPrStatusQueryKey } from "@/git/query-keys";
+import {
+  checkoutPrStatusQueryKeyWhenAvailable,
+  normalizeCheckoutCwd,
+  normalizeOptionalCheckoutCwd,
+} from "@/git/query-keys";
 import { normalizeForge } from "@/git/forge";
 import { selectPrHintFromStatus, type PrHint } from "@/git/pr-hint";
 import { type CheckoutPrStatusPayload, normalizeCheckoutPrStatusPayload } from "@/git/pr-status";
@@ -27,16 +31,19 @@ export function useCheckoutPrStatusQuery({
   const { t } = useTranslation();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
 
   const query = useQuery({
-    queryKey: checkoutPrStatusQueryKey(serverId, cwd),
+    queryKey: checkoutPrStatusQueryKeyWhenAvailable(serverId, cwd),
     queryFn: async () => {
       if (!client) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      return normalizeCheckoutPrStatusPayload(await client.checkoutPrStatus(cwd));
+      return normalizeCheckoutPrStatusPayload(
+        await client.checkoutPrStatus(normalizeCheckoutCwd(cwd)),
+      );
     },
-    enabled: !!client && isConnected && !!cwd && enabled,
+    enabled: !!client && isConnected && normalizedCwd !== null && enabled,
     staleTime: Infinity,
     // Refetch on mount only after explicit invalidation (e.g. reconnect) — see
     // useCheckoutStatusQuery for the rationale.
@@ -70,16 +77,19 @@ export function useWorkspacePrHint({
   const { t } = useTranslation();
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
 
   const query = useQuery<CheckoutPrStatusPayload, Error, PrHint | null>({
-    queryKey: checkoutPrStatusQueryKey(serverId, cwd),
+    queryKey: checkoutPrStatusQueryKeyWhenAvailable(serverId, cwd),
     queryFn: async () => {
       if (!client) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      return normalizeCheckoutPrStatusPayload(await client.checkoutPrStatus(cwd));
+      return normalizeCheckoutPrStatusPayload(
+        await client.checkoutPrStatus(normalizeCheckoutCwd(cwd)),
+      );
     },
-    enabled: !!client && isConnected && !!cwd && enabled,
+    enabled: !!client && isConnected && normalizedCwd !== null && enabled,
     staleTime: Infinity,
     // Refetch on mount only after explicit invalidation (e.g. reconnect) — see
     // useCheckoutStatusQuery for the rationale.

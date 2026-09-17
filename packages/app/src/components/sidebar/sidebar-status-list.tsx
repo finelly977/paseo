@@ -729,6 +729,7 @@ function StatusWorkspaceRowInner({
                 {shouldRenderActionSlot ? (
                   <StatusWorkspaceActionSlot
                     workspace={workspace}
+                    sessionId={workspace.agentId}
                     showBase={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
                     showKebab={showKebabInSlot}
                     onMenuOpenChange={revalidateHover}
@@ -756,6 +757,7 @@ function StatusWorkspaceRowInner({
 
 function StatusWorkspaceActionSlot({
   workspace,
+  sessionId,
   showBase,
   showKebab,
   onMenuOpenChange,
@@ -772,6 +774,7 @@ function StatusWorkspaceActionSlot({
   archiveShortcutKeys,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionId: string | null;
   showBase: boolean;
   showKebab: boolean;
   onMenuOpenChange: () => void;
@@ -801,6 +804,7 @@ function StatusWorkspaceActionSlot({
         {showKebab && onArchive ? (
           <SidebarWorkspaceMenu
             workspaceKey={workspace.workspaceKey}
+            sessionId={sessionId}
             onOpenChange={onMenuOpenChange}
             onCopyPath={onCopyPath}
             onCopyBranchName={onCopyBranchName}

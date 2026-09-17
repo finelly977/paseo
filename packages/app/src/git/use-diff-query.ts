@@ -3,7 +3,7 @@ import { useReplicaQuery } from "@/data/query";
 import { checkoutDiffPushRoute } from "@/data/push-router";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import type { ParsedDiffFile, SubscribeCheckoutDiffResponse } from "@getpaseo/protocol/messages";
-import { checkoutDiffQueryKey } from "@/git/query-keys";
+import { checkoutDiffQueryKeyWhenAvailable, normalizeOptionalCheckoutCwd } from "@/git/query-keys";
 
 interface UseCheckoutDiffQueryOptions {
   serverId: string;
@@ -55,8 +55,9 @@ export function useCheckoutDiffQuery({
   const compareMode = normalizedCompare.mode;
   const compareBaseRef = normalizedCompare.baseRef;
   const compareIgnoreWhitespace = normalizedCompare.ignoreWhitespace;
+  const normalizedCwd = useMemo(() => normalizeOptionalCheckoutCwd(cwd), [cwd]);
   const queryKey = useMemo(() => {
-    const comparisonKey = checkoutDiffQueryKey(
+    const comparisonKey = checkoutDiffQueryKeyWhenAvailable(
       serverId,
       cwd,
       compareMode,
@@ -67,23 +68,25 @@ export function useCheckoutDiffQuery({
     return normalizedScope ? [...comparisonKey, "scope", normalizedScope] : comparisonKey;
   }, [serverId, cwd, compareMode, compareBaseRef, compareIgnoreWhitespace, queryScope]);
   const subscriptionId = useMemo(() => `checkoutDiff:${JSON.stringify(queryKey)}`, [queryKey]);
-  const routeEnabled = Boolean(enabled && isConnected && cwd);
+  const routeEnabled = enabled && isConnected && normalizedCwd !== null;
 
   const query = useReplicaQuery<CheckoutDiffQueryPayload>({
     queryKey,
     enabled: routeEnabled,
     pushEvent: "checkout_diff_update",
-    meta: checkoutDiffPushRoute({
-      enabled: routeEnabled,
-      serverId,
-      subscriptionId,
-      cwd,
-      compare: {
-        mode: compareMode,
-        ...(compareBaseRef ? { baseRef: compareBaseRef } : {}),
-        ignoreWhitespace: compareIgnoreWhitespace,
-      },
-    }),
+    meta: normalizedCwd
+      ? checkoutDiffPushRoute({
+          enabled: routeEnabled,
+          serverId,
+          subscriptionId,
+          cwd: normalizedCwd,
+          compare: {
+            mode: compareMode,
+            ...(compareBaseRef ? { baseRef: compareBaseRef } : {}),
+            ignoreWhitespace: compareIgnoreWhitespace,
+          },
+        })
+      : undefined,
   });
 
   const payload = query.data ?? null;
@@ -93,7 +96,7 @@ export function useCheckoutDiffQuery({
     files: payload?.files ?? [],
     payloadError,
     diffTooLarge: payload?.diffTooLarge === true,
-    isLoading: payload === null && enabled && isConnected,
+    isLoading: payload === null && routeEnabled,
     isFetching: false,
     isError: Boolean(payloadError),
     error: null,

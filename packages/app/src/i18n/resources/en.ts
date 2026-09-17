@@ -1120,6 +1120,7 @@ export const en = {
         showMore: "Show more",
         showLess: "Show less",
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
+        copySessionId: "Copy session ID",
         copyPath: "Copy path",
         copyBranchName: "Copy branch name",
         rename: "Rename workspace",
@@ -1157,6 +1158,8 @@ export const en = {
       },
       toasts: {
         workspacePathUnavailable: "Workspace path not available",
+        sessionIdCopied: "Session ID copied",
+        copySessionIdFailed: "Failed to copy session ID",
         pathCopied: "Path copied",
         branchNameCopied: "Branch name copied",
         hostDisconnected: "Host is not connected",

@@ -201,7 +201,7 @@
 - 普通 OpenCode 会话复用守护进程内的共享辅助服务，减少多会话同时打开时重复的 OpenCode 和 Node.js 进程。每个会话的环境、Paseo 工具目录和权限请求仍由私有回环桥接按原生会话标识隔离；带额外环境变量或自定义 MCP 服务的会话继续使用独立辅助进程。释放、归档或移除一个普通 OpenCode 会话只解除该会话的桥接绑定，不会停止或串改其他会话；守护进程关闭时才统一释放共享服务。
 - 移除只删除 Paseo 自己的会话记录以及随之变空的工作区记录，不调用智能体提供方的归档或删除能力，也不修改原始会话文件；原生会话之后仍可从导入页面重新导入。
 - 新客户端只会在主机明确声明支持时发送释放或移除请求；旧主机会提示更新，不会尝试调用不存在的接口。
-- 侧栏会话名称前显示当前根智能体的提供方图标，Claude、Codex、OpenCode、OMP、Pi、Copilot 和 ACP 提供方复用统一图标解析规则。
+- 侧栏会话名称前显示当前根智能体的提供方图标，Claude、Codex、OpenCode、OMP、Pi、Copilot 和 ACP 提供方复用统一图标解析规则；项目分组、状态分组和固定会话的右键菜单都可复制该行当前会话的 Paseo 会话 ID，便于定位日志或诊断指定会话。
 
 主要涉及：
 
@@ -218,6 +218,7 @@
 - `packages/app/src/utils/aggregate-agents.ts`
 - `packages/app/src/components/sidebar-workspace-list.tsx`
 - `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx`
+- `packages/app/src/hooks/sidebar-workspaces-view-model.ts`
 - `packages/server/src/server/session.ts`
 - `packages/server/src/server/websocket-server.ts`
 - `packages/client/src/daemon-client.ts`
@@ -331,6 +332,7 @@
 ### 16. 右侧 Git 面板采用 VS Code 式源代码管理工作流
 
 - 右侧 Git 面板移除单独的“存储库”和“Git”标题以及工具栏改动数徽标，将仓库、当前分支、刷新和常用操作合并为一行工具栏，避免重复状态占用纵向空间；桌面端的工具栏、资源组、文件和提交行统一使用紧凑密度，移动端文件行保留 34 像素触控高度，刷新加载指示器固定为 12 像素。低频 Git、合并、拉取请求与归档操作进入同一操作菜单。
+- 工作区副本恢复期间如果项目目录尚未到达客户端，Git 状态、提交、差异和拉取请求查询保持明确禁用，不在 React 渲染阶段把临时缺失路径升级成全局错误；真实 Git 请求仍严格拒绝空路径，单个项目的 Git 查询或仓库错误只影响该项目相关界面，不会遮挡应用或阻止用户进入其他会话。
 - 守护进程通过一次零终止的 Git 状态读取，准确区分冲突、暂存区、工作区、未跟踪、重命名和复制文件；工作区状态订阅直接持有文件系统观察器，即使没有打开差异正文，也会在文件变化后重新读取并实时推送完整分组明细。同一目录存在已归档历史工作区时，只从仍有效的工作区中注册观察器，旧记录不会阻断监听。连续文件事件按固定 1 秒窗口合并，避免 Windows 递归监听在开发目录持续产生事件时无限推迟刷新。客户端统一规范 Windows 斜杠和尾部斜杠，状态推送会命中当前工作区的更改列表并同时使提交图表重新读取，外部修改或智能体提交后无需手动刷新。
 - 文件资源行使用 Material 文件图标、文件名、灰色目录和行末 Git 状态字母；桌面端悬停时，状态字母在固定宽度的尾部区域让位给始终挂载的操作图标，鼠标移入图标后不会消失，移动端始终显示操作。资源组和文件行都支持暂存、取消暂存，工作区文件还支持放弃更改；右键或长按菜单提供相同操作。放弃更改前必须确认，已跟踪文件恢复工作区内容，未跟踪文件从磁盘删除。
 - 大型更改列表使用虚拟化渲染，初始只挂载视口附近的组头和文件行，同时保留分组折叠、全部文件操作、右键菜单和移动端长按菜单；提交图谱扫描仓库引用时同步读取当前分支的上游引用，减少每次刷新启动的 Git 进程，不使用可能导致提交后数据陈旧的结果缓存。
@@ -348,6 +350,11 @@
 主要涉及：
 
 - `packages/app/src/git/source-control-panel.tsx`
+- `packages/app/src/git/query-keys.ts`
+- `packages/app/src/git/use-status-query.ts`
+- `packages/app/src/git/use-pr-status-query.ts`
+- `packages/app/src/git/use-diff-query.ts`
+- `packages/app/src/git/use-commits-query.ts`
 - `packages/app/src/git/commit-review-host.tsx`
 - `packages/app/src/git/commit-review-pane.tsx`
 - `packages/app/src/git/use-git-ai.ts`

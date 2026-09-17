@@ -24,6 +24,7 @@ function workspace(projectKey: string, workspaceId: string): SidebarWorkspaceEnt
     projectKind: "git",
     workspaceKind: "worktree",
     name: workspaceId,
+    agentId: null,
     agentProvider: null,
     title: null,
     currentBranch: null,

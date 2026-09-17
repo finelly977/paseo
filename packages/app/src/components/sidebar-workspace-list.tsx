@@ -289,6 +289,7 @@ interface ProjectHeaderRowProps {
 
 interface WorkspaceRowInnerProps {
   workspace: SidebarWorkspaceEntry;
+  sessionId: string | null;
   subtitle?: string | null;
   selected: boolean;
   shortcutNumber: number | null;
@@ -656,6 +657,7 @@ function ProjectKebabMenu({
 
 function WorkspaceRowRightGroup({
   workspace,
+  sessionId,
   isHovered,
   onMenuOpenChange,
   isTouchPlatform,
@@ -680,6 +682,7 @@ function WorkspaceRowRightGroup({
   isRemovingAgent,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionId: string | null;
   isHovered: boolean;
   onMenuOpenChange: () => void;
   isTouchPlatform: boolean;
@@ -731,6 +734,7 @@ function WorkspaceRowRightGroup({
             {onArchive ? (
               <SidebarWorkspaceMenu
                 workspaceKey={workspace.workspaceKey}
+                sessionId={sessionId}
                 onOpenChange={onMenuOpenChange}
                 onCopyPath={onCopyPath}
                 onCopyBranchName={onCopyBranchName}
@@ -1166,6 +1170,7 @@ function ProjectHeaderRow({
 
 function WorkspaceRowInner({
   workspace,
+  sessionId,
   subtitle,
   selected,
   shortcutNumber,
@@ -1277,6 +1282,7 @@ function WorkspaceRowInner({
               >
                 <WorkspaceRowRightGroup
                   workspace={workspace}
+                  sessionId={sessionId}
                   isHovered={isHovered}
                   onMenuOpenChange={revalidateHover}
                   isTouchPlatform={isTouchPlatform}
@@ -1598,6 +1604,7 @@ function WorkspaceRowWithMenu({
     <>
       <WorkspaceRowInner
         workspace={workspace}
+        sessionId={workspace.agentId}
         subtitle={subtitle}
         selected={selected}
         shortcutNumber={shortcutNumber}

@@ -21,6 +21,7 @@ function ws(
     projectKind: input.projectKind ?? "git",
     workspaceKind: input.workspaceKind ?? "worktree",
     name: input.name ?? "main",
+    agentId: input.agentId ?? null,
     agentProvider: input.agentProvider ?? null,
     title: input.title ?? null,
     currentBranch: input.currentBranch ?? null,

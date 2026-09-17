@@ -2,7 +2,11 @@ import type { CheckoutCommit, CheckoutCommitReference } from "@getpaseo/protocol
 import { useMemo } from "react";
 import invariant from "tiny-invariant";
 import { useInfiniteFetchQuery } from "@/data/query";
-import { checkoutCommitsQueryKey } from "@/git/query-keys";
+import {
+  checkoutCommitsQueryKeyWhenAvailable,
+  normalizeCheckoutCwd,
+  normalizeOptionalCheckoutCwd,
+} from "@/git/query-keys";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 
@@ -145,22 +149,23 @@ export function useCheckoutCommitsQuery({
       state.sessions[serverId]?.serverInfo?.features?.commitGraphV2 === true,
   );
   const selectedRefs = filter.mode === "selected" ? filter.refs : [];
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
 
-  const canFetch = Boolean(cwd) && Boolean(client) && isConnected;
+  const canFetch = normalizedCwd !== null && Boolean(client) && isConnected;
   const queryEnabled = enabled && capabilityPresent && canFetch;
   const query = useInfiniteFetchQuery<
     CheckoutCommitsPage,
     Error,
     { pages: CheckoutCommitsPage[] },
-    ReturnType<typeof checkoutCommitsQueryKey>,
+    ReturnType<typeof checkoutCommitsQueryKeyWhenAvailable>,
     number
   >({
-    queryKey: checkoutCommitsQueryKey(serverId, cwd, filter.mode, selectedRefs),
+    queryKey: checkoutCommitsQueryKeyWhenAvailable(serverId, cwd, filter.mode, selectedRefs),
     queryFn: async ({ pageParam }) => {
       if (!client) {
         throw new Error("主机连接已断开");
       }
-      const data = await client.listCheckoutCommits(cwd, {
+      const data = await client.listCheckoutCommits(normalizeCheckoutCwd(cwd), {
         cursor: pageParam,
         limit: CHECKOUT_COMMITS_PAGE_SIZE,
         refMode: filter.mode,

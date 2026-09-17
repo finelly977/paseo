@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { type PressableStateCallbackType } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Archive,
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Shortcut } from "@/components/ui/shortcut";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
+import { useToast } from "@/contexts/toast-context";
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -65,6 +67,7 @@ function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
 
 interface SidebarWorkspaceMenuProps {
   workspaceKey: string;
+  sessionId?: string | null;
   onOpenChange?: (open: boolean) => void;
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
@@ -87,6 +90,7 @@ interface SidebarWorkspaceMenuProps {
 
 export function SidebarWorkspaceMenu({
   workspaceKey,
+  sessionId,
   onOpenChange,
   onCopyPath,
   onCopyBranchName,
@@ -107,10 +111,23 @@ export function SidebarWorkspaceMenu({
   openInFileManagerPath,
 }: SidebarWorkspaceMenuProps) {
   const { t } = useTranslation();
+  const toast = useToast();
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys && !isNative ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
   );
+  const handleCopySessionId = useCallback(async () => {
+    if (!sessionId) {
+      throw new Error("无法复制会话 ID：会话标识不存在");
+    }
+    try {
+      await Clipboard.setStringAsync(sessionId);
+      toast.copied(t("sidebar.workspace.toasts.sessionIdCopied"));
+    } catch (error) {
+      console.error("[sidebar] failed to copy session ID", error);
+      toast.error(t("sidebar.workspace.toasts.copySessionIdFailed"));
+    }
+  }, [sessionId, t, toast]);
 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
@@ -124,6 +141,15 @@ export function SidebarWorkspaceMenu({
         {renderTriggerIcon}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" width={260}>
+        {sessionId ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-copy-session-id-${workspaceKey}`}
+            leading={copyLeadingIcon}
+            onSelect={handleCopySessionId}
+          >
+            {t("sidebar.workspace.actions.copySessionId")}
+          </DropdownMenuItem>
+        ) : null}
         {onCopyPath ? (
           <DropdownMenuItem
             testID={`sidebar-workspace-menu-copy-path-${workspaceKey}`}

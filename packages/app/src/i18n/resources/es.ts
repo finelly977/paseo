@@ -1145,6 +1145,7 @@ export const es: TranslationResources = {
         showMore: "Mostrar más",
         showLess: "Mostrar menos",
         createWorkspaceFor: "Crea un nuevo espacio de trabajo para{{projectName}}",
+        copySessionId: "Copiar ID de sesión",
         copyPath: "Copiar ruta",
         copyBranchName: "Copiar nombre de sucursal",
         rename: "Cambiar nombre del espacio de trabajo",
@@ -1182,6 +1183,8 @@ export const es: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "RutaWorkspaceno disponible",
+        sessionIdCopied: "ID de sesión copiado",
+        copySessionIdFailed: "No se pudo copiar el ID de sesión",
         pathCopied: "Ruta copiada",
         branchNameCopied: "Nombre de la sucursal copiado",
         hostDisconnected: "Hostno está conectado",

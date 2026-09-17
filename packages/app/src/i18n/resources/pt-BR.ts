@@ -1135,6 +1135,7 @@ export const ptBR: TranslationResources = {
         showMore: "Mostrar mais",
         showLess: "Mostrar menos",
         createWorkspaceFor: "Criar um novo workspace para {{projectName}}",
+        copySessionId: "Copiar ID da sessão",
         copyPath: "Copiar caminho",
         copyBranchName: "Copiar nome da branch",
         rename: "Renomear workspace",
@@ -1172,6 +1173,8 @@ export const ptBR: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "Caminho do workspace indisponível",
+        sessionIdCopied: "ID da sessão copiado",
+        copySessionIdFailed: "Falha ao copiar o ID da sessão",
         pathCopied: "Caminho copiado",
         branchNameCopied: "Nome da branch copiado",
         hostDisconnected: "Host não está conectado",

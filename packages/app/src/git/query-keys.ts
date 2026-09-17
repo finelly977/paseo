@@ -14,6 +14,14 @@ interface CheckoutQueryScope {
 
 type CheckoutQueryKey = readonly [kind: string, serverId: string, cwd: string, ...rest: unknown[]];
 
+type CheckoutQueryKind = "checkoutStatus" | "checkoutDiff" | "checkoutPrStatus" | "checkoutCommits";
+
+export type DisabledCheckoutQueryKey = readonly [
+  kind: "disabledCheckoutQuery",
+  queryKind: CheckoutQueryKind,
+  serverId: string,
+];
+
 // A commit's file diff is immutable for a given sha+path, so every consumer
 // can share the same long-lived cache policy.
 export const COMMIT_FILE_DIFF_STALE_TIME = 5 * 60_000;
@@ -30,8 +38,31 @@ export function normalizeCheckoutCwd(cwd: string): string {
   return normalized;
 }
 
+/**
+ * 工作区副本恢复期间，界面可能先拿到工作区标识、后拿到工作目录。
+ * 这只表示当前查询尚不可执行，不应在 React 渲染阶段构造严格查询键时击穿整个应用。
+ */
+export function normalizeOptionalCheckoutCwd(cwd: string): string | null {
+  const normalized = normalizeWorkspacePath(cwd);
+  return normalized || null;
+}
+
+function disabledCheckoutQueryKey(
+  queryKind: CheckoutQueryKind,
+  serverId: string,
+): DisabledCheckoutQueryKey {
+  return ["disabledCheckoutQuery", queryKind, serverId] as const;
+}
+
 export function checkoutStatusQueryKey(serverId: string, cwd: string) {
   return ["checkoutStatus", serverId, normalizeCheckoutCwd(cwd)] as const;
+}
+
+export function checkoutStatusQueryKeyWhenAvailable(serverId: string, cwd: string) {
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
+  return normalizedCwd
+    ? checkoutStatusQueryKey(serverId, normalizedCwd)
+    : disabledCheckoutQueryKey("checkoutStatus", serverId);
 }
 
 export function checkoutDiffQueryKey(
@@ -51,8 +82,28 @@ export function checkoutDiffQueryKey(
   ] as const;
 }
 
+export function checkoutDiffQueryKeyWhenAvailable(
+  serverId: string,
+  cwd: string,
+  mode: "uncommitted" | "base",
+  baseRef?: string,
+  ignoreWhitespace?: boolean,
+) {
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
+  return normalizedCwd
+    ? checkoutDiffQueryKey(serverId, normalizedCwd, mode, baseRef, ignoreWhitespace)
+    : disabledCheckoutQueryKey("checkoutDiff", serverId);
+}
+
 export function checkoutPrStatusQueryKey(serverId: string, cwd: string) {
   return ["checkoutPrStatus", serverId, normalizeCheckoutCwd(cwd)] as const;
+}
+
+export function checkoutPrStatusQueryKeyWhenAvailable(serverId: string, cwd: string) {
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
+  return normalizedCwd
+    ? checkoutPrStatusQueryKey(serverId, normalizedCwd)
+    : disabledCheckoutQueryKey("checkoutPrStatus", serverId);
 }
 
 export function checkoutCommitsQueryKey(
@@ -65,6 +116,18 @@ export function checkoutCommitsQueryKey(
     return ["checkoutCommits", serverId, normalizeCheckoutCwd(cwd)] as const;
   }
   return ["checkoutCommits", serverId, normalizeCheckoutCwd(cwd), refMode, ...refs] as const;
+}
+
+export function checkoutCommitsQueryKeyWhenAvailable(
+  serverId: string,
+  cwd: string,
+  refMode?: "auto" | "all" | "selected",
+  refs: readonly string[] = [],
+) {
+  const normalizedCwd = normalizeOptionalCheckoutCwd(cwd);
+  return normalizedCwd
+    ? checkoutCommitsQueryKey(serverId, normalizedCwd, refMode, refs)
+    : disabledCheckoutQueryKey("checkoutCommits", serverId);
 }
 
 export function checkoutCommitFileDiffQueryKey(

@@ -1132,6 +1132,7 @@ export const ru: TranslationResources = {
         showMore: "Показать ещё",
         showLess: "Показать меньше",
         createWorkspaceFor: "Создайте новое рабочее пространство для{{projectName}}.",
+        copySessionId: "Копировать ID сеанса",
         copyPath: "Копировать путь",
         copyBranchName: "Скопировать название ветки",
         rename: "Переименовать рабочую область",
@@ -1169,6 +1170,8 @@ export const ru: TranslationResources = {
       },
       toasts: {
         workspacePathUnavailable: "Путь Workspace недоступен",
+        sessionIdCopied: "ID сеанса скопирован",
+        copySessionIdFailed: "Не удалось скопировать ID сеанса",
         pathCopied: "Путь скопирован",
         branchNameCopied: "Название филиала скопировано.",
         hostDisconnected: "Host не подключен",
