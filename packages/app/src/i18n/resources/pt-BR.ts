@@ -1911,6 +1911,10 @@ export const ptBR: TranslationResources = {
           external: "Navegador externo",
         },
       },
+      contextWindowProviderUsage: {
+        label: "Uso da conta no medidor de contexto",
+        description: "Busca e mostra o uso da conta do provedor ativo ao abrir o medidor",
+      },
       terminalScrollback: {
         label: "Scrollback do terminal",
         description: "Linhas mantidas no buffer do terminal integrado",

@@ -262,6 +262,9 @@ export function useSettings<TSelected>(
       if (updates.serviceUrlBehavior !== undefined) {
         appUpdates.serviceUrlBehavior = updates.serviceUrlBehavior;
       }
+      if (updates.contextWindowProviderUsageEnabled !== undefined) {
+        appUpdates.contextWindowProviderUsageEnabled = updates.contextWindowProviderUsageEnabled;
+      }
       if (updates.terminalScrollbackLines !== undefined) {
         appUpdates.terminalScrollbackLines = updates.terminalScrollbackLines;
       }

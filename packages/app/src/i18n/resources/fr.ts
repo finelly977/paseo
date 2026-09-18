@@ -1929,6 +1929,11 @@ export const fr: TranslationResources = {
           external: "Navigateur externe",
         },
       },
+      contextWindowProviderUsage: {
+        label: "Utilisation du compte dans la jauge de contexte",
+        description:
+          "Récupère et affiche l'utilisation du compte du fournisseur actif à l'ouverture de la jauge",
+      },
       terminalScrollback: {
         label: "DéfilementTerminal",
         description: "Lignes conservées dans le tampon du terminal intégré",

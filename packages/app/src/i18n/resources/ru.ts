@@ -1912,6 +1912,11 @@ export const ru: TranslationResources = {
           external: "Внешний браузер",
         },
       },
+      contextWindowProviderUsage: {
+        label: "Использование аккаунта в индикаторе контекста",
+        description:
+          "Получать и показывать использование аккаунта активного провайдера при открытии индикатора",
+      },
       terminalScrollback: {
         label: "Terminal прокрутка назад",
         description: "Строки, хранящиеся во встроенном буфере терминала.",

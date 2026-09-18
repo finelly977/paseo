@@ -20,6 +20,8 @@ interface ContextWindowMeterProps {
   pending?: boolean;
   /** Optional glyph envelope for icon-toolbar alignment. */
   glyphSize?: number;
+  /** Whether opening the tooltip may fetch and show provider account usage. */
+  providerUsageEnabled?: boolean;
 }
 
 const SVG_SIZE = 14;
@@ -105,26 +107,29 @@ export function ContextWindowMeter({
   provider,
   pending = false,
   glyphSize,
+  providerUsageEnabled = true,
 }: ContextWindowMeterProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const [isTooltipOpen, setIsTooltipOpen] = useState(false);
   const { view: providerUsageView, refresh: refreshProviderUsage } = useProviderUsage(
     serverId ?? null,
-    { enabled: isTooltipOpen },
+    {
+      enabled: providerUsageEnabled && isTooltipOpen,
+    },
   );
   const percentage =
     maxTokens !== null && usedTokens !== null ? getUsagePercentage(maxTokens, usedTokens) : null;
   const handleTooltipOpenChange = useCallback(
     (nextOpen: boolean) => {
       setIsTooltipOpen(nextOpen);
-      if (nextOpen) {
+      if (nextOpen && providerUsageEnabled) {
         void refreshProviderUsage().catch((error) => {
           console.error("[上下文窗口] 刷新提供商用量失败", error);
         });
       }
     },
-    [refreshProviderUsage],
+    [providerUsageEnabled, refreshProviderUsage],
   );
 
   const geometry = getMeterGeometry(showPercentage, glyphSize);
@@ -235,7 +240,9 @@ export function ContextWindowMeter({
               {t("contextWindow.sessionCost", { cost: formattedSessionCost })}
             </Text>
           ) : null}
-          <ProviderUsageTooltipSection view={providerUsageView} activeProviderId={provider} />
+          {providerUsageEnabled ? (
+            <ProviderUsageTooltipSection view={providerUsageView} activeProviderId={provider} />
+          ) : null}
         </View>
       </TooltipContent>
     </Tooltip>

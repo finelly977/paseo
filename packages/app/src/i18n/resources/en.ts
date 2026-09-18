@@ -1888,6 +1888,11 @@ export const en = {
           external: "External browser",
         },
       },
+      contextWindowProviderUsage: {
+        label: "Account usage in context meter",
+        description:
+          "Fetch and show the active provider's account usage when the context meter opens",
+      },
       terminalScrollback: {
         label: "Terminal scrollback",
         description: "Lines kept in the built-in terminal buffer",

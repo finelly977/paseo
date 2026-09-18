@@ -1856,6 +1856,10 @@ export const zhCN: TranslationResources = {
           external: "外部浏览器",
         },
       },
+      contextWindowProviderUsage: {
+        label: "上下文圆圈账户额度",
+        description: "打开上下文圆圈时获取并显示当前服务商的账户额度",
+      },
       terminalScrollback: {
         label: "终端回滚",
         description: "内置终端缓冲区保留的行数",

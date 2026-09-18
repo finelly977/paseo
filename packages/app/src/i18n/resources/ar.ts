@@ -1880,6 +1880,10 @@ export const ar: TranslationResources = {
           external: "متصفح خارجي",
         },
       },
+      contextWindowProviderUsage: {
+        label: "استخدام الحساب في مؤشر السياق",
+        description: "يجلب استخدام حساب المزوّد النشط ويعرضه عند فتح مؤشر السياق",
+      },
       terminalScrollback: {
         label: "التمرير Terminal",
         description: "يتم الاحتفاظ بالخطوط في المخزن المؤقت الطرفي المدمج",

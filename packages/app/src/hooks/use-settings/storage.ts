@@ -85,6 +85,7 @@ export interface AppSettings {
   language: AppLanguage;
   sendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
+  contextWindowProviderUsageEnabled: boolean;
   terminalScrollbackLines: number;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
@@ -120,6 +121,7 @@ const StoredAppSettingsSchema = z.looseObject({
   language: z.unknown().optional(),
   sendBehavior: z.unknown().optional(),
   serviceUrlBehavior: z.unknown().optional(),
+  contextWindowProviderUsageEnabled: z.unknown().optional(),
   terminalScrollbackLines: z.unknown().optional(),
   uiFontFamily: z.unknown().optional(),
   monoFontFamily: z.unknown().optional(),
@@ -159,6 +161,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   language: "system",
   sendBehavior: "steer",
   serviceUrlBehavior: "ask",
+  contextWindowProviderUsageEnabled: true,
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
   monoFontFamily: "",
@@ -338,6 +341,21 @@ type NumericAppSetting =
   | "conversationHistoryLoadCount"
   | "totalConversationHistoryLimit";
 
+type BooleanAppSetting =
+  | "autoExpandReasoning"
+  | "contextWindowProviderUsageEnabled"
+  | "vimKeybindings";
+
+function copyBooleanAppSetting(
+  result: Partial<AppSettings>,
+  key: BooleanAppSetting,
+  value: unknown,
+): void {
+  if (typeof value === "boolean") {
+    result[key] = value;
+  }
+}
+
 function copyClampedNumericSetting(
   result: Partial<AppSettings>,
   key: NumericAppSetting,
@@ -377,6 +395,11 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   ) {
     result.serviceUrlBehavior = stored.serviceUrlBehavior;
   }
+  copyBooleanAppSetting(
+    result,
+    "contextWindowProviderUsageEnabled",
+    stored.contextWindowProviderUsageEnabled,
+  );
   const terminalScrollbackLines = parseTerminalScrollbackLines(stored.terminalScrollbackLines);
   if (terminalScrollbackLines !== null) {
     result.terminalScrollbackLines = terminalScrollbackLines;
@@ -483,15 +506,11 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   if (typeof stored.syntaxTheme === "string" && isSyntaxThemeId(stored.syntaxTheme)) {
     result.syntaxTheme = stored.syntaxTheme;
   }
-  if (typeof stored.vimKeybindings === "boolean") {
-    result.vimKeybindings = stored.vimKeybindings;
-  }
+  copyBooleanAppSetting(result, "vimKeybindings", stored.vimKeybindings);
   if (stored.workspaceTitleSource === "title" || stored.workspaceTitleSource === "branch") {
     result.workspaceTitleSource = stored.workspaceTitleSource;
   }
-  if (typeof stored.autoExpandReasoning === "boolean") {
-    result.autoExpandReasoning = stored.autoExpandReasoning;
-  }
+  copyBooleanAppSetting(result, "autoExpandReasoning", stored.autoExpandReasoning);
   const toolCallDetailLevel = parseToolCallDetailLevel(stored);
   if (toolCallDetailLevel !== null) {
     result.toolCallDetailLevel = toolCallDetailLevel;

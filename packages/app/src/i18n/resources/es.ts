@@ -1928,6 +1928,11 @@ export const es: TranslationResources = {
           external: "Navegador externo",
         },
       },
+      contextWindowProviderUsage: {
+        label: "Uso de la cuenta en el medidor de contexto",
+        description:
+          "Obtiene y muestra el uso de la cuenta del proveedor activo al abrir el medidor",
+      },
       terminalScrollback: {
         label: "Historial de terminal",
         description: "Líneas mantenidas en el búfer de terminal incorporado",

@@ -82,6 +82,7 @@ import { PairLinkModal } from "@/components/pair-link-modal";
 import { KeyboardShortcutsSection } from "@/screens/settings/keyboard-shortcuts-section";
 import { EditorSection } from "@/screens/settings/editor-section";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { isNative } from "@/constants/platform";
 import { CommunityLinks } from "@/components/community-links";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -273,6 +274,7 @@ interface GeneralSectionProps {
   handleSendBehaviorChange: (behavior: SendBehavior) => void;
   handleServiceUrlBehaviorChange: (behavior: ServiceUrlBehavior) => void;
   handleLanguageChange: (language: AppLanguage) => void;
+  handleContextWindowProviderUsageChange: (enabled: boolean) => void;
   handleTerminalScrollbackLinesChange: (lines: number) => void;
   handleSidebarWorkspaceVisibleCountChange: (count: number) => void;
   handleConversationHistoryLoadCountChange: (count: number) => void;
@@ -383,6 +385,7 @@ function GeneralSection({
   handleSendBehaviorChange,
   handleServiceUrlBehaviorChange,
   handleLanguageChange,
+  handleContextWindowProviderUsageChange,
   handleTerminalScrollbackLinesChange,
   handleSidebarWorkspaceVisibleCountChange,
   handleConversationHistoryLoadCountChange,
@@ -496,6 +499,21 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
+        <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+          <View style={settingsStyles.rowContent}>
+            <Text style={settingsStyles.rowTitle}>
+              {t("settings.general.contextWindowProviderUsage.label")}
+            </Text>
+            <Text style={settingsStyles.rowHint}>
+              {t("settings.general.contextWindowProviderUsage.description")}
+            </Text>
+          </View>
+          <Switch
+            value={settings.contextWindowProviderUsageEnabled}
+            onValueChange={handleContextWindowProviderUsageChange}
+            accessibilityLabel={t("settings.general.contextWindowProviderUsage.label")}
+          />
+        </View>
         <IntegerSettingRow
           title={t("settings.general.terminalScrollback.label")}
           description={t("settings.general.terminalScrollback.description")}
@@ -1277,6 +1295,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     [updateSettings],
   );
 
+  const handleContextWindowProviderUsageChange = useCallback(
+    (contextWindowProviderUsageEnabled: boolean) => {
+      void updateSettings({ contextWindowProviderUsageEnabled });
+    },
+    [updateSettings],
+  );
+
   const handleTerminalScrollbackLinesChange = useCallback(
     (terminalScrollbackLines: number) => {
       void updateSettings({ terminalScrollbackLines });
@@ -1510,6 +1535,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
                 handleSendBehaviorChange={handleSendBehaviorChange}
                 handleServiceUrlBehaviorChange={handleServiceUrlBehaviorChange}
                 handleLanguageChange={handleLanguageChange}
+                handleContextWindowProviderUsageChange={handleContextWindowProviderUsageChange}
                 handleTerminalScrollbackLinesChange={handleTerminalScrollbackLinesChange}
                 handleSidebarWorkspaceVisibleCountChange={handleSidebarWorkspaceVisibleCountChange}
                 handleConversationHistoryLoadCountChange={handleConversationHistoryLoadCountChange}

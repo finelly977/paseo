@@ -1894,6 +1894,11 @@ export const ja: TranslationResources = {
           external: "外部ブラウザ",
         },
       },
+      contextWindowProviderUsage: {
+        label: "コンテキストメーターのアカウント使用量",
+        description:
+          "メーターを開いたときに現在のプロバイダーのアカウント使用量を取得して表示します",
+      },
       terminalScrollback: {
         label: "ターミナルスクロールバック",
         description: "組み込みターミナルバッファに保持する行数",

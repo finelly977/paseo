@@ -166,6 +166,26 @@ describe("loadAppSettingsFromStorage", () => {
     expect(result.language).toBe("system");
   });
 
+  it("默认启用上下文圆圈的账户额度探测", async () => {
+    const deps = makeDeps();
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.contextWindowProviderUsageEnabled).toBe(true);
+  });
+
+  it("保留已关闭的上下文圆圈账户额度探测设置", async () => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ contextWindowProviderUsageEnabled: false }),
+      }),
+    });
+
+    const result = await loadAppSettingsFromStorage(deps);
+
+    expect(result.contextWindowProviderUsageEnabled).toBe(false);
+  });
+
   it("defaults workspace title source to title when storage is empty", async () => {
     const deps = makeDeps();
 

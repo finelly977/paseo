@@ -233,6 +233,7 @@ function renderContextWindowMeter(
   showPercentage: boolean,
   serverId: string,
   provider: string | null,
+  providerUsageEnabled: boolean,
   pending: boolean,
   glyphSize: number,
 ): ReactElement | null {
@@ -248,6 +249,7 @@ function renderContextWindowMeter(
       showPercentage={showPercentage}
       serverId={serverId}
       provider={provider}
+      providerUsageEnabled={providerUsageEnabled}
       pending={pending}
       glyphSize={glyphSize}
     />
@@ -1824,6 +1826,7 @@ export function Composer({
         false,
         serverId,
         agentState.provider,
+        appSettings.contextWindowProviderUsageEnabled,
         contextWindowPending,
         contextWindowMeterGlyphSize,
       ),
@@ -1833,6 +1836,7 @@ export function Composer({
       agentState.totalCostUsd,
       serverId,
       agentState.provider,
+      appSettings.contextWindowProviderUsageEnabled,
       contextWindowPending,
       contextWindowMeterGlyphSize,
     ],
