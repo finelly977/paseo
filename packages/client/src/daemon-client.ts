@@ -3304,12 +3304,14 @@ export class DaemonClient {
   async applyCodexProviderInjection(
     agentId: string,
     injectionId: string,
+    model?: string,
   ): Promise<{ action: "started" | "reloaded" }> {
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "agent.codex_provider_injection.apply.request",
       agentId,
       injectionId,
+      ...(model ? { model } : {}),
       requestId,
     });
     const payload = await this.sendRequest({

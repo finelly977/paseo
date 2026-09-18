@@ -3,7 +3,10 @@ import { Alert, Text, View, type AccessibilityActionEvent } from "react-native";
 import { useTranslation } from "react-i18next";
 import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import type { CodexProviderInjection } from "@getpaseo/protocol/messages";
+import {
+  getCodexProviderInjectionModels,
+  type CodexProviderInjection,
+} from "@getpaseo/protocol/messages";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
 import { Button } from "@/components/ui/button";
@@ -29,6 +32,18 @@ const removeIcon = <ThemedTrash size={ICON_SIZE.sm} uniProps={mutedColor} />;
 interface EditTarget {
   mode: "create" | "edit";
   injection?: CodexProviderInjection;
+}
+
+interface ModelDraft {
+  id: number;
+  value: string;
+}
+
+let nextModelDraftId = 0;
+
+function createModelDraft(value = ""): ModelDraft {
+  nextModelDraftId += 1;
+  return { id: nextModelDraftId, value };
 }
 
 function generateId(): string {
@@ -224,6 +239,7 @@ function InjectionRow({
   onMove: (id: string, offset: -1 | 1) => void;
 }): ReactElement {
   const { t } = useTranslation();
+  const models = getCodexProviderInjectionModels(item);
   const actions = useMemo(
     () => [
       ...(!first
@@ -262,7 +278,14 @@ function InjectionRow({
         </Text>
         <Text style={settingsStyles.rowHint} numberOfLines={1}>
           {item.modelProvider}
-          {item.model ? ` · ${item.model}` : ""}
+        </Text>
+        <Text style={styles.modelSummary} numberOfLines={1}>
+          {models.length
+            ? t("settings.host.codexProviderInjections.modelSummary", {
+                count: models.length,
+                models: models.join(" · "),
+              })
+            : t("settings.host.codexProviderInjections.keepCurrentModelSummary")}
         </Text>
       </View>
       <View style={styles.actions}>
@@ -321,6 +344,56 @@ function parseEnv(value: string): Record<string, string> | undefined {
   return parsed as Record<string, string>;
 }
 
+function ModelInputRow({
+  model,
+  index,
+  canRemove,
+  disabled,
+  onChange,
+  onRemove,
+}: {
+  model: ModelDraft;
+  index: number;
+  canRemove: boolean;
+  disabled: boolean;
+  onChange: (id: number, value: string) => void;
+  onRemove: (id: number) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleChange = useCallback(
+    (value: string) => onChange(model.id, value),
+    [model.id, onChange],
+  );
+  const handleRemove = useCallback(() => onRemove(model.id), [model.id, onRemove]);
+
+  return (
+    <View style={styles.modelRow}>
+      <FormTextInput
+        value={model.value}
+        onChangeText={handleChange}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!disabled}
+        placeholder={t("settings.host.codexProviderInjections.modelPlaceholder")}
+        accessibilityLabel={t("settings.host.codexProviderInjections.modelAccessibilityLabel", {
+          index: index + 1,
+        })}
+        style={styles.modelInput}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        leftIcon={removeIcon}
+        onPress={handleRemove}
+        disabled={disabled || !canRemove}
+        accessibilityLabel={t("settings.host.codexProviderInjections.removeModel", {
+          index: index + 1,
+        })}
+      />
+    </View>
+  );
+}
+
 function InjectionEditModal({
   target,
   onClose,
@@ -334,7 +407,7 @@ function InjectionEditModal({
   const entry = target?.injection;
   const [name, setName] = useState("");
   const [modelProvider, setModelProvider] = useState("");
-  const [model, setModel] = useState("");
+  const [models, setModels] = useState<ModelDraft[]>(() => [createModelDraft()]);
   const [definition, setDefinition] = useState("{}");
   const [env, setEnv] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -344,16 +417,41 @@ function InjectionEditModal({
     if (!target) return;
     setName(entry?.name ?? "");
     setModelProvider(entry?.modelProvider ?? "");
-    setModel(entry?.model ?? "");
+    const configuredModels = entry ? getCodexProviderInjectionModels(entry) : [];
+    setModels(
+      configuredModels.length
+        ? configuredModels.map((model) => createModelDraft(model))
+        : [createModelDraft()],
+    );
     setDefinition(JSON.stringify(entry?.definition ?? {}, null, 2));
     setEnv(entry?.env ? JSON.stringify(entry.env, null, 2) : "");
     setError(null);
   }, [entry, target]);
+  const addModel = useCallback(() => {
+    setModels((current) => [...current, createModelDraft()]);
+  }, []);
+  const updateModel = useCallback((id: number, value: string) => {
+    setModels((current) => current.map((model) => (model.id === id ? { ...model, value } : model)));
+  }, []);
+  const removeModel = useCallback((id: number) => {
+    setModels((current) =>
+      current.length === 1 ? current : current.filter((model) => model.id !== id),
+    );
+  }, []);
   const submit = useCallback(async () => {
     const normalizedName = name.trim();
     const normalizedProvider = modelProvider.trim();
     if (!normalizedName || !normalizedProvider) {
       setError(t("settings.host.codexProviderInjections.required"));
+      return;
+    }
+    const normalizedModels = models.map((model) => model.value.trim());
+    if (normalizedModels.some((model) => !model)) {
+      setError(t("settings.host.codexProviderInjections.modelsRequired"));
+      return;
+    }
+    if (new Set(normalizedModels).size !== normalizedModels.length) {
+      setError(t("settings.host.codexProviderInjections.duplicateModel"));
       return;
     }
     setSaving(true);
@@ -370,7 +468,7 @@ function InjectionEditModal({
       await onSave({
         name: normalizedName,
         modelProvider: normalizedProvider,
-        ...(model.trim() ? { model: model.trim() } : {}),
+        models: normalizedModels,
         definition: parsedDefinition,
         ...(parsedEnv ? { env: parsedEnv } : {}),
       });
@@ -380,7 +478,7 @@ function InjectionEditModal({
     } finally {
       setSaving(false);
     }
-  }, [definition, env, model, modelProvider, name, onClose, onSave, t]);
+  }, [definition, env, modelProvider, models, name, onClose, onSave, t]);
   const header = useMemo(
     () => ({
       title: t(
@@ -398,62 +496,111 @@ function InjectionEditModal({
 
   if (!target) return null;
   return (
-    <AdaptiveModalSheet visible header={header} onClose={handleClose} desktopMaxWidth={600}>
+    <AdaptiveModalSheet visible header={header} onClose={handleClose} desktopMaxWidth={720}>
       <View style={styles.form}>
-        <Field label={t("settings.host.codexProviderInjections.nameLabel")}>
-          <FormTextInput
-            initialValue={entry?.name ?? ""}
-            onChangeText={setName}
-            editable={!saving}
-          />
-        </Field>
-        <Field label={t("settings.host.codexProviderInjections.providerIdLabel")}>
-          <FormTextInput
-            initialValue={entry?.modelProvider ?? ""}
-            onChangeText={setModelProvider}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!saving}
-          />
-        </Field>
-        <Field
-          label={t("settings.host.codexProviderInjections.modelLabel")}
-          hint={t("settings.host.codexProviderInjections.modelHint")}
-        >
-          <FormTextInput
-            initialValue={entry?.model ?? ""}
-            onChangeText={setModel}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!saving}
-          />
-        </Field>
-        <Field
-          label={t("settings.host.codexProviderInjections.definitionLabel")}
-          hint={t("settings.host.codexProviderInjections.definitionHint")}
-        >
-          <FormTextInput
-            initialValue={JSON.stringify(entry?.definition ?? {}, null, 2)}
-            onChangeText={setDefinition}
-            multiline
-            numberOfLines={8}
-            style={styles.codeInput}
-            editable={!saving}
-          />
-        </Field>
-        <Field
-          label={t("settings.host.codexProviderInjections.envLabel")}
-          hint={t("settings.host.codexProviderInjections.envHint")}
-        >
-          <FormTextInput
-            initialValue={entry?.env ? JSON.stringify(entry.env, null, 2) : ""}
-            onChangeText={setEnv}
-            multiline
-            numberOfLines={5}
-            style={styles.codeInput}
-            editable={!saving}
-          />
-        </Field>
+        <View style={styles.formSection}>
+          <Text style={styles.sectionTitle}>
+            {t("settings.host.codexProviderInjections.basicSection")}
+          </Text>
+          <View style={styles.basicFields}>
+            <View style={styles.flexField}>
+              <Field label={t("settings.host.codexProviderInjections.nameLabel")}>
+                <FormTextInput
+                  initialValue={entry?.name ?? ""}
+                  onChangeText={setName}
+                  editable={!saving}
+                />
+              </Field>
+            </View>
+            <View style={styles.flexField}>
+              <Field label={t("settings.host.codexProviderInjections.providerIdLabel")}>
+                <FormTextInput
+                  initialValue={entry?.modelProvider ?? ""}
+                  onChangeText={setModelProvider}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!saving}
+                />
+              </Field>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.sectionDivider} />
+
+        <View style={styles.formSection}>
+          <View style={styles.sectionHeading}>
+            <View style={styles.sectionHeadingText}>
+              <Text style={styles.sectionTitle}>
+                {t("settings.host.codexProviderInjections.modelsSection")}
+              </Text>
+              <Text style={styles.sectionHint}>
+                {t("settings.host.codexProviderInjections.modelsHint")}
+              </Text>
+            </View>
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={addIcon}
+              onPress={addModel}
+              disabled={saving}
+            >
+              {t("settings.host.codexProviderInjections.addModel")}
+            </Button>
+          </View>
+          <View style={styles.modelList}>
+            {models.map((model, index) => (
+              <ModelInputRow
+                key={model.id}
+                model={model}
+                index={index}
+                canRemove={models.length > 1}
+                disabled={saving}
+                onChange={updateModel}
+                onRemove={removeModel}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.sectionDivider} />
+
+        <View style={styles.formSection}>
+          <View style={styles.sectionHeadingText}>
+            <Text style={styles.sectionTitle}>
+              {t("settings.host.codexProviderInjections.advancedSection")}
+            </Text>
+            <Text style={styles.sectionHint}>
+              {t("settings.host.codexProviderInjections.advancedHint")}
+            </Text>
+          </View>
+          <Field
+            label={t("settings.host.codexProviderInjections.definitionLabel")}
+            hint={t("settings.host.codexProviderInjections.definitionHint")}
+          >
+            <FormTextInput
+              initialValue={JSON.stringify(entry?.definition ?? {}, null, 2)}
+              onChangeText={setDefinition}
+              multiline
+              numberOfLines={9}
+              style={[styles.codeInput, styles.definitionInput]}
+              editable={!saving}
+            />
+          </Field>
+          <Field
+            label={t("settings.host.codexProviderInjections.envLabel")}
+            hint={t("settings.host.codexProviderInjections.envHint")}
+          >
+            <FormTextInput
+              initialValue={entry?.env ? JSON.stringify(entry.env, null, 2) : ""}
+              onChangeText={setEnv}
+              multiline
+              numberOfLines={5}
+              style={styles.codeInput}
+              editable={!saving}
+            />
+          </Field>
+        </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <View style={styles.footer}>
           <Button
@@ -476,11 +623,45 @@ function InjectionEditModal({
 const styles = StyleSheet.create((theme) => ({
   empty: { padding: theme.spacing[6], alignItems: "center", gap: theme.spacing[3] },
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, textAlign: "center" },
-  row: { minHeight: 56, paddingVertical: theme.spacing[3] },
+  row: { minHeight: 68, paddingVertical: theme.spacing[3] },
+  modelSummary: {
+    marginTop: theme.spacing[1],
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+  },
   dragging: { backgroundColor: theme.colors.surface2 },
   actions: { flexDirection: "row", alignItems: "center" },
-  form: { padding: theme.spacing[6], gap: theme.spacing[4] },
+  form: { padding: theme.spacing[6], gap: theme.spacing[6] },
+  formSection: { gap: theme.spacing[4] },
+  sectionHeading: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: theme.spacing[3],
+  },
+  sectionHeadingText: { flex: 1, minWidth: 0, gap: theme.spacing[1] },
+  sectionTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+  },
+  sectionHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.round(theme.fontSize.xs * 1.4),
+  },
+  sectionDivider: { height: 1, backgroundColor: theme.colors.border },
+  basicFields: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[4],
+  },
+  flexField: { flexGrow: 1, flexBasis: 0, minWidth: 220 },
+  modelList: { gap: theme.spacing[2] },
+  modelRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  modelInput: { flex: 1 },
   codeInput: { minHeight: 112, fontFamily: "monospace", textAlignVertical: "top" },
+  definitionInput: { minHeight: 160 },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
   footer: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing[2] },
   footerButton: { minWidth: 104 },

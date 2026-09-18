@@ -40,7 +40,10 @@ import {
   SidebarWorkspaceTrailingActionSlot,
 } from "@/components/sidebar/sidebar-workspace-row-content";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
-import { SidebarWorkspaceMenu } from "@/components/sidebar/sidebar-workspace-menu";
+import {
+  SidebarWorkspaceMenu,
+  type CodexProviderInjectionMenuItem,
+} from "@/components/sidebar/sidebar-workspace-menu";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
@@ -594,7 +597,7 @@ function StatusWorkspaceRowWithMenu({
     });
   }, [clearAttention, toast]);
   const handleApplyCodexProviderInjection = useCallback(
-    async (injectionId: string) => {
+    async (injectionId: string, model?: string) => {
       if (applyingCodexProviderInjectionId) return;
       const client = getHostRuntimeStore().getClient(workspace.serverId);
       if (!workspaceAgent || !client) {
@@ -603,7 +606,11 @@ function StatusWorkspaceRowWithMenu({
       }
       setApplyingCodexProviderInjectionId(injectionId);
       try {
-        const result = await client.applyCodexProviderInjection(workspaceAgent.id, injectionId);
+        const result = await client.applyCodexProviderInjection(
+          workspaceAgent.id,
+          injectionId,
+          model,
+        );
         toast.show(
           t(
             result.action === "started"
@@ -735,9 +742,9 @@ function StatusWorkspaceRowInner({
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
-  codexProviderInjections?: readonly { id: string; name: string }[];
+  codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
-  onApplyCodexProviderInjection?: (injectionId: string) => void;
+  onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
 }) {
   const isTouchPlatform = platformIsNative;
@@ -862,9 +869,9 @@ function StatusWorkspaceActionSlot({
   archiveStatus?: "idle" | "pending" | "success";
   archivePendingLabel?: string;
   archiveShortcutKeys?: ShortcutKey[][] | null;
-  codexProviderInjections?: readonly { id: string; name: string }[];
+  codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
-  onApplyCodexProviderInjection?: (injectionId: string) => void;
+  onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
 }) {
   return (
     <SidebarWorkspaceTrailingActionSlot>

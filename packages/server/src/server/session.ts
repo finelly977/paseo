@@ -5,6 +5,7 @@ import { basename, resolve, sep } from "path";
 import { homedir } from "node:os";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import {
+  getCodexProviderInjectionModels,
   serializeAgentStreamEvent,
   type AgentSnapshotPayload,
   type AgentAttachment,
@@ -3847,7 +3848,7 @@ export class Session {
   private async handleCodexProviderInjectionApplyRequest(
     msg: Extract<SessionInboundMessage, { type: "agent.codex_provider_injection.apply.request" }>,
   ): Promise<void> {
-    const { agentId, injectionId, requestId } = msg;
+    const { agentId, injectionId, model, requestId } = msg;
     try {
       const injection = this.daemonConfigStore
         .get()
@@ -3866,9 +3867,15 @@ export class Session {
         throw new Error("Codex 服务商注入只能用于 Codex 会话");
       }
 
+      const configuredModels = getCodexProviderInjectionModels(injection);
+      if (model && !configuredModels.includes(model)) {
+        throw new Error(`模型不属于所选 Codex 服务商注入配置：${model}`);
+      }
+      const selectedModel = model ?? configuredModels[0];
+
       const overrides: Partial<AgentSessionConfig> = {
         codexProviderInjectionId: injection.id,
-        ...(injection.model ? { model: injection.model } : {}),
+        ...(selectedModel ? { model: selectedModel } : {}),
       };
       let snapshot: ManagedAgent;
       let action: "started" | "reloaded";
@@ -3885,7 +3892,7 @@ export class Session {
           config: {
             ...record.config,
             codexProviderInjectionId: injection.id,
-            ...(injection.model ? { model: injection.model } : {}),
+            ...(selectedModel ? { model: selectedModel } : {}),
           },
         };
         await this.agentStorage.upsert(nextRecord);

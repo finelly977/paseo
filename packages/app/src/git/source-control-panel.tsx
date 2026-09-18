@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -32,6 +32,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  COMMIT_INPUT_MAX_HEIGHT,
+  COMMIT_INPUT_MIN_HEIGHT,
+  resolveCommitInputHeightFromContent,
+} from "@/git/commit-input-height";
 
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedRotateCw = withUnistyles(RotateCw);
@@ -385,17 +390,28 @@ export function SourceControlCommitComposer({
 }: SourceControlCommitComposerProps) {
   const { t } = useTranslation();
   const [message, setMessage] = useState("");
+  const messageRef = useRef("");
   const [focused, setFocused] = useState(false);
-  const [inputHeight, setInputHeight] = useState(26);
+  const [inputHeight, setInputHeight] = useState(COMMIT_INPUT_MIN_HEIGHT);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [historyDraft, setHistoryDraft] = useState("");
   const isPending = status === "pending";
-  const handleGeneratedMessage = useCallback((generated: string) => {
-    setMessage(generated);
-    setHistoryIndex(null);
-    setHistoryDraft("");
+  const updateMessage = useCallback((nextMessage: string) => {
+    messageRef.current = nextMessage;
+    setMessage(nextMessage);
+    if (nextMessage.length === 0) {
+      setInputHeight(COMMIT_INPUT_MIN_HEIGHT);
+    }
   }, []);
+  const handleGeneratedMessage = useCallback(
+    (generated: string) => {
+      updateMessage(generated);
+      setHistoryIndex(null);
+      setHistoryDraft("");
+    },
+    [updateMessage],
+  );
   const generation = useCommitMessageGeneration({
     onGenerateMessage,
     hasChanges,
@@ -439,8 +455,7 @@ export function SourceControlCommitComposer({
         .then((committed) => {
           if (committed) {
             setHistory(nextHistory);
-            setMessage("");
-            setInputHeight(26);
+            updateMessage("");
             setHistoryIndex(null);
             setHistoryDraft("");
           }
@@ -450,7 +465,7 @@ export function SourceControlCommitComposer({
           console.error("提交操作失败且未被上层处理", error);
         });
     },
-    [generation.isGenerating, hasChanges, history, isPending, message, onCommit],
+    [generation.isGenerating, hasChanges, history, isPending, message, onCommit, updateMessage],
   );
   const submit = useCallback(() => {
     if (!canPress) {
@@ -473,7 +488,12 @@ export function SourceControlCommitComposer({
   const submitAll = useCallback(() => submitCommit(true), [submitCommit]);
   const handleContentSizeChange = useCallback(
     (event: { nativeEvent: { contentSize: { height: number } } }) => {
-      setInputHeight(Math.max(26, Math.min(100, Math.ceil(event.nativeEvent.contentSize.height))));
+      setInputHeight(
+        resolveCommitInputHeightFromContent(
+          event.nativeEvent.contentSize.height,
+          messageRef.current,
+        ),
+      );
     },
     [],
   );
@@ -494,7 +514,7 @@ export function SourceControlCommitComposer({
           setHistoryDraft(message);
         }
         setHistoryIndex(nextIndex);
-        setMessage(history[nextIndex] ?? message);
+        updateMessage(history[nextIndex] ?? message);
         return;
       }
       if (event.nativeEvent.altKey === true && event.nativeEvent.key === "ArrowDown") {
@@ -504,12 +524,12 @@ export function SourceControlCommitComposer({
         }
         if (historyIndex === 0) {
           setHistoryIndex(null);
-          setMessage(historyDraft);
+          updateMessage(historyDraft);
           return;
         }
         const nextIndex = historyIndex - 1;
         setHistoryIndex(nextIndex);
-        setMessage(history[nextIndex] ?? historyDraft);
+        updateMessage(history[nextIndex] ?? historyDraft);
         return;
       }
       if (
@@ -520,7 +540,7 @@ export function SourceControlCommitComposer({
         submit();
       }
     },
-    [history, historyDraft, historyIndex, message, submit],
+    [history, historyDraft, historyIndex, message, submit, updateMessage],
   );
 
   const commitButtonStyle = useCallback(
@@ -544,10 +564,10 @@ export function SourceControlCommitComposer({
   }, []);
   const handleMessageChange = useCallback(
     (value: string) => {
-      setMessage(value);
+      updateMessage(value);
       clearGenerationError();
     },
-    [clearGenerationError],
+    [clearGenerationError, updateMessage],
   );
   const buttonLabel = resolveCommitButtonLabel({ isPending, buttonKind, t });
 
@@ -564,7 +584,7 @@ export function SourceControlCommitComposer({
           value={message}
           onChangeText={handleMessageChange}
           multiline
-          scrollEnabled={inputHeight >= 100}
+          scrollEnabled={inputHeight >= COMMIT_INPUT_MAX_HEIGHT}
           onContentSizeChange={handleContentSizeChange}
           onKeyPress={handleInputKeyPress}
           editable={!isPending && !generation.isGenerating}

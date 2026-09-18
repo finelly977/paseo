@@ -272,15 +272,40 @@ export const CodexProviderInjectionSchema = z
     id: z.string().trim().min(1),
     name: z.string().trim().min(1),
     modelProvider: z.string().trim().min(1),
+    models: z.array(z.string().trim().min(1)).min(1).optional(),
+    // COMPAT(codexProviderInjectionModel): 2026-09-18 起新配置改用 models，
+    // 继续接收旧版单模型字段至 2027-03-18。
     model: z.string().trim().min(1).optional(),
     definition: z
       .record(z.string(), z.unknown())
       .refine((value) => Object.keys(value).length > 0, "Provider definition cannot be empty"),
     env: z.record(z.string().min(1), z.string()).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((entry, ctx) => {
+    if (!entry.models) return;
+    const seenModels = new Set<string>();
+    for (const [index, model] of entry.models.entries()) {
+      if (seenModels.has(model)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["models", index],
+          message: `Duplicate Codex provider injection model: ${model}`,
+        });
+      }
+      seenModels.add(model);
+    }
+  });
 
 export type CodexProviderInjection = z.infer<typeof CodexProviderInjectionSchema>;
+
+export function getCodexProviderInjectionModels(injection: {
+  models?: readonly string[];
+  model?: string;
+}): readonly string[] {
+  if (injection.models) return injection.models;
+  return injection.model ? [injection.model] : [];
+}
 
 export const CodexProviderInjectionsSchema = z
   .array(CodexProviderInjectionSchema)
@@ -1845,6 +1870,7 @@ export const AgentCodexProviderInjectionApplyRequestMessageSchema = z.object({
   type: z.literal("agent.codex_provider_injection.apply.request"),
   agentId: z.string(),
   injectionId: z.string().trim().min(1),
+  model: z.string().trim().min(1).optional(),
   requestId: z.string(),
 });
 

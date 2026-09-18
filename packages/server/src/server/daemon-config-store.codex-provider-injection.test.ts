@@ -31,7 +31,7 @@ describe("Codex provider injection daemon config", () => {
         id: "proxy",
         name: "Proxy",
         modelProvider: "proxy_api",
-        model: "gpt-proxy",
+        models: ["gpt-proxy", "gpt-proxy-fast"],
         definition: {
           name: "Proxy API",
           base_url: "https://proxy.example/v1",

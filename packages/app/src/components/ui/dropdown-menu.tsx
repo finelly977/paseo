@@ -28,8 +28,8 @@ import {
   type StyleProp,
 } from "react-native";
 import { Keyframe, runOnJS } from "react-native-reanimated";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { Check, CheckCircle } from "lucide-react-native";
+import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
+import { Check, CheckCircle, ChevronRight } from "lucide-react-native";
 import { FloatingScrollView, FloatingSurface } from "@/components/ui/floating";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isWeb } from "@/constants/platform";
@@ -65,6 +65,11 @@ interface DropdownMenuContextValue {
 }
 
 const DropdownMenuContext = createContext<DropdownMenuContextValue | null>(null);
+const DropdownMenuDismissContext = createContext<(() => void) | null>(null);
+const ThemedChevronRight = withUnistyles(ChevronRight);
+const mutedIconColor = (theme: { colors: { foregroundMuted: string } }) => ({
+  color: theme.colors.foregroundMuted,
+});
 
 export function useDropdownMenuClose(): () => void {
   const { setOpen } = useDropdownMenuContext("useDropdownMenuClose");
@@ -129,6 +134,8 @@ function computePosition({
   // Calculate available space
   const spaceTop = triggerRect.y - displayArea.y;
   const spaceBottom = displayArea.y + displayArea.height - (triggerRect.y + triggerRect.height);
+  const spaceLeft = triggerRect.x - displayArea.x;
+  const spaceRight = displayArea.x + displayArea.width - (triggerRect.x + triggerRect.width);
 
   // Flip if needed
   let actualPlacement = placement;
@@ -136,6 +143,10 @@ function computePosition({
     actualPlacement = "top";
   } else if (placement === "top" && spaceTop < contentHeight && spaceBottom > spaceTop) {
     actualPlacement = "bottom";
+  } else if (placement === "right" && spaceRight < contentWidth && spaceLeft > spaceRight) {
+    actualPlacement = "left";
+  } else if (placement === "left" && spaceLeft < contentWidth && spaceRight > spaceLeft) {
+    actualPlacement = "right";
   }
 
   let x: number;
@@ -244,6 +255,7 @@ export function DropdownMenu({
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
 }>): ReactElement {
+  const parentCloseAll = useContext(DropdownMenuDismissContext);
   const triggerRef = useRef<View>(null);
   const pendingSelectRef = useRef<(() => void) | null>(null);
   const [isOpen, setIsOpen] = useControllableOpenState({
@@ -268,6 +280,11 @@ export function DropdownMenu({
     pendingSelect();
   }, []);
 
+  const closeAll = useCallback(() => {
+    setIsOpen(false);
+    parentCloseAll?.();
+  }, [parentCloseAll, setIsOpen]);
+
   const selectItem = useCallback(
     (onSelect: (() => void) | undefined, closeOnSelect: boolean) => {
       if (!closeOnSelect) {
@@ -277,14 +294,14 @@ export function DropdownMenu({
 
       if (Platform.OS === "ios") {
         pendingSelectRef.current = onSelect ?? null;
-        setIsOpen(false);
+        closeAll();
         return;
       }
 
-      setIsOpen(false);
+      closeAll();
       onSelect?.();
     },
-    [setIsOpen],
+    [closeAll],
   );
 
   const value = useMemo<DropdownMenuContextValue>(
@@ -298,7 +315,11 @@ export function DropdownMenu({
     [flushPendingSelect, isOpen, selectItem, setIsOpen],
   );
 
-  return <DropdownMenuContext.Provider value={value}>{children}</DropdownMenuContext.Provider>;
+  return (
+    <DropdownMenuDismissContext.Provider value={closeAll}>
+      <DropdownMenuContext.Provider value={value}>{children}</DropdownMenuContext.Provider>
+    </DropdownMenuDismissContext.Provider>
+  );
 }
 
 interface TriggerState {
@@ -325,7 +346,6 @@ export function DropdownMenuTrigger({
     if (disabled) return;
     ctx.setOpen(!ctx.open);
   }, [disabled, ctx]);
-
   const pressableStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => {
       if (typeof style === "function") {
@@ -358,11 +378,81 @@ export function DropdownMenuTrigger({
   );
 }
 
+export function DropdownMenuSub({
+  children,
+}: PropsWithChildren<Record<never, never>>): ReactElement {
+  return <DropdownMenu>{children}</DropdownMenu>;
+}
+
+export function DropdownMenuSubTrigger({
+  children,
+  leading,
+  disabled,
+  testID,
+}: PropsWithChildren<{
+  leading?: ReactElement | null;
+  disabled?: boolean;
+  testID?: string;
+}>): ReactElement {
+  const triggerStyle = useCallback(
+    ({ pressed, hovered, open }: TriggerState) => [
+      styles.item,
+      disabled ? styles.itemDisabled : null,
+      (hovered || pressed || open) && !disabled ? styles.itemHovered : null,
+    ],
+    [disabled],
+  );
+
+  return (
+    <DropdownMenuTrigger disabled={disabled} style={triggerStyle} testID={testID}>
+      {leading ? <View style={styles.leadingSlot}>{leading}</View> : null}
+      <View style={styles.itemContent}>
+        <Text numberOfLines={1} style={styles.itemText}>
+          {children}
+        </Text>
+      </View>
+      <View style={styles.trailingSlot}>
+        <ThemedChevronRight size={16} uniProps={mutedIconColor} />
+      </View>
+    </DropdownMenuTrigger>
+  );
+}
+
+export function DropdownMenuSubContent({
+  children,
+  width = 240,
+  maxHeight = 360,
+  testID,
+}: PropsWithChildren<{
+  width?: number;
+  maxHeight?: number;
+  testID?: string;
+}>): ReactElement | null {
+  return (
+    <DropdownMenuContent
+      side="right"
+      align="start"
+      offset={2}
+      width={width}
+      maxHeight={maxHeight}
+      scrollable
+      testID={testID}
+    >
+      {children}
+    </DropdownMenuContent>
+  );
+}
+
 function getTransformOrigin(placement: Placement, alignment: Alignment): string {
-  let vertical: string;
-  if (placement === "bottom") vertical = "top";
-  else if (placement === "top") vertical = "bottom";
-  else vertical = "center";
+  if (placement === "left" || placement === "right") {
+    let vertical = "center";
+    if (alignment === "start") vertical = "top";
+    if (alignment === "end") vertical = "bottom";
+    const horizontal = placement === "left" ? "right" : "left";
+    return `${vertical} ${horizontal}`;
+  }
+
+  const vertical = placement === "bottom" ? "top" : "bottom";
   let horizontal: string;
   if (alignment === "start") horizontal = "left";
   else if (alignment === "end") horizontal = "right";

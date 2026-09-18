@@ -93,7 +93,10 @@ import { isEmphasizedStatusDotBucket } from "@/utils/status-dot-color";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
-import { SidebarWorkspaceMenu } from "@/components/sidebar/sidebar-workspace-menu";
+import {
+  SidebarWorkspaceMenu,
+  type CodexProviderInjectionMenuItem,
+} from "@/components/sidebar/sidebar-workspace-menu";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
@@ -318,9 +321,9 @@ interface WorkspaceRowInnerProps {
   isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
-  codexProviderInjections?: readonly { id: string; name: string }[];
+  codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
-  onApplyCodexProviderInjection?: (injectionId: string) => void;
+  onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
   reserveIdleStatusIndicatorSpace?: boolean;
 }
 
@@ -712,9 +715,9 @@ function WorkspaceRowRightGroup({
   isReleasingAgentRuntime?: boolean;
   onRemoveAgent?: () => void;
   isRemovingAgent?: boolean;
-  codexProviderInjections?: readonly { id: string; name: string }[];
+  codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
-  onApplyCodexProviderInjection?: (injectionId: string) => void;
+  onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
 }) {
   const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
@@ -1564,7 +1567,7 @@ function WorkspaceRowWithMenu({
   ]);
 
   const handleApplyCodexProviderInjection = useCallback(
-    async (injectionId: string) => {
+    async (injectionId: string, model?: string) => {
       if (applyingCodexProviderInjectionId) return;
       if (!supportsCodexProviderInjection) {
         toast.error(t("sidebar.workspace.codexProviderInjections.updateHost"));
@@ -1576,7 +1579,11 @@ function WorkspaceRowWithMenu({
       }
       setApplyingCodexProviderInjectionId(injectionId);
       try {
-        const result = await hostClient.applyCodexProviderInjection(workspaceAgent.id, injectionId);
+        const result = await hostClient.applyCodexProviderInjection(
+          workspaceAgent.id,
+          injectionId,
+          model,
+        );
         toast.show(
           t(
             result.action === "started"

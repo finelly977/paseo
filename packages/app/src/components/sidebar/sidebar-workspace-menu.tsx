@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { type PressableStateCallbackType } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { getCodexProviderInjectionModels } from "@getpaseo/protocol/messages";
 import {
   Archive,
   CircleCheck,
@@ -23,8 +24,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -66,29 +69,78 @@ const providerInjectionLeadingIcon = (
 export interface CodexProviderInjectionMenuItem {
   id: string;
   name: string;
+  models?: readonly string[];
+  model?: string;
 }
 
-function CodexProviderInjectionItem({
+function CodexProviderInjectionSubmenu({
   injection,
   applying,
   onApply,
 }: {
   injection: CodexProviderInjectionMenuItem;
   applying: boolean;
-  onApply: (injectionId: string) => void;
+  onApply: (injectionId: string, model?: string) => void;
 }) {
   const { t } = useTranslation();
-  const handleSelect = useCallback(() => onApply(injection.id), [injection.id, onApply]);
+  const models = getCodexProviderInjectionModels(injection);
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger
+        testID={`codex-provider-injection-provider-${injection.id}`}
+        disabled={applying}
+      >
+        {injection.name}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent testID={`codex-provider-injection-models-${injection.id}`}>
+        {models.length ? (
+          models.map((model) => (
+            <CodexProviderModelItem
+              key={model}
+              injection={injection}
+              model={model}
+              applying={applying}
+              onApply={onApply}
+            />
+          ))
+        ) : (
+          <CodexProviderModelItem injection={injection} applying={applying} onApply={onApply}>
+            {t("sidebar.workspace.codexProviderInjections.keepCurrentModel")}
+          </CodexProviderModelItem>
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+function CodexProviderModelItem({
+  injection,
+  model,
+  applying,
+  onApply,
+  children,
+}: {
+  injection: CodexProviderInjectionMenuItem;
+  model?: string;
+  applying: boolean;
+  onApply: (injectionId: string, model?: string) => void;
+  children?: string;
+}): React.ReactElement {
+  const { t } = useTranslation();
+  const handleSelect = useCallback(
+    () => onApply(injection.id, model),
+    [injection.id, model, onApply],
+  );
   return (
     <DropdownMenuItem
-      leading={providerInjectionLeadingIcon}
+      testID={`codex-provider-injection-model-${injection.id}-${model ?? "current"}`}
       onSelect={handleSelect}
       status={applying ? "pending" : "idle"}
       pendingLabel={t("sidebar.workspace.codexProviderInjections.applying", {
         name: injection.name,
       })}
     >
-      {injection.name}
+      {children ?? model}
     </DropdownMenuItem>
   );
 }
@@ -125,7 +177,7 @@ interface SidebarWorkspaceMenuProps {
   openInFileManagerPath?: string | null;
   codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
-  onApplyCodexProviderInjection?: (injectionId: string) => void;
+  onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
 }
 
 export function SidebarWorkspaceMenu({
@@ -250,17 +302,24 @@ export function SidebarWorkspaceMenu({
         {codexProviderInjections?.length && onApplyCodexProviderInjection ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel>
-              {t("sidebar.workspace.codexProviderInjections.label")}
-            </DropdownMenuLabel>
-            {codexProviderInjections.map((injection) => (
-              <CodexProviderInjectionItem
-                key={injection.id}
-                injection={injection}
-                applying={applyingCodexProviderInjectionId === injection.id}
-                onApply={onApplyCodexProviderInjection}
-              />
-            ))}
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger
+                leading={providerInjectionLeadingIcon}
+                testID={`sidebar-workspace-menu-codex-provider-injections-${workspaceKey}`}
+              >
+                {t("sidebar.workspace.codexProviderInjections.label")}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent testID="codex-provider-injection-providers">
+                {codexProviderInjections.map((injection) => (
+                  <CodexProviderInjectionSubmenu
+                    key={injection.id}
+                    injection={injection}
+                    applying={applyingCodexProviderInjectionId === injection.id}
+                    onApply={onApplyCodexProviderInjection}
+                  />
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
           </>
         ) : null}
