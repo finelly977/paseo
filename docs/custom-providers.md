@@ -241,7 +241,7 @@ requires_openai_auth = false
 
 ### 按会话动态注入 Codex 服务商
 
-如果只需要让某个 Codex 会话切换端点，而不想创建独立的 Paseo 提供方，请打开**设置 → Host → Agents → Codex 服务商注入**。每个条目把一个 Codex `model_provider` 标识映射到原生服务商定义及可选的进程环境变量：
+如果只需要让某个 Codex 会话切换端点，而不想创建独立的 Paseo 提供方，请打开**设置 → Host → Codex 服务商**。每个条目把一个 Codex `model_provider` 标识映射到原生服务商定义及可选的进程环境变量；常用的 API 地址、密钥变量、登录要求与 WebSocket 支持直接使用结构化字段填写，只有少见字段需要写入折叠的“其他服务商参数”JSON：
 
 ```json
 {
@@ -251,7 +251,7 @@ requires_openai_auth = false
         "id": "internal_gateway",
         "name": "Internal gateway",
         "modelProvider": "internal_gateway",
-        "model": "gpt-5.4",
+        "models": ["gpt-5.4", "gpt-5.4-mini"],
         "definition": {
           "name": "Internal gateway",
           "base_url": "https://gateway.example.com/v1",
@@ -272,7 +272,7 @@ requires_openai_auth = false
 
 - `modelProvider` 可以与用户全局 Codex 配置中已经使用的标识相同。多个注入条目也可以复用同一标识，因为一个会话每次只会物化当前选中的定义。不要在 `definition` 内重复填写 `model_provider`；该对象只对应 `[model_providers.<id>]` 表。
 - 尚未加载或已经释放运行时的会话会立即携带所选注入配置启动。已经加载的会话会完整重新加载，因为 Codex 不能原地切换已加载线程的服务商。
-- Paseo 会话只保存所选条目 ID；凭据和服务商定义保留在守护进程配置中，仅在运行时启动时解析。
+- Paseo 会话保存所选条目 ID 和模型；凭据和服务商定义保留在守护进程配置中，仅在运行时启动时解析。
 - 如果删除仍被会话选中的条目，该会话下次启动会明确失败，不能静默回退到其他端点。
 - 此功能适合按会话切换。如果端点需要作为新会话和 Agent 配置档案中的普通提供方选项出现，应使用继承 `codex` 的自定义提供方。
 

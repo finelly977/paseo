@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
-import { Alert, Text, View, type AccessibilityActionEvent } from "react-native";
+import { Alert, Pressable, Text, View, type AccessibilityActionEvent } from "react-native";
 import { useTranslation } from "react-i18next";
-import { GripVertical, Pencil, Plus, Trash2 } from "lucide-react-native";
+import { ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   getCodexProviderInjectionModels,
@@ -11,18 +11,29 @@ import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
 import { Button } from "@/components/ui/button";
 import { Field, FormTextInput } from "@/components/ui/form-field";
+import type { FieldControlSize } from "@/components/ui/control-geometry";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { toErrorMessage } from "@/utils/error-messages";
+import {
+  buildCodexProviderDefinition,
+  buildEnvironmentVariables,
+  parseCodexProviderDefinition,
+  type OptionalBooleanDraft,
+} from "./codex-provider-injection-form";
 import { useCodexProviderInjections } from "./use-codex-provider-injections";
 
 const ThemedPlus = withUnistyles(Plus);
 const ThemedGrip = withUnistyles(GripVertical);
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedTrash = withUnistyles(Trash2);
+const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedChevronRight = withUnistyles(ChevronRight);
 const mutedColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const addIcon = <ThemedPlus size={ICON_SIZE.sm} uniProps={mutedColor} />;
 const dragIcon = <ThemedGrip size={ICON_SIZE.sm} uniProps={mutedColor} />;
@@ -39,11 +50,23 @@ interface ModelDraft {
   value: string;
 }
 
+interface EnvironmentVariableDraft {
+  id: number;
+  key: string;
+  value: string;
+}
+
 let nextModelDraftId = 0;
+let nextEnvironmentVariableDraftId = 0;
 
 function createModelDraft(value = ""): ModelDraft {
   nextModelDraftId += 1;
   return { id: nextModelDraftId, value };
+}
+
+function createEnvironmentVariableDraft(key = "", value = ""): EnvironmentVariableDraft {
+  nextEnvironmentVariableDraftId += 1;
+  return { id: nextEnvironmentVariableDraftId, key, value };
 }
 
 function generateId(): string {
@@ -169,30 +192,43 @@ export function CodexProviderInjectionSettings({ serverId }: { serverId: string 
         onPress={openCreate}
         disabled={!injections || reordering}
         accessibilityLabel={t("settings.host.codexProviderInjections.add")}
-      />
+      >
+        {t("settings.host.codexProviderInjections.add")}
+      </Button>
     ),
     [injections, openCreate, reordering, t],
   );
 
   if (!connected || !isSupported) {
     return (
-      <SettingsSection title={t("settings.host.codexProviderInjections.title")}>
-        <View style={settingsStyles.card}>
-          <View style={styles.empty}>
-            <Text style={styles.muted}>
-              {connected
-                ? t("settings.host.codexProviderInjections.unsupported")
-                : t("settings.host.codexProviderInjections.unavailable")}
-            </Text>
+      <View>
+        <Text style={styles.pageDescription}>
+          {t("settings.host.codexProviderInjections.description")}
+        </Text>
+        <SettingsSection title={t("settings.host.codexProviderInjections.configuredTitle")}>
+          <View style={settingsStyles.card}>
+            <View style={styles.empty}>
+              <Text style={styles.muted}>
+                {connected
+                  ? t("settings.host.codexProviderInjections.unsupported")
+                  : t("settings.host.codexProviderInjections.unavailable")}
+              </Text>
+            </View>
           </View>
-        </View>
-      </SettingsSection>
+        </SettingsSection>
+      </View>
     );
   }
 
   return (
     <>
-      <SettingsSection title={t("settings.host.codexProviderInjections.title")} trailing={trailing}>
+      <Text style={styles.pageDescription}>
+        {t("settings.host.codexProviderInjections.description")}
+      </Text>
+      <SettingsSection
+        title={t("settings.host.codexProviderInjections.configuredTitle")}
+        trailing={trailing}
+      >
         <View style={settingsStyles.card}>
           {ordered.length ? (
             <DraggableList
@@ -333,21 +369,12 @@ function parseObject(value: string, fieldName: string): Record<string, unknown> 
   return parsed as Record<string, unknown>;
 }
 
-function parseEnv(value: string): Record<string, string> | undefined {
-  if (!value.trim()) return undefined;
-  const parsed = parseObject(value, "环境变量");
-  for (const [key, entry] of Object.entries(parsed)) {
-    if (!key || typeof entry !== "string") {
-      throw new Error("环境变量必须是字符串键值对");
-    }
-  }
-  return parsed as Record<string, string>;
-}
-
 function ModelInputRow({
   model,
   index,
   canRemove,
+  first,
+  size,
   disabled,
   onChange,
   onRemove,
@@ -355,6 +382,8 @@ function ModelInputRow({
   model: ModelDraft;
   index: number;
   canRemove: boolean;
+  first: boolean;
+  size: FieldControlSize;
   disabled: boolean;
   onChange: (id: number, value: string) => void;
   onRemove: (id: number) => void;
@@ -367,7 +396,8 @@ function ModelInputRow({
   const handleRemove = useCallback(() => onRemove(model.id), [model.id, onRemove]);
 
   return (
-    <View style={styles.modelRow}>
+    <View style={[styles.repeaterRow, first ? null : styles.repeaterRowBorder]}>
+      <Text style={styles.rowIndex}>{index + 1}</Text>
       <FormTextInput
         value={model.value}
         onChangeText={handleChange}
@@ -378,7 +408,8 @@ function ModelInputRow({
         accessibilityLabel={t("settings.host.codexProviderInjections.modelAccessibilityLabel", {
           index: index + 1,
         })}
-        style={styles.modelInput}
+        size={size}
+        style={styles.repeaterInput}
       />
       <Button
         variant="ghost"
@@ -390,6 +421,77 @@ function ModelInputRow({
           index: index + 1,
         })}
       />
+    </View>
+  );
+}
+
+function EnvironmentVariableInputRow({
+  variable,
+  first,
+  size,
+  disabled,
+  onChange,
+  onRemove,
+}: {
+  variable: EnvironmentVariableDraft;
+  first: boolean;
+  size: FieldControlSize;
+  disabled: boolean;
+  onChange: (id: number, patch: Partial<Pick<EnvironmentVariableDraft, "key" | "value">>) => void;
+  onRemove: (id: number) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const handleKeyChange = useCallback(
+    (key: string) => onChange(variable.id, { key }),
+    [onChange, variable.id],
+  );
+  const handleValueChange = useCallback(
+    (value: string) => onChange(variable.id, { value }),
+    [onChange, variable.id],
+  );
+  const handleRemove = useCallback(() => onRemove(variable.id), [onRemove, variable.id]);
+
+  return (
+    <View style={[styles.repeaterRow, first ? null : styles.repeaterRowBorder]}>
+      <FormTextInput
+        value={variable.key}
+        onChangeText={handleKeyChange}
+        placeholder={t("settings.host.codexProviderInjections.envNamePlaceholder")}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        editable={!disabled}
+        size={size}
+        style={styles.envNameInput}
+      />
+      <FormTextInput
+        value={variable.value}
+        onChangeText={handleValueChange}
+        placeholder={t("settings.host.codexProviderInjections.envValuePlaceholder")}
+        autoCapitalize="none"
+        autoCorrect={false}
+        editable={!disabled}
+        size={size}
+        style={styles.envValueInput}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        leftIcon={removeIcon}
+        onPress={handleRemove}
+        disabled={disabled}
+        accessibilityLabel={t("settings.host.codexProviderInjections.removeEnvironmentVariable")}
+      />
+    </View>
+  );
+}
+
+function FormSectionHeading({ title, hint }: { title: string; hint?: string }): ReactElement {
+  return (
+    <View style={styles.sectionHeading}>
+      <View style={styles.sectionHeadingText}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -408,10 +510,19 @@ function InjectionEditModal({
   const [name, setName] = useState("");
   const [modelProvider, setModelProvider] = useState("");
   const [models, setModels] = useState<ModelDraft[]>(() => [createModelDraft()]);
-  const [definition, setDefinition] = useState("{}");
-  const [env, setEnv] = useState("");
+  const [providerName, setProviderName] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [envKey, setEnvKey] = useState("");
+  const [requiresOpenAiAuth, setRequiresOpenAiAuth] = useState<OptionalBooleanDraft>("default");
+  const [supportsWebsockets, setSupportsWebsockets] = useState<OptionalBooleanDraft>("default");
+  const [environmentVariables, setEnvironmentVariables] = useState<EnvironmentVariableDraft[]>(
+    () => [createEnvironmentVariableDraft()],
+  );
+  const [additionalDefinition, setAdditionalDefinition] = useState("{}");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const isCompact = useIsCompactFormFactor();
 
   useEffect(() => {
     if (!target) return;
@@ -423,9 +534,34 @@ function InjectionEditModal({
         ? configuredModels.map((model) => createModelDraft(model))
         : [createModelDraft()],
     );
-    setDefinition(JSON.stringify(entry?.definition ?? {}, null, 2));
-    setEnv(entry?.env ? JSON.stringify(entry.env, null, 2) : "");
-    setError(null);
+    const definition = entry?.definition ?? {};
+    try {
+      const definitionDraft = parseCodexProviderDefinition(definition);
+      setProviderName(definitionDraft.providerName);
+      setBaseUrl(definitionDraft.baseUrl);
+      setEnvKey(definitionDraft.envKey);
+      setRequiresOpenAiAuth(definitionDraft.requiresOpenAiAuth);
+      setSupportsWebsockets(definitionDraft.supportsWebsockets);
+      setAdditionalDefinition(JSON.stringify(definitionDraft.additionalDefinition, null, 2));
+      setAdvancedOpen(
+        Object.keys(definitionDraft.additionalDefinition).length > 0 ||
+          Boolean(definitionDraft.providerName && definitionDraft.providerName !== entry?.name),
+      );
+      setEnvironmentVariables(
+        entry?.env
+          ? Object.entries(entry.env).map(([key, value]) =>
+              createEnvironmentVariableDraft(key, value),
+            )
+          : [createEnvironmentVariableDraft()],
+      );
+      setError(null);
+    } catch (initializationError) {
+      console.error(
+        "[codex-provider-injection] failed to read provider definition",
+        initializationError,
+      );
+      setError(toErrorMessage(initializationError));
+    }
   }, [entry, target]);
   const addModel = useCallback(() => {
     setModels((current) => [...current, createModelDraft()]);
@@ -438,6 +574,24 @@ function InjectionEditModal({
       current.length === 1 ? current : current.filter((model) => model.id !== id),
     );
   }, []);
+  const addEnvironmentVariable = useCallback(() => {
+    setEnvironmentVariables((current) => [...current, createEnvironmentVariableDraft()]);
+  }, []);
+  const updateEnvironmentVariable = useCallback(
+    (id: number, patch: Partial<Pick<EnvironmentVariableDraft, "key" | "value">>) => {
+      setEnvironmentVariables((current) =>
+        current.map((variable) => (variable.id === id ? { ...variable, ...patch } : variable)),
+      );
+    },
+    [],
+  );
+  const removeEnvironmentVariable = useCallback((id: number) => {
+    setEnvironmentVariables((current) => {
+      const next = current.filter((variable) => variable.id !== id);
+      return next.length ? next : [createEnvironmentVariableDraft()];
+    });
+  }, []);
+  const toggleAdvanced = useCallback(() => setAdvancedOpen((current) => !current), []);
   const submit = useCallback(async () => {
     const normalizedName = name.trim();
     const normalizedProvider = modelProvider.trim();
@@ -457,20 +611,23 @@ function InjectionEditModal({
     setSaving(true);
     setError(null);
     try {
-      const parsedDefinition = parseObject(definition, "服务商定义");
-      if (Object.keys(parsedDefinition).length === 0) {
-        throw new Error("服务商定义不能为空");
-      }
-      if (Object.hasOwn(parsedDefinition, "model_provider")) {
-        throw new Error("服务商定义中不要填写 model_provider，请使用上方标识");
-      }
-      const parsedEnv = parseEnv(env);
+      const parsedAdditionalDefinition = parseObject(additionalDefinition, "其他服务商参数");
+      const definition = buildCodexProviderDefinition({
+        displayName: normalizedName,
+        providerName,
+        baseUrl,
+        envKey,
+        requiresOpenAiAuth,
+        supportsWebsockets,
+        additionalDefinition: parsedAdditionalDefinition,
+      });
+      const env = buildEnvironmentVariables(environmentVariables);
       await onSave({
         name: normalizedName,
         modelProvider: normalizedProvider,
         models: normalizedModels,
-        definition: parsedDefinition,
-        ...(parsedEnv ? { env: parsedEnv } : {}),
+        definition,
+        ...(env ? { env } : {}),
       });
       onClose();
     } catch (submitError) {
@@ -478,7 +635,21 @@ function InjectionEditModal({
     } finally {
       setSaving(false);
     }
-  }, [definition, env, modelProvider, models, name, onClose, onSave, t]);
+  }, [
+    additionalDefinition,
+    baseUrl,
+    envKey,
+    environmentVariables,
+    modelProvider,
+    models,
+    name,
+    onClose,
+    onSave,
+    providerName,
+    requiresOpenAiAuth,
+    supportsWebsockets,
+    t,
+  ]);
   const header = useMemo(
     () => ({
       title: t(
@@ -493,134 +664,269 @@ function InjectionEditModal({
     if (!saving) onClose();
   }, [onClose, saving]);
   const handleSubmit = useCallback(() => void submit(), [submit]);
+  const optionalBooleanOptions = useMemo(
+    () => [
+      {
+        value: "default" as const,
+        label: t("settings.host.codexProviderInjections.optionDefault"),
+      },
+      {
+        value: "enabled" as const,
+        label: t("settings.host.codexProviderInjections.optionEnabled"),
+      },
+      {
+        value: "disabled" as const,
+        label: t("settings.host.codexProviderInjections.optionDisabled"),
+      },
+    ],
+    [t],
+  );
+  const controlSize = isCompact ? "md" : "sm";
+  const optionSize = isCompact ? "sm" : "xs";
+  const AdvancedIcon = advancedOpen ? ThemedChevronDown : ThemedChevronRight;
+  const advancedAccessibilityState = useMemo(() => ({ expanded: advancedOpen }), [advancedOpen]);
+  const footer = useMemo(
+    () => (
+      <View style={styles.footer}>
+        <Button
+          variant="secondary"
+          onPress={handleClose}
+          disabled={saving}
+          style={styles.footerButton}
+        >
+          {t("common.actions.cancel")}
+        </Button>
+        <Button onPress={handleSubmit} disabled={saving} style={styles.footerButton}>
+          {saving ? t("settings.host.codexProviderInjections.saving") : t("common.actions.save")}
+        </Button>
+      </View>
+    ),
+    [handleClose, handleSubmit, saving, t],
+  );
 
   if (!target) return null;
   return (
-    <AdaptiveModalSheet visible header={header} onClose={handleClose} desktopMaxWidth={720}>
+    <AdaptiveModalSheet
+      visible
+      header={header}
+      onClose={handleClose}
+      desktopMaxWidth={620}
+      footer={footer}
+      testID="codex-provider-injection-editor"
+    >
       <View style={styles.form}>
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>
-            {t("settings.host.codexProviderInjections.basicSection")}
-          </Text>
-          <View style={styles.basicFields}>
-            <View style={styles.flexField}>
-              <Field label={t("settings.host.codexProviderInjections.nameLabel")}>
-                <FormTextInput
-                  initialValue={entry?.name ?? ""}
-                  onChangeText={setName}
-                  editable={!saving}
-                />
-              </Field>
-            </View>
-            <View style={styles.flexField}>
-              <Field label={t("settings.host.codexProviderInjections.providerIdLabel")}>
-                <FormTextInput
-                  initialValue={entry?.modelProvider ?? ""}
-                  onChangeText={setModelProvider}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!saving}
-                />
-              </Field>
-            </View>
+        <View style={styles.fieldRow}>
+          <View style={styles.flexField}>
+            <Field label={t("settings.host.codexProviderInjections.nameLabel")}>
+              <FormTextInput
+                value={name}
+                onChangeText={setName}
+                placeholder={t("settings.host.codexProviderInjections.namePlaceholder")}
+                editable={!saving}
+                size={controlSize}
+              />
+            </Field>
+          </View>
+          <View style={styles.flexField}>
+            <Field label={t("settings.host.codexProviderInjections.providerIdLabel")}>
+              <FormTextInput
+                value={modelProvider}
+                onChangeText={setModelProvider}
+                placeholder={t("settings.host.codexProviderInjections.providerIdPlaceholder")}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!saving}
+                size={controlSize}
+              />
+            </Field>
           </View>
         </View>
 
-        <View style={styles.sectionDivider} />
+        <Field label={t("settings.host.codexProviderInjections.baseUrlLabel")}>
+          <FormTextInput
+            value={baseUrl}
+            onChangeText={setBaseUrl}
+            placeholder="https://api.example.com/v1"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            editable={!saving}
+            size={controlSize}
+          />
+        </Field>
 
         <View style={styles.formSection}>
-          <View style={styles.sectionHeading}>
-            <View style={styles.sectionHeadingText}>
-              <Text style={styles.sectionTitle}>
-                {t("settings.host.codexProviderInjections.modelsSection")}
-              </Text>
-              <Text style={styles.sectionHint}>
-                {t("settings.host.codexProviderInjections.modelsHint")}
-              </Text>
-            </View>
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={addIcon}
-              onPress={addModel}
-              disabled={saving}
-            >
-              {t("settings.host.codexProviderInjections.addModel")}
-            </Button>
-          </View>
-          <View style={styles.modelList}>
+          <FormSectionHeading
+            title={t("settings.host.codexProviderInjections.modelsSection")}
+            hint={t("settings.host.codexProviderInjections.modelsHint")}
+          />
+          <View style={styles.repeater}>
             {models.map((model, index) => (
               <ModelInputRow
                 key={model.id}
                 model={model}
                 index={index}
+                first={index === 0}
+                size={controlSize}
                 canRemove={models.length > 1}
                 disabled={saving}
                 onChange={updateModel}
                 onRemove={removeModel}
               />
             ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={addIcon}
+              onPress={addModel}
+              disabled={saving}
+              style={styles.addRepeaterButton}
+            >
+              {t("settings.host.codexProviderInjections.addModel")}
+            </Button>
           </View>
         </View>
-
-        <View style={styles.sectionDivider} />
 
         <View style={styles.formSection}>
-          <View style={styles.sectionHeadingText}>
-            <Text style={styles.sectionTitle}>
-              {t("settings.host.codexProviderInjections.advancedSection")}
-            </Text>
-            <Text style={styles.sectionHint}>
-              {t("settings.host.codexProviderInjections.advancedHint")}
-            </Text>
+          <FormSectionHeading
+            title={t("settings.host.codexProviderInjections.credentialsSection")}
+            hint={t("settings.host.codexProviderInjections.credentialsHint")}
+          />
+          <Field label={t("settings.host.codexProviderInjections.envKeyLabel")}>
+            <FormTextInput
+              value={envKey}
+              onChangeText={setEnvKey}
+              placeholder="OPENAI_API_KEY"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!saving}
+              size={controlSize}
+            />
+          </Field>
+          <View style={styles.repeater}>
+            {environmentVariables.map((variable, index) => (
+              <EnvironmentVariableInputRow
+                key={variable.id}
+                variable={variable}
+                first={index === 0}
+                size={controlSize}
+                disabled={saving}
+                onChange={updateEnvironmentVariable}
+                onRemove={removeEnvironmentVariable}
+              />
+            ))}
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={addIcon}
+              onPress={addEnvironmentVariable}
+              disabled={saving}
+              style={styles.addRepeaterButton}
+            >
+              {t("settings.host.codexProviderInjections.addEnvironmentVariable")}
+            </Button>
           </View>
-          <Field
-            label={t("settings.host.codexProviderInjections.definitionLabel")}
-            hint={t("settings.host.codexProviderInjections.definitionHint")}
+        </View>
+
+        <View style={styles.formSection}>
+          <FormSectionHeading
+            title={t("settings.host.codexProviderInjections.capabilitiesSection")}
+          />
+          <View style={styles.optionCard}>
+            <View style={styles.optionRow}>
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle}>
+                  {t("settings.host.codexProviderInjections.openAiAuthLabel")}
+                </Text>
+                <Text style={styles.optionHint}>
+                  {t("settings.host.codexProviderInjections.openAiAuthHint")}
+                </Text>
+              </View>
+              <SegmentedControl
+                options={optionalBooleanOptions}
+                value={requiresOpenAiAuth}
+                onValueChange={setRequiresOpenAiAuth}
+                size={optionSize}
+              />
+            </View>
+            <View style={[styles.optionRow, styles.optionRowBorder]}>
+              <View style={styles.optionText}>
+                <Text style={styles.optionTitle}>
+                  {t("settings.host.codexProviderInjections.websocketsLabel")}
+                </Text>
+                <Text style={styles.optionHint}>
+                  {t("settings.host.codexProviderInjections.websocketsHint")}
+                </Text>
+              </View>
+              <SegmentedControl
+                options={optionalBooleanOptions}
+                value={supportsWebsockets}
+                onValueChange={setSupportsWebsockets}
+                size={optionSize}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.advancedSection}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={advancedAccessibilityState}
+            onPress={toggleAdvanced}
+            style={styles.advancedTrigger}
           >
-            <FormTextInput
-              initialValue={JSON.stringify(entry?.definition ?? {}, null, 2)}
-              onChangeText={setDefinition}
-              multiline
-              numberOfLines={9}
-              style={[styles.codeInput, styles.definitionInput]}
-              editable={!saving}
-            />
-          </Field>
-          <Field
-            label={t("settings.host.codexProviderInjections.envLabel")}
-            hint={t("settings.host.codexProviderInjections.envHint")}
-          >
-            <FormTextInput
-              initialValue={entry?.env ? JSON.stringify(entry.env, null, 2) : ""}
-              onChangeText={setEnv}
-              multiline
-              numberOfLines={5}
-              style={styles.codeInput}
-              editable={!saving}
-            />
-          </Field>
+            <AdvancedIcon size={14} uniProps={mutedColor} />
+            <View style={styles.advancedTriggerText}>
+              <Text style={styles.optionTitle}>
+                {t("settings.host.codexProviderInjections.additionalDefinitionLabel")}
+              </Text>
+              <Text style={styles.optionHint}>
+                {t("settings.host.codexProviderInjections.additionalDefinitionHint")}
+              </Text>
+            </View>
+          </Pressable>
+          {advancedOpen ? (
+            <View style={styles.advancedContent}>
+              <Field
+                label={t("settings.host.codexProviderInjections.providerNameLabel")}
+                hint={t("settings.host.codexProviderInjections.providerNameHint")}
+              >
+                <FormTextInput
+                  value={providerName}
+                  onChangeText={setProviderName}
+                  placeholder={name || t("settings.host.codexProviderInjections.namePlaceholder")}
+                  editable={!saving}
+                  size={controlSize}
+                />
+              </Field>
+              <FormTextInput
+                value={additionalDefinition}
+                onChangeText={setAdditionalDefinition}
+                multiline
+                numberOfLines={5}
+                style={styles.codeInput}
+                editable={!saving}
+                accessibilityLabel={t(
+                  "settings.host.codexProviderInjections.additionalDefinitionLabel",
+                )}
+              />
+            </View>
+          ) : null}
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <View style={styles.footer}>
-          <Button
-            variant="secondary"
-            onPress={onClose}
-            disabled={saving}
-            style={styles.footerButton}
-          >
-            {t("common.actions.cancel")}
-          </Button>
-          <Button onPress={handleSubmit} disabled={saving} style={styles.footerButton}>
-            {saving ? t("settings.host.codexProviderInjections.saving") : t("common.actions.save")}
-          </Button>
-        </View>
       </View>
     </AdaptiveModalSheet>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
+  pageDescription: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: Math.round(theme.fontSize.sm * 1.5),
+    marginBottom: theme.spacing[6],
+    maxWidth: 620,
+  },
   empty: { padding: theme.spacing[6], alignItems: "center", gap: theme.spacing[3] },
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, textAlign: "center" },
   row: { minHeight: 68, paddingVertical: theme.spacing[3] },
@@ -631,7 +937,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   dragging: { backgroundColor: theme.colors.surface2 },
   actions: { flexDirection: "row", alignItems: "center" },
-  form: { padding: theme.spacing[6], gap: theme.spacing[6] },
+  form: { gap: theme.spacing[6] },
   formSection: { gap: theme.spacing[4] },
   sectionHeading: {
     flexDirection: "row",
@@ -650,19 +956,89 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     lineHeight: Math.round(theme.fontSize.xs * 1.4),
   },
-  sectionDivider: { height: 1, backgroundColor: theme.colors.border },
-  basicFields: {
+  fieldRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: theme.spacing[4],
+    gap: theme.spacing[3],
   },
-  flexField: { flexGrow: 1, flexBasis: 0, minWidth: 220 },
-  modelList: { gap: theme.spacing[2] },
-  modelRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
-  modelInput: { flex: 1 },
-  codeInput: { minHeight: 112, fontFamily: "monospace", textAlignVertical: "top" },
-  definitionInput: { minHeight: 160 },
+  flexField: { flexGrow: 1, flexBasis: 0, minWidth: 190 },
+  repeater: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    overflow: "hidden",
+  },
+  repeaterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+  },
+  repeaterRowBorder: { borderTopWidth: 1, borderTopColor: theme.colors.border },
+  rowIndex: {
+    width: 18,
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    textAlign: "center",
+  },
+  repeaterInput: { flex: 1 },
+  envNameInput: { flex: 0.8 },
+  envValueInput: { flex: 1.2 },
+  addRepeaterButton: {
+    alignSelf: "stretch",
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    borderRadius: 0,
+  },
+  optionCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    overflow: "hidden",
+  },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: theme.spacing[3],
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[3],
+  },
+  optionRowBorder: { borderTopWidth: 1, borderTopColor: theme.colors.border },
+  optionText: { flex: 1, minWidth: 220, gap: theme.spacing[1] },
+  optionTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.normal,
+  },
+  optionHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.round(theme.fontSize.xs * 1.4),
+  },
+  advancedSection: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    paddingTop: theme.spacing[3],
+    gap: theme.spacing[3],
+  },
+  advancedTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+  },
+  advancedTriggerText: { flex: 1, gap: theme.spacing[1] },
+  advancedContent: { gap: theme.spacing[3] },
+  codeInput: { minHeight: 120, fontFamily: "monospace", textAlignVertical: "top" },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
-  footer: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing[2] },
+  footer: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: theme.spacing[2],
+  },
   footerButton: { minWidth: 104 },
 }));

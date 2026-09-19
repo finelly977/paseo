@@ -287,9 +287,18 @@ export function HostAgentsPage({ serverId }: { serverId: string }) {
         </View>
       )}
       <AgentProfilesSection serverId={serverId} />
-      <CodexProviderInjectionSettings serverId={serverId} />
     </View>
   );
+}
+
+export function HostCodexProvidersPage({ serverId }: { serverId: string }) {
+  const host = useHostProfile(serverId);
+
+  if (!host) {
+    return <HostNotFound />;
+  }
+
+  return <CodexProviderInjectionSettings serverId={serverId} />;
 }
 
 export function HostWorkspacesPage({ serverId }: { serverId: string }) {

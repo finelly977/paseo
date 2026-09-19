@@ -37,6 +37,7 @@ import {
   SquareTerminal,
   Code2,
   Blocks,
+  ServerCog,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -109,6 +110,7 @@ import {
 import {
   HostConnectionsPage,
   HostAgentsPage,
+  HostCodexProvidersPage,
   HostSettingsPage,
   HostProvidersPage,
   HostUsagePage,
@@ -189,6 +191,11 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "host", labelKey: "settings.hostSections.host", icon: Server },
   { id: "connections", labelKey: "settings.hostSections.connections", icon: Network },
   { id: "agents", labelKey: "settings.hostSections.agents", icon: Bot },
+  {
+    id: "codex-providers",
+    labelKey: "settings.hostSections.codexProviders",
+    icon: ServerCog,
+  },
   { id: "workspaces", labelKey: "settings.hostSections.workspaces", icon: FolderGit2 },
   { id: "providers", labelKey: "settings.hostSections.providers", icon: Boxes },
   { id: "usage", labelKey: "settings.hostSections.usage", icon: Gauge },
@@ -205,6 +212,8 @@ function renderHostSettingsContent(
       return <HostConnectionsPage serverId={view.serverId} />;
     case "agents":
       return <HostAgentsPage serverId={view.serverId} />;
+    case "codex-providers":
+      return <HostCodexProvidersPage serverId={view.serverId} />;
     case "workspaces":
       return <HostWorkspacesPage serverId={view.serverId} />;
     case "providers":

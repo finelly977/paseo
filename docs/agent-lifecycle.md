@@ -24,7 +24,7 @@ primed.
 Codex 服务商注入属于 Paseo 会话的持久配置。创建或恢复提供方运行时之前，
 `AgentManager.prepareSessionConfig()` 会从守护进程的当前配置解析所选条目，只把
 `model_provider` / `model_providers` 写入本次启动配置，并且只把条目中的环境变量加入
-该运行时的启动上下文。智能体记录仅保存注入条目 ID。向已关闭智能体应用选择时，先
+该运行时的启动上下文。智能体记录保存注入条目 ID，所选模型继续存入普通会话模型字段。向已关闭智能体应用选择时，先
 更新记录再调用 `ensureAgentLoaded()`；向已加载智能体应用选择时，调用
 `reloadAgentSession()` 关闭旧 Codex app-server，再恢复同一个持久线程。
 
