@@ -25,6 +25,7 @@ import {
   getWorkspaceActivePaseoBrowserIdForHostWindow,
   getPaseoBrowserWorkspaceId,
 } from "../browser-webviews/index.js";
+import { assertTrustedIpcSender } from "../../security/trusted-renderer.js";
 
 const MAX_CONSOLE_MESSAGES_PER_TAB = 200;
 const consoleMessagesByContentsId = new Map<number, BrowserAutomationConsoleLogEntry[]>();
@@ -393,6 +394,7 @@ export function registerBrowserAutomationIpc(options?: { ipc?: IpcHandlerRegistr
   const ipc = options?.ipc ?? ipcMain;
 
   ipc.handle("paseo:browser:execute-automation-command", async (event, rawRequest: unknown) => {
+    assertTrustedIpcSender(event as Electron.IpcMainInvokeEvent);
     const hostContents = (event as { sender?: HostWebContents }).sender;
     const hostWebContentsId = hostContents?.id;
     if (!hostContents || typeof hostWebContentsId !== "number") {

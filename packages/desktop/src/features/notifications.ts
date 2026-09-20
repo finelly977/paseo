@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { app, BrowserWindow, Notification, ipcMain, nativeImage } from "electron";
 import { focusNotificationTargetWindow } from "./notification-window";
 import { getDesktopSettingsStore } from "../settings/desktop-settings-electron.js";
+import { assertTrustedIpcSender } from "../security/trusted-renderer.js";
 
 interface NotificationInput {
   title?: unknown;
@@ -76,11 +77,13 @@ export function ensureNotificationCenterRegistration(): void {
 }
 
 export function registerNotificationHandlers(): void {
-  ipcMain.handle("paseo:notification:isSupported", () => {
+  ipcMain.handle("paseo:notification:isSupported", (event) => {
+    assertTrustedIpcSender(event);
     return Notification.isSupported();
   });
 
   ipcMain.handle("paseo:notification:send", async (event, rawInput?: NotificationInput) => {
+    assertTrustedIpcSender(event);
     if (!Notification.isSupported()) {
       return false;
     }

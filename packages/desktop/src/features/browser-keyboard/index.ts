@@ -8,6 +8,7 @@ import {
   parseBrowserKeyboardPolicy,
   parseBrowserShortcutInput,
 } from "./policy.js";
+import { assertTrustedIpcSender } from "../../security/trusted-renderer.js";
 
 export type { BrowserKeyboardPolicy } from "./policy.js";
 
@@ -65,6 +66,7 @@ export class BrowserKeyboard {
 
   public registerIpc(): void {
     ipcMain.handle(POLICY_INPUT_CHANNEL, (event, rawPolicy: unknown) => {
+      assertTrustedIpcSender(event);
       this.publish(event.sender.id, rawPolicy);
     });
     ipcMain.on(SHORTCUT_INPUT_CHANNEL, (event, rawInput: unknown) => {

@@ -583,6 +583,27 @@ describe("stream reducer canonical tool calls", () => {
     expect(reasoningResult.head.some((item) => item.kind === "thought")).toBe(false);
   });
 
+  it("在压缩标记前结清流式正文并保持时间顺序", () => {
+    const assistantResult = applyStreamEvent({
+      tail: [],
+      head: [],
+      event: assistantTimeline("压缩前仍在输出", "codex", "msg-before-compaction"),
+      timestamp: new Date("2025-01-01T10:02:00Z"),
+    });
+    const compactionResult = applyStreamEvent({
+      tail: assistantResult.tail,
+      head: assistantResult.head,
+      event: compactionTimeline("completed", "auto"),
+      timestamp: new Date("2025-01-01T10:02:01Z"),
+    });
+
+    expect(compactionResult.head).toEqual([]);
+    expect(compactionResult.tail.map((item) => item.kind)).toEqual([
+      "assistant_message",
+      "compaction",
+    ]);
+  });
+
   it("合并分块消息后移除 Codex Git 界面指令", () => {
     const state = hydrateStreamState([
       {

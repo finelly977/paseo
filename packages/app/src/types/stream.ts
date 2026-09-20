@@ -1917,6 +1917,8 @@ function getEventItemKind(
       return "todo_list";
     case "error":
       return "activity_log";
+    case "compaction":
+      return "compaction";
     default:
       return null;
   }

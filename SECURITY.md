@@ -60,6 +60,12 @@ For remote access, use the relay connection. It is the supported path for reachi
 
 Host header validation and CORS origin checks are defense-in-depth controls for localhost exposure. They help block DNS rebinding and browser-based attacks, but they do not replace network isolation.
 
+## Electron 桌面信任边界
+
+Electron 主窗口拥有守护进程管理、文件操作、更新安装、CLI、技能和系统窗口等本机能力，因此只有打包应用的 `paseo://app` 来源或开发环境明确配置的精确来源可以加载到该窗口。离开受信任来源的顶层导航和重定向会被阻断；HTTP(S) 链接交给系统浏览器，其他协议直接拒绝，网页不能创建继承宿主 preload 的 Electron 子窗口。
+
+主进程不会只信任 preload 或渲染器传入的参数。每个宿主 IPC 都校验调用者来自受信任来源的顶层主框架，嵌套框架、内置浏览器 guest 和意外加载的远程页面均不能调用这些能力。内置浏览器使用独立沙箱、持久化会话分区和低权限键盘 preload，不暴露 `window.paseoDesktop`。
+
 ## DNS rebinding protection
 
 CORS is not a complete security boundary. It controls which browser origins can make requests, but does not prevent a malicious website from resolving its domain to your local machine (DNS rebinding).

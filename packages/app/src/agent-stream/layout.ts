@@ -60,6 +60,7 @@ interface LayoutSegmentInput {
   boundaryAboveIndex: number | null;
   messageSpacing: number;
   phase: "streaming" | "complete";
+  activeTurnId: string | null;
 }
 
 interface AssistantFooterSource {
@@ -303,8 +304,12 @@ function tryResolvePartialTurnFooter(input: {
   item: StreamItem;
   aboveItem: StreamItem | null;
   phase: "streaming" | "complete";
+  activeTurnId: string | null;
 }): TurnFooterHost | null {
   if (input.phase === "streaming") {
+    return null;
+  }
+  if (input.activeTurnId !== null && input.item.turnId === input.activeTurnId) {
     return null;
   }
   if (!isToolSequenceItem(input.item)) {
@@ -439,6 +444,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
           item,
           aboveItem,
           phase: input.phase,
+          activeTurnId: input.activeTurnId,
         });
     const turnFooter = completedFooter ?? partialTurnFooter;
 
@@ -468,8 +474,18 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
 // kind and id don't change when only its text grows.
 const historyLayoutCache = new WeakMap<StreamItem[], Map<string, StreamLayoutItem[]>>();
 
+function resolveActiveTurnId(input: StreamLayoutInput): string | null {
+  if (!input.isTurnActive) {
+    return null;
+  }
+  const activeItems = input.liveHead.length > 0 ? input.liveHead : input.history;
+  const latestIndex = input.strategy.getLatestItemIndex(activeItems);
+  return latestIndex === null ? null : (activeItems[latestIndex]?.turnId ?? null);
+}
+
 export function layoutStream(input: StreamLayoutInput): StreamLayout {
   const auxiliaryTurnFooter = resolveAuxiliaryTurnFooter(input);
+  const activeTurnId = resolveActiveTurnId(input);
   const historyBoundaryIndex = input.strategy.getHistoryLiveBoundaryIndex(input.history);
   const liveHeadBoundaryIndex = input.strategy.getLiveHeadHistoryBoundaryIndex(input.liveHead);
   const historyBoundaryItem =
@@ -489,6 +505,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       liveHeadBoundaryItem?.kind ?? "null",
       liveHeadBoundaryItem?.turnId ?? "null",
       auxiliaryTurnFooter?.itemId ?? "null",
+      activeTurnId ?? "null",
       input.messageSpacing,
     ].join(":");
     let byKey = historyLayoutCache.get(input.history);
@@ -513,6 +530,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
         boundaryAboveIndex: null,
         messageSpacing: input.messageSpacing,
         phase: "complete",
+        activeTurnId,
       });
       byKey.set(historyCacheKey, history);
     }
@@ -533,6 +551,7 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     boundaryAboveIndex: historyBoundaryIndex,
     messageSpacing: input.messageSpacing,
     phase: input.isTurnActive ? "streaming" : "complete",
+    activeTurnId,
   });
 
   return {

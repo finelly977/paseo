@@ -11,6 +11,13 @@ import {
 } from "electron";
 
 import type { WindowState, WindowStateStore } from "../settings/window-state.js";
+import {
+  assertTrustedIpcSender,
+  classifyMainWindowNavigation,
+  getTrustedRendererPolicy,
+  isTrustedRendererUrl,
+  type TrustedRendererPolicy,
+} from "../security/trusted-renderer.js";
 import type { DesktopWindowChromeMode } from "./chrome.js";
 
 const WINDOW_STATE_SAVE_DEBOUNCE_MS = 400;
@@ -147,14 +154,17 @@ export function applyMacWindowControlsUpdate(input: {
 
 export function registerWindowManager(input: { mode: DesktopWindowChromeMode }): void {
   ipcMain.handle("paseo:window:minimize", (event) => {
+    assertTrustedIpcSender(event);
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 
   ipcMain.handle("paseo:window:close", (event) => {
+    assertTrustedIpcSender(event);
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
   ipcMain.handle("paseo:window:toggleMaximize", (event) => {
+    assertTrustedIpcSender(event);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return;
     if (win.isMaximized()) {
@@ -165,20 +175,24 @@ export function registerWindowManager(input: { mode: DesktopWindowChromeMode }):
   });
 
   ipcMain.handle("paseo:window:isFullscreen", (event) => {
+    assertTrustedIpcSender(event);
     const win = BrowserWindow.fromWebContents(event.sender);
     return win?.isFullScreen() ?? false;
   });
 
   ipcMain.handle("paseo:window:isMaximized", (event) => {
+    assertTrustedIpcSender(event);
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
   });
 
   ipcMain.handle("paseo:window:setFullscreen", (event, fullscreen: unknown) => {
+    assertTrustedIpcSender(event);
     if (typeof fullscreen !== "boolean") return;
     BrowserWindow.fromWebContents(event.sender)?.setFullScreen(fullscreen);
   });
 
-  ipcMain.handle("paseo:window:setBadgeCount", (_event, count?: unknown) => {
+  ipcMain.handle("paseo:window:setBadgeCount", (event, count?: unknown) => {
+    assertTrustedIpcSender(event);
     if (process.platform === "darwin" || process.platform === "linux") {
       const badgeCount = readBadgeCount(count);
       try {
@@ -194,6 +208,7 @@ export function registerWindowManager(input: { mode: DesktopWindowChromeMode }):
   });
 
   ipcMain.handle("paseo:window:updateChrome", (event, update?: unknown) => {
+    assertTrustedIpcSender(event);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
       return;
@@ -394,16 +409,35 @@ export function setupDefaultContextMenu(win: BrowserWindow): void {
   });
 }
 
-/**
- * Prevent Electron from navigating to files dragged onto the window.
- * The renderer handles drag-drop via standard HTML5 APIs instead.
- */
-export function setupDragDropPrevention(win: BrowserWindow): void {
-  win.webContents.on("will-navigate", (event, url) => {
-    // Allow normal navigation (e.g. dev server hot-reload) but block file:// URLs
-    // that result from dropping files onto the window.
-    if (url.startsWith("file://")) {
-      event.preventDefault();
+export function setupMainWindowNavigationSecurity(
+  win: BrowserWindow,
+  policy: TrustedRendererPolicy = getTrustedRendererPolicy(),
+): void {
+  const handleNavigation = (event: Electron.Event, url: string): void => {
+    const decision = classifyMainWindowNavigation(url, policy);
+    if (decision === "allow") {
+      return;
     }
+    event.preventDefault();
+    if (decision === "open-external" && isTrustedRendererUrl(win.webContents.getURL(), policy)) {
+      void shell.openExternal(url).catch((error) => {
+        console.error("[window-manager] 无法在系统浏览器中打开被拦截的主窗口导航", error);
+      });
+    }
+  };
+
+  win.webContents.on("will-navigate", handleNavigation);
+  win.webContents.on("will-redirect", handleNavigation);
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (
+      classifyMainWindowNavigation(url, policy) === "open-external" &&
+      isTrustedRendererUrl(win.webContents.getURL(), policy)
+    ) {
+      void shell.openExternal(url).catch((error) => {
+        console.error("[window-manager] 无法在系统浏览器中打开主窗口链接", error);
+      });
+    }
+    return { action: "deny" };
   });
 }

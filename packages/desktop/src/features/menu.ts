@@ -1,5 +1,6 @@
 import { app, Menu, BrowserWindow, ipcMain } from "electron";
 import { getActivePaseoBrowserWebContentsForHostWindow } from "./browser-webviews/index.js";
+import { assertTrustedIpcSender } from "../security/trusted-renderer.js";
 
 interface ShowContextMenuInput {
   kind?: "terminal";
@@ -197,6 +198,7 @@ export function setupApplicationMenu(options: ApplicationMenuOptions): void {
   rebuildApplicationMenu();
 
   ipcMain.handle("paseo:menu:showContextMenu", (event, input?: ShowContextMenuInput) => {
+    assertTrustedIpcSender(event);
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) {
       return;
@@ -230,7 +232,8 @@ export function setupApplicationMenu(options: ApplicationMenuOptions): void {
 
   // Disable the zoom accelerators while capturing a shortcut so combos like
   // Cmd+- / Cmd+= reach the renderer instead of zooming the window.
-  ipcMain.handle("paseo:menu:set-capturing-shortcut", (_event, capturing?: boolean) => {
+  ipcMain.handle("paseo:menu:set-capturing-shortcut", (event, capturing?: boolean) => {
+    assertTrustedIpcSender(event);
     capturingShortcut = capturing === true;
     rebuildApplicationMenu();
   });

@@ -37,7 +37,7 @@ import {
   setupWindowResizeEvents,
   setupWindowStatePersistence,
   setupDefaultContextMenu,
-  setupDragDropPrevention,
+  setupMainWindowNavigationSecurity,
   buildStandardContextMenuItems,
 } from "./window/window-manager.js";
 import { resolveDesktopWindowChromeMode, windowChromeModeArgument } from "./window/chrome.js";
@@ -98,9 +98,13 @@ import {
   type AgentDeepLinkTarget,
 } from "@getpaseo/protocol/agent-deep-link";
 import { AgentNavigationInbox, parseAgentDeepLinkFromArgv } from "./agent-navigation.js";
+import {
+  assertTrustedIpcSender,
+  TRUSTED_APP_BASE_URL,
+  TRUSTED_APP_SCHEME,
+} from "./security/trusted-renderer.js";
 
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
-const APP_SCHEME = "paseo";
 const PASEO_DEBUG = process.env.PASEO_DEBUG === "1";
 const DISABLE_SINGLE_INSTANCE_LOCK = process.env.PASEO_DISABLE_SINGLE_INSTANCE_LOCK === "1";
 const APP_NAME = process.env.PASEO_TEST_APP_NAME?.trim() || "Paseo";
@@ -356,6 +360,7 @@ if (PASEO_DEBUG) {
 // The renderer pulls the pending path on mount via IPC — this avoids
 // a race where the push event arrives before React registers its listener.
 ipcMain.handle("paseo:get-pending-open-project", (event) => {
+  assertTrustedIpcSender(event);
   const webContentsId = event.sender.id;
   const result = pendingOpenProjectStore.take(webContentsId);
   log.info("[open-project] renderer requested pending path:", {
@@ -366,6 +371,7 @@ ipcMain.handle("paseo:get-pending-open-project", (event) => {
 });
 
 ipcMain.handle("paseo:agent-navigation:ready", (event) => {
+  assertTrustedIpcSender(event);
   return agentNavigationInbox.windowReady(event.sender.id);
 });
 
@@ -403,6 +409,7 @@ function normalizeBrowserCaptureRect(
 }
 
 ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => {
+  assertTrustedIpcSender(event);
   const input = readAttachedBrowserInput(rawInput);
   if (!input) {
     throw new Error("Invalid attached browser registration");
@@ -435,6 +442,7 @@ ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => 
 });
 
 ipcMain.handle("paseo:browser:unregister-workspace-browser", async (event, browserId: unknown) => {
+  assertTrustedIpcSender(event);
   if (typeof browserId === "string" && browserId.trim().length > 0) {
     const normalizedBrowserId = browserId.trim();
     const hasOtherHost = getPaseoBrowserWebviewRegistry().hasBrowserInOtherHostWindow(
@@ -464,6 +472,7 @@ ipcMain.handle("paseo:browser:unregister-workspace-browser", async (event, brows
 });
 
 ipcMain.handle("paseo:browser:set-workspace-active-browser", (event, rawInput: unknown) => {
+  assertTrustedIpcSender(event);
   const input = readActiveBrowserInput(rawInput);
   if (input) {
     setWorkspaceActivePaseoBrowserId({ ...input, hostWebContentsId: event.sender.id });
@@ -471,6 +480,7 @@ ipcMain.handle("paseo:browser:set-workspace-active-browser", (event, rawInput: u
 });
 
 ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
+  assertTrustedIpcSender(event);
   if (typeof browserId !== "string" || browserId.trim().length === 0) {
     const result = {
       ok: false,
@@ -511,7 +521,8 @@ ipcMain.handle("paseo:browser:open-devtools", (event, browserId: unknown) => {
   return result;
 });
 
-ipcMain.handle("paseo:browser:clear-profile", async (_event, rawLegacyBrowserIds: unknown) => {
+ipcMain.handle("paseo:browser:clear-profile", async (event, rawLegacyBrowserIds: unknown) => {
+  assertTrustedIpcSender(event);
   const profileSessions = getPaseoBrowserProfileSessions(
     session,
     readLegacyPaseoBrowserIds(rawLegacyBrowserIds),
@@ -533,6 +544,7 @@ ipcMain.handle("paseo:browser:clear-profile", async (_event, rawLegacyBrowserIds
 ipcMain.handle(
   "paseo:browser:capture-element",
   async (event, browserId: unknown, rect: unknown) => {
+    assertTrustedIpcSender(event);
     if (typeof browserId !== "string" || browserId.trim().length === 0) {
       return null;
     }
@@ -562,7 +574,8 @@ ipcMain.handle(
   },
 );
 
-ipcMain.handle("paseo:browser:copy-element", (_event, payload: unknown): boolean => {
+ipcMain.handle("paseo:browser:copy-element", (event, payload: unknown): boolean => {
+  assertTrustedIpcSender(event);
   if (!payload || typeof payload !== "object") {
     return false;
   }
@@ -604,7 +617,7 @@ ipcMain.handle("paseo:browser:copy-element", (_event, payload: unknown): boolean
 
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: APP_SCHEME,
+    scheme: TRUSTED_APP_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true },
   },
 ]);
@@ -717,6 +730,9 @@ async function createWindow(
       additionalArguments: [windowChromeModeArgument(DESKTOP_WINDOW_CHROME_MODE)],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
       webviewTag: true,
       // 窗口失焦或隐藏时不节流页面定时器，agent 流式事件与同步逻辑保持实时。
       backgroundThrottling: false,
@@ -752,7 +768,7 @@ async function createWindow(
     setupWindowStatePersistence(mainWindow, windowStateStore);
   }
   setupDefaultContextMenu(mainWindow);
-  setupDragDropPrevention(mainWindow);
+  setupMainWindowNavigationSecurity(mainWindow);
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     if (!isPaseoBrowserWebviewAttach(params)) {
       event.preventDefault();
@@ -804,7 +820,7 @@ async function createWindow(
     return mainWindow;
   }
 
-  await mainWindow.loadURL(`${APP_SCHEME}://app${options.initialRoute ?? "/"}`);
+  await mainWindow.loadURL(`${TRUSTED_APP_BASE_URL}${options.initialRoute ?? "/"}`);
   return mainWindow;
 }
 
@@ -944,7 +960,7 @@ async function bootstrap(): Promise<void> {
   await app.whenReady();
 
   const appDistDir = getAppDistDir();
-  protocol.handle(APP_SCHEME, (request) => {
+  protocol.handle(TRUSTED_APP_SCHEME, (request) => {
     const { pathname, search, hash } = new URL(request.url);
     const decodedPath = decodeURIComponent(pathname);
 
@@ -952,7 +968,7 @@ async function bootstrap(): Promise<void> {
     // Canonicalize it back to the route URL so Expo Router sees `/`, not `/index.html`.
     if (decodedPath.endsWith("/index.html")) {
       const normalizedPath = decodedPath.slice(0, -"/index.html".length) || "/";
-      return Response.redirect(`${APP_SCHEME}://app${normalizedPath}${search}${hash}`, 307);
+      return Response.redirect(`${TRUSTED_APP_BASE_URL}${normalizedPath}${search}${hash}`, 307);
     }
 
     const filePath = path.join(appDistDir, decodedPath);
@@ -992,7 +1008,8 @@ async function bootstrap(): Promise<void> {
 
   // In-app "Open in new window": opens a window that lands on the given project
   // via the same open-project flow as a CLI launch (no move, no ownership).
-  ipcMain.handle("paseo:window:openNew", async (_event, options?: unknown) => {
+  ipcMain.handle("paseo:window:openNew", async (event, options?: unknown) => {
+    assertTrustedIpcSender(event);
     const pendingPath =
       options && typeof options === "object" && "pendingOpenProjectPath" in options
         ? (options as { pendingOpenProjectPath?: unknown }).pendingOpenProjectPath

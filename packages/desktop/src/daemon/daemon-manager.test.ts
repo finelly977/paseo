@@ -1,10 +1,15 @@
 import { EventEmitter } from "node:events";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { ipcMain } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { getBundledCliShimPath } from "../integrations/cli-install";
-import { createDaemonCommandHandlers, prestartDesktopDaemon } from "./daemon-manager";
+import {
+  createDaemonCommandHandlers,
+  prestartDesktopDaemon,
+  registerDaemonManager,
+} from "./daemon-manager";
 
 const mocks = vi.hoisted(() => ({
   paseoHome: "/tmp/paseo-desktop-daemon-manager-test-home",
@@ -121,6 +126,7 @@ describe("daemon-manager commands", () => {
     mocks.logError.mockReset();
     mocks.getElectronLogFile.mockReset();
     mocks.getElectronLogFile.mockReturnValue({ path: mocks.appLogPath });
+    vi.mocked(ipcMain.handle).mockReset();
     rmSync(mocks.paseoHome, { recursive: true, force: true });
     rmSync(mocks.appLogPath, { force: true });
   });
@@ -570,5 +576,20 @@ describe("daemon-manager commands", () => {
         "\n",
       ),
     });
+  });
+
+  it("拒绝远程页面调用通用桌面命令", async () => {
+    registerDaemonManager();
+    const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => {
+      return channel === "paseo:invoke";
+    })?.[1];
+    if (typeof handler !== "function") {
+      throw new Error("通用桌面命令处理器未注册");
+    }
+    const mainFrame = { url: "https://evil.example", origin: "https://evil.example" };
+
+    await expect(
+      handler({ sender: { mainFrame }, senderFrame: mainFrame }, "desktop_get_runtime_info"),
+    ).rejects.toThrow("拒绝来自非受信任页面的桌面 IPC");
   });
 });

@@ -4,9 +4,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isAllowedExternalUrl, registerOpenerHandlers } from "./opener";
 
 vi.mock("electron", () => ({
+  app: { isPackaged: true },
   ipcMain: { handle: vi.fn() },
   shell: { openExternal: vi.fn() },
 }));
+
+function trustedRendererEvent() {
+  const mainFrame = { url: "paseo://app/", origin: "paseo://app" };
+  return { sender: { mainFrame }, senderFrame: mainFrame };
+}
 
 function getRegisteredOpenUrlHandler(): (_event: unknown, url: unknown) => Promise<void> {
   registerOpenerHandlers();
@@ -38,7 +44,7 @@ describe("desktop opener", () => {
   it("opens allowed URLs through Electron shell", async () => {
     const handler = getRegisteredOpenUrlHandler();
 
-    await handler({}, "https://example.com");
+    await handler(trustedRendererEvent(), "https://example.com");
 
     expect(shell.openExternal).toHaveBeenCalledWith("https://example.com");
   });
@@ -46,7 +52,20 @@ describe("desktop opener", () => {
   it("rejects blocked URLs before invoking Electron shell", async () => {
     const handler = getRegisteredOpenUrlHandler();
 
-    await expect(handler({}, "file:///etc/passwd")).rejects.toThrow("Unsupported external URL");
+    await expect(handler(trustedRendererEvent(), "file:///etc/passwd")).rejects.toThrow(
+      "Unsupported external URL",
+    );
+
+    expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("拒绝远程页面调用系统浏览器", async () => {
+    const handler = getRegisteredOpenUrlHandler();
+    const mainFrame = { url: "https://evil.example", origin: "https://evil.example" };
+
+    await expect(
+      handler({ sender: { mainFrame }, senderFrame: mainFrame }, "https://example.com"),
+    ).rejects.toThrow("拒绝来自非受信任页面的桌面 IPC");
 
     expect(shell.openExternal).not.toHaveBeenCalled();
   });

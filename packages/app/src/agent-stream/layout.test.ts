@@ -71,6 +71,20 @@ function thought(id: string, seed: number): Extract<StreamItem, { kind: "thought
   };
 }
 
+function compaction(
+  id: string,
+  seed: number,
+  turnId: string,
+): Extract<StreamItem, { kind: "compaction" }> {
+  return {
+    kind: "compaction",
+    id,
+    turnId,
+    timestamp: timestamp(seed),
+    status: "completed",
+  };
+}
+
 function timingFor(...ids: string[]): Map<string, TurnTiming> {
   const timing = {
     startedAt: timestamp(1),
@@ -813,6 +827,26 @@ describe("layoutStream", () => {
     )?.completedFooter;
     expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id]);
   });
+
+  it.each(["web", "android"] as const)(
+    "上下文压缩后仍在运行的 %s 当前回合过程保持展开",
+    (platform) => {
+      const turnId = "active-turn";
+      const activeTool = toolCall("post-compaction-tool", 4, turnId);
+      const layout = layoutFor({
+        platform,
+        agentStatus: "running",
+        tail: [
+          { ...userMessage("user", 1), turnId },
+          assistantMessage("before-compaction", 2, undefined, turnId),
+          compaction("compaction", 3, turnId),
+          activeTool,
+        ],
+      });
+
+      expect(findLayoutItem(layout, activeTool.id).completedFooter).toBeNull();
+    },
+  );
 
   it("当前实时区域从回合中间开始且仍在输出时保持展开", () => {
     const thoughtItem = thought("thought-1", 1);
