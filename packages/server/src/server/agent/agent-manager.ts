@@ -3854,19 +3854,17 @@ export class AgentManager {
     const deferredBroadcast = typeof broadcast === "function";
     let timelineRows: AgentTimelineRow[] = [];
     const providerSubagentEvents: AgentManagerEvent[] = [];
+    const providerSubagentHistoryEvents: Extract<
+      AgentStreamEvent,
+      { type: "provider_subagent" }
+    >[] = [];
     const historyEvents: Extract<AgentStreamEvent, { type: "timeline" }>[] = [];
     agent.historyPrimed = false;
     try {
       for await (const rawEvent of agent.session.streamHistory()) {
         const event = limitAgentStreamEventContent(rawEvent);
         if (event.type === "provider_subagent") {
-          const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
-          const managerEvent: AgentManagerEvent = { type: "provider_subagent", event: update };
-          if (deferredBroadcast) {
-            providerSubagentEvents.push(managerEvent);
-          } else if (broadcast) {
-            this.dispatch(managerEvent);
-          }
+          providerSubagentHistoryEvents.push(event);
           continue;
         }
         if (event.type !== "timeline") {
@@ -3876,6 +3874,23 @@ export class AgentManager {
           continue;
         }
         historyEvents.push(event);
+      }
+
+      const publishProviderSubagentEvent = (managerEvent: AgentManagerEvent): void => {
+        if (deferredBroadcast) {
+          providerSubagentEvents.push(managerEvent);
+        } else if (broadcast) {
+          this.dispatch(managerEvent);
+        }
+      };
+      if (providerSubagentHistoryEvents.length > 0) {
+        for (const event of this.providerSubagents.deleteParent(agent.id)) {
+          publishProviderSubagentEvent({ type: "provider_subagent", event });
+        }
+        for (const event of providerSubagentHistoryEvents) {
+          const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
+          publishProviderSubagentEvent({ type: "provider_subagent", event: update });
+        }
       }
 
       const reconciledRows = reconcileProviderHistory(

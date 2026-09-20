@@ -23,7 +23,7 @@ import { toErrorMessage } from "@/utils/error-messages";
 import {
   buildCodexProviderDefinition,
   buildEnvironmentVariables,
-  parseCodexProviderDefinition,
+  openCodexProviderInjectionForm,
   type OptionalBooleanDraft,
 } from "./codex-provider-injection-form";
 import { useCodexProviderInjections } from "./use-codex-provider-injections";
@@ -40,10 +40,7 @@ const dragIcon = <ThemedGrip size={ICON_SIZE.sm} uniProps={mutedColor} />;
 const editIcon = <ThemedPencil size={ICON_SIZE.sm} uniProps={mutedColor} />;
 const removeIcon = <ThemedTrash size={ICON_SIZE.sm} uniProps={mutedColor} />;
 
-interface EditTarget {
-  mode: "create" | "edit";
-  injection?: CodexProviderInjection;
-}
+type EditTarget = { mode: "create" } | { mode: "edit"; injection: CodexProviderInjection };
 
 interface ModelDraft {
   id: number;
@@ -250,7 +247,14 @@ export function CodexProviderInjectionSettings({ serverId }: { serverId: string 
           )}
         </View>
       </SettingsSection>
-      <InjectionEditModal target={editTarget} onClose={closeEditor} onSave={save} />
+      {editTarget ? (
+        <InjectionEditModal
+          key={editTarget.mode === "edit" ? `edit:${editTarget.injection.id}` : "create"}
+          target={editTarget}
+          onClose={closeEditor}
+          onSave={save}
+        />
+      ) : null}
     </>
   );
 }
@@ -399,7 +403,7 @@ function ModelInputRow({
     <View style={[styles.repeaterRow, first ? null : styles.repeaterRowBorder]}>
       <Text style={styles.rowIndex}>{index + 1}</Text>
       <FormTextInput
-        value={model.value}
+        initialValue={model.value}
         onChangeText={handleChange}
         autoCapitalize="none"
         autoCorrect={false}
@@ -454,7 +458,7 @@ function EnvironmentVariableInputRow({
   return (
     <View style={[styles.repeaterRow, first ? null : styles.repeaterRowBorder]}>
       <FormTextInput
-        value={variable.key}
+        initialValue={variable.key}
         onChangeText={handleKeyChange}
         placeholder={t("settings.host.codexProviderInjections.envNamePlaceholder")}
         autoCapitalize="characters"
@@ -464,7 +468,7 @@ function EnvironmentVariableInputRow({
         style={styles.envNameInput}
       />
       <FormTextInput
-        value={variable.value}
+        initialValue={variable.value}
         onChangeText={handleValueChange}
         placeholder={t("settings.host.codexProviderInjections.envValuePlaceholder")}
         autoCapitalize="none"
@@ -501,68 +505,47 @@ function InjectionEditModal({
   onClose,
   onSave,
 }: {
-  target: EditTarget | null;
+  target: EditTarget;
   onClose: () => void;
   onSave: (value: Omit<CodexProviderInjection, "id">) => Promise<void>;
-}): ReactElement | null {
+}): ReactElement {
   const { t } = useTranslation();
-  const entry = target?.injection;
-  const [name, setName] = useState("");
-  const [modelProvider, setModelProvider] = useState("");
-  const [models, setModels] = useState<ModelDraft[]>(() => [createModelDraft()]);
-  const [providerName, setProviderName] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [envKey, setEnvKey] = useState("");
-  const [requiresOpenAiAuth, setRequiresOpenAiAuth] = useState<OptionalBooleanDraft>("default");
-  const [supportsWebsockets, setSupportsWebsockets] = useState<OptionalBooleanDraft>("default");
-  const [environmentVariables, setEnvironmentVariables] = useState<EnvironmentVariableDraft[]>(
-    () => [createEnvironmentVariableDraft()],
+  const entry = target.mode === "edit" ? target.injection : undefined;
+  const [initialization] = useState(() => openCodexProviderInjectionForm(entry));
+  const initialDraft = initialization.draft;
+  const [name, setName] = useState(initialDraft.name);
+  const [modelProvider, setModelProvider] = useState(initialDraft.modelProvider);
+  const [models, setModels] = useState<ModelDraft[]>(() =>
+    initialDraft.models.map((model) => createModelDraft(model)),
   );
-  const [additionalDefinition, setAdditionalDefinition] = useState("{}");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [providerName, setProviderName] = useState(initialDraft.providerName);
+  const [baseUrl, setBaseUrl] = useState(initialDraft.baseUrl);
+  const [envKey, setEnvKey] = useState(initialDraft.envKey);
+  const [requiresOpenAiAuth, setRequiresOpenAiAuth] = useState<OptionalBooleanDraft>(
+    initialDraft.requiresOpenAiAuth,
+  );
+  const [supportsWebsockets, setSupportsWebsockets] = useState<OptionalBooleanDraft>(
+    initialDraft.supportsWebsockets,
+  );
+  const [environmentVariables, setEnvironmentVariables] = useState<EnvironmentVariableDraft[]>(() =>
+    initialDraft.environmentVariables.map(({ key, value }) =>
+      createEnvironmentVariableDraft(key, value),
+    ),
+  );
+  const [additionalDefinition, setAdditionalDefinition] = useState(
+    initialDraft.additionalDefinition,
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(initialDraft.advancedOpen);
+  const [error, setError] = useState<string | null>(() => {
+    if (!initialization.error) return null;
+    console.error(
+      "[codex-provider-injection] failed to read provider definition",
+      initialization.error,
+    );
+    return toErrorMessage(initialization.error);
+  });
   const [saving, setSaving] = useState(false);
   const isCompact = useIsCompactFormFactor();
-
-  useEffect(() => {
-    if (!target) return;
-    setName(entry?.name ?? "");
-    setModelProvider(entry?.modelProvider ?? "");
-    const configuredModels = entry ? getCodexProviderInjectionModels(entry) : [];
-    setModels(
-      configuredModels.length
-        ? configuredModels.map((model) => createModelDraft(model))
-        : [createModelDraft()],
-    );
-    const definition = entry?.definition ?? {};
-    try {
-      const definitionDraft = parseCodexProviderDefinition(definition);
-      setProviderName(definitionDraft.providerName);
-      setBaseUrl(definitionDraft.baseUrl);
-      setEnvKey(definitionDraft.envKey);
-      setRequiresOpenAiAuth(definitionDraft.requiresOpenAiAuth);
-      setSupportsWebsockets(definitionDraft.supportsWebsockets);
-      setAdditionalDefinition(JSON.stringify(definitionDraft.additionalDefinition, null, 2));
-      setAdvancedOpen(
-        Object.keys(definitionDraft.additionalDefinition).length > 0 ||
-          Boolean(definitionDraft.providerName && definitionDraft.providerName !== entry?.name),
-      );
-      setEnvironmentVariables(
-        entry?.env
-          ? Object.entries(entry.env).map(([key, value]) =>
-              createEnvironmentVariableDraft(key, value),
-            )
-          : [createEnvironmentVariableDraft()],
-      );
-      setError(null);
-    } catch (initializationError) {
-      console.error(
-        "[codex-provider-injection] failed to read provider definition",
-        initializationError,
-      );
-      setError(toErrorMessage(initializationError));
-    }
-  }, [entry, target]);
   const addModel = useCallback(() => {
     setModels((current) => [...current, createModelDraft()]);
   }, []);
@@ -653,12 +636,12 @@ function InjectionEditModal({
   const header = useMemo(
     () => ({
       title: t(
-        target?.mode === "edit"
+        target.mode === "edit"
           ? "settings.host.codexProviderInjections.editTitle"
           : "settings.host.codexProviderInjections.addTitle",
       ),
     }),
-    [t, target?.mode],
+    [t, target.mode],
   );
   const handleClose = useCallback(() => {
     if (!saving) onClose();
@@ -704,7 +687,6 @@ function InjectionEditModal({
     [handleClose, handleSubmit, saving, t],
   );
 
-  if (!target) return null;
   return (
     <AdaptiveModalSheet
       visible
@@ -719,7 +701,7 @@ function InjectionEditModal({
           <View style={styles.flexField}>
             <Field label={t("settings.host.codexProviderInjections.nameLabel")}>
               <FormTextInput
-                value={name}
+                initialValue={name}
                 onChangeText={setName}
                 placeholder={t("settings.host.codexProviderInjections.namePlaceholder")}
                 editable={!saving}
@@ -730,7 +712,7 @@ function InjectionEditModal({
           <View style={styles.flexField}>
             <Field label={t("settings.host.codexProviderInjections.providerIdLabel")}>
               <FormTextInput
-                value={modelProvider}
+                initialValue={modelProvider}
                 onChangeText={setModelProvider}
                 placeholder={t("settings.host.codexProviderInjections.providerIdPlaceholder")}
                 autoCapitalize="none"
@@ -744,7 +726,7 @@ function InjectionEditModal({
 
         <Field label={t("settings.host.codexProviderInjections.baseUrlLabel")}>
           <FormTextInput
-            value={baseUrl}
+            initialValue={baseUrl}
             onChangeText={setBaseUrl}
             placeholder="https://api.example.com/v1"
             autoCapitalize="none"
@@ -794,7 +776,7 @@ function InjectionEditModal({
           />
           <Field label={t("settings.host.codexProviderInjections.envKeyLabel")}>
             <FormTextInput
-              value={envKey}
+              initialValue={envKey}
               onChangeText={setEnvKey}
               placeholder="OPENAI_API_KEY"
               autoCapitalize="characters"
@@ -892,7 +874,7 @@ function InjectionEditModal({
                 hint={t("settings.host.codexProviderInjections.providerNameHint")}
               >
                 <FormTextInput
-                  value={providerName}
+                  initialValue={providerName}
                   onChangeText={setProviderName}
                   placeholder={name || t("settings.host.codexProviderInjections.namePlaceholder")}
                   editable={!saving}
@@ -900,7 +882,7 @@ function InjectionEditModal({
                 />
               </Field>
               <FormTextInput
-                value={additionalDefinition}
+                initialValue={additionalDefinition}
                 onChangeText={setAdditionalDefinition}
                 multiline
                 numberOfLines={5}

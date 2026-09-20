@@ -356,7 +356,7 @@ describe("ClaudeAgentSession sub-agent sidechain updates", () => {
     expect(providerEvents.at(-1)).toMatchObject({
       type: "upsert",
       id: "task-call-1",
-      title: "Explore",
+      title: "Inspect repository structure",
       description: "Inspect repository structure",
       status: "completed",
     });

@@ -270,6 +270,7 @@ requires_openai_auth = false
 
 然后打开 Codex 会话菜单，在**注入 Codex 服务商**下选择一个条目。Paseo 会同时通过 Codex app-server 顶层的 `modelProvider` 字段和 `config.model_provider` 发送同一个标识，并把 `definition` 写入 `config.model_providers[modelProvider]`。
 
+- 在 Host 设置中编辑已有条目时，显示名称、标识、模型、端点、凭据、能力选项、环境变量和额外参数都会从已保存快照完整回填；每次打开使用独立表单实例，取消或关闭不会污染下一次新建或编辑。
 - `modelProvider` 可以与用户全局 Codex 配置中已经使用的标识相同。多个注入条目也可以复用同一标识，因为一个会话每次只会物化当前选中的定义。不要在 `definition` 内重复填写 `model_provider`；该对象只对应 `[model_providers.<id>]` 表。
 - 尚未加载或已经释放运行时的会话会立即携带所选注入配置启动。已经加载的会话会完整重新加载，因为 Codex 不能原地切换已加载线程的服务商。
 - Paseo 会话保存所选条目 ID 和模型；凭据和服务商定义保留在守护进程配置中，仅在运行时启动时解析。

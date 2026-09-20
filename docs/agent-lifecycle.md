@@ -150,11 +150,13 @@ The collapsible track above the composer in an agent's pane (`packages/app/src/s
 parentAgentId === thisAgent.id  AND  !archivedAt
 ```
 
-- **Provider subagents** are child executions owned by Claude, Codex, or OpenCode. They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track.
+- **Provider subagents** are child executions owned by Claude, Codex, or OpenCode. They are not inserted into `AgentManager` as managed agents. Providers emit a separate descriptor and timeline stream through `agent.provider_subagents.*`; the client keeps that state outside the normal agent store and merges only the presentation rows into the track. The track contains only children created directly by the open parent. Provider grandchildren stay represented by their `Agent`/`Task` call inside the direct child's timeline instead of being flattened into the root track.
 
 Clicking either kind opens a workspace tab. A Paseo subagent tab is a normal interactive agent pane. A provider subagent tab is a read-only timeline pane with no composer, archive, detach, rewind, or fork actions. Both panes use `AgentStreamView`, so message, reasoning, tool-call, and layout rendering stay identical.
 
 Provider timelines use the same structural timeline item format but deliberately have a separate lifecycle and transport. A provider thread/session identifier is not a Paseo agent identifier, and closing its tab is always layout-only.
+
+Claude reports both a native task identifier and the parent `Agent` tool-call identifier for one execution. The provider must alias both identifiers to the tool-call identity before emitting a descriptor or timeline row. The initial `task_started` prompt becomes the child timeline's first user message. Child titles resolve in this order: explicit native name, task description, subagent type, generic fallback. The same rule applies during persisted-history replay: only native agent identifiers referenced by the direct parent's `Agent` results become rows, while identifiers launched from another sidechain are excluded from the root track. When a reopened runtime supplies provider-child history, `AgentManager` replaces the retained provider-child snapshot before applying that history; it must not append the same rows again. Providers that return no child history keep the retained snapshot.
 
 Archived Paseo subagents disappear from the track, by design. To remove one from the track without closing its tab, use the **archive button** on the row — it opens a confirm dialog and archives the subagent on confirm. Provider-owned rows have no individual Paseo lifecycle controls.
 

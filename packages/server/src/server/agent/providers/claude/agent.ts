@@ -5591,6 +5591,7 @@ function readClaudeHistoricalSubagentToolCalls(
 
 function readClaudeHistoricalSubagentToolResults(
   entries: ClaudeHistoryEntry[],
+  toolCalls: ReadonlyMap<string, ClaudeHistoricalSubagentToolCall>,
 ): Map<string, { toolCallId: string; failed: boolean }> {
   const results = new Map<string, { toolCallId: string; failed: boolean }>();
   for (const entry of entries) {
@@ -5598,7 +5599,13 @@ function readClaudeHistoricalSubagentToolResults(
     if (!Array.isArray(content)) continue;
     for (const value of content) {
       const block = toObjectRecord(value);
-      if (block?.type !== "tool_result" || typeof block.tool_use_id !== "string") continue;
+      if (
+        block?.type !== "tool_result" ||
+        typeof block.tool_use_id !== "string" ||
+        !toolCalls.has(block.tool_use_id)
+      ) {
+        continue;
+      }
       const match = /agentId:\s*([\w-]+)/.exec(JSON.stringify(block.content));
       if (!match?.[1]) continue;
       results.set(match[1], { toolCallId: block.tool_use_id, failed: block.is_error === true });
@@ -5627,8 +5634,15 @@ function buildClaudePersistedSidechainEvents(
 ): Extract<AgentStreamEvent, { type: "provider_subagent" }>[] {
   const events: Extract<AgentStreamEvent, { type: "provider_subagent" }>[] = [];
   const toolCalls = readClaudeHistoricalSubagentToolCalls(parentEntries);
-  const toolResults = readClaudeHistoricalSubagentToolResults(parentEntries);
+  const toolResults = readClaudeHistoricalSubagentToolResults(parentEntries, toolCalls);
+  const nestedToolCalls = readClaudeHistoricalSubagentToolCalls(sidechainEntries);
+  const nestedAgentIds = new Set(
+    readClaudeHistoricalSubagentToolResults(sidechainEntries, nestedToolCalls).keys(),
+  );
   for (const [agentId, entries] of groupClaudeSidechainEntries(sidechainEntries)) {
+    if (nestedAgentIds.has(agentId)) {
+      continue;
+    }
     events.push(
       ...buildClaudePersistedSidechainAgentEvents(
         agentId,
@@ -5645,7 +5659,7 @@ function buildClaudePersistedSidechainEvents(
 function resolveClaudeHistoricalSubagentTitle(
   toolCall: ClaudeHistoricalSubagentToolCall | undefined,
 ): string {
-  return toolCall?.name ?? toolCall?.subagentType ?? "Claude subagent";
+  return toolCall?.name ?? toolCall?.description ?? toolCall?.subagentType ?? "Claude subagent";
 }
 
 function buildClaudePersistedSidechainAgentEvents(

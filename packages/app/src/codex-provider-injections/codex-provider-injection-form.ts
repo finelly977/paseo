@@ -1,3 +1,8 @@
+import {
+  getCodexProviderInjectionModels,
+  type CodexProviderInjection,
+} from "@getpaseo/protocol/messages";
+
 export type OptionalBooleanDraft = "default" | "enabled" | "disabled";
 
 export interface CodexProviderDefinitionDraft {
@@ -12,6 +17,25 @@ export interface CodexProviderDefinitionDraft {
 export interface EnvironmentVariableInput {
   key: string;
   value: string;
+}
+
+export interface CodexProviderInjectionFormDraft {
+  name: string;
+  modelProvider: string;
+  models: string[];
+  providerName: string;
+  baseUrl: string;
+  envKey: string;
+  requiresOpenAiAuth: OptionalBooleanDraft;
+  supportsWebsockets: OptionalBooleanDraft;
+  environmentVariables: EnvironmentVariableInput[];
+  additionalDefinition: string;
+  advancedOpen: boolean;
+}
+
+export interface OpenCodexProviderInjectionFormResult {
+  draft: CodexProviderInjectionFormDraft;
+  error: Error | null;
 }
 
 const KNOWN_PROVIDER_DEFINITION_KEYS = new Set([
@@ -57,6 +81,60 @@ export function parseCodexProviderDefinition(
       Object.entries(definition).filter(([key]) => !KNOWN_PROVIDER_DEFINITION_KEYS.has(key)),
     ),
   };
+}
+
+function createBaseFormDraft(injection?: CodexProviderInjection): CodexProviderInjectionFormDraft {
+  const configuredModels = injection ? getCodexProviderInjectionModels(injection) : [];
+  return {
+    name: injection?.name ?? "",
+    modelProvider: injection?.modelProvider ?? "",
+    models: configuredModels.length ? [...configuredModels] : [""],
+    providerName: "",
+    baseUrl: "",
+    envKey: "",
+    requiresOpenAiAuth: "default",
+    supportsWebsockets: "default",
+    environmentVariables: injection?.env
+      ? Object.entries(injection.env).map(([key, value]) => ({ key, value }))
+      : [{ key: "", value: "" }],
+    additionalDefinition: "{}",
+    advancedOpen: false,
+  };
+}
+
+export function openCodexProviderInjectionForm(
+  injection?: CodexProviderInjection,
+): OpenCodexProviderInjectionFormResult {
+  const draft = createBaseFormDraft(injection);
+  if (!injection) return { draft, error: null };
+
+  try {
+    const definition = parseCodexProviderDefinition(injection.definition);
+    return {
+      draft: {
+        ...draft,
+        providerName: definition.providerName,
+        baseUrl: definition.baseUrl,
+        envKey: definition.envKey,
+        requiresOpenAiAuth: definition.requiresOpenAiAuth,
+        supportsWebsockets: definition.supportsWebsockets,
+        additionalDefinition: JSON.stringify(definition.additionalDefinition, null, 2),
+        advancedOpen:
+          Object.keys(definition.additionalDefinition).length > 0 ||
+          Boolean(definition.providerName && definition.providerName !== injection.name),
+      },
+      error: null,
+    };
+  } catch (error) {
+    return {
+      draft: {
+        ...draft,
+        additionalDefinition: JSON.stringify(injection.definition, null, 2),
+        advancedOpen: true,
+      },
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
 }
 
 function optionalBooleanValue(value: OptionalBooleanDraft): boolean | undefined {

@@ -223,6 +223,78 @@ test("reconciles provider history whenever a persisted agent starts a new runtim
   }
 });
 
+test("reopening a runtime replaces provider subagent history instead of appending it", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-provider-child-reopen-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentId = "00000000-0000-4000-8000-000000000220";
+  const handle: AgentPersistenceHandle = {
+    provider: "codex",
+    sessionId: "provider-child-reopen",
+    metadata: { provider: "codex", cwd: workdir },
+  };
+
+  class ProviderChildHistorySession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      yield {
+        type: "provider_subagent",
+        provider: "codex",
+        event: {
+          type: "upsert",
+          id: "child-thread",
+          title: "Review",
+          status: "completed",
+        },
+      };
+      yield {
+        type: "provider_subagent",
+        provider: "codex",
+        event: {
+          type: "timeline",
+          id: "child-thread",
+          item: { type: "assistant_message", text: "Child result" },
+        },
+      };
+    }
+  }
+
+  class ProviderChildHistoryClient extends TestAgentClient {
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      return new ProviderChildHistorySession({
+        provider: "codex",
+        cwd: config?.cwd ?? workdir,
+      });
+    }
+  }
+
+  const manager = new AgentManager({
+    clients: { codex: new ProviderChildHistoryClient() },
+    registry: storage,
+    logger,
+  });
+  try {
+    await manager.resumeAgentFromPersistence(handle, { cwd: workdir }, agentId);
+    await manager.hydrateTimelineFromProvider(agentId);
+    expect(manager.listProviderSubagents(agentId)).toHaveLength(1);
+    expect(manager.fetchProviderSubagentTimeline(agentId, "child-thread").rows).toHaveLength(1);
+
+    await manager.releaseAgentRuntime(agentId);
+    await manager.resumeAgentFromPersistence(handle, { cwd: workdir }, agentId);
+    await manager.hydrateTimelineFromProvider(agentId);
+
+    expect(manager.listProviderSubagents(agentId)).toHaveLength(1);
+    expect(manager.fetchProviderSubagentTimeline(agentId, "child-thread").rows).toHaveLength(1);
+  } finally {
+    if (manager.getAgent(agentId)) {
+      await manager.closeAgent(agentId).catch(() => undefined);
+    }
+    await storage.flush().catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("重新打开时清理重复的提供方助手消息并保留实时回合记录", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-assistant-history-duplicate-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

@@ -2,10 +2,53 @@ import { describe, expect, it } from "vitest";
 import {
   buildCodexProviderDefinition,
   buildEnvironmentVariables,
+  openCodexProviderInjectionForm,
   parseCodexProviderDefinition,
 } from "./codex-provider-injection-form";
 
 describe("Codex 服务商结构化表单", () => {
+  it("编辑已保存的服务商时用完整配置初始化表单", () => {
+    expect(
+      openCodexProviderInjectionForm({
+        id: "gateway",
+        name: "内部中转",
+        modelProvider: "internal_gateway",
+        models: ["gpt-5.4", "gpt-5.4-mini"],
+        definition: {
+          name: "Gateway",
+          base_url: "https://gateway.example/v1",
+          wire_api: "responses",
+          env_key: "GATEWAY_KEY",
+          requires_openai_auth: false,
+          supports_websockets: true,
+          request_max_retries: 3,
+        },
+        env: {
+          GATEWAY_KEY: "secret",
+          HTTPS_PROXY: "http://proxy.example:7890",
+        },
+      }),
+    ).toEqual({
+      draft: {
+        name: "内部中转",
+        modelProvider: "internal_gateway",
+        models: ["gpt-5.4", "gpt-5.4-mini"],
+        providerName: "Gateway",
+        baseUrl: "https://gateway.example/v1",
+        envKey: "GATEWAY_KEY",
+        requiresOpenAiAuth: "disabled",
+        supportsWebsockets: "enabled",
+        environmentVariables: [
+          { key: "GATEWAY_KEY", value: "secret" },
+          { key: "HTTPS_PROXY", value: "http://proxy.example:7890" },
+        ],
+        additionalDefinition: '{\n  "request_max_retries": 3\n}',
+        advancedOpen: true,
+      },
+      error: null,
+    });
+  });
+
   it("拆分常用字段并保留额外参数", () => {
     expect(
       parseCodexProviderDefinition({

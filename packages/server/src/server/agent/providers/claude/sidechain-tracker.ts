@@ -71,6 +71,8 @@ export class ClaudeSidechainTracker {
   private readonly activeSidechains = new Map<string, SubAgentActivityState>();
   private readonly canonicalSidechainIdByTaskId = new Map<string, string>();
   private readonly canonicalSidechainIdByToolUseId = new Map<string, string>();
+  private readonly startedToolUseIds = new Set<string>();
+  private readonly nestedSidechainIds = new Set<string>();
   private readonly contextBySidechainId = new Map<
     string,
     Pick<SubAgentActivityState, "name" | "subAgentType" | "description">
@@ -83,10 +85,16 @@ export class ClaudeSidechainTracker {
 
   handleMessage(message: SDKMessage, parentToolUseId: string): AgentStreamEvent[] {
     const canonicalId = this.resolveSidechainId(parentToolUseId);
+    if (this.nestedSidechainIds.has(parentToolUseId) || this.nestedSidechainIds.has(canonicalId)) {
+      return [];
+    }
     const state = this.getOrCreateSidechainState(canonicalId);
 
     const contextUpdated = this.updateSubAgentContextFromTaskInput(state, canonicalId);
     const actionCandidates = this.extractSubAgentActionCandidates(message);
+    const nestedRemovalEvents = actionCandidates.flatMap((action) =>
+      this.isSubagentTool(action.toolName) ? this.ignoreNestedSidechain(action.key) : [],
+    );
     const childTimelineItems = [
       ...this.extractSubAgentTimelineItems(message),
       ...this.extractSubAgentToolResults(message, state),
@@ -109,7 +117,7 @@ export class ClaudeSidechainTracker {
     }
 
     if (!contextUpdated && !actionUpdated && childTimelineItems.length === 0) {
-      return [];
+      return nestedRemovalEvents;
     }
 
     const toolCall = mapClaudeRunningToolCall({
@@ -135,13 +143,14 @@ export class ClaudeSidechainTracker {
     };
 
     return [
+      ...nestedRemovalEvents,
       {
         type: "provider_subagent",
         provider: "claude",
         event: {
           type: "upsert",
           id: canonicalId,
-          title: state.name ?? state.subAgentType ?? "Claude subagent",
+          title: state.name ?? state.description ?? state.subAgentType ?? "Claude subagent",
           description: state.description ?? null,
           status: "running",
           toolCallId: canonicalId,
@@ -176,27 +185,41 @@ export class ClaudeSidechainTracker {
     if (!taskId || !toolUseId || task.skip_transcript === true || !isSubagent) return [];
 
     const existingId = this.canonicalSidechainIdByTaskId.get(taskId);
-    if (!existingId) {
-      this.canonicalSidechainIdByTaskId.set(taskId, toolUseId);
-      this.canonicalSidechainIdByToolUseId.set(toolUseId, toolUseId);
-      this.rememberSubAgentContext(toolUseId, task);
-      return [];
+    const canonicalId = existingId ?? toolUseId;
+    const nested =
+      this.nestedSidechainIds.has(taskId) ||
+      this.nestedSidechainIds.has(toolUseId) ||
+      this.nestedSidechainIds.has(canonicalId);
+
+    this.canonicalSidechainIdByTaskId.set(taskId, canonicalId);
+    this.canonicalSidechainIdByToolUseId.set(taskId, canonicalId);
+    this.canonicalSidechainIdByToolUseId.set(toolUseId, canonicalId);
+
+    if (nested) {
+      this.nestedSidechainIds.add(taskId);
+      this.nestedSidechainIds.add(toolUseId);
+      this.nestedSidechainIds.add(canonicalId);
+      return this.removeActiveSidechains([taskId, toolUseId, canonicalId]);
     }
 
-    this.canonicalSidechainIdByToolUseId.set(toolUseId, existingId);
-    const state = this.getOrCreateSidechainState(existingId);
-    this.updateSubAgentContextFromTaskInput(state, existingId);
+    if (this.startedToolUseIds.has(toolUseId)) {
+      return [];
+    }
+    this.startedToolUseIds.add(toolUseId);
+    this.rememberSubAgentContext(canonicalId, task);
+    const state = this.getOrCreateSidechainState(canonicalId);
+    this.updateSubAgentContextFromTaskInput(state, canonicalId);
     const events: AgentStreamEvent[] = [
       {
         type: "provider_subagent",
         provider: "claude",
         event: {
           type: "upsert",
-          id: existingId,
-          title: state.name ?? state.subAgentType ?? "Claude subagent",
+          id: canonicalId,
+          title: state.name ?? state.description ?? state.subAgentType ?? "Claude subagent",
           description: state.description ?? null,
           status: "running",
-          toolCallId: existingId,
+          toolCallId: canonicalId,
         },
       },
     ];
@@ -207,7 +230,7 @@ export class ClaudeSidechainTracker {
         provider: "claude",
         event: {
           type: "timeline",
-          id: existingId,
+          id: canonicalId,
           item: { type: "user_message", text: prompt },
         },
       });
@@ -224,7 +247,7 @@ export class ClaudeSidechainTracker {
         event: {
           type: "upsert",
           id,
-          title: state.name ?? state.subAgentType ?? "Claude subagent",
+          title: state.name ?? state.description ?? state.subAgentType ?? "Claude subagent",
           description: state.description ?? null,
           status,
           toolCallId: id,
@@ -247,7 +270,7 @@ export class ClaudeSidechainTracker {
         event: {
           type: "upsert",
           id: canonicalId,
-          title: state.name ?? state.subAgentType ?? "Claude subagent",
+          title: state.name ?? state.description ?? state.subAgentType ?? "Claude subagent",
           description: state.description ?? null,
           status,
           toolCallId: canonicalId,
@@ -268,6 +291,8 @@ export class ClaudeSidechainTracker {
     this.clear();
     this.canonicalSidechainIdByTaskId.clear();
     this.canonicalSidechainIdByToolUseId.clear();
+    this.startedToolUseIds.clear();
+    this.nestedSidechainIds.clear();
     this.contextBySidechainId.clear();
   }
 
@@ -289,6 +314,36 @@ export class ClaudeSidechainTracker {
     } satisfies SubAgentActivityState;
     this.activeSidechains.set(id, state);
     return state;
+  }
+
+  private isSubagentTool(toolName: string): boolean {
+    return toolName === "Task" || toolName === "Agent";
+  }
+
+  private ignoreNestedSidechain(id: string): AgentStreamEvent[] {
+    const canonicalId = this.resolveSidechainId(id);
+    this.nestedSidechainIds.add(id);
+    this.nestedSidechainIds.add(canonicalId);
+    return this.removeActiveSidechains([id, canonicalId]);
+  }
+
+  private removeActiveSidechains(ids: readonly string[]): AgentStreamEvent[] {
+    const events: AgentStreamEvent[] = [];
+    const removed = new Set<string>();
+    for (const id of ids) {
+      for (const candidateId of new Set([id, this.resolveSidechainId(id)])) {
+        if (removed.has(candidateId) || !this.activeSidechains.delete(candidateId)) {
+          continue;
+        }
+        removed.add(candidateId);
+        events.push({
+          type: "provider_subagent",
+          provider: "claude",
+          event: { type: "remove", id: candidateId },
+        });
+      }
+    }
+    return events;
   }
 
   private extractSubAgentTimelineItems(message: SDKMessage): AgentTimelineItem[] {
