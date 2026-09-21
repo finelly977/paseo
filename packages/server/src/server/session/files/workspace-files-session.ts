@@ -1,4 +1,5 @@
 import type pino from "pino";
+import { relative } from "node:path";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import {
   encodeFileTransferFrame,
@@ -158,23 +159,28 @@ export class WorkspaceFilesSession {
     const token = {};
     let updateTimer: ReturnType<typeof setTimeout> | null = null;
     let updateBatchStartedAt: number | null = null;
+    const pendingChangedPaths = new Set<string>();
     const cancelPendingUpdate = () => {
       if (updateTimer) {
         clearTimeout(updateTimer);
         updateTimer = null;
       }
       updateBatchStartedAt = null;
+      pendingChangedPaths.clear();
     };
     const emitPendingUpdate = () => {
       updateTimer = null;
       updateBatchStartedAt = null;
       if (this.directorySubscriptions.get(request.subscriptionId)?.token !== token) return;
+      const paths = Array.from(pendingChangedPaths);
+      pendingChangedPaths.clear();
       this.host.emit({
         type: "fs.directory.update",
-        payload: { status: "changed", subscriptionId: request.subscriptionId },
+        payload: { status: "changed", subscriptionId: request.subscriptionId, paths },
       });
     };
-    const schedulePendingUpdate = () => {
+    const schedulePendingUpdate = (changedPaths: readonly string[]) => {
+      for (const changedPath of changedPaths) pendingChangedPaths.add(changedPath);
       const now = Date.now();
       updateBatchStartedAt ??= now;
       if (updateTimer) clearTimeout(updateTimer);
@@ -210,7 +216,9 @@ export class WorkspaceFilesSession {
           return;
         }
         if (events.length === 0) return;
-        schedulePendingUpdate();
+        schedulePendingUpdate(
+          events.map((event) => relative(cwd, event.path).replaceAll("\\", "/") || "."),
+        );
       });
       this.directorySubscriptions.set(request.subscriptionId, {
         token,

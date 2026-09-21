@@ -1194,7 +1194,7 @@ export class DaemonClient {
   >();
   private directorySubscriptions = new Map<
     string,
-    { cwd: string; onUpdate: () => void; onError: (error: Error) => void }
+    { cwd: string; onUpdate: (paths: readonly string[]) => void; onError: (error: Error) => void }
   >();
   private readonly terminalStreams = new TerminalStreamRouter();
   private pendingBinaryFileReads = new Map<string, PendingBinaryFileRead>();
@@ -2486,7 +2486,7 @@ export class DaemonClient {
         .then((payload) => {
           if (payload.status === "error") throw new Error(payload.error);
           if (this.directorySubscriptions.get(subscriptionId) === subscription) {
-            subscription.onUpdate();
+            subscription.onUpdate([]);
           }
           return null;
         })
@@ -4583,7 +4583,7 @@ export class DaemonClient {
 
   async subscribeWorkspaceDirectory(
     input: { cwd: string },
-    onUpdate: () => void,
+    onUpdate: (paths: readonly string[]) => void,
     onError: (error: Error) => void,
   ): Promise<{ unsubscribe: () => Promise<void> }> {
     const subscriptionId = this.createRequestId();
@@ -4600,7 +4600,7 @@ export class DaemonClient {
       });
       if (payload.status === "error") throw new Error(payload.error);
       if (this.directorySubscriptions.get(subscriptionId) === subscription) {
-        subscription.onUpdate();
+        subscription.onUpdate([]);
       }
       return {
         unsubscribe: async () => {
@@ -6313,7 +6313,9 @@ export class DaemonClient {
       const subscription = this.directorySubscriptions.get(consumerMessage.payload.subscriptionId);
       if (subscription) {
         if (consumerMessage.payload.status === "changed") {
-          subscription.onUpdate();
+          // COMPAT(directory-update-paths): added in v0.2.2; remove after 2027-03-21.
+          // Older daemons omit paths, which requests a full refresh of known directories.
+          subscription.onUpdate(consumerMessage.payload.paths ?? []);
         } else {
           const error = new Error(consumerMessage.payload.error);
           this.logger.error(

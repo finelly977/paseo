@@ -35,9 +35,9 @@ When the app fetches `direction: "after"` and the daemon responds with `hasNewer
 
 Initialization timeouts guard lack of catch-up progress, not the full multi-page sync. A successful page that queues the next `after` page refreshes the watchdog.
 
-The first load of an agent without a local cursor is different: it fetches a bounded latest tail page. Older history remains user-driven by scrolling upward.
+The first load of an agent without a local cursor is different: it fetches a bounded latest tail page. When a configured initial conversation target reaches farther back, the visible-timeline synchronizer backfills toward that target one bounded page at a time after the first page has become usable. History before that target remains user-driven by scrolling upward.
 
-首次打开或恢复没有本地游标的会话时，只读取一页有界的最新尾部；更早的历史仍由用户向上滚动时加载。
+首次打开或恢复没有本地游标的会话时，首个响应只读取一页有界的最新尾部，不能因为配置了较多对话轮次就一次返回整段长历史。首屏可用后，可见会话同步器按页向前补齐配置的最近轮次；超过该目标的更早历史仍由用户向上滚动时加载。
 
 补载或订阅协调失败后会自动重试，间隔从 1 秒开始翻倍，最高 30 秒。固定每秒重试会让持续存在的守护进程拒绝（例如同一 Codex 线程已有活动写入者）在应用空闲时也不断产生请求和日志。成功、重连、传输模式变化或真正的可见会话集合变化会重置间隔；重复发布完全相同的可见集合是空操作，不能绕过退避。
 

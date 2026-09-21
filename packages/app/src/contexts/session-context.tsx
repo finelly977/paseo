@@ -824,7 +824,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       fetchPage: async (agentId, request) => {
         const session = useSessionStore.getState().sessions[serverId];
         const initKey = getInitKey(serverId, agentId);
-        const shouldInitialize = session?.agentAuthoritativeHistoryApplied.get(agentId) !== true;
+        const shouldInitialize =
+          request.direction !== "before" &&
+          session?.agentAuthoritativeHistoryApplied.get(agentId) !== true;
         if (shouldInitialize) {
           if (!getInitDeferred(initKey)) {
             const deferred = createInitDeferred(initKey, request.direction ?? "tail");

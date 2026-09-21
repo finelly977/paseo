@@ -6721,6 +6721,7 @@ export class Session {
             rows: timeline.rows,
             bounds: timeline.window,
             conversationLimit: input.conversationLimit,
+            itemLimit: input.pageLimit,
           })
         : selectProjectedTimelinePage({
             rows: timeline.rows,

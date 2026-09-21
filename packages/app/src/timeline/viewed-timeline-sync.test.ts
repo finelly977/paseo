@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import type { ProjectedTimelineForwardFetchPlan } from "./timeline-sync-plan";
+import type { ProjectedTimelineFetchPlan } from "./timeline-sync-plan";
 import {
   createViewedTimelineSync,
   VIEWED_TIMELINE_UNSUBSCRIBE_GRACE_MS,
@@ -29,13 +29,20 @@ interface MembershipRequest {
 
 interface TimelineFetch {
   agentId: string;
-  request: ProjectedTimelineForwardFetchPlan;
-  respond(input: { hasNewer: boolean; seq?: number }): void;
+  request: ProjectedTimelineFetchPlan;
+  respond(input: {
+    hasNewer: boolean;
+    seq?: number;
+    hasOlder?: boolean;
+    startSeq?: number;
+    conversationSeqs?: number[];
+  }): void;
   fail(message: string): void;
 }
 
 class TimelineWorld {
   readonly errors: string[] = [];
+  private initialConversationLimit: number | undefined;
   readonly sync = createViewedTimelineSync({
     initialDeliveryMode: "selective",
     initialConnected: false,
@@ -51,18 +58,27 @@ class TimelineWorld {
     },
     readCursor: (agentId) => this.cursors.get(agentId),
     hasAuthoritativeHistory: (agentId) => this.authoritativeHistory.has(agentId),
+    getInitialConversationLimit: () => this.initialConversationLimit,
     fetchPage: async (agentId, request) => {
       const result = deferred<{
         hasNewer: boolean;
         endCursor: { epoch: string; seq: number } | null;
+        hasOlder: boolean;
+        startCursor: { epoch: string; seq: number } | null;
+        conversationIndex?: Array<{ seqStart: number }>;
       }>();
       this.fetches.push({
         agentId,
         request,
-        respond: ({ hasNewer, seq = 1 }) =>
+        respond: ({ hasNewer, seq = 1, hasOlder = false, startSeq = 1, conversationSeqs }) =>
           result.resolve({
             hasNewer,
             endCursor: { epoch: `epoch-${agentId}`, seq },
+            hasOlder,
+            startCursor: { epoch: `epoch-${agentId}`, seq: startSeq },
+            ...(conversationSeqs
+              ? { conversationIndex: conversationSeqs.map((seqStart) => ({ seqStart })) }
+              : {}),
           }),
         fail: (message) => result.reject(new Error(message)),
       });
@@ -113,6 +129,10 @@ class TimelineWorld {
 
   setLiveCursor(agentId: string, endSeq: number): void {
     this.cursors.set(agentId, { epoch: `epoch-${agentId}`, startSeq: 1, endSeq });
+  }
+
+  setInitialConversationLimit(limit: number): void {
+    this.initialConversationLimit = limit;
   }
 
   nextMembership(): Promise<MembershipRequest> {
@@ -194,6 +214,50 @@ test("uses a tail fetch when a live cursor is not authoritative", async () => {
   const fetch = await world.nextFetch("agent-a");
   expect(fetch.request).toEqual({ direction: "tail", limit: 40, projection: "projected" });
   fetch.respond({ hasNewer: false });
+});
+
+test("首屏尾页有界返回后分批补齐设置要求的最近对话", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(50);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const membership = await world.nextMembership();
+  membership.succeed();
+
+  const tail = await world.nextFetch("agent-a");
+  expect(tail.request).toEqual({
+    direction: "tail",
+    limit: 40,
+    conversationLimit: 50,
+    projection: "projected",
+  });
+  tail.respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: 42,
+    conversationSeqs: [1],
+  });
+  const older = await world.nextFetch("agent-a");
+  expect(older.request).toEqual({
+    direction: "before",
+    cursor: { epoch: "epoch-agent-a", seq: 42 },
+    limit: 40,
+    projection: "projected",
+  });
+  older.respond({ hasNewer: false, hasOlder: true, startSeq: 2 });
+
+  const oldest = await world.nextFetch("agent-a");
+  expect(oldest.request).toEqual({
+    direction: "before",
+    cursor: { epoch: "epoch-agent-a", seq: 2 },
+    limit: 40,
+    projection: "projected",
+  });
+  oldest.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+
+  await vi.waitFor(() => {
+    expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  });
 });
 
 test("unchanged visible-set publication does not cancel paged catch-up", async () => {
@@ -987,7 +1051,12 @@ test("a sync created while already connected subscribes without a setConnected t
     },
     readCursor: () => undefined,
     hasAuthoritativeHistory: () => false,
-    fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+    fetchPage: async () => ({
+      hasNewer: false,
+      endCursor: null,
+      hasOlder: false,
+      startCursor: null,
+    }),
     reportError: () => {},
     schedule: () => () => {},
   });

@@ -1921,6 +1921,7 @@ test("工作区目录订阅在断线重连后恢复并可完整取消", async ()
   );
   const subscription = await subscribePromise;
   expect(onUpdate).toHaveBeenCalledTimes(1);
+  expect(onUpdate).toHaveBeenLastCalledWith([]);
 
   first.triggerClose({ code: 1006, reason: "测试断线" });
   await vi.advanceTimersByTimeAsync(5);
@@ -1944,13 +1945,19 @@ test("工作区目录订阅在断线重连后恢复并可完整取消", async ()
     }),
   );
   await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2));
+  expect(onUpdate).toHaveBeenLastCalledWith([]);
   second.triggerMessage(
     wrapSessionMessage({
       type: "fs.directory.update",
-      payload: { status: "changed", subscriptionId },
+      payload: {
+        status: "changed",
+        subscriptionId,
+        paths: ["src/features/new-file.ts"],
+      },
     }),
   );
   expect(onUpdate).toHaveBeenCalledTimes(3);
+  expect(onUpdate).toHaveBeenLastCalledWith(["src/features/new-file.ts"]);
   expect(onError).not.toHaveBeenCalled();
 
   const unsubscribePromise = subscription.unsubscribe();

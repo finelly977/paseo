@@ -5574,6 +5574,8 @@ export const DirectoryUpdateSchema = z.object({
     z.object({
       status: z.literal("changed"),
       subscriptionId: z.string(),
+      // COMPAT(directory-update-paths): added in v0.2.2; remove optional after 2027-03-21.
+      paths: z.array(z.string()).optional(),
     }),
     z.object({
       status: z.literal("error"),

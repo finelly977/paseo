@@ -47,9 +47,23 @@ describe("workspace file editing messages", () => {
     expect(
       DirectoryUpdateSchema.parse({
         type: "fs.directory.update",
-        payload: { status: "changed", subscriptionId: "directory-1" },
-      }).payload.status,
-    ).toBe("changed");
+        payload: {
+          status: "changed",
+          subscriptionId: "directory-1",
+          paths: ["src/features/new-file.ts"],
+        },
+      }).payload,
+    ).toEqual({
+      status: "changed",
+      subscriptionId: "directory-1",
+      paths: ["src/features/new-file.ts"],
+    });
+    expect(
+      DirectoryUpdateSchema.parse({
+        type: "fs.directory.update",
+        payload: { status: "changed", subscriptionId: "legacy-directory" },
+      }).payload,
+    ).toEqual({ status: "changed", subscriptionId: "legacy-directory" });
     expect(
       DirectoryUnsubscribeRequestSchema.parse({
         type: "fs.directory.unsubscribe.request",

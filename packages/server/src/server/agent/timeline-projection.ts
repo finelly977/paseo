@@ -557,6 +557,7 @@ export function selectProjectedTimelineTailByConversationLimit(input: {
   rows: readonly AgentTimelineRow[];
   bounds?: { minSeq: number; maxSeq: number };
   conversationLimit: number;
+  itemLimit: number;
 }): ProjectedTimelinePageSelection {
   const bounds = input.bounds ?? getTimelineBounds(input.rows);
   const entries = projectTimelineRows({ rows: input.rows, mode: "projected" });
@@ -578,22 +579,25 @@ export function selectProjectedTimelineTailByConversationLimit(input: {
     }
   }
 
-  if (userMessageIndexes.length === 0) {
-    return {
-      entries,
-      startSeq: entries[0]?.seqStart ?? null,
-      endSeq: entries.at(-1)?.seqEnd ?? null,
-      hasOlder: false,
-      hasNewer: false,
-    };
-  }
-
   const firstConversationIndex =
-    userMessageIndexes[Math.max(0, userMessageIndexes.length - conversationLimit)];
-  if (firstConversationIndex === undefined) {
-    throw new Error("无法确定对话历史的起始位置");
+    userMessageIndexes.length === 0
+      ? 0
+      : userMessageIndexes[Math.max(0, userMessageIndexes.length - conversationLimit)];
+  if (firstConversationIndex === undefined) throw new Error("无法确定对话历史的起始位置");
+  const conversationStartSeq = entries[firstConversationIndex]?.seqStart;
+  if (conversationStartSeq === undefined) throw new Error("无法确定对话历史的起始序号");
+
+  const scopedRows = input.rows.filter((row) => row.seq >= conversationStartSeq);
+  const page = selectTimelineWindowByProjectedLimit({
+    rows: scopedRows,
+    direction: "tail",
+    limit: input.itemLimit,
+  });
+  let selected = page.projectedEntries;
+  const firstUserMessageIndex = selected.findIndex((entry) => entry.item.type === "user_message");
+  if (firstUserMessageIndex > 0) {
+    selected = selected.slice(firstUserMessageIndex);
   }
-  const selected = entries.slice(firstConversationIndex);
   const startSeq = selected[0]?.seqStart ?? null;
   const endSeq = selected.at(-1)?.seqEnd ?? null;
   return {

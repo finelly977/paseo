@@ -2,7 +2,7 @@ import type { ExplorerDirectory } from "@/stores/session-store";
 import { isHiddenExplorerPath } from "./visibility";
 
 interface RefreshExplorerDirectoriesInput {
-  expandedPaths: ReadonlySet<string>;
+  directoryPaths: ReadonlySet<string>;
   showHiddenFiles: boolean;
   shouldContinue: () => boolean;
   requestDirectoryListing: (path: string) => Promise<ExplorerDirectory | null>;
@@ -13,13 +13,13 @@ interface RefreshExplorerDirectoriesResult {
 }
 
 export async function refreshExplorerDirectories({
-  expandedPaths,
+  directoryPaths: requestedDirectoryPaths,
   showHiddenFiles,
   shouldContinue,
   requestDirectoryListing,
 }: RefreshExplorerDirectoriesInput): Promise<RefreshExplorerDirectoriesResult> {
   if (!shouldContinue()) return { missingPaths: [] };
-  const directoryPaths = Array.from(expandedPaths).filter(
+  const directoryPaths = Array.from(requestedDirectoryPaths).filter(
     (path) => showHiddenFiles || !isHiddenExplorerPath(path),
   );
   if (!directoryPaths.includes(".")) directoryPaths.unshift(".");
@@ -56,6 +56,61 @@ export async function refreshExplorerDirectories({
   }
 
   return { missingPaths: Array.from(missingPaths) };
+}
+
+export function collectExplorerRefreshPaths({
+  expandedPaths,
+  cachedDirectoryPaths,
+  changedPaths,
+  refreshAllKnownDirectories,
+}: {
+  expandedPaths: ReadonlySet<string>;
+  cachedDirectoryPaths: ReadonlySet<string>;
+  changedPaths?: readonly string[];
+  refreshAllKnownDirectories?: boolean;
+}): ReadonlySet<string> {
+  const knownDirectoryPaths = new Set([...expandedPaths, ...cachedDirectoryPaths]);
+  const refreshPaths = new Set<string>();
+
+  if (refreshAllKnownDirectories || !changedPaths || changedPaths.length === 0) {
+    for (const path of knownDirectoryPaths) {
+      addExplorerPathWithAncestors(refreshPaths, path);
+    }
+  }
+
+  if (changedPaths) {
+    for (const changedPath of changedPaths) {
+      const normalizedPath = normalizeExplorerPath(changedPath);
+      addExplorerPathWithAncestors(refreshPaths, explorerParentPath(normalizedPath));
+      if (knownDirectoryPaths.has(normalizedPath)) {
+        addExplorerPathWithAncestors(refreshPaths, normalizedPath);
+      }
+    }
+  }
+
+  addExplorerPathWithAncestors(refreshPaths, ".");
+  return new Set(
+    Array.from(refreshPaths).sort((left, right) => {
+      const depthDifference = explorerPathDepth(left) - explorerPathDepth(right);
+      return depthDifference === 0 ? left.localeCompare(right) : depthDifference;
+    }),
+  );
+}
+
+function addExplorerPathWithAncestors(paths: Set<string>, path: string): void {
+  const pending: string[] = [];
+  let currentPath = path;
+  while (!paths.has(currentPath)) {
+    pending.push(currentPath);
+    if (currentPath === ".") break;
+    currentPath = explorerParentPath(currentPath);
+  }
+  for (const ancestor of pending.toReversed()) paths.add(ancestor);
+}
+
+function normalizeExplorerPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
+  return normalized.length === 0 ? "." : normalized;
 }
 
 function explorerPathDepth(path: string): number {

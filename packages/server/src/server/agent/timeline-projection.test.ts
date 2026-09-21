@@ -707,6 +707,7 @@ describe("selectProjectedTimelineTailByConversationLimit", () => {
     const page = selectProjectedTimelineTailByConversationLimit({
       rows,
       conversationLimit: 2,
+      itemLimit: 40,
     });
 
     expect(page.entries.map((entry) => entry.item.type)).toEqual([
@@ -733,11 +734,43 @@ describe("selectProjectedTimelineTailByConversationLimit", () => {
     const page = selectProjectedTimelineTailByConversationLimit({
       rows,
       conversationLimit: 50,
+      itemLimit: 40,
     });
 
     expect(page.entries).toHaveLength(1);
     expect(page.startSeq).toBe(4);
     expect(page.endSeq).toBe(4);
     expect(page.hasOlder).toBe(false);
+  });
+
+  test("超长的最近一轮也只返回一页投影记录，避免打开会话时阻塞界面", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-09-21T00:00:00.000Z",
+        item: { type: "user_message", text: "检查整个项目" },
+      },
+      ...Array.from({ length: 80 }, (_, index) => ({
+        seq: index + 2,
+        timestamp: "2026-09-21T00:00:01.000Z",
+        item: {
+          type: "assistant_message" as const,
+          text: `过程 ${index}`,
+          messageId: `message-${index}`,
+        },
+      })),
+    ];
+
+    const page = selectProjectedTimelineTailByConversationLimit({
+      rows,
+      conversationLimit: 50,
+      itemLimit: 40,
+    });
+
+    expect(page.entries).toHaveLength(40);
+    expect(page.startSeq).toBe(42);
+    expect(page.endSeq).toBe(81);
+    expect(page.hasOlder).toBe(true);
+    expect(page.hasNewer).toBe(false);
   });
 });

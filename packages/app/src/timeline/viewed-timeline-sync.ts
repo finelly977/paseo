@@ -3,13 +3,18 @@ import {
   planInitialAgentTimelineSync,
   planResumeTimelineSync,
   planTimelineCatchUpAfter,
+  planTimelineOlderFetch,
   planTimelineTailFetch,
+  type ProjectedTimelineFetchPlan,
   type ProjectedTimelineForwardFetchPlan,
 } from "./timeline-sync-plan";
 
 interface TimelinePageResult {
   hasNewer: boolean;
   endCursor: { epoch: string; seq: number } | null;
+  hasOlder: boolean;
+  startCursor: { epoch: string; seq: number } | null;
+  conversationIndex?: ReadonlyArray<{ seqStart: number }>;
 }
 
 interface ViewedTimelineSyncPorts {
@@ -28,10 +33,7 @@ interface ViewedTimelineSyncPorts {
   readCursor(agentId: string): AgentTimelineCursorState | undefined;
   hasAuthoritativeHistory(agentId: string): boolean;
   getInitialConversationLimit?(): number | undefined;
-  fetchPage(
-    agentId: string,
-    request: ProjectedTimelineForwardFetchPlan,
-  ): Promise<TimelinePageResult>;
+  fetchPage(agentId: string, request: ProjectedTimelineFetchPlan): Promise<TimelinePageResult>;
   reportError(error: unknown): void;
   schedule(task: () => void, delayMs: number): () => void;
 }
@@ -110,6 +112,42 @@ function sameAgentIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((agentId, index) => agentId === right[index]);
 }
 
+function getInitialConversationBackfillTarget(
+  request: ProjectedTimelineForwardFetchPlan,
+  page: TimelinePageResult,
+): { cursor: { epoch: string; seq: number }; targetSeq: number } | null {
+  if (request.direction !== "tail" || request.conversationLimit === undefined) return null;
+  if (!page.hasOlder || !page.startCursor || !page.conversationIndex?.length) return null;
+  const targetConversation =
+    page.conversationIndex[Math.max(0, page.conversationIndex.length - request.conversationLimit)];
+  if (!targetConversation || page.startCursor.seq <= targetConversation.seqStart) return null;
+  return { cursor: page.startCursor, targetSeq: targetConversation.seqStart };
+}
+
+async function backfillInitialConversationHistory(input: {
+  agentId: string;
+  cursor: { epoch: string; seq: number };
+  targetSeq: number;
+  fetchPage: ViewedTimelineSyncPorts["fetchPage"];
+  isCurrent: () => boolean;
+}): Promise<boolean> {
+  let cursor = input.cursor;
+  while (cursor.seq > input.targetSeq) {
+    const olderPage = await input.fetchPage(input.agentId, planTimelineOlderFetch(cursor));
+    if (!input.isCurrent()) return false;
+    const nextCursor = olderPage.startCursor;
+    if (!nextCursor || nextCursor.seq >= cursor.seq) {
+      if (olderPage.hasOlder) {
+        throw new Error(`Timeline history page for ${input.agentId} made no backward progress`);
+      }
+      return true;
+    }
+    cursor = nextCursor;
+    if (!olderPage.hasOlder) return true;
+  }
+  return true;
+}
+
 export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): ViewedTimelineSync {
   const sources = new Map<string, string[]>();
   const catchUps = new Map<string, CatchUpState>();
@@ -140,6 +178,12 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
 
   const isAcknowledged = (agentId: string) => acknowledged.includes(agentId);
   const isDesired = (agentId: string) => desired.includes(agentId);
+  const isCatchUpCurrent = (agentId: string, generation: number) =>
+    !disposed &&
+    connected &&
+    isDesired(agentId) &&
+    isAcknowledged(agentId) &&
+    catchUps.get(agentId)?.generation === generation;
 
   const notifyListeners = () => {
     for (const listener of listeners) listener();
@@ -175,33 +219,27 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     generation: number,
     request: ProjectedTimelineForwardFetchPlan,
   ): Promise<void> => {
-    if (
-      disposed ||
-      !connected ||
-      !isDesired(agentId) ||
-      !isAcknowledged(agentId) ||
-      catchUps.get(agentId)?.generation !== generation
-    ) {
-      return;
-    }
+    if (!isCatchUpCurrent(agentId, generation)) return;
 
     try {
       const page = await ports.fetchPage(agentId, request);
-      if (
-        disposed ||
-        !connected ||
-        !isDesired(agentId) ||
-        !isAcknowledged(agentId) ||
-        catchUps.get(agentId)?.generation !== generation
-      ) {
-        return;
-      }
+      if (!isCatchUpCurrent(agentId, generation)) return;
       if (page.hasNewer && page.endCursor) {
         await fetchUntilCurrent(agentId, generation, planTimelineCatchUpAfter(page.endCursor));
         return;
       }
       if (page.hasNewer) {
         throw new Error(`Timeline page for ${agentId} hasNewer without an end cursor`);
+      }
+      const backfillTarget = getInitialConversationBackfillTarget(request, page);
+      if (backfillTarget) {
+        const completed = await backfillInitialConversationHistory({
+          agentId,
+          ...backfillTarget,
+          fetchPage: ports.fetchPage,
+          isCurrent: () => isCatchUpCurrent(agentId, generation),
+        });
+        if (!completed) return;
       }
       catchUps.set(agentId, { generation, status: "complete" });
       setVisibilityCatchUpReady(agentId);

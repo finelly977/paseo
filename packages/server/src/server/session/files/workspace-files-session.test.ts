@@ -158,7 +158,7 @@ describe("WorkspaceFilesSession", () => {
 
     directoryObserver.emit([
       { type: "create", path: join(cwd, "first.txt") },
-      { type: "update", path: join(cwd, "second.txt") },
+      { type: "update", path: join(cwd, "src", "nested", "second.txt") },
     ]);
     await vi.advanceTimersByTimeAsync(100);
     directoryObserver.emit([{ type: "update", path: join(cwd, "third.txt") }]);
@@ -167,7 +167,11 @@ describe("WorkspaceFilesSession", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(emitted.at(-1)).toEqual({
       type: "fs.directory.update",
-      payload: { status: "changed", subscriptionId: "directory-1" },
+      payload: {
+        status: "changed",
+        subscriptionId: "directory-1",
+        paths: ["first.txt", "src/nested/second.txt", "third.txt"],
+      },
     });
 
     await subsystem.handleDirectoryUnsubscribeRequest({
@@ -214,7 +218,22 @@ describe("WorkspaceFilesSession", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(emitted.at(-1)).toEqual({
       type: "fs.directory.update",
-      payload: { status: "changed", subscriptionId: "directory-sustained" },
+      payload: {
+        status: "changed",
+        subscriptionId: "directory-sustained",
+        paths: [
+          "first.txt",
+          "1.txt",
+          "2.txt",
+          "3.txt",
+          "4.txt",
+          "5.txt",
+          "6.txt",
+          "7.txt",
+          "8.txt",
+          "9.txt",
+        ],
+      },
     });
 
     await subsystem.dispose();

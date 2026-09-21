@@ -38,7 +38,7 @@ import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stor
 import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { isHiddenExplorerPath } from "@/file-explorer/visibility";
-import { refreshExplorerDirectories } from "@/file-explorer/refresh";
+import { collectExplorerRefreshPaths, refreshExplorerDirectories } from "@/file-explorer/refresh";
 import { createExplorerRefreshQueue } from "@/file-explorer/refresh-queue";
 import {
   flattenExplorerTree,
@@ -451,11 +451,20 @@ export function FileExplorerPane({
   ]);
 
   const refreshExplorer = useCallback(
-    async (shouldContinue: () => boolean) => {
+    async (
+      shouldContinue: () => boolean,
+      changedPaths?: readonly string[],
+      refreshAllKnownDirectories?: boolean,
+    ) => {
       if (!hasWorkspaceScope) return null;
       const shouldShowHiddenFiles = usePanelStore.getState().explorerShowHiddenFiles;
       const { missingPaths } = await refreshExplorerDirectories({
-        expandedPaths,
+        directoryPaths: collectExplorerRefreshPaths({
+          expandedPaths,
+          cachedDirectoryPaths: new Set(directories.keys()),
+          changedPaths,
+          refreshAllKnownDirectories,
+        }),
         showHiddenFiles: shouldShowHiddenFiles,
         shouldContinue,
         requestDirectoryListing: (path) =>
@@ -476,6 +485,7 @@ export function FileExplorerPane({
     },
     [
       expandedPaths,
+      directories,
       hasWorkspaceScope,
       requestDirectoryListing,
       setExpandedPathsForWorkspace,
@@ -492,9 +502,19 @@ export function FileExplorerPane({
     if (!client || !hasWorkspaceScope || !supportsDirectoryObservation) return;
     let disposed = false;
     let unsubscribe: (() => Promise<void>) | null = null;
+    let refreshAllKnownDirectories = false;
+    const pendingChangedPaths = new Set<string>();
     const refreshQueue = createExplorerRefreshQueue({
       refresh: async (isCurrent) => {
-        await latestRefreshExplorerRef.current(isCurrent);
+        const changedPaths = Array.from(pendingChangedPaths);
+        const shouldRefreshAllKnownDirectories = refreshAllKnownDirectories;
+        refreshAllKnownDirectories = false;
+        pendingChangedPaths.clear();
+        await latestRefreshExplorerRef.current(
+          isCurrent,
+          changedPaths,
+          shouldRefreshAllKnownDirectories,
+        );
       },
       onError: (refreshError) => {
         console.error("自动刷新工作区文件列表失败", refreshError);
@@ -503,8 +523,14 @@ export function FileExplorerPane({
     void client
       .subscribeWorkspaceDirectory(
         { cwd: normalizedWorkspaceRoot },
-        () => {
-          if (!disposed) refreshQueue.request();
+        (changedPaths) => {
+          if (disposed) return;
+          if (changedPaths.length === 0) {
+            refreshAllKnownDirectories = true;
+          } else {
+            for (const path of changedPaths) pendingChangedPaths.add(path);
+          }
+          refreshQueue.request();
         },
         (observationError) => console.error("工作区文件列表实时更新已中断", observationError),
       )

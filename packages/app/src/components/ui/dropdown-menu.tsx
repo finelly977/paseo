@@ -35,6 +35,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { isWeb } from "@/constants/platform";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
 import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
+import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
 
 // Action status for menu items with loading/success feedback
 export type ActionStatus = "idle" | "pending" | "success";
@@ -337,15 +338,24 @@ export interface DropdownMenuTriggerProps extends Omit<PressableProps, "style" |
 export function DropdownMenuTrigger({
   children,
   disabled,
+  onPress,
   style,
   ...props
 }: DropdownMenuTriggerProps): ReactElement {
   const ctx = useDropdownMenuContext("DropdownMenuTrigger");
 
-  const handlePress = useCallback(() => {
-    if (disabled) return;
-    ctx.setOpen(!ctx.open);
-  }, [disabled, ctx]);
+  const handlePress = useCallback(
+    (event: Parameters<NonNullable<PressableProps["onPress"]>>[0]) => {
+      activateDropdownMenuTrigger({
+        event,
+        disabled,
+        open: ctx.open,
+        setOpen: ctx.setOpen,
+        ...(onPress ? { onPress } : {}),
+      });
+    },
+    [disabled, ctx.open, ctx.setOpen, onPress],
+  );
   const pressableStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => {
       if (typeof style === "function") {
