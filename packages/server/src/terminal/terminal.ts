@@ -3,7 +3,15 @@ import xterm, { type Terminal as TerminalType } from "@xterm/headless";
 import { randomUUID } from "crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
-import { basename, delimiter, dirname, extname, join, resolve as resolvePath } from "node:path";
+import {
+  basename,
+  delimiter,
+  dirname,
+  extname,
+  join,
+  resolve as resolvePath,
+  win32,
+} from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
@@ -232,17 +240,52 @@ export function ensureNodePtySpawnHelperExecutableForCurrentPlatform(
   }
 }
 
-export function resolveDefaultTerminalShell(
-  options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv } = {},
-): string {
+export async function resolveDefaultTerminalCommand(
+  options: {
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    resolveExecutable?: (name: string) => Promise<string | null>;
+  } = {},
+): Promise<ResolvedTerminalCommand> {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
 
-  if (platform === "win32") {
-    return env.ComSpec || env.COMSPEC || "C:\\Windows\\System32\\cmd.exe";
+  if (platform !== "win32") {
+    return { command: env.SHELL || "/bin/sh", args: [] };
   }
 
-  return env.SHELL || "/bin/sh";
+  const resolveExecutable = options.resolveExecutable ?? findExecutable;
+  const powerShellCandidates = ["pwsh.exe"];
+  const programFiles = env.ProgramFiles ?? env.ProgramW6432;
+  if (programFiles) {
+    powerShellCandidates.push(win32.join(programFiles, "PowerShell", "7", "pwsh.exe"));
+  }
+  if (env.LOCALAPPDATA) {
+    powerShellCandidates.push(
+      win32.join(env.LOCALAPPDATA, "Programs", "PowerShell", "7", "pwsh.exe"),
+    );
+  }
+  powerShellCandidates.push("powershell.exe");
+  const systemRoot = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir;
+  if (systemRoot) {
+    powerShellCandidates.push(
+      win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+    );
+  }
+
+  for (const candidate of powerShellCandidates) {
+    const executable = await resolveExecutable(candidate);
+    if (executable) {
+      // 不传 -NoProfile，让 PowerShell 按原生交互式行为加载用户 Profile、
+      // PSReadLine 设置及其命令历史路径。
+      return { command: executable, args: [] };
+    }
+  }
+
+  return {
+    command: env.ComSpec || env.COMSPEC || "C:\\Windows\\System32\\cmd.exe",
+    args: [],
+  };
 }
 
 export interface ResolvedTerminalCommand {
@@ -814,7 +857,9 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
     command,
     args = [],
   } = options;
-  const resolvedShell = shell ?? resolveDefaultTerminalShell();
+  const defaultCommand = shell
+    ? { command: shell, args: [] as string[] }
+    : await resolveDefaultTerminalCommand();
 
   const id = options.id ?? randomUUID();
   const listeners = new Set<(msg: ServerMessage) => void>();
@@ -858,7 +903,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
   // Create PTY
   const { command: spawnCommand, args: spawnArgs } = command
     ? await resolveTerminalSpawnCommand(command, args)
-    : { command: resolvedShell, args: [] as string[] };
+    : defaultCommand;
   const ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
     name: "xterm-256color",
     cols,

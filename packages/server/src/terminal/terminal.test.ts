@@ -4,7 +4,7 @@ import {
   buildTerminalEnvironment,
   createTerminal,
   ensureNodePtySpawnHelperExecutableForCurrentPlatform,
-  resolveDefaultTerminalShell,
+  resolveDefaultTerminalCommand,
   resolveTerminalSpawnCommand,
   humanizeProcessTitle,
   normalizeProcessTitle,
@@ -192,16 +192,64 @@ describe("createTerminal", () => {
     expect(statSync(helperPath).mode & 0o111).toBe(0o111);
   });
 
-  it("uses cmd.exe-compatible default shell on Windows", () => {
-    expect(resolveDefaultTerminalShell({ platform: "win32", env: {} })).toBe(
-      "C:\\Windows\\System32\\cmd.exe",
+  it("Windows 默认终端优先启动 PowerShell 7 并保留用户 Profile 加载", async () => {
+    const resolveExecutable = vi.fn(async (candidate: string) =>
+      candidate === "C:\\Program Files\\PowerShell\\7\\pwsh.exe" ? candidate : null,
     );
-    expect(
-      resolveDefaultTerminalShell({
-        platform: "win32",
-        env: { ComSpec: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" },
-      }),
-    ).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+
+    const command = await resolveDefaultTerminalCommand({
+      platform: "win32",
+      env: { ProgramFiles: "C:\\Program Files" },
+      resolveExecutable,
+    });
+
+    expect(command).toEqual({
+      command: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      args: [],
+    });
+    expect(command.args).not.toContain("-NoProfile");
+    expect(resolveExecutable.mock.calls.map(([candidate]) => candidate)).toEqual([
+      "pwsh.exe",
+      "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    ]);
+  });
+
+  it("Windows 未安装 PowerShell 7 时依次回退 Windows PowerShell 和 ComSpec", async () => {
+    const windowsPowerShell = await resolveDefaultTerminalCommand({
+      platform: "win32",
+      env: { SystemRoot: "C:\\Windows", ComSpec: "C:\\Windows\\System32\\cmd.exe" },
+      resolveExecutable: async (candidate) =>
+        candidate === "powershell.exe"
+          ? "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+          : null,
+    });
+    const commandPrompt = await resolveDefaultTerminalCommand({
+      platform: "win32",
+      env: { ComSpec: "D:\\Windows\\System32\\cmd.exe" },
+      resolveExecutable: async () => null,
+    });
+
+    expect(windowsPowerShell).toEqual({
+      command: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      args: [],
+    });
+    expect(commandPrompt).toEqual({
+      command: "D:\\Windows\\System32\\cmd.exe",
+      args: [],
+    });
+  });
+
+  it("非 Windows 默认终端继续使用用户 SHELL", async () => {
+    const resolveExecutable = vi.fn(async () => null);
+
+    const command = await resolveDefaultTerminalCommand({
+      platform: "linux",
+      env: { SHELL: "/usr/bin/fish" },
+      resolveExecutable,
+    });
+
+    expect(command).toEqual({ command: "/usr/bin/fish", args: [] });
+    expect(resolveExecutable).not.toHaveBeenCalled();
   });
 
   it("passes profile commands through untouched on non-Windows", async () => {

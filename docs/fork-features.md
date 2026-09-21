@@ -160,10 +160,11 @@
 - `packages/desktop/src/features/notifications.ts`
 - `packages/desktop/src/features/notification-window.ts`
 
-### 8. Windows PowerShell 工作区打开方式
+### 8. Windows PowerShell 工作区打开与内置终端
 
 - 桌面端“打开方式”菜单在 Windows 上检测 PowerShell 7（pwsh）及其常见命令路径，并始终优先打开 PowerShell 7；仅在没有安装 PowerShell 7 时回退到系统自带的 Windows PowerShell 5.1。
 - 选择 PowerShell 会打开可见的独立控制台，并通过进程工作目录直接定位到当前工作区，避免路径字符串解析导致启动无窗口。
+- Windows 上新建的普通内置 Terminal 同样优先使用 PowerShell 7：先检查 `PATH`，再检查 `Program Files` 和当前用户本地安装目录；没有 PowerShell 7 时回退到 Windows PowerShell 5.1，二者都不可用时才使用 `ComSpec`。启动 PowerShell 时不传 `-NoProfile`，并保留用户环境，因此正常加载 PowerShell 7 的用户 Profile、PSReadLine 键位、预测设置和命令历史路径；Paseo 不创建独立历史文件，也不覆盖用户的 `HistorySavePath`。显式选择 Claude、Codex、OpenCode 或自定义 Terminal Profile 时仍直接运行该配置命令，不额外套一层 PowerShell。
 - 非 Windows 平台不显示该目标。
 
 主要涉及：
@@ -173,6 +174,7 @@
 - `packages/desktop/src/features/editor-targets/target.ts`
 - `packages/desktop/src/features/editor-targets/registry.ts`
 - `packages/app/src/screens/workspace/workspace-open-in-editor-button.tsx`
+- `packages/server/src/terminal/terminal.ts`
 
 ### 9. Windows 桌面安装包完整构建与二开更新隔离
 

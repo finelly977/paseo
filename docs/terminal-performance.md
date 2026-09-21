@@ -27,6 +27,7 @@ Terminal frames share the daemon main event loop with all agent traffic. The `ev
 - **Plugin daemon sessions report IPC queue bytes.** Their virtual socket increments `bufferedAmount` before `process.send` and decrements it only in the send callback. Text and binary frames share that ordered queue, so the normal snapshot catch-up and physical high-water gates remain valid for server-side plugin SDK traffic.
 - **Client output writes are not serialized per frame.** The emulator runtime drains contiguous plain writes straight into xterm (which buffers internally). Only barrier ops (`clear`, `snapshot`, `suppressInput` writes) wait — behind a zero-length sentinel write — so resets can't interleave with in-flight output.
 - **Retained terminal tabs in the focused workspace keep their streams.** Hidden mounted terminals continue applying output, so switching tabs does not resubscribe or request a fresh snapshot. Only the presented pane may submit terminal geometry, and terminals detach when their workspace loses focus.
+- **Windows 的普通内置终端沿用用户 PowerShell 环境。** 默认 Shell 依次选择 PowerShell 7、Windows PowerShell 5.1 和 `ComSpec`；PowerShell 启动参数不得加入 `-NoProfile`，否则用户的 PSReadLine 键位、预测和命令历史配置会在 Paseo 中失效。显式 Terminal Profile 仍直接运行其配置命令，不经过默认 Shell。
 
 ## Measuring
 
