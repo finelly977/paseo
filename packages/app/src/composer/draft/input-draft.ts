@@ -22,6 +22,8 @@ import {
 } from "@/provider-selection/provider-selection";
 import { useDraftStore } from "@/stores/draft-store";
 import { toDraftInputIfReady } from "@/stores/draft-store/state";
+import { useCodexProviderInjections } from "@/codex-provider-injections/use-codex-provider-injections";
+import { resolveDraftCodexProviderInjection } from "@/codex-provider-injections/draft-selection";
 
 type AttachmentUpdater =
   | UserComposerAttachment[]
@@ -34,6 +36,7 @@ interface AgentInputDraftComposerOptions {
   isVisible?: boolean;
   onlineServerIds?: string[];
   lockedWorkingDir?: string;
+  initialCodexProviderInjectionId?: string | null;
 }
 
 interface UseAgentInputDraftInput {
@@ -46,6 +49,7 @@ type DraftComposerState = UseAgentFormStateResult & {
   effectiveModelId: string;
   effectiveThinkingOptionId: string;
   featureValues: Record<string, unknown> | undefined;
+  codexProviderInjectionId: string | null;
   agentControls: DraftAgentControlsProps;
   commandDraftConfig: DraftCommandConfig | undefined;
 };
@@ -59,6 +63,136 @@ export interface AgentInputDraft {
   isHydrated: boolean;
   attachmentFocusRequestId: number;
   composerState: DraftComposerState | null;
+}
+
+interface DraftCodexProviderInjectionState {
+  serverId: string | null;
+  injectionId: string | null;
+  model: string | null;
+}
+
+function useDraftCodexProviderInjection(input: {
+  composerOptions: AgentInputDraftComposerOptions | null;
+  draftKey: string;
+  formState: UseAgentFormStateResult;
+}) {
+  const { composerOptions, draftKey, formState } = input;
+  const { injections, isSupported } = useCodexProviderInjections(formState.selectedServerId);
+  const [selection, setSelection] = useState<DraftCodexProviderInjectionState>(() => ({
+    serverId: composerOptions?.initialServerId ?? null,
+    injectionId: composerOptions?.initialCodexProviderInjectionId ?? null,
+    model: composerOptions?.initialValues?.model?.trim() || null,
+  }));
+
+  useEffect(() => {
+    setSelection({
+      serverId: formState.selectedServerId,
+      injectionId: composerOptions?.initialCodexProviderInjectionId ?? null,
+      model: composerOptions?.initialValues?.model?.trim() || null,
+    });
+  }, [
+    composerOptions?.initialCodexProviderInjectionId,
+    composerOptions?.initialValues?.model,
+    draftKey,
+    formState.selectedServerId,
+  ]);
+
+  const selectedInjectionId = useMemo(() => {
+    if (!isSupported || formState.selectedProvider !== "codex") return null;
+    if (selection.serverId !== formState.selectedServerId || !selection.injectionId) return null;
+    if (!injections) return null;
+    return injections.some((injection) => injection.id === selection.injectionId)
+      ? selection.injectionId
+      : null;
+  }, [formState.selectedProvider, formState.selectedServerId, injections, isSupported, selection]);
+
+  const clearSelection = useCallback(() => {
+    setSelection((current) => {
+      if (current.injectionId === null) return current;
+      return {
+        serverId: formState.selectedServerId,
+        injectionId: null,
+        model: null,
+      };
+    });
+  }, [formState.selectedServerId]);
+
+  useEffect(() => {
+    if (!selectedInjectionId || !selection.model || formState.selectedModel === selection.model) {
+      return;
+    }
+    formState.setModelLocally(selection.model);
+  }, [formState, selectedInjectionId, selection.model]);
+
+  const selectInjection = useCallback(
+    (injectionId: string, model?: string) => {
+      if (formState.selectedProvider !== "codex") {
+        throw new Error("Codex 服务商注入只能用于 Codex 会话");
+      }
+      if (!isSupported || !injections) {
+        throw new Error("当前守护进程不支持 Codex 服务商注入");
+      }
+      const resolved = resolveDraftCodexProviderInjection({
+        injections,
+        injectionId,
+        ...(model ? { model } : {}),
+      });
+      setSelection({
+        serverId: formState.selectedServerId,
+        injectionId: resolved.injectionId,
+        model: resolved.model,
+      });
+      if (resolved.model) formState.setModelLocally(resolved.model);
+    },
+    [formState, injections, isSupported],
+  );
+
+  const selectProvider = useCallback(
+    (provider: Parameters<typeof formState.setProviderFromUser>[0]) => {
+      clearSelection();
+      formState.setProviderFromUser(provider);
+    },
+    [clearSelection, formState],
+  );
+  const selectModel = useCallback(
+    (modelId: string) => {
+      clearSelection();
+      formState.setModelFromUser(modelId);
+    },
+    [clearSelection, formState],
+  );
+  const selectProviderAndModel = useCallback(
+    (provider: Parameters<typeof formState.setProviderAndModelFromUser>[0], modelId: string) => {
+      clearSelection();
+      formState.setProviderAndModelFromUser(provider, modelId);
+    },
+    [clearSelection, formState],
+  );
+
+  return useMemo(
+    () => ({
+      injections: isSupported && injections ? injections : undefined,
+      selectedInjectionId,
+      selectInjection,
+      selectProvider,
+      selectModel,
+      selectProviderAndModel,
+      persistFormPreferences: selectedInjectionId
+        ? formState.persistFormPreferencesWithoutModel
+        : formState.persistFormPreferences,
+    }),
+    [
+      formState.persistFormPreferences,
+      formState.persistFormPreferencesWithoutModel,
+      injections,
+      isSupported,
+      selectInjection,
+      selectModel,
+      selectProvider,
+      selectProviderAndModel,
+      selectedInjectionId,
+    ],
+  );
 }
 
 export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDraft {
@@ -78,6 +212,11 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       }),
     [formState.selectedServerId, input.draftKey],
   );
+  const codexProviderInjection = useDraftCodexProviderInjection({
+    composerOptions,
+    draftKey,
+    formState,
+  });
   const draftRecord = useDraftStore((state) => state.drafts[draftKey]);
   const draft = useMemo(() => toDraftInputIfReady(draftRecord), [draftRecord]);
   const attachmentFocusRequestId = useDraftStore(
@@ -96,7 +235,10 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       },
     ) => {
       const store = useDraftStore.getState();
-      const current = store.getDraftInput(draftKey) ?? { text: "", attachments: [] };
+      const current = store.getDraftInput(draftKey) ?? {
+        text: "",
+        attachments: [],
+      };
       const next = update(current);
       if (!hasDraftContent(next)) {
         store.clearDraftInput({ draftKey, lifecycle: "abandoned" });
@@ -221,6 +363,23 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     ],
   );
 
+  const agentControls = useMemo(
+    () => ({
+      ...buildDraftAgentControls({
+        formState,
+        features: draftFeatures,
+        onSetFeature: setDraftFeatureValue,
+      }),
+      onSelectProvider: codexProviderInjection.selectProvider,
+      onSelectModel: codexProviderInjection.selectModel,
+      onSelectProviderAndModel: codexProviderInjection.selectProviderAndModel,
+      codexProviderInjections: codexProviderInjection.injections,
+      selectedCodexProviderInjectionId: codexProviderInjection.selectedInjectionId,
+      onSelectCodexProviderInjection: codexProviderInjection.selectInjection,
+    }),
+    [codexProviderInjection, draftFeatures, formState, setDraftFeatureValue],
+  );
+
   const composerState = useMemo<DraftComposerState | null>(() => {
     if (!composerOptions) {
       return null;
@@ -228,15 +387,13 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
 
     return {
       ...formState,
+      persistFormPreferences: codexProviderInjection.persistFormPreferences,
       workingDir,
       effectiveModelId,
       effectiveThinkingOptionId,
       featureValues: draftFeatureValues,
-      agentControls: buildDraftAgentControls({
-        formState,
-        features: draftFeatures,
-        onSetFeature: setDraftFeatureValue,
-      }),
+      codexProviderInjectionId: codexProviderInjection.selectedInjectionId,
+      agentControls,
       commandDraftConfig,
     };
   }, [
@@ -244,10 +401,11 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     composerOptions,
     effectiveModelId,
     effectiveThinkingOptionId,
-    draftFeatures,
+    agentControls,
+    codexProviderInjection.persistFormPreferences,
+    codexProviderInjection.selectedInjectionId,
     draftFeatureValues,
     formState,
-    setDraftFeatureValue,
     workingDir,
   ]);
 

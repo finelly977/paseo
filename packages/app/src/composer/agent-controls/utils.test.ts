@@ -196,4 +196,23 @@ describe("resolveAgentModelSelection", () => {
     expect(selection.selectedThinkingId).toBe("low");
     expect(selection.displayThinking).toBe("Low");
   });
+
+  it("保留注入服务商的自定义模型，不回退显示原服务商默认模型", () => {
+    const selection = resolveAgentModelSelection({
+      models: [
+        {
+          id: "gpt-default",
+          provider: "codex",
+          label: "GPT Default",
+          isDefault: true,
+        },
+      ],
+      runtimeModelId: "proxy-codex-model",
+      configuredModelId: "proxy-codex-model",
+      explicitThinkingOptionId: null,
+    });
+
+    expect(selection.activeModelId).toBe("proxy-codex-model");
+    expect(selection.displayModel).toBe("proxy-codex-model");
+  });
 });

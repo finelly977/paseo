@@ -27,6 +27,7 @@ function ws(
     currentBranch: input.currentBranch ?? null,
     statusBucket: input.statusBucket ?? "done",
     statusEnteredAt: input.statusEnteredAt ?? null,
+    pinnedAt: input.pinnedAt ?? null,
     archivingAt: null,
     diffStat: null,
     prHint: null,
@@ -47,13 +48,21 @@ const emptyProjectNames = new Map<string, string>();
 describe("buildStatusGroups", () => {
   it("groups workspaces by status bucket in fixed order", () => {
     const workspaces = [
-      ws({ workspaceKey: "srv:done-ws", statusBucket: "done", name: "done-ws" }),
+      ws({
+        workspaceKey: "srv:done-ws",
+        statusBucket: "done",
+        name: "done-ws",
+      }),
       ws({
         workspaceKey: "srv:needs-input-ws",
         statusBucket: "needs_input",
         name: "needs-input-ws",
       }),
-      ws({ workspaceKey: "srv:running-ws", statusBucket: "running", name: "running-ws" }),
+      ws({
+        workspaceKey: "srv:running-ws",
+        statusBucket: "running",
+        name: "running-ws",
+      }),
     ];
 
     const groups = buildStatusGroups(workspaces, emptyProjectNames);
@@ -99,15 +108,43 @@ describe("buildStatusGroups", () => {
     expect(groups[0]?.rows.map((r) => r.workspaceKey)).toEqual(["srv:new", "srv:mid", "srv:old"]);
   });
 
+  it("只在当前状态分组内把置顶会话排在前面", () => {
+    const workspaces = [
+      ws({
+        workspaceKey: "srv:recent",
+        statusBucket: "done",
+        statusEnteredAt: d("2026-06-01T00:00:00Z"),
+      }),
+      ws({
+        workspaceKey: "srv:pinned",
+        statusBucket: "done",
+        statusEnteredAt: d("2026-01-01T00:00:00Z"),
+        pinnedAt: "2026-07-01T00:00:00Z",
+      }),
+    ];
+
+    const groups = buildStatusGroups(workspaces, emptyProjectNames);
+
+    expect(groups[0]?.rows.map((row) => row.workspaceKey)).toEqual(["srv:pinned", "srv:recent"]);
+  });
+
   it("sorts null timestamps last within a bucket", () => {
     const workspaces = [
-      ws({ workspaceKey: "srv:null-a", statusBucket: "done", statusEnteredAt: null }),
+      ws({
+        workspaceKey: "srv:null-a",
+        statusBucket: "done",
+        statusEnteredAt: null,
+      }),
       ws({
         workspaceKey: "srv:ts",
         statusBucket: "done",
         statusEnteredAt: d("2026-01-01T00:00:00Z"),
       }),
-      ws({ workspaceKey: "srv:null-b", statusBucket: "done", statusEnteredAt: null }),
+      ws({
+        workspaceKey: "srv:null-b",
+        statusBucket: "done",
+        statusEnteredAt: null,
+      }),
     ];
 
     const groups = buildStatusGroups(workspaces, emptyProjectNames);
@@ -126,9 +163,24 @@ describe("buildStatusGroups", () => {
     ]);
 
     const workspaces = [
-      ws({ workspaceKey: "srv:1", statusBucket: "done", projectKey: "proj-b", name: "zebra" }),
-      ws({ workspaceKey: "srv:2", statusBucket: "done", projectKey: "proj-a", name: "alpha" }),
-      ws({ workspaceKey: "srv:3", statusBucket: "done", projectKey: "proj-a", name: "alpha" }),
+      ws({
+        workspaceKey: "srv:1",
+        statusBucket: "done",
+        projectKey: "proj-b",
+        name: "zebra",
+      }),
+      ws({
+        workspaceKey: "srv:2",
+        statusBucket: "done",
+        projectKey: "proj-a",
+        name: "alpha",
+      }),
+      ws({
+        workspaceKey: "srv:3",
+        statusBucket: "done",
+        projectKey: "proj-a",
+        name: "alpha",
+      }),
     ];
 
     const groups = buildStatusGroups(workspaces, projectNames);
@@ -163,7 +215,11 @@ describe("buildStatusGroups", () => {
         statusBucket: "running",
         statusEnteredAt: d("2026-01-01T00:00:00Z"),
       }),
-      ws({ workspaceKey: "srv:dn", statusBucket: "done", statusEnteredAt: null }),
+      ws({
+        workspaceKey: "srv:dn",
+        statusBucket: "done",
+        statusEnteredAt: null,
+      }),
     ];
 
     const groups = buildStatusGroups(workspaces, emptyProjectNames);
@@ -183,7 +239,11 @@ describe("buildStatusGroups", () => {
 describe("buildStatusShortcutIndex", () => {
   it("assigns sequential numbers in status visual order", () => {
     const groups: StatusGroup[] = [
-      { bucket: "needs_input", label: "Needs input", rows: [ws({ workspaceKey: "srv:ni" })] },
+      {
+        bucket: "needs_input",
+        label: "Needs input",
+        rows: [ws({ workspaceKey: "srv:ni" })],
+      },
       {
         bucket: "running",
         label: "Working",

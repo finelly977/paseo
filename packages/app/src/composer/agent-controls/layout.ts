@@ -4,6 +4,7 @@ export interface ComposerControlPresence {
   hasModel: boolean;
   hasThinking: boolean;
   hasMode: boolean;
+  hasInjection: boolean;
   features: readonly ComposerFeatureControlPresence[];
   fontScale: number;
 }
@@ -14,6 +15,7 @@ export interface ComposerControlPresentation {
   showCarets: boolean;
   showThinkingLabel: boolean;
   showModeLabel: boolean;
+  showInjectionLabel: boolean;
   aggregateFeatures: boolean;
 }
 
@@ -62,6 +64,7 @@ function resolveCondensedFloor(controls: ComposerControlPresence): number {
   if (controls.hasModel) widths.push(36 + 60 * fontScale);
   if (controls.hasThinking) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
   if (controls.hasMode) widths.push(36 + 96 * fontScale);
+  if (controls.hasInjection) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
   if (controls.features.length > 0) widths.push(COMPOSER_TOOLBAR_GEOMETRY.controlSize);
   return sumControlWidths(widths);
 }
@@ -72,6 +75,7 @@ function resolveFullFloor(controls: ComposerControlPresence): number {
   if (controls.hasModel) widths.push(50 + 70 * fontScale);
   if (controls.hasThinking) widths.push(54 + 48 * fontScale);
   if (controls.hasMode) widths.push(54 + 96 * fontScale);
+  if (controls.hasInjection) widths.push(54 + 88 * fontScale);
   for (const feature of controls.features) {
     widths.push(resolveFeatureControlWidth(feature, fontScale));
   }
@@ -110,6 +114,7 @@ export function resolveComposerControlPresentation(
       showCarets: true,
       showThinkingLabel: true,
       showModeLabel: true,
+      showInjectionLabel: true,
       aggregateFeatures: false,
     };
   }
@@ -118,6 +123,7 @@ export function resolveComposerControlPresentation(
       showCarets: false,
       showThinkingLabel: false,
       showModeLabel: true,
+      showInjectionLabel: false,
       aggregateFeatures: true,
     };
   }
@@ -125,6 +131,7 @@ export function resolveComposerControlPresentation(
     showCarets: false,
     showThinkingLabel: false,
     showModeLabel: false,
+    showInjectionLabel: false,
     aggregateFeatures: true,
   };
 }

@@ -117,10 +117,10 @@ function pickSelectedModel(
   preferredModelId: string | null,
   fallbackModel: AgentModelDefinition | null,
 ): AgentModelDefinition | null {
-  if (!models || !preferredModelId) {
+  if (!preferredModelId) {
     return fallbackModel;
   }
-  return findModelById(models, preferredModelId) ?? fallbackModel;
+  return findModelById(models, preferredModelId);
 }
 
 function resolveThinkingId(

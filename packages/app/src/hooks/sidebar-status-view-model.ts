@@ -58,6 +58,9 @@ function compareStatusRows(
   b: SidebarWorkspaceEntry,
   projectNamesByKey: Map<string, string>,
 ): number {
+  const pinnedComparison = comparePinnedRows(a.pinnedAt ?? null, b.pinnedAt ?? null);
+  if (pinnedComparison !== 0) return pinnedComparison;
+
   const aTime = a.statusEnteredAt?.getTime() ?? null;
   const bTime = b.statusEnteredAt?.getTime() ?? null;
 
@@ -78,6 +81,13 @@ function compareStatusRows(
   if (nameCmp !== 0) return nameCmp;
 
   return a.workspaceKey.localeCompare(b.workspaceKey);
+}
+
+function comparePinnedRows(aPinnedAt: string | null, bPinnedAt: string | null): number {
+  if (aPinnedAt && bPinnedAt) return bPinnedAt.localeCompare(aPinnedAt);
+  if (aPinnedAt) return -1;
+  if (bPinnedAt) return 1;
+  return 0;
 }
 
 export function buildStatusShortcutIndex(groups: StatusGroup[]): Map<string, number> {

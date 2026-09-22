@@ -54,17 +54,17 @@ function makeProject(workspaces: SidebarWorkspacePlacement[]): SidebarProjectEnt
   };
 }
 
-function projectionInput(options?: {
-  groupMode?: "project" | "status";
-  pinnedCollapsed?: boolean;
-}) {
+function projectionInput(options?: { groupMode?: "project" | "status" }) {
   const pinned = makeWorkspace("pinned", "running");
   const unpinned = makeWorkspace("unpinned", "needs_input");
+  pinned.entry.pinnedAt = "2026-07-12T12:00:00.000Z";
   return {
     projects: [makeProject([pinned.placement, unpinned.placement])],
     pinnedKeys: {
       pinnedWorkspaceKeys: [pinned.placement.workspaceKey],
-      pinnedAtByKey: { [pinned.placement.workspaceKey]: "2026-07-12T12:00:00.000Z" },
+      pinnedAtByKey: {
+        [pinned.placement.workspaceKey]: "2026-07-12T12:00:00.000Z",
+      },
     },
     workspaceEntriesByKey: new Map([
       [pinned.entry.workspaceKey, pinned.entry],
@@ -72,32 +72,17 @@ function projectionInput(options?: {
     ]),
     projectNamesByKey: new Map([["project", "Project"]]),
     groupMode: options?.groupMode ?? ("project" as const),
-    pinnedCollapsed: options?.pinnedCollapsed ?? false,
     collapsedProjectKeys: new Set<string>(),
     collapsedStatusGroupKeys: new Set<string>(),
   };
 }
 
 describe("buildSidebarProjection", () => {
-  it("uses one pin-aware projection for project rows and shortcut order", () => {
+  it("把置顶会话保留在原工作区内并用同一顺序生成快捷键", () => {
     const projection = buildSidebarProjection(projectionInput());
 
-    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
+    expect(projection.projects[0]?.workspaces.map((entry) => entry.workspaceId)).toEqual([
       "pinned",
-    ]);
-    const remainingProject = projection.pinnedGroups.unpinnedProjects[0];
-    expect(remainingProject?.workspaces.map((entry) => entry.workspaceId)).toEqual(["unpinned"]);
-    expect(projection.shortcutModel.shortcutTargets).toEqual([
-      { serverId: "srv", workspaceId: "pinned" },
-      { serverId: "srv", workspaceId: "unpinned" },
-    ]);
-  });
-
-  it("keeps pinned chats above status groups and removes them from those groups", () => {
-    const projection = buildSidebarProjection(projectionInput({ groupMode: "status" }));
-
-    expect(projection.statusGroups.map((group) => group.bucket)).toEqual(["needs_input"]);
-    expect(projection.statusGroups[0]?.rows.map((entry) => entry.workspaceId)).toEqual([
       "unpinned",
     ]);
     expect(projection.shortcutModel.shortcutTargets).toEqual([
@@ -106,13 +91,16 @@ describe("buildSidebarProjection", () => {
     ]);
   });
 
-  it("does not number pinned chats while the pinned section is collapsed", () => {
-    const projection = buildSidebarProjection(
-      projectionInput({ groupMode: "status", pinnedCollapsed: true }),
-    );
+  it("状态视图中置顶会话仍留在它自己的状态分组", () => {
+    const projection = buildSidebarProjection(projectionInput({ groupMode: "status" }));
 
+    expect(projection.statusGroups.map((group) => group.bucket)).toEqual([
+      "needs_input",
+      "running",
+    ]);
     expect(projection.shortcutModel.shortcutTargets).toEqual([
       { serverId: "srv", workspaceId: "unpinned" },
+      { serverId: "srv", workspaceId: "pinned" },
     ]);
   });
 });

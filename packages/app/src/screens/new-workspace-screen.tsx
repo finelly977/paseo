@@ -104,7 +104,9 @@ import {
 import { useNewWorkspaceProjectPicker } from "./new-workspace/project-picker";
 
 const ThemedFolderPlus = withUnistyles(FolderPlus);
-const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const foregroundMutedColorMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 const addProjectIcon = (
   <ThemedFolderPlus size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />
 );
@@ -746,7 +748,10 @@ function getContentStyle(input: { isCompact: boolean; insetBottom: number }) {
 
 function normalizeBranchDetails(
   data:
-    | { branchDetails?: Array<{ name: string; committerDate: number }>; branches?: string[] }
+    | {
+        branchDetails?: Array<{ name: string; committerDate: number }>;
+        branches?: string[];
+      }
     | undefined,
 ): Array<{ name: string; committerDate: number }> {
   const details = data?.branchDetails;
@@ -778,6 +783,7 @@ interface WorkspaceDraftSubmissionConfig {
   provider: AgentProvider;
   modeId: string | null;
   model: string | null;
+  codexProviderInjectionId: string | null;
   thinkingOptionId: string | null;
   featureValues: Record<string, unknown> | undefined;
   target: WorkspaceTabTarget;
@@ -801,7 +807,11 @@ async function createAndMergeWorkspace(input: {
   }
   const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
   const workspaceForInitialMerge = input.createInput.firstAgentContext
-    ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
+    ? {
+        ...normalizedWorkspace,
+        status: "running" as const,
+        statusEnteredAt: new Date(),
+      }
     : normalizedWorkspace;
   input.mergeWorkspaces(input.serverId, [workspaceForInitialMerge]);
   return normalizedWorkspace;
@@ -855,7 +865,11 @@ async function createMultiplicityWorkspace(input: {
   }
   const normalizedWorkspace = normalizeWorkspaceDescriptor(payload.workspace);
   const workspaceForInitialMerge = input.withInitialAgent
-    ? { ...normalizedWorkspace, status: "running" as const, statusEnteredAt: new Date() }
+    ? {
+        ...normalizedWorkspace,
+        status: "running" as const,
+        statusEnteredAt: new Date(),
+      }
     : normalizedWorkspace;
   input.mergeWorkspaces(input.serverId, [workspaceForInitialMerge]);
   return normalizedWorkspace;
@@ -891,6 +905,7 @@ function buildWorkspaceDraftSetupFromComposer(input: {
     cwd: input.cwd,
     modeId: input.composerState.selectedMode || null,
     model: input.composerState.effectiveModelId || null,
+    codexProviderInjectionId: input.composerState.codexProviderInjectionId,
     thinkingOptionId: input.composerState.effectiveThinkingOptionId || null,
     featureValues: input.composerState.featureValues ?? {},
   };
@@ -901,16 +916,15 @@ function buildWorkspaceDraftSetupForCreatedWorkspace(input: {
   workspaceDirectory: string;
   provider: AgentProvider;
   composerState: NewWorkspaceComposerState;
-}): WorkspaceDraftTabSetup | undefined {
-  if (!input.forkDraftSetup) {
-    return undefined;
-  }
+}): WorkspaceDraftTabSetup {
   return buildWorkspaceDraftSetupFromComposer({
-    cwd: remapDraftCwdToWorkspace({
-      cwd: input.forkDraftSetup.setup.cwd,
-      sourceDirectory: input.forkDraftSetup.sourceDirectory,
-      workspaceDirectory: input.workspaceDirectory,
-    }),
+    cwd: input.forkDraftSetup
+      ? remapDraftCwdToWorkspace({
+          cwd: input.forkDraftSetup.setup.cwd,
+          sourceDirectory: input.forkDraftSetup.sourceDirectory,
+          workspaceDirectory: input.workspaceDirectory,
+        })
+      : input.workspaceDirectory,
     provider: input.provider,
     composerState: input.composerState,
   });
@@ -992,6 +1006,7 @@ function buildComposerConfig(input: {
     initialServerId: serverId || null,
     initialValues: buildComposerInitialValues({ workingDir, initialSetup }),
     initialFeatureValues: initialSetup?.featureValues,
+    initialCodexProviderInjectionId: initialSetup?.codexProviderInjectionId,
     isVisible: true,
     onlineServerIds: isConnected && serverId ? [serverId] : [],
     lockedWorkingDir: workingDir,
@@ -1024,6 +1039,7 @@ function resolveWorkspaceDraftSubmissionConfig(input: {
       provider: initialSetup.provider,
       modeId: initialSetup.modeId,
       model: initialSetup.model,
+      codexProviderInjectionId: initialSetup.codexProviderInjectionId,
       thinkingOptionId: initialSetup.thinkingOptionId,
       featureValues: initialSetup.featureValues,
       target: { kind: "draft", draftId, setup: initialSetup },
@@ -1034,6 +1050,7 @@ function resolveWorkspaceDraftSubmissionConfig(input: {
     provider,
     modeId: composerState.selectedMode || null,
     model: composerState.effectiveModelId || null,
+    codexProviderInjectionId: composerState.codexProviderInjectionId,
     thinkingOptionId: composerState.effectiveThinkingOptionId || null,
     featureValues: composerState.featureValues,
     target: { kind: "draft", draftId },
@@ -1091,6 +1108,9 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     timestamp,
     ...(submission.modeId ? { modeId: submission.modeId } : {}),
     ...(submission.model ? { model: submission.model } : {}),
+    ...(submission.codexProviderInjectionId
+      ? { codexProviderInjectionId: submission.codexProviderInjectionId }
+      : {}),
     ...(submission.thinkingOptionId ? { thinkingOptionId: submission.thinkingOptionId } : {}),
     ...(submission.featureValues ? { featureValues: submission.featureValues } : {}),
     allowEmptyText: true,
@@ -1255,7 +1275,10 @@ function useNewWorkspaceInitialContext({
   const lastActiveProject = useMemo(
     () =>
       lastWorkspaceServerId
-        ? hostProjectFromWorkspace({ serverId: lastWorkspaceServerId, workspace: lastWorkspace })
+        ? hostProjectFromWorkspace({
+            serverId: lastWorkspaceServerId,
+            workspace: lastWorkspace,
+          })
         : null,
     [lastWorkspace, lastWorkspaceServerId],
   );
@@ -1558,7 +1581,10 @@ export function NewWorkspaceScreen({
   const projectPickerAnchorRef = useRef<View>(null);
   const isolationPickerAnchorRef = useRef<View>(null);
   const hostPickerAnchorRef = useRef<View | null>(null);
-  const isDraftHandoffActive = useIsNewWorkspaceDraftHandoffActive({ draftId, selectedServerId });
+  const isDraftHandoffActive = useIsNewWorkspaceDraftHandoffActive({
+    draftId,
+    selectedServerId,
+  });
 
   useEffect(() => {
     const trimmed = pickerSearchQuery.trim();
@@ -1567,7 +1593,10 @@ export function NewWorkspaceScreen({
   }, [pickerSearchQuery]);
 
   const workspace = createdWorkspace;
-  const isPending = isNewWorkspacePending({ pendingAction, isDraftHandoffActive });
+  const isPending = isNewWorkspacePending({
+    pendingAction,
+    isDraftHandoffActive,
+  });
   const client = useHostRuntimeClient(selectedServerId);
   const isConnected = useHostRuntimeIsConnected(selectedServerId);
   const {
@@ -1592,7 +1621,13 @@ export function NewWorkspaceScreen({
         if (!iconWorkingDir) {
           return [];
         }
-        return [{ projectKey: project.projectKey, serverId: selectedServerId, iconWorkingDir }];
+        return [
+          {
+            projectKey: project.projectKey,
+            serverId: selectedServerId,
+            iconWorkingDir,
+          },
+        ];
       }),
     [projects, selectedServerId],
   );
@@ -1604,7 +1639,11 @@ export function NewWorkspaceScreen({
   const forkDraftSetup = usePendingWorkspaceDraftSetup(draftId);
   const draftContextScopeKey = useDraftWorkspaceAttachmentScopeKey(draftId);
   const visibleDraftContextScopeKeys = useMemo(
-    () => resolveVisibleDraftContextScopeKeys({ isDraftHandoffActive, draftContextScopeKey }),
+    () =>
+      resolveVisibleDraftContextScopeKeys({
+        isDraftHandoffActive,
+        draftContextScopeKey,
+      }),
     [draftContextScopeKey, isDraftHandoffActive],
   );
   const chatDraft = useAgentInputDraft({

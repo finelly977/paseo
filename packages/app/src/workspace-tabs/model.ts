@@ -6,6 +6,7 @@ export interface WorkspaceDraftTabSetup {
   cwd: string;
   modeId: string | null;
   model: string | null;
+  codexProviderInjectionId: string | null;
   thinkingOptionId: string | null;
   featureValues: Record<string, unknown>;
 }

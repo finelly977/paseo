@@ -389,6 +389,7 @@ function buildForkDraftSetup(agent: AgentScreenAgent): WorkspaceDraftTabSetup | 
     cwd: agent.cwd,
     modeId: agent.currentModeId ?? agent.runtimeInfo?.modeId ?? null,
     model: agent.model ?? agent.runtimeInfo?.model ?? null,
+    codexProviderInjectionId: null,
     thinkingOptionId: agent.thinkingOptionId ?? agent.runtimeInfo?.thinkingOptionId ?? null,
     featureValues,
   };

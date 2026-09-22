@@ -134,6 +134,7 @@ const WorkspaceDraftTabSetupStorageSchema = z.strictObject({
   cwd: z.string(),
   modeId: z.string().nullable(),
   model: z.string().nullable(),
+  codexProviderInjectionId: z.string().nullable().optional().default(null),
   thinkingOptionId: z.string().nullable(),
   featureValues: z.record(z.string(), z.union([z.boolean(), z.string(), z.null()])),
 });

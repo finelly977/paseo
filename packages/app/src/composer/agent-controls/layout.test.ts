@@ -12,18 +12,21 @@ describe("composer control layout", () => {
       showCarets: true,
       showThinkingLabel: true,
       showModeLabel: true,
+      showInjectionLabel: true,
       aggregateFeatures: false,
     });
     expect(resolveComposerControlPresentation("condensed")).toEqual({
       showCarets: false,
       showThinkingLabel: false,
       showModeLabel: true,
+      showInjectionLabel: false,
       aggregateFeatures: true,
     });
     expect(resolveComposerControlPresentation("tight")).toEqual({
       showCarets: false,
       showThinkingLabel: false,
       showModeLabel: false,
+      showInjectionLabel: false,
       aggregateFeatures: true,
     });
   });
@@ -33,6 +36,7 @@ describe("composer control layout", () => {
       hasModel: true,
       hasThinking: true,
       hasMode: true,
+      hasInjection: false,
       features: [{ type: "toggle" as const }],
       fontScale: 1,
     };
@@ -94,6 +98,7 @@ describe("composer control layout", () => {
           hasModel: true,
           hasThinking: true,
           hasMode: true,
+          hasInjection: false,
           features: [{ type: "toggle" }],
           fontScale: 1,
         },
@@ -106,6 +111,7 @@ describe("composer control layout", () => {
           hasModel: true,
           hasThinking: true,
           hasMode: true,
+          hasInjection: false,
           features: [{ type: "toggle" }, { type: "select", label: "Tools" }],
           fontScale: 1,
         },
@@ -118,6 +124,7 @@ describe("composer control layout", () => {
           hasModel: true,
           hasThinking: true,
           hasMode: true,
+          hasInjection: false,
           features: [{ type: "toggle" }],
           fontScale: 1.25,
         },
@@ -133,6 +140,7 @@ describe("composer control layout", () => {
         hasModel: true,
         hasThinking: true,
         hasMode: true,
+        hasInjection: false,
         fontScale: 1,
       },
     };

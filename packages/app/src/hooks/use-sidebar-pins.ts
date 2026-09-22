@@ -1,24 +1,13 @@
 import { useMemo, useRef } from "react";
 import { shallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import type {
-  SidebarProjectEntry,
-  SidebarWorkspacePlacement,
-} from "@/hooks/use-sidebar-workspaces-list";
+import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useSessionStore } from "@/stores/session-store";
 
 export interface PinnedSidebarKeys {
   pinnedWorkspaceKeys: string[];
   // workspaceKey -> pinnedAt ISO string, used to order by recency.
   pinnedAtByKey: Record<string, string>;
-}
-
-export interface PinnedSidebarGroups {
-  // Individually pinned chats, hoisted into the Pinned section and removed from their
-  // project below. Most recently pinned first.
-  pinnedChats: SidebarWorkspacePlacement[];
-  // Everything else, with pinned chats removed. Feeds the draggable project list.
-  unpinnedProjects: SidebarProjectEntry[];
 }
 
 function buildPinnedSidebarKeys(
@@ -96,41 +85,39 @@ export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSid
   }, [projects, serverIds, workspaceMaps]);
 }
 
-// Splits the sidebar into a dedicated Pinned section (chats) and the regular list below.
-// Pinned chats are ordered most-recently-pinned first.
-export function splitPinnedSidebarGroups(input: {
+// 置顶只在会话所属工作区内生效：置顶会话留在原工作区，并按最近
+// 置顶时间排在该工作区其他会话之前。不再将它们提升到跨工作区全局分组。
+export function applyWorkspaceLocalPins(input: {
   projects: SidebarProjectEntry[];
   keys: PinnedSidebarKeys;
-}): PinnedSidebarGroups {
+}): SidebarProjectEntry[] {
   const { projects, keys } = input;
   if (keys.pinnedWorkspaceKeys.length === 0) {
-    return { pinnedChats: [], unpinnedProjects: projects };
+    return projects;
   }
   const pinnedWorkspaceKeySet = new Set(keys.pinnedWorkspaceKeys);
-  const pinnedChats: SidebarWorkspacePlacement[] = [];
-  const unpinnedProjects: SidebarProjectEntry[] = [];
 
+  const locallyPinnedProjects: SidebarProjectEntry[] = [];
   for (const project of projects) {
-    const remainingWorkspaces: SidebarWorkspacePlacement[] = [];
-    for (const workspace of project.workspaces) {
-      if (pinnedWorkspaceKeySet.has(workspace.workspaceKey)) {
-        pinnedChats.push(workspace);
-      } else {
-        remainingWorkspaces.push(workspace);
-      }
-    }
-    unpinnedProjects.push(
-      remainingWorkspaces.length === project.workspaces.length
-        ? project
-        : { ...project, workspaces: remainingWorkspaces },
+    const hasPinnedWorkspace = project.workspaces.some((workspace) =>
+      pinnedWorkspaceKeySet.has(workspace.workspaceKey),
     );
+    if (!hasPinnedWorkspace) {
+      locallyPinnedProjects.push(project);
+      continue;
+    }
+
+    const workspaces = [...project.workspaces].sort((left, right) => {
+      const leftPinnedAt = keys.pinnedAtByKey[left.workspaceKey] ?? null;
+      const rightPinnedAt = keys.pinnedAtByKey[right.workspaceKey] ?? null;
+      if (leftPinnedAt && rightPinnedAt) {
+        return rightPinnedAt.localeCompare(leftPinnedAt);
+      }
+      if (leftPinnedAt) return -1;
+      if (rightPinnedAt) return 1;
+      return 0;
+    });
+    locallyPinnedProjects.push({ ...project, workspaces });
   }
-
-  pinnedChats.sort((a, b) =>
-    (keys.pinnedAtByKey[b.workspaceKey] ?? "").localeCompare(
-      keys.pinnedAtByKey[a.workspaceKey] ?? "",
-    ),
-  );
-
-  return { pinnedChats, unpinnedProjects };
+  return locallyPinnedProjects;
 }

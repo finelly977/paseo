@@ -3,7 +3,7 @@ import type {
   SidebarProjectEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/sidebar-workspaces-view-model";
-import { splitPinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import { applyWorkspaceLocalPins } from "@/hooks/use-sidebar-pins";
 
 function placement(workspaceKey: string): SidebarWorkspacePlacement {
   return {
@@ -29,46 +29,47 @@ function project(projectKey: string, workspaces: SidebarWorkspacePlacement[]): S
   };
 }
 
-describe("splitPinnedSidebarGroups", () => {
-  it("keeps the project shell reachable when every chat is pinned", () => {
+describe("applyWorkspaceLocalPins", () => {
+  it("所有会话置顶时仍留在原工作区", () => {
     const only = placement("w1");
     const projects = [project("p1", [only])];
-    const result = splitPinnedSidebarGroups({
+    const result = applyWorkspaceLocalPins({
       projects,
       keys: {
         pinnedWorkspaceKeys: ["w1"],
         pinnedAtByKey: { w1: "2026-01-01T00:00:00Z" },
       },
     });
-    expect(result.pinnedChats).toHaveLength(1);
-    expect(result.unpinnedProjects).toEqual([{ ...projects[0], workspaces: [] }]);
+    expect(result).toEqual(projects);
   });
 
   it("keeps a genuinely empty project so its new-workspace row stays reachable", () => {
     const projects = [project("p1", [])];
-    const result = splitPinnedSidebarGroups({
+    const result = applyWorkspaceLocalPins({
       projects,
       keys: { pinnedWorkspaceKeys: [], pinnedAtByKey: {} },
     });
-    expect(result.unpinnedProjects).toHaveLength(1);
+    expect(result).toHaveLength(1);
   });
 
-  it("keeps remaining chats when only some are pinned", () => {
+  it("只在原工作区内把置顶会话排到前面", () => {
     const projects = [project("p1", [placement("w1"), placement("w2")])];
-    const result = splitPinnedSidebarGroups({
+    const result = applyWorkspaceLocalPins({
       projects,
       keys: {
-        pinnedWorkspaceKeys: ["w1"],
-        pinnedAtByKey: { w1: "2026-01-01T00:00:00Z" },
+        pinnedWorkspaceKeys: ["w2"],
+        pinnedAtByKey: { w2: "2026-01-01T00:00:00Z" },
       },
     });
-    expect(result.pinnedChats.map((w) => w.workspaceKey)).toEqual(["w1"]);
-    expect(result.unpinnedProjects[0]?.workspaces.map((w) => w.workspaceKey)).toEqual(["w2"]);
+    expect(result[0]?.workspaces.map((workspace) => workspace.workspaceKey)).toEqual(["w2", "w1"]);
   });
 
-  it("orders pinned chats by most-recently-pinned first", () => {
-    const projects = [project("p1", [placement("older"), placement("newer")])];
-    const result = splitPinnedSidebarGroups({
+  it("每个工作区独立按最近置顶时间排序", () => {
+    const projects = [
+      project("p1", [placement("regular"), placement("older"), placement("newer")]),
+      project("p2", [{ ...placement("other"), projectKey: "p2", projectName: "p2" }]),
+    ];
+    const result = applyWorkspaceLocalPins({
       projects,
       keys: {
         pinnedWorkspaceKeys: ["older", "newer"],
@@ -79,9 +80,11 @@ describe("splitPinnedSidebarGroups", () => {
       },
     });
 
-    expect(result.pinnedChats.map((workspace) => workspace.workspaceKey)).toEqual([
+    expect(result[0]?.workspaces.map((workspace) => workspace.workspaceKey)).toEqual([
       "newer",
       "older",
+      "regular",
     ]);
+    expect(result[1]?.workspaces.map((workspace) => workspace.workspaceKey)).toEqual(["other"]);
   });
 });

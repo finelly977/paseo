@@ -9,6 +9,7 @@ describe("workspace-draft-agent-config", () => {
         cwd: "/tmp/project",
         modeId: "auto",
         model: "gpt-5.4",
+        codexProviderInjectionId: "proxy-provider",
         thinkingOptionId: "high",
       }),
     ).toEqual({
@@ -16,6 +17,7 @@ describe("workspace-draft-agent-config", () => {
       cwd: "/tmp/project",
       modeId: "auto",
       model: "gpt-5.4",
+      codexProviderInjectionId: "proxy-provider",
       thinkingOptionId: "high",
     });
   });

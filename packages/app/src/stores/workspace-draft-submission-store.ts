@@ -15,6 +15,7 @@ export interface PendingWorkspaceDraftSubmission {
   timestamp: number;
   modeId?: string;
   model?: string;
+  codexProviderInjectionId?: string;
   thinkingOptionId?: string;
   featureValues?: Record<string, unknown>;
   allowEmptyText?: boolean;
@@ -74,7 +75,10 @@ export const useWorkspaceDraftSubmissionStore = create<WorkspaceDraftSubmissionS
       set((state) => ({
         setupByDraftId: {
           ...state.setupByDraftId,
-          [normalizedDraftId]: { setup, sourceDirectory: sourceDirectory ?? null },
+          [normalizedDraftId]: {
+            setup,
+            sourceDirectory: sourceDirectory ?? null,
+          },
         },
       }));
     },

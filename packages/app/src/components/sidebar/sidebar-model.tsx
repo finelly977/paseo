@@ -7,7 +7,7 @@ import {
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
-import { usePinnedSidebarKeys, type PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
+import { usePinnedSidebarKeys } from "@/hooks/use-sidebar-pins";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarViewStore, type SidebarGroupMode } from "@/stores/sidebar-view-store";
 import type { SidebarShortcutModel } from "@/utils/sidebar-shortcuts";
@@ -20,7 +20,6 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   resolvedProjectFilters: readonly string[];
   groupMode: SidebarGroupMode;
   statusGroups: StatusGroup[];
-  pinnedGroups: PinnedSidebarGroups;
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectKey: string) => void;
   shortcutModel: SidebarShortcutModel;
@@ -45,7 +44,6 @@ export function SidebarModelProvider({
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
-  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
   );
@@ -90,7 +88,6 @@ export function SidebarModelProvider({
         workspaceEntriesByKey: projectionWorkspaceEntriesByKey,
         projectNamesByKey: list.projectNamesByKey,
         groupMode,
-        pinnedCollapsed,
         collapsedProjectKeys,
         collapsedStatusGroupKeys,
       }),
@@ -100,7 +97,6 @@ export function SidebarModelProvider({
       groupMode,
       list.projectNamesByKey,
       filteredProjects,
-      pinnedCollapsed,
       pinnedKeys,
       projectionWorkspaceEntriesByKey,
     ],
@@ -108,21 +104,19 @@ export function SidebarModelProvider({
   const value = useMemo(
     () => ({
       ...list,
-      projects: filteredProjects,
+      projects: projection.projects,
       workspacePlacements: filteredWorkspacePlacements,
       allProjects: list.projects,
       resolvedProjectFilters,
       workspaceEntriesByKey,
       groupMode,
       statusGroups: projection.statusGroups,
-      pinnedGroups: projection.pinnedGroups,
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,
     }),
     [
       collapsedProjectKeys,
-      filteredProjects,
       filteredWorkspacePlacements,
       groupMode,
       list,

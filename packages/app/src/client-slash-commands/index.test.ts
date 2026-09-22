@@ -99,7 +99,10 @@ describe("resolveClientSlashCommand", () => {
     expect(resolveClientSlashCommand({ text: "/clear now", hasAttachments: false })).toBeNull();
     expect(resolveClientSlashCommand({ text: "/quit now", hasAttachments: false })).toBeNull();
     expect(
-      resolveClientSlashCommand({ text: "/provider-command", hasAttachments: false }),
+      resolveClientSlashCommand({
+        text: "/provider-command",
+        hasAttachments: false,
+      }),
     ).toBeNull();
     expect(resolveClientSlashCommand({ text: "hello /quit", hasAttachments: false })).toBeNull();
     expect(resolveClientSlashCommand({ text: "/quit", hasAttachments: true })).toBeNull();
@@ -113,6 +116,7 @@ describe("buildDraftAgentSetup", () => {
       cwd: "/repo",
       modeId: "mode-current",
       model: "agent-model",
+      codexProviderInjectionId: null,
       thinkingOptionId: "think-hard",
       featureValues: {
         "web-search": true,

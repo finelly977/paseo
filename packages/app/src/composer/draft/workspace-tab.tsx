@@ -66,6 +66,7 @@ interface AutoSubmitConfig {
   provider: string;
   modeId: string | null;
   model: string | null;
+  codexProviderInjectionId: string | null;
   thinkingOptionId: string | null;
   featureValues: Record<string, unknown>;
 }
@@ -75,6 +76,7 @@ function resolveAutoSubmitConfig(
     provider: string;
     modeId?: string | null;
     model?: string | null;
+    codexProviderInjectionId?: string | null;
     thinkingOptionId?: string | null;
     featureValues?: Record<string, unknown>;
   } | null,
@@ -84,6 +86,7 @@ function resolveAutoSubmitConfig(
     provider: pending.provider,
     modeId: pending.modeId ?? null,
     model: pending.model ?? null,
+    codexProviderInjectionId: pending.codexProviderInjectionId ?? null,
     thinkingOptionId: pending.thinkingOptionId ?? null,
     featureValues: pending.featureValues ?? {},
   };
@@ -133,6 +136,17 @@ function resolveDraftModeId(input: {
   return null;
 }
 
+function resolveDraftCodexProviderInjectionId(input: {
+  autoSubmitConfig: AutoSubmitConfig | null;
+  composerState: { codexProviderInjectionId: string | null };
+}): string | undefined {
+  return (
+    input.autoSubmitConfig?.codexProviderInjectionId ??
+    input.composerState.codexProviderInjectionId ??
+    undefined
+  );
+}
+
 async function submitDraftCreateRequest(input: {
   attempt: { clientMessageId: string };
   text: string;
@@ -148,6 +162,7 @@ async function submitDraftCreateRequest(input: {
     selectedMode: string;
     modeOptions: readonly { id: string }[];
     effectiveModelId: string | null;
+    codexProviderInjectionId: string | null;
     effectiveThinkingOptionId: string | null;
     featureValues: Record<string, unknown> | undefined;
   };
@@ -187,6 +202,10 @@ async function submitDraftCreateRequest(input: {
     cwd,
     ...modeIdOverride,
     model: autoSubmitConfig?.model ?? (composerState.effectiveModelId || undefined),
+    codexProviderInjectionId: resolveDraftCodexProviderInjectionId({
+      autoSubmitConfig,
+      composerState,
+    }),
     thinkingOptionId:
       autoSubmitConfig?.thinkingOptionId ?? (composerState.effectiveThinkingOptionId || undefined),
     featureValues: autoSubmitConfig?.featureValues ?? composerState.featureValues,
@@ -369,6 +388,7 @@ export function WorkspaceDraftAgentTab({
       initialServerId: serverId,
       initialValues: draftInitialValues,
       initialFeatureValues: draftSetup?.featureValues,
+      initialCodexProviderInjectionId: draftSetup?.codexProviderInjectionId,
       isVisible: true,
       onlineServerIds,
       lockedWorkingDir: draftWorkingDirectory ?? undefined,
@@ -438,7 +458,9 @@ export function WorkspaceDraftAgentTab({
   const isCompactFormFactor = useIsCompactFormFactor();
   const { onLayout: onInputAreaLayout, isBelow: isCompactComposerLayout } = useContainerWidthBelow(
     COMPACT_FORM_FACTOR_WIDTH,
-    { initialIsBelow: isCompactFormFactor },
+    {
+      initialIsBelow: isCompactFormFactor,
+    },
   );
   const workspaceAttachmentScopeKey = useWorkspaceAttachmentScopeKey({
     serverId,
@@ -564,7 +586,11 @@ export function WorkspaceDraftAgentTab({
     if (autoSubmitKeyRef.current === submitKey) {
       return;
     }
-    const submission = consumePendingAutoSubmit({ serverId, workspaceId, draftId });
+    const submission = consumePendingAutoSubmit({
+      serverId,
+      workspaceId,
+      draftId,
+    });
     if (!submission) {
       return;
     }
@@ -686,7 +712,10 @@ export function WorkspaceDraftAgentTab({
           onChangeAttachments={draftInput.setAttachments}
           cwd={composerState.workingDir}
           clearDraft={draftInput.clear}
-          autoFocus={shouldAutoFocusWorkspaceDraftComposer({ isPaneFocused, isSubmitting })}
+          autoFocus={shouldAutoFocusWorkspaceDraftComposer({
+            isPaneFocused,
+            isSubmitting,
+          })}
           autoFocusKey={String(draftInput.attachmentFocusRequestId)}
           onFocusInput={handleFocusInputCallback}
           commandDraftConfig={composerState.commandDraftConfig}

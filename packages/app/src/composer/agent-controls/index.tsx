@@ -50,6 +50,7 @@ import type {
   AgentProvider,
 } from "@getpaseo/protocol/agent-types";
 import type { AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
+import type { CodexProviderInjection } from "@getpaseo/protocol/messages";
 import {
   getFeatureHighlightColor,
   getFeatureTooltip,
@@ -86,6 +87,7 @@ import {
   type AgentProfilePicker,
 } from "@/agent-profiles";
 import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
+import { CodexProviderInjectionControl } from "@/composer/agent-controls/codex-provider-injection-control";
 
 interface AgentControlOption {
   id: string;
@@ -121,6 +123,9 @@ interface ControlledAgentControlsProps {
   modeControl?: AgentModeControlValue | null;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  codexProviderInjections?: readonly CodexProviderInjection[];
+  selectedCodexProviderInjectionId?: string | null;
+  onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
 }
 
 export interface DraftAgentControlsProps {
@@ -149,6 +154,9 @@ export interface DraftAgentControlsProps {
   disabled?: boolean;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  codexProviderInjections?: readonly CodexProviderInjection[];
+  selectedCodexProviderInjectionId?: string | null;
+  onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
 }
 
 interface AgentControlsProps {
@@ -400,6 +408,16 @@ function buildOpenChangeHandler(
   };
 }
 
+function supportsCodexProviderInjectionControl(input: {
+  provider: string;
+  injections?: readonly CodexProviderInjection[];
+  onSelect?: (injectionId: string, model?: string) => void;
+}): boolean {
+  if (input.provider !== "codex") return false;
+  if (!input.injections || input.injections.length === 0) return false;
+  return input.onSelect !== undefined;
+}
+
 function ControlledAgentControls({
   provider,
   providerOptions,
@@ -427,6 +445,9 @@ function ControlledAgentControls({
   modeControl,
   modelSelectorServerId = null,
   isCompactLayout,
+  codexProviderInjections,
+  selectedCodexProviderInjectionId = null,
+  onSelectCodexProviderInjection,
 }: ControlledAgentControlsProps) {
   const { t } = useTranslation();
   const isCompactFormFactor = useIsCompactFormFactor();
@@ -440,7 +461,6 @@ function ControlledAgentControls({
   const availableWidthRef = useRef(0);
 
   const providerAnchorRef = useRef<View>(null);
-  const _modelAnchorRef = useRef<View>(null);
   const thinkingAnchorRef = useRef<View>(null);
 
   const canSelectProvider = Boolean(
@@ -450,6 +470,11 @@ function ControlledAgentControls({
   const canSelectThinking = Boolean(
     onSelectThinkingOption && thinkingOptions && thinkingOptions.length > 0,
   );
+  const canSelectCodexProviderInjection = supportsCodexProviderInjectionControl({
+    provider,
+    injections: codexProviderInjections,
+    onSelect: onSelectCodexProviderInjection,
+  });
 
   const displayProvider = findOptionLabel(
     providerOptions,
@@ -490,10 +515,18 @@ function ControlledAgentControls({
       hasModel: canSelectModel,
       hasThinking: canSelectThinking,
       hasMode: modeControl !== null && modeControl !== undefined,
+      hasInjection: canSelectCodexProviderInjection,
       features: featureControls,
       fontScale,
     }),
-    [canSelectModel, canSelectThinking, featureControls, fontScale, modeControl],
+    [
+      canSelectCodexProviderInjection,
+      canSelectModel,
+      canSelectThinking,
+      featureControls,
+      fontScale,
+      modeControl,
+    ],
   );
   const presentation = useMemo(() => resolveComposerControlPresentation(density), [density]);
   const layoutContextValue = useMemo(
@@ -706,6 +739,10 @@ function ControlledAgentControls({
             handleOpenSheet={handleOpenSheet}
             handleCloseSheet={handleCloseSheet}
             modelSelectorServerId={modelSelectorServerId}
+            codexProviderInjections={codexProviderInjections}
+            selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+            onSelectCodexProviderInjection={onSelectCodexProviderInjection}
+            canSelectCodexProviderInjection={canSelectCodexProviderInjection}
           />
         ) : (
           <SheetAgentControlsContent
@@ -740,6 +777,10 @@ function ControlledAgentControls({
             modeControl={modeControl}
             glyphSize={layoutContextValue.glyphSize}
             modelSelectorServerId={modelSelectorServerId}
+            codexProviderInjections={codexProviderInjections}
+            selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+            onSelectCodexProviderInjection={onSelectCodexProviderInjection}
+            canSelectCodexProviderInjection={canSelectCodexProviderInjection}
           />
         )}
       </View>
@@ -801,6 +842,10 @@ interface DesktopAgentControlsContentProps {
   handleOpenSheet: (sheet: Exclude<ActiveSheet, null>) => void;
   handleCloseSheet: () => void;
   modelSelectorServerId: string | null;
+  codexProviderInjections?: readonly CodexProviderInjection[];
+  selectedCodexProviderInjectionId: string | null;
+  onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
+  canSelectCodexProviderInjection: boolean;
 }
 
 const DESKTOP_SEARCH_THRESHOLD = 6;
@@ -855,6 +900,10 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     handleOpenSheet,
     handleCloseSheet,
     modelSelectorServerId,
+    codexProviderInjections,
+    selectedCodexProviderInjectionId,
+    onSelectCodexProviderInjection,
+    canSelectCodexProviderInjection,
   } = props;
   const modelToolbar = useMemo(
     () => ({ glyphSize, showCaret: presentation.showCarets }),
@@ -923,6 +972,21 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             <Text style={styles.tooltipText}>{t(getAgentControlHintKey("model"))}</Text>
           </TooltipContent>
         </Tooltip>
+      ) : null}
+
+      {canSelectCodexProviderInjection &&
+      codexProviderInjections &&
+      onSelectCodexProviderInjection ? (
+        <CodexProviderInjectionControl
+          injections={codexProviderInjections}
+          selectedInjectionId={selectedCodexProviderInjectionId}
+          selectedModelId={selectedModelId ?? ""}
+          onSelect={onSelectCodexProviderInjection}
+          onClose={onDropdownClose}
+          disabled={disabled}
+          surface="toolbar"
+          showToolbarLabel={presentation.showInjectionLabel}
+        />
       ) : null}
 
       {thinkingOptions && thinkingOptions.length > 0 ? (
@@ -1053,6 +1117,10 @@ interface SheetAgentControlsContentProps {
   modeControl?: AgentModeControlValue | null;
   glyphSize: number;
   modelSelectorServerId: string | null;
+  codexProviderInjections?: readonly CodexProviderInjection[];
+  selectedCodexProviderInjectionId: string | null;
+  onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
+  canSelectCodexProviderInjection: boolean;
 }
 
 function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
@@ -1089,6 +1157,10 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
     modeControl,
     glyphSize,
     modelSelectorServerId,
+    codexProviderInjections,
+    selectedCodexProviderInjectionId,
+    onSelectCodexProviderInjection,
+    canSelectCodexProviderInjection,
   } = props;
 
   const thinkingAnchorRef = useRef<View | null>(null);
@@ -1141,6 +1213,20 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
       ) : null}
 
       {modeControl ? <AgentModeControl {...modeControl} surface="sheet" /> : null}
+
+      {canSelectCodexProviderInjection &&
+      codexProviderInjections &&
+      onSelectCodexProviderInjection ? (
+        <CodexProviderInjectionControl
+          injections={codexProviderInjections}
+          selectedInjectionId={selectedCodexProviderInjectionId}
+          selectedModelId={selectedModelId ?? ""}
+          onSelect={onSelectCodexProviderInjection}
+          onClose={onDropdownClose}
+          disabled={disabled}
+          surface="sheet"
+        />
+      ) : null}
 
       {(features ?? []).map((feature) => (
         <SheetFeatureItem
@@ -1221,7 +1307,10 @@ function DesktopFeatureItem({
   const comboboxOptions = useMemo<ComboboxOption[]>(
     () =>
       feature.type === "select"
-        ? feature.options.map((option) => ({ id: option.id, label: option.label }))
+        ? feature.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+          }))
         : [],
     [feature],
   );
@@ -1332,7 +1421,10 @@ function SheetFeatureItem({
   const comboboxOptions = useMemo<ComboboxOption[]>(
     () =>
       feature.type === "select"
-        ? feature.options.map((option) => ({ id: option.id, label: option.label }))
+        ? feature.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+          }))
         : [],
     [feature],
   );
@@ -1474,7 +1566,10 @@ export const AgentControls = memo(function AgentControls({
   });
 
   const modelOptions = useMemo<AgentControlOption[]>(() => {
-    return (models ?? []).map((model) => ({ id: model.id, label: model.label }));
+    return (models ?? []).map((model) => ({
+      id: model.id,
+      label: model.label,
+    }));
   }, [models]);
 
   const thinkingOptions = useMemo<AgentControlOption[]>(() => {
@@ -1681,6 +1776,9 @@ export function DraftAgentControls({
   disabled = false,
   modelSelectorServerId = null,
   isCompactLayout,
+  codexProviderInjections,
+  selectedCodexProviderInjectionId = null,
+  onSelectCodexProviderInjection,
 }: DraftAgentControlsProps) {
   const mappedThinkingOptions = useMemo<AgentControlOption[]>(() => {
     return toThinkingControlOptions(thinkingOptions);
@@ -1773,6 +1871,9 @@ export function DraftAgentControls({
       modeControl={modeControl}
       modelSelectorServerId={modelSelectorServerId}
       isCompactLayout={isCompactLayout}
+      codexProviderInjections={codexProviderInjections}
+      selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+      onSelectCodexProviderInjection={onSelectCodexProviderInjection}
     />
   );
 }

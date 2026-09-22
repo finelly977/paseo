@@ -93,6 +93,9 @@ export function normalizeWorkspaceDraftTabSetup(
     cwd,
     modeId: trimOptionalString(typeof record.modeId === "string" ? record.modeId : null),
     model: trimOptionalString(typeof record.model === "string" ? record.model : null),
+    codexProviderInjectionId: trimOptionalString(
+      typeof record.codexProviderInjectionId === "string" ? record.codexProviderInjectionId : null,
+    ),
     thinkingOptionId: trimOptionalString(
       typeof record.thinkingOptionId === "string" ? record.thinkingOptionId : null,
     ),
@@ -169,6 +172,7 @@ function workspaceDraftTabSetupsEqual(
     left.cwd === right.cwd &&
     left.modeId === right.modeId &&
     left.model === right.model &&
+    left.codexProviderInjectionId === right.codexProviderInjectionId &&
     left.thinkingOptionId === right.thinkingOptionId &&
     recordsShallowEqual(left.featureValues, right.featureValues)
   );

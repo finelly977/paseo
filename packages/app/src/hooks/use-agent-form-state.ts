@@ -56,6 +56,7 @@ export interface UseAgentFormStateResult {
   selectedMode: string;
   setModeFromUser: (modeId: string) => void;
   selectedModel: string;
+  setModelLocally: (modelId: string) => void;
   setModelFromUser: (modelId: string) => void;
   selectedThinkingOptionId: string;
   setThinkingOptionFromUser: (thinkingOptionId: string) => void;
@@ -81,6 +82,7 @@ export interface UseAgentFormStateResult {
   clearProviderSelectionFromUser: () => void;
   workingDirIsEmpty: boolean;
   persistFormPreferences: () => Promise<void>;
+  persistFormPreferencesWithoutModel: () => Promise<void>;
 }
 
 function shouldAutoSelectServerId(input: {
@@ -178,8 +180,9 @@ async function persistProviderPreferences(input: {
   updatePreferences: (
     updates: Partial<FormPreferences> | ((current: FormPreferences) => FormPreferences),
   ) => Promise<void>;
+  includeModel: boolean;
 }): Promise<void> {
-  const { provider, formState, availableModels, updatePreferences } = input;
+  const { provider, formState, availableModels, updatePreferences, includeModel } = input;
   const resolvedModel = resolveEffectiveModel(availableModels, formState.model);
   const modelId = resolvedModel?.id ?? formState.model;
   await updatePreferences((current) =>
@@ -187,9 +190,9 @@ async function persistProviderPreferences(input: {
       preferences: current,
       provider,
       updates: {
-        model: modelId || undefined,
+        ...(includeModel && modelId ? { model: modelId } : {}),
         mode: formState.modeId || undefined,
-        ...(modelId && formState.thinkingOptionId
+        ...(includeModel && modelId && formState.thinkingOptionId
           ? { thinkingByModel: { [modelId]: formState.thinkingOptionId } }
           : {}),
       },
@@ -507,6 +510,13 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
     [availableModels, updatePreferences],
   );
 
+  const setModelLocally = useCallback(
+    (modelId: string) => {
+      dispatch({ type: "SET_MODEL_FROM_USER", modelId, availableModels });
+    },
+    [availableModels],
+  );
+
   const setThinkingOptionFromUser = useCallback(
     (thinkingOptionId: string) => {
       dispatch({ type: "SET_THINKING_OPTION_FROM_USER", thinkingOptionId });
@@ -560,6 +570,20 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       formState,
       availableModels,
       updatePreferences,
+      includeModel: true,
+    });
+  }, [availableModels, formState, updatePreferences]);
+
+  const persistFormPreferencesWithoutModel = useCallback(async () => {
+    if (!formState.provider) {
+      return;
+    }
+    await persistProviderPreferences({
+      provider: formState.provider,
+      formState,
+      availableModels,
+      updatePreferences,
+      includeModel: false,
     });
   }, [availableModels, formState, updatePreferences]);
 
@@ -587,6 +611,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       selectedMode: formState.modeId,
       setModeFromUser,
       selectedModel: formState.model,
+      setModelLocally,
       setModelFromUser,
       selectedThinkingOptionId: formState.thinkingOptionId,
       setThinkingOptionFromUser,
@@ -612,6 +637,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       clearProviderSelectionFromUser,
       workingDirIsEmpty,
       persistFormPreferences,
+      persistFormPreferencesWithoutModel,
     }),
     [
       formState.serverId,
@@ -625,6 +651,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       setProviderFromUser,
       setModeFromUser,
       setModelFromUser,
+      setModelLocally,
       setThinkingOptionFromUser,
       setWorkingDir,
       setWorkingDirFromUser,
@@ -647,6 +674,7 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
       clearProviderSelectionFromUser,
       workingDirIsEmpty,
       persistFormPreferences,
+      persistFormPreferencesWithoutModel,
     ],
   );
 }

@@ -2,14 +2,15 @@ import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Pressable, ScrollView, type PressableStateCallbackType } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
-import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import {
+  navigateToWorkspace,
+  useActiveWorkspaceSelection,
+} from "@/stores/navigation-active-workspace-store";
 import { type SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 import { isWeb as platformIsWeb, isNative as platformIsNative } from "@/constants/platform";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
-import { withUnistyles } from "react-native-unistyles";
 import {
   ChevronDown,
   ChevronRight,
@@ -44,7 +45,6 @@ import {
   SidebarWorkspaceMenu,
   type CodexProviderInjectionMenuItem,
 } from "@/components/sidebar/sidebar-workspace-menu";
-import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pin";
@@ -58,10 +58,18 @@ import { useCodexProviderInjections } from "@/codex-provider-injections/use-code
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
-const blueColorMapping = (theme: Theme) => ({ color: theme.colors.palette.blue[500] });
-const amberColorMapping = (theme: Theme) => ({ color: theme.colors.palette.amber[500] });
-const redColorMapping = (theme: Theme) => ({ color: theme.colors.palette.red[500] });
-const greenColorMapping = (theme: Theme) => ({ color: theme.colors.palette.green[500] });
+const blueColorMapping = (theme: Theme) => ({
+  color: theme.colors.palette.blue[500],
+});
+const amberColorMapping = (theme: Theme) => ({
+  color: theme.colors.palette.amber[500],
+});
+const redColorMapping = (theme: Theme) => ({
+  color: theme.colors.palette.red[500],
+});
+const greenColorMapping = (theme: Theme) => ({
+  color: theme.colors.palette.green[500],
+});
 
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronRight = withUnistyles(ChevronRight);
@@ -71,7 +79,6 @@ const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedCircleX = withUnistyles(CircleX);
 interface StatusWorkspaceListProps {
   groups: StatusGroup[];
-  pinnedWorkspaces: SidebarWorkspaceEntry[];
   projectNamesByKey: Map<string, string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
   showShortcutBadges: boolean;
@@ -86,7 +93,6 @@ interface StatusWorkspaceListProps {
 
 export function SidebarStatusWorkspaceList({
   groups,
-  pinnedWorkspaces,
   projectNamesByKey,
   shortcutIndexByWorkspaceKey,
   showShortcutBadges,
@@ -106,56 +112,9 @@ export function SidebarStatusWorkspaceList({
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
-  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
-  const togglePinnedCollapsed = useSidebarCollapsedSectionsStore(
-    (state) => state.togglePinnedCollapsed,
-  );
-  const {
-    visibleItems: visiblePinnedWorkspaces,
-    expanded: pinnedWorkspacesExpanded,
-    canToggle: canTogglePinnedWorkspaces,
-    toggleExpanded: togglePinnedWorkspacesExpanded,
-  } = useLimitedSidebarGroup(pinnedWorkspaces);
-
   const statusShortcutIndex = showShortcutBadges ? shortcutIndexByWorkspaceKey : new Map();
   const content = (
     <>
-      {pinnedWorkspaces.length > 0 ? (
-        <View style={styles.pinnedSection} testID="sidebar-pinned-section">
-          <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
-          {pinnedCollapsed ? null : (
-            <>
-              {visiblePinnedWorkspaces.map((workspace) => (
-                <StatusWorkspaceRow
-                  key={workspace.workspaceKey}
-                  workspace={workspace}
-                  subtitle={buildStatusRowSubtitle({
-                    projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                    hostLabel: resolveSidebarHostLabel({
-                      serverId: workspace.serverId,
-                      localDaemonServerId,
-                      showHostLabels,
-                      hostLabelByServerId,
-                    }),
-                  })}
-                  shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
-                  showShortcutBadge={showShortcutBadges}
-                  canPin={supportsPinningByServerId.get(workspace.serverId) === true}
-                  onToggleWorkspacePin={onToggleWorkspacePin}
-                  onWorkspacePress={onWorkspacePress}
-                />
-              ))}
-              {canTogglePinnedWorkspaces ? (
-                <SidebarGroupToggleRow
-                  expanded={pinnedWorkspacesExpanded}
-                  onPress={togglePinnedWorkspacesExpanded}
-                  testID="sidebar-pinned-show-more"
-                />
-              ) : null}
-            </>
-          )}
-        </View>
-      ) : null}
       {listHeaderComponent}
       <StatusGroupList
         groups={groups}
@@ -455,7 +414,10 @@ const StatusWorkspaceRow = memo(function StatusWorkspaceRow({
   const handlePress = useCallback(() => {
     if (!workspace.serverId) return;
     onWorkspacePress?.();
-    navigateToWorkspace({ serverId: workspace.serverId, workspaceId: workspace.workspaceId });
+    navigateToWorkspace({
+      serverId: workspace.serverId,
+      workspaceId: workspace.workspaceId,
+    });
   }, [onWorkspacePress, workspace.serverId, workspace.workspaceId]);
 
   return (
@@ -771,7 +733,10 @@ function StatusWorkspaceRowInner({
         const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
         const showKebabInSlot = showKebab && !showShortcut;
         const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
-        const workspaceRowStyle = getStatusWorkspaceRowStyle({ selected, isHovered });
+        const workspaceRowStyle = getStatusWorkspaceRowStyle({
+          selected,
+          isHovered,
+        });
         const resolvedWorkspaceRowStyle = [
           ...workspaceRowStyle,
           {
@@ -936,9 +901,6 @@ const styles = StyleSheet.create((theme) => ({
     // Keep status mode's Pinned/Workspaces boundary identical to project mode.
     paddingTop: 2,
     paddingBottom: theme.spacing[4],
-  },
-  pinnedSection: {
-    marginBottom: theme.spacing[1],
   },
   statusGroupBlock: {
     marginBottom: theme.spacing[1],

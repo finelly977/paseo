@@ -43,7 +43,6 @@ import {
   type SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
-import type { PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 import { RetainedPanelActivity } from "@/components/retained-panel";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 import { type SidebarGroupMode, useSidebarViewStore } from "@/stores/sidebar-view-store";
@@ -93,7 +92,6 @@ const sidebarIconColorMapping = (theme: Theme) => ({
 
 interface SidebarSharedProps {
   statusGroups: StatusGroup[];
-  pinnedGroups: PinnedSidebarGroups;
   projects: SidebarProjectEntry[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
@@ -155,7 +153,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     isRevalidating,
     refreshAll,
     statusGroups,
-    pinnedGroups,
     collapsedProjectKeys,
     toggleProjectCollapsed,
     groupMode,
@@ -252,7 +249,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
 
   const sharedProps = {
     statusGroups,
-    pinnedGroups,
     projects,
     workspaceEntriesByKey,
     projectNamesByKey,
@@ -596,7 +592,6 @@ function SidebarFooter({
 
 function MobileSidebar({
   statusGroups,
-  pinnedGroups,
   projects,
   workspaceEntriesByKey,
   projectNamesByKey,
@@ -710,7 +705,6 @@ function MobileSidebar({
             shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
             groupMode={groupMode}
             statusGroups={statusGroups}
-            pinnedGroups={pinnedGroups}
             projects={projects}
             workspaceEntriesByKey={workspaceEntriesByKey}
             projectNamesByKey={projectNamesByKey}
@@ -738,7 +732,6 @@ function MobileSidebar({
 
 function DesktopSidebar({
   statusGroups,
-  pinnedGroups,
   projects,
   workspaceEntriesByKey,
   projectNamesByKey,
@@ -876,7 +869,6 @@ function DesktopSidebar({
             shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
             groupMode={groupMode}
             statusGroups={statusGroups}
-            pinnedGroups={pinnedGroups}
             projects={projects}
             workspaceEntriesByKey={workspaceEntriesByKey}
             projectNamesByKey={projectNamesByKey}
