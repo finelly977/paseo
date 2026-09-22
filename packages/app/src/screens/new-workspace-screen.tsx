@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactElement, RefObject } from "react";
+import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Pressable, StyleSheet as RNStyleSheet, Text, View } from "react-native";
@@ -62,6 +63,7 @@ import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { getForgePresentation } from "@/git/forge";
 import type { CreateAgentInitialValues } from "@/hooks/use-agent-form-state";
 import { generateMessageId } from "@/types/stream";
+import { createWorkspaceBrowser } from "@/stores/browser-store";
 import { toErrorMessage } from "@/utils/error-messages";
 import { projectIconPlaceholderLabelFromDisplayName } from "@/utils/project-display-name";
 import {
@@ -81,8 +83,13 @@ import type { AgentAttachment, ForgeSearchItem } from "@getpaseo/protocol/messag
 import type { CreatePaseoWorktreeInput } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
+import { createWorkspaceFileTabTarget } from "@/workspace/file-open";
+import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 import { isEmptyWorkspaceSubmission, runCreateEmptyWorkspace } from "./new-workspace-empty";
-import { shouldAutomaticallyCreateWorkspaceShell } from "./new-workspace-auto-shell";
+import {
+  NewWorkspaceDraftShell,
+  type NewWorkspaceDraftShellTarget,
+} from "./new-workspace-draft-shell";
 import {
   getWorkspaceNamingAttachments,
   remapDraftCwdToWorkspace,
@@ -1535,6 +1542,93 @@ function useNewWorkspaceFormStack(input: NewWorkspaceFormStackInput): ReactEleme
   );
 }
 
+interface NewWorkspaceDraftShellContext {
+  serverId: string;
+  projectId: string | null;
+  projectName: string;
+  draftId: string;
+  cwd: string;
+  isGit: boolean;
+}
+
+function resolveNewWorkspaceDraftShellContext(input: {
+  isCompact: boolean;
+  sourceDirectory: string | null;
+  selectedProject: HostProjectListItem | null;
+  serverId: string;
+  routeProjectId?: string;
+  displayName?: string;
+  fallbackTitle: string;
+  draftId: string;
+  isGit: boolean;
+}): NewWorkspaceDraftShellContext | null {
+  if (input.isCompact || !input.sourceDirectory) {
+    return null;
+  }
+  const selectedProjectId = input.selectedProject
+    ? getHostProjectId(input.selectedProject, input.serverId)
+    : null;
+  return {
+    serverId: input.serverId,
+    projectId: selectedProjectId ?? input.routeProjectId ?? null,
+    projectName: input.selectedProject?.projectName ?? input.displayName ?? input.fallbackTitle,
+    draftId: input.draftId,
+    cwd: input.sourceDirectory,
+    isGit: input.isGit,
+  };
+}
+
+function resolveNewWorkspaceShellDraftId(draftId: string | undefined): string {
+  return draftId?.trim() || generateDraftId();
+}
+
+function NewWorkspaceTitlebarDragRegion({ hasDraftShell }: { hasDraftShell: boolean }) {
+  if (hasDraftShell) {
+    return null;
+  }
+  return <TitlebarDragRegion />;
+}
+
+interface NewWorkspaceScreenLayoutProps {
+  shellContext: NewWorkspaceDraftShellContext | null;
+  isPending: boolean;
+  onCreateDraft: () => void;
+  onOpenTarget: (target: NewWorkspaceDraftShellTarget) => void;
+  children: ReactElement;
+}
+
+const newWorkspaceHeaderLeft = <SidebarMenuToggle />;
+
+function NewWorkspaceScreenLayout({
+  shellContext,
+  isPending,
+  onCreateDraft,
+  onOpenTarget,
+  children,
+}: NewWorkspaceScreenLayoutProps) {
+  if (!shellContext) {
+    return (
+      <FileDropZone style={styles.container}>
+        <ScreenHeader left={newWorkspaceHeaderLeft} borderless />
+        {children}
+      </FileDropZone>
+    );
+  }
+
+  return (
+    <FileDropZone style={styles.container}>
+      <NewWorkspaceDraftShell
+        {...shellContext}
+        isPending={isPending}
+        onCreateDraft={onCreateDraft}
+        onOpenTarget={onOpenTarget}
+      >
+        {children}
+      </NewWorkspaceDraftShell>
+    </FileDropZone>
+  );
+}
+
 export function NewWorkspaceScreen({
   serverId,
   sourceDirectory: sourceDirectoryProp,
@@ -1542,6 +1636,7 @@ export function NewWorkspaceScreen({
   displayName: displayNameProp,
   draftId,
 }: NewWorkspaceScreenProps) {
+  const router = useRouter();
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -1582,7 +1677,7 @@ export function NewWorkspaceScreen({
   const projectPickerAnchorRef = useRef<View>(null);
   const isolationPickerAnchorRef = useRef<View>(null);
   const hostPickerAnchorRef = useRef<View | null>(null);
-  const automaticWorkspaceCreationStartedRef = useRef(false);
+  const shellDraftIdRef = useRef(resolveNewWorkspaceShellDraftId(draftId));
   const isDraftHandoffActive = useIsNewWorkspaceDraftHandoffActive({
     draftId,
     selectedServerId,
@@ -2060,73 +2155,94 @@ export function NewWorkspaceScreen({
     ],
   );
 
-  useEffect(() => {
-    const selectedProvider = composerState?.selectedProvider;
-    if (!selectedSourceDirectory) {
-      return;
-    }
-    if (
-      automaticWorkspaceCreationStartedRef.current ||
-      !selectedProvider ||
-      !shouldAutomaticallyCreateWorkspaceShell({
-        routeHasProject: Boolean(sourceDirectoryProp || projectId),
-        hasDraftHandoff: Boolean(draftId),
-        selectedSourceDirectory,
-        clientReady,
-        checkoutReady: checkoutStatusQuery.isSuccess,
-        isPending,
-      })
-    ) {
-      return;
-    }
-
-    automaticWorkspaceCreationStartedRef.current = true;
-    setPendingAction("empty");
-    void (async () => {
-      try {
-        await composerState.persistFormPreferences();
-        const ensuredWorkspace = await ensureWorkspace({
-          cwd: selectedSourceDirectory,
-          prompt: "",
-          attachments: [],
-          withInitialAgent: false,
-        });
-        const targetDraftId = generateDraftId();
-        navigateToWorkspace({
-          serverId: selectedServerId,
-          workspaceId: ensuredWorkspace.id,
-          target: {
-            kind: "draft",
-            draftId: targetDraftId,
-            setup: buildWorkspaceDraftSetupForCreatedWorkspace({
-              forkDraftSetup: null,
-              workspaceDirectory: ensuredWorkspace.workspaceDirectory,
-              provider: selectedProvider,
-              composerState,
-            }),
-          },
-        });
-      } catch (error) {
-        automaticWorkspaceCreationStartedRef.current = false;
-        setPendingAction(null);
-        const message = toErrorMessage(error);
-        setErrorMessage(message);
-        toast.error(message);
+  const handleOpenDraftShellTarget = useCallback(
+    (target: NewWorkspaceDraftShellTarget) => {
+      if (isPending || !selectedSourceDirectory) {
+        return;
       }
-    })();
-  }, [
-    checkoutStatusQuery.isSuccess,
-    clientReady,
-    composerState,
-    draftId,
-    ensureWorkspace,
-    isPending,
-    projectId,
-    selectedServerId,
-    selectedSourceDirectory,
-    sourceDirectoryProp,
-    toast,
-  ]);
+      setErrorMessage(null);
+      setPendingAction("empty");
+      void (async () => {
+        try {
+          await composerState?.persistFormPreferences();
+          const ensuredWorkspace = await ensureWorkspace({
+            cwd: selectedSourceDirectory,
+            prompt: "",
+            attachments: [],
+            withInitialAgent: false,
+          });
+          let workspaceTarget: WorkspaceTabTarget;
+          if (target.kind === "terminal") {
+            const terminalPayload = target.profile
+              ? await withConnectedClient().createTerminal(
+                  ensuredWorkspace.workspaceDirectory,
+                  target.profile.name,
+                  undefined,
+                  {
+                    command: target.profile.command,
+                    args: target.profile.args,
+                    workspaceId: ensuredWorkspace.id,
+                  },
+                )
+              : await withConnectedClient().createTerminal(
+                  ensuredWorkspace.workspaceDirectory,
+                  undefined,
+                  undefined,
+                  { workspaceId: ensuredWorkspace.id },
+                );
+            if (!terminalPayload.terminal) {
+              throw new Error(terminalPayload.error ?? t("workspace.terminal.unableToSubscribe"));
+            }
+            workspaceTarget = { kind: "terminal", terminalId: terminalPayload.terminal.id };
+          } else if (target.kind === "browser") {
+            const { browserId } = createWorkspaceBrowser();
+            workspaceTarget = { kind: "browser", browserId };
+          } else {
+            workspaceTarget = createWorkspaceFileTabTarget(target.location);
+          }
+          navigateToWorkspace({
+            serverId: selectedServerId,
+            workspaceId: ensuredWorkspace.id,
+            target: workspaceTarget,
+          });
+        } catch (error) {
+          setPendingAction(null);
+          const message = toErrorMessage(error);
+          setErrorMessage(message);
+          toast.error(message);
+        }
+      })();
+    },
+    [
+      composerState,
+      ensureWorkspace,
+      isPending,
+      selectedServerId,
+      selectedSourceDirectory,
+      t,
+      toast,
+      withConnectedClient,
+    ],
+  );
+
+  const handleCreateSiblingDraft = useCallback(() => {
+    if (!selectedSourceDirectory || !selectedProject) {
+      return;
+    }
+    const selectedProjectId = getHostProjectId(selectedProject, selectedServerId);
+    if (!selectedProjectId) {
+      throw new Error("无法新建会话：当前主机上的项目标识不存在");
+    }
+    router.push(
+      buildNewWorkspaceRoute({
+        serverId: selectedServerId,
+        sourceDirectory: selectedSourceDirectory,
+        displayName: selectedProject.projectName,
+        projectId: selectedProjectId,
+        draftId: generateDraftId(),
+      }),
+    );
+  }, [router, selectedProject, selectedServerId, selectedSourceDirectory]);
 
   const renderPickerOption = useCallback(
     (props: {
@@ -2248,49 +2364,66 @@ export function NewWorkspaceScreen({
     },
   });
 
-  const screenHeaderLeft = useMemo(() => <SidebarMenuToggle />, []);
+  const draftShellContext = resolveNewWorkspaceDraftShellContext({
+    isCompact,
+    sourceDirectory: selectedSourceDirectory,
+    selectedProject,
+    serverId: selectedServerId,
+    routeProjectId: projectId,
+    displayName: displayNameProp,
+    fallbackTitle: t("newWorkspace.title"),
+    draftId: shellDraftIdRef.current,
+    isGit: checkoutStatusQuery.data?.isGit === true,
+  });
+  const composerContent = (
+    <View style={contentStyle}>
+      <NewWorkspaceTitlebarDragRegion hasDraftShell={draftShellContext !== null} />
+      <ReanimatedAnimated.View style={centeredStyle}>
+        <View style={styles.composerTitleContainer}>
+          <Text style={styles.composerTitle}>{t("newWorkspace.title")}</Text>
+        </View>
+        {formStack}
+        <Composer
+          externalKeyboardShift
+          agentId={draftKey}
+          serverId={selectedServerId}
+          isPaneFocused={true}
+          onSubmitMessage={handleSubmitNewWorkspace}
+          allowEmptySubmit={true}
+          submitButtonAccessibilityLabel={t("newWorkspace.create")}
+          submitButtonTestID="workspace-create-submit"
+          submitIcon="return"
+          isSubmitLoading={isPending}
+          waitForGithubAutoAttachOnSubmit
+          submitBehavior="preserve-and-lock"
+          blurOnSubmit={true}
+          value={chatDraft.text}
+          onChangeText={chatDraft.setText}
+          attachments={chatDraft.attachments}
+          attachmentScopeKeys={visibleDraftContextScopeKeys}
+          onChangeAttachments={chatDraft.setAttachments}
+          onGithubPrDetected={handleGithubPrDetected}
+          onGithubPrAutoAttach={handleGithubPrAutoAttach}
+          cwd={selectedSourceDirectory ?? ""}
+          clearDraft={handleClearDraft}
+          autoFocus
+          commandDraftConfig={composerState?.commandDraftConfig}
+          agentControls={agentControlsWithDisabled}
+        />
+        {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+      </ReanimatedAnimated.View>
+    </View>
+  );
 
   return (
-    <FileDropZone style={styles.container}>
-      <ScreenHeader left={screenHeaderLeft} borderless />
-      <View style={contentStyle}>
-        <TitlebarDragRegion />
-        <ReanimatedAnimated.View style={centeredStyle}>
-          <View style={styles.composerTitleContainer}>
-            <Text style={styles.composerTitle}>{t("newWorkspace.title")}</Text>
-          </View>
-          {formStack}
-          <Composer
-            externalKeyboardShift
-            agentId={draftKey}
-            serverId={selectedServerId}
-            isPaneFocused={true}
-            onSubmitMessage={handleSubmitNewWorkspace}
-            allowEmptySubmit={true}
-            submitButtonAccessibilityLabel={t("newWorkspace.create")}
-            submitButtonTestID="workspace-create-submit"
-            submitIcon="return"
-            isSubmitLoading={isPending}
-            waitForGithubAutoAttachOnSubmit
-            submitBehavior="preserve-and-lock"
-            blurOnSubmit={true}
-            value={chatDraft.text}
-            onChangeText={chatDraft.setText}
-            attachments={chatDraft.attachments}
-            attachmentScopeKeys={visibleDraftContextScopeKeys}
-            onChangeAttachments={chatDraft.setAttachments}
-            onGithubPrDetected={handleGithubPrDetected}
-            onGithubPrAutoAttach={handleGithubPrAutoAttach}
-            cwd={selectedSourceDirectory ?? ""}
-            clearDraft={handleClearDraft}
-            autoFocus
-            commandDraftConfig={composerState?.commandDraftConfig}
-            agentControls={agentControlsWithDisabled}
-          />
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-        </ReanimatedAnimated.View>
-      </View>
-    </FileDropZone>
+    <NewWorkspaceScreenLayout
+      shellContext={draftShellContext}
+      isPending={isPending}
+      onCreateDraft={handleCreateSiblingDraft}
+      onOpenTarget={handleOpenDraftShellTarget}
+    >
+      {composerContent}
+    </NewWorkspaceScreenLayout>
   );
 }
 
