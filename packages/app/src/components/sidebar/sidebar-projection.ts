@@ -1,5 +1,10 @@
 import { buildStatusGroups, type StatusGroup } from "@/hooks/sidebar-status-view-model";
-import { applyWorkspaceLocalPins, type PinnedSidebarKeys } from "@/hooks/use-sidebar-pins";
+import {
+  applyWorkspaceLocalPins,
+  splitPinnedSidebarGroups,
+  type PinnedSidebarGroups,
+  type PinnedSidebarKeys,
+} from "@/hooks/use-sidebar-pins";
 import type {
   SidebarProjectEntry,
   SidebarWorkspaceEntry,
@@ -12,6 +17,7 @@ import {
 } from "@/utils/sidebar-shortcuts";
 
 export interface SidebarProjection {
+  pinnedGroups: PinnedSidebarGroups;
   projects: SidebarProjectEntry[];
   statusGroups: StatusGroup[];
   shortcutModel: SidebarShortcutModel;
@@ -20,22 +26,37 @@ export interface SidebarProjection {
 export function buildSidebarProjection(input: {
   projects: SidebarProjectEntry[];
   pinnedKeys: PinnedSidebarKeys;
+  projectPinnedKeys: PinnedSidebarKeys;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
   groupMode: SidebarGroupMode;
+  pinnedCollapsed: boolean;
   collapsedProjectKeys: ReadonlySet<string>;
   collapsedStatusGroupKeys: ReadonlySet<string>;
 }): SidebarProjection {
-  const projects = applyWorkspaceLocalPins({
+  const globallyPinned = splitPinnedSidebarGroups({
     projects: input.projects,
     keys: input.pinnedKeys,
   });
+  const projects = applyWorkspaceLocalPins({
+    projects: globallyPinned.unpinnedProjects,
+    keys: input.projectPinnedKeys,
+  });
+  const pinnedWorkspaceKeys = new Set(input.pinnedKeys.pinnedWorkspaceKeys);
   const statusGroups =
     input.groupMode === "status"
-      ? buildStatusGroups(Array.from(input.workspaceEntriesByKey.values()), input.projectNamesByKey)
+      ? buildStatusGroups(
+          Array.from(input.workspaceEntriesByKey.values()).filter(
+            (workspace) => !pinnedWorkspaceKeys.has(workspace.workspaceKey),
+          ),
+          input.projectNamesByKey,
+        )
       : [];
 
   const sections: SidebarShortcutSection[] = [];
+  if (!input.pinnedCollapsed) {
+    sections.push({ workspaces: globallyPinned.pinnedChats });
+  }
   if (input.groupMode === "status") {
     sections.push(
       ...statusGroups.map((group) => ({
@@ -53,6 +74,10 @@ export function buildSidebarProjection(input: {
   }
 
   return {
+    pinnedGroups: {
+      pinnedChats: globallyPinned.pinnedChats,
+      unpinnedProjects: projects,
+    },
     projects,
     statusGroups,
     shortcutModel: buildSidebarShortcutSections({ sections }),

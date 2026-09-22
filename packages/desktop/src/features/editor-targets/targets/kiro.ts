@@ -17,12 +17,12 @@ function launchArgs(input: EditorTargetLaunchInput): string[] {
 
 export const kiroTarget: EditorTarget = {
   id: "kiro",
-  async describe() {
+  async describe(runtime) {
     return {
       id: this.id,
       label: "Kiro",
       kind: "editor",
-      icon: { kind: "symbol", name: "terminal" },
+      icon: await runtime.loadIcon("kiro.png"),
     };
   },
   async isInstalled(runtime) {

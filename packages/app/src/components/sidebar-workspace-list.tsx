@@ -50,6 +50,7 @@ import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
 import { getHostRuntimeStore, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
+import type { PinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 import {
   useSidebarWorkspacePinController,
   type ToggleSidebarWorkspacePin,
@@ -70,6 +71,8 @@ import {
   type SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
+import { useSidebarWorkspacePinStore } from "@/stores/sidebar-workspace-pin-store";
+import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { ContextMenuTrigger, useContextMenu } from "@/components/ui/context-menu";
@@ -97,6 +100,7 @@ import {
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
+import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
 import {
   SidebarWorkspaceRowFrame,
@@ -245,6 +249,7 @@ function selectionForSelectedWorkspace(
 
 interface SidebarWorkspaceListProps {
   statusGroups: StatusGroup[];
+  pinnedGroups: PinnedSidebarGroups;
   projects: SidebarProjectEntry[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
@@ -311,6 +316,8 @@ interface WorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isProjectPinned?: boolean;
+  onToggleProjectPin?: () => void;
   onReloadAgent?: () => void;
   onReleaseAgentRuntime?: () => void;
   isReleasingAgentRuntime?: boolean;
@@ -677,6 +684,8 @@ function WorkspaceRowRightGroup({
   onRename,
   isPinned,
   onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
   onReloadAgent,
   onReleaseAgentRuntime,
   isReleasingAgentRuntime,
@@ -705,6 +714,8 @@ function WorkspaceRowRightGroup({
   onRename?: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isProjectPinned?: boolean;
+  onToggleProjectPin?: () => void;
   onReloadAgent?: () => void;
   onReleaseAgentRuntime?: () => void;
   isReleasingAgentRuntime?: boolean;
@@ -755,6 +766,8 @@ function WorkspaceRowRightGroup({
                 archiveShortcutKeys={archiveShortcutKeys}
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
+                isProjectPinned={isProjectPinned}
+                onToggleProjectPin={onToggleProjectPin}
                 onReloadAgent={onReloadAgent}
                 onReleaseAgentRuntime={onReleaseAgentRuntime}
                 isReleasingAgentRuntime={isReleasingAgentRuntime}
@@ -1203,6 +1216,8 @@ function WorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
   onReloadAgent,
   onReleaseAgentRuntime,
   isReleasingAgentRuntime,
@@ -1313,6 +1328,8 @@ function WorkspaceRowInner({
                   onRename={onRename}
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
+                  isProjectPinned={isProjectPinned}
+                  onToggleProjectPin={onToggleProjectPin}
                   onReloadAgent={onReloadAgent}
                   onReleaseAgentRuntime={onReleaseAgentRuntime}
                   isReleasingAgentRuntime={isReleasingAgentRuntime}
@@ -1481,10 +1498,18 @@ function WorkspaceRowWithMenu({
   );
 
   const isPinned = workspace.pinnedAt != null;
+  const isProjectPinned = useSidebarWorkspacePinStore(
+    (state) => state.projectPinnedAtByWorkspaceKey[workspace.workspaceKey] != null,
+  );
+  const toggleProjectWorkspacePin = useSidebarWorkspacePinController("project");
   const handleTogglePin = useCallback(() => {
     onToggleWorkspacePin(workspace);
   }, [onToggleWorkspacePin, workspace]);
   const onTogglePin = canPin ? handleTogglePin : undefined;
+  const handleToggleProjectPin = useCallback(() => {
+    toggleProjectWorkspacePin(workspace);
+  }, [toggleProjectWorkspacePin, workspace]);
+  const onToggleProjectPin = canPin ? handleToggleProjectPin : undefined;
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
@@ -1705,6 +1730,8 @@ function WorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isProjectPinned={isProjectPinned}
+        onToggleProjectPin={onToggleProjectPin}
         onReloadAgent={workspaceAgent ? handleReloadAgent : undefined}
         onReleaseAgentRuntime={
           workspaceAgent && workspaceAgent.status !== "closed"
@@ -2256,6 +2283,7 @@ const MemoProjectBlock = memo(ProjectBlock, areProjectBlockPropsEqual);
 
 export function SidebarWorkspaceList({
   statusGroups,
+  pinnedGroups,
   projects,
   workspaceEntriesByKey,
   projectNamesByKey,
@@ -2341,6 +2369,8 @@ export function SidebarWorkspaceList({
     groupMode === "status" ? (
       <SidebarStatusModeWrapper
         statusGroups={statusGroups}
+        pinnedGroups={pinnedGroups}
+        workspaceEntriesByKey={workspaceEntriesByKey}
         projectNamesByKey={projectNamesByKey}
         shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
         onWorkspacePress={onWorkspacePress}
@@ -2354,6 +2384,7 @@ export function SidebarWorkspaceList({
     ) : (
       <ProjectModeList
         projects={projects}
+        pinnedGroups={pinnedGroups}
         workspaceEntriesByKey={workspaceEntriesByKey}
         collapsedProjectKeys={collapsedProjectKeys}
         onToggleProjectCollapsed={onToggleProjectCollapsed}
@@ -2385,6 +2416,8 @@ export function SidebarWorkspaceList({
 
 function SidebarStatusModeWrapper({
   statusGroups,
+  pinnedGroups,
+  workspaceEntriesByKey,
   projectNamesByKey,
   shortcutIndexByWorkspaceKey: _projectShortcutIndex,
   onWorkspacePress,
@@ -2396,6 +2429,8 @@ function SidebarStatusModeWrapper({
   listHeaderComponent,
 }: {
   statusGroups: StatusGroup[];
+  pinnedGroups: PinnedSidebarGroups;
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByKey: Map<string, string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
   onWorkspacePress?: () => void;
@@ -2411,6 +2446,10 @@ function SidebarStatusModeWrapper({
   return (
     <SidebarStatusWorkspaceList
       groups={statusGroups}
+      pinnedWorkspaces={pinnedGroups.pinnedChats.flatMap((workspace) => {
+        const entry = workspaceEntriesByKey.get(workspace.workspaceKey);
+        return entry ? [entry] : [];
+      })}
       projectNamesByKey={projectNamesByKey}
       shortcutIndexByWorkspaceKey={_projectShortcutIndex}
       showShortcutBadges={showShortcutBadges}
@@ -2427,6 +2466,7 @@ function SidebarStatusModeWrapper({
 
 function ProjectModeList({
   projects,
+  pinnedGroups,
   workspaceEntriesByKey,
   collapsedProjectKeys,
   onToggleProjectCollapsed,
@@ -2469,6 +2509,17 @@ function ProjectModeList({
     new Map(),
   );
   const showShortcutBadges = useShowShortcutBadges();
+  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
+  const togglePinnedCollapsed = useSidebarCollapsedSectionsStore(
+    (state) => state.togglePinnedCollapsed,
+  );
+  const { pinnedChats } = pinnedGroups;
+  const {
+    visibleItems: visiblePinnedChats,
+    expanded: pinnedChatsExpanded,
+    canToggle: canTogglePinnedChats,
+    toggleExpanded: togglePinnedChatsExpanded,
+  } = useLimitedSidebarGroup(pinnedChats);
   const getProjectOrder = useSidebarOrderStore((state) => state.getProjectOrder);
   const getProjectAddedOrder = useSidebarOrderStore((state) => state.getProjectAddedOrder);
   const setProjectOrder = useSidebarOrderStore((state) => state.setProjectOrder);
@@ -2702,6 +2753,48 @@ function ProjectModeList({
     [renderProjectBlock],
   );
 
+  const renderPinnedChat = useCallback(
+    (workspace: SidebarWorkspacePlacement) => {
+      const hostLabel = resolveSidebarHostLabel({
+        serverId: workspace.serverId,
+        localDaemonServerId,
+        showHostLabels,
+        hostLabelByServerId,
+      });
+      return (
+        <MemoWorkspaceRowItem
+          key={workspace.workspaceKey}
+          workspace={workspace}
+          workspaceEntry={workspaceEntriesByKey.get(workspace.workspaceKey) ?? null}
+          subtitle={hostLabel ? `${workspace.projectName} · ${hostLabel}` : workspace.projectName}
+          shortcutNumber={shortcutIndexByWorkspaceKey.get(workspace.workspaceKey) ?? null}
+          showShortcutBadge={showShortcutBadges}
+          canCopyBranchName={workspace.projectKind === "git"}
+          canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+          onToggleWorkspacePin={onToggleWorkspacePin}
+          isCreating={creatingWorkspaceIds.has(workspace.workspaceId)}
+          selectionEnabled={selectionEnabled}
+          activeWorkspaceSelection={activeWorkspaceSelection}
+          onWorkspacePress={onWorkspacePress}
+        />
+      );
+    },
+    [
+      activeWorkspaceSelection,
+      creatingWorkspaceIds,
+      hostLabelByServerId,
+      localDaemonServerId,
+      onToggleWorkspacePin,
+      onWorkspacePress,
+      selectionEnabled,
+      shortcutIndexByWorkspaceKey,
+      showHostLabels,
+      showShortcutBadges,
+      supportsPinningByServerId,
+      workspaceEntriesByKey,
+    ],
+  );
+
   let projectListContent: ReactElement;
   if (projects.length === 0) {
     projectListContent = (
@@ -2743,6 +2836,23 @@ function ProjectModeList({
 
   const content = (
     <>
+      {pinnedChats.length > 0 ? (
+        <View style={styles.pinnedSection} testID="sidebar-pinned-section">
+          <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
+          {pinnedCollapsed ? null : (
+            <>
+              {visiblePinnedChats.map(renderPinnedChat)}
+              {canTogglePinnedChats ? (
+                <SidebarGroupToggleRow
+                  expanded={pinnedChatsExpanded}
+                  onPress={togglePinnedChatsExpanded}
+                  testID="sidebar-pinned-show-more"
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
       {projects.length > 0 || hasActiveHostFilter ? listHeaderComponent : null}
       {projectListContent}
       {listFooterComponent}
@@ -2791,6 +2901,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectListContainer: {
     width: "100%",
+  },
+  pinnedSection: {
+    marginBottom: theme.spacing[1],
   },
   projectBlock: {
     marginBottom: 2,

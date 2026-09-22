@@ -66,6 +66,53 @@ const providerInjectionLeadingIcon = (
   <ThemedServerCog size={14} uniProps={foregroundMutedColorMapping} />
 );
 
+function WorkspacePinSubmenu({
+  workspaceKey,
+  isPinned,
+  onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
+}: Pick<
+  SidebarWorkspaceMenuProps,
+  "workspaceKey" | "isPinned" | "onTogglePin" | "isProjectPinned" | "onToggleProjectPin"
+>) {
+  const { t } = useTranslation();
+  if (!onTogglePin && !onToggleProjectPin) {
+    return null;
+  }
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger leading={pinLeadingIcon}>
+        {t("sidebar.workspace.actions.pin")}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent testID={`sidebar-workspace-menu-pin-${workspaceKey}`}>
+        {onTogglePin ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-pin-global-${workspaceKey}`}
+            leading={isPinned ? unpinLeadingIcon : pinLeadingIcon}
+            onSelect={onTogglePin}
+          >
+            {isPinned
+              ? t("sidebar.workspace.actions.unpinGlobal")
+              : t("sidebar.workspace.actions.pinGlobal")}
+          </DropdownMenuItem>
+        ) : null}
+        {onToggleProjectPin ? (
+          <DropdownMenuItem
+            testID={`sidebar-workspace-menu-pin-project-${workspaceKey}`}
+            leading={isProjectPinned ? unpinLeadingIcon : pinLeadingIcon}
+            onSelect={onToggleProjectPin}
+          >
+            {isProjectPinned
+              ? t("sidebar.workspace.actions.unpinProject")
+              : t("sidebar.workspace.actions.pinProject")}
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
 export interface CodexProviderInjectionMenuItem {
   id: string;
   name: string;
@@ -169,6 +216,8 @@ interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isProjectPinned?: boolean;
+  onToggleProjectPin?: () => void;
   onReloadAgent?: () => void;
   onReleaseAgentRuntime?: () => void;
   isReleasingAgentRuntime?: boolean;
@@ -195,6 +244,8 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
   onReloadAgent,
   onReleaseAgentRuntime,
   isReleasingAgentRuntime,
@@ -281,15 +332,13 @@ export function SidebarWorkspaceMenu({
             Mark as read
           </DropdownMenuItem>
         ) : null}
-        {onTogglePin ? (
-          <DropdownMenuItem
-            testID={`sidebar-workspace-menu-pin-${workspaceKey}`}
-            leading={isPinned ? unpinLeadingIcon : pinLeadingIcon}
-            onSelect={onTogglePin}
-          >
-            {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
-          </DropdownMenuItem>
-        ) : null}
+        <WorkspacePinSubmenu
+          workspaceKey={workspaceKey}
+          isPinned={isPinned}
+          onTogglePin={onTogglePin}
+          isProjectPinned={isProjectPinned}
+          onToggleProjectPin={onToggleProjectPin}
+        />
         {onReloadAgent ? (
           <DropdownMenuItem
             testID={`sidebar-workspace-menu-reload-agent-${workspaceKey}`}

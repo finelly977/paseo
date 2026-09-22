@@ -5,6 +5,7 @@ import type { EditorTargetIcon, EditorTargetRuntime } from "./target.js";
 import { cursorTarget } from "./targets/cursor.js";
 import { explorerTarget, fileManagerTarget, finderTarget } from "./targets/file-manager.js";
 import { intellijIdeaTarget } from "./targets/intellij-idea.js";
+import { kiroTarget } from "./targets/kiro.js";
 import { powershellTarget } from "./targets/powershell.js";
 import { pycharmTarget } from "./targets/pycharm.js";
 import { vscodeTarget } from "./targets/vscode.js";
@@ -116,16 +117,24 @@ describe("editor target registry", () => {
   it("lists installed target implementations in registration order", async () => {
     const runtime = new FakeEditorTargets();
     runtime.installCommand("code");
+    runtime.installCommand("kiro");
     runtime.installCommand("webstorm");
 
     const targets = await listAvailableEditorTargets(runtime, [
       cursorTarget,
+      kiroTarget,
       vscodeTarget,
       webstormTarget,
       fileManagerTarget,
     ]);
 
     expect(targets).toEqual([
+      {
+        id: "kiro",
+        label: "Kiro",
+        kind: "editor",
+        icon: { kind: "image", dataUrl: "data:image/png;base64,kiro.png" },
+      },
       {
         id: "vscode",
         label: "VS Code",

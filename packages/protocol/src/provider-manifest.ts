@@ -174,6 +174,31 @@ export const OMP_MODES: AgentProviderModeDefinition[] = [
   },
 ];
 
+export const PI_MODES: AgentProviderModeDefinition[] = [
+  {
+    id: "full",
+    label: "Full Access",
+    description: "Runs Pi with every configured tool enabled and no approval prompt.",
+    icon: "ShieldOff",
+    colorTier: "dangerous",
+    isUnattended: true,
+  },
+  {
+    id: "ask",
+    label: "Always Ask",
+    description: "Asks before Pi edits files or runs shell commands.",
+    icon: "ShieldCheck",
+    colorTier: "safe",
+  },
+  {
+    id: "read-only",
+    label: "Read Only",
+    description: "Only enables Pi's read, grep, find, and directory listing tools.",
+    icon: "ShieldEllipsis",
+    colorTier: "planning",
+  },
+];
+
 const MOCK_LOAD_TEST_MODES: AgentProviderModeDefinition[] = [
   {
     id: "load-test",
@@ -244,8 +269,8 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     id: "pi",
     label: "Pi",
     description: "Minimal terminal-based coding agent with multi-provider LLM support",
-    defaultModeId: null,
-    modes: [],
+    defaultModeId: "full",
+    modes: PI_MODES,
   },
   {
     id: "omp",

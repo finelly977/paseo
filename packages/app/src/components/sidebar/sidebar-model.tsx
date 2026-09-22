@@ -7,7 +7,11 @@ import {
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useSidebarWorkspaceEntries } from "@/hooks/use-sidebar-workspace-entries";
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
-import { usePinnedSidebarKeys } from "@/hooks/use-sidebar-pins";
+import {
+  usePinnedSidebarKeys,
+  useProjectPinnedSidebarKeys,
+  type PinnedSidebarGroups,
+} from "@/hooks/use-sidebar-pins";
 import { useSidebarCollapsedSectionsStore } from "@/stores/sidebar-collapsed-sections-store";
 import { useSidebarViewStore, type SidebarGroupMode } from "@/stores/sidebar-view-store";
 import type { SidebarShortcutModel } from "@/utils/sidebar-shortcuts";
@@ -20,6 +24,7 @@ interface SidebarModel extends SidebarWorkspacesListResult {
   resolvedProjectFilters: readonly string[];
   groupMode: SidebarGroupMode;
   statusGroups: StatusGroup[];
+  pinnedGroups: PinnedSidebarGroups;
   collapsedProjectKeys: ReadonlySet<string>;
   toggleProjectCollapsed: (projectKey: string) => void;
   shortcutModel: SidebarShortcutModel;
@@ -44,6 +49,7 @@ export function SidebarModelProvider({
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
+  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
   const toggleProjectCollapsed = useSidebarCollapsedSectionsStore(
     (state) => state.toggleProjectCollapsed,
   );
@@ -80,14 +86,17 @@ export function SidebarModelProvider({
     ? workspaceEntriesByKey
     : EMPTY_WORKSPACE_ENTRIES;
   const pinnedKeys = usePinnedSidebarKeys(filteredProjects);
+  const projectPinnedKeys = useProjectPinnedSidebarKeys(filteredProjects);
   const projection = useMemo(
     () =>
       buildSidebarProjection({
         projects: filteredProjects,
         pinnedKeys,
+        projectPinnedKeys,
         workspaceEntriesByKey: projectionWorkspaceEntriesByKey,
         projectNamesByKey: list.projectNamesByKey,
         groupMode,
+        pinnedCollapsed,
         collapsedProjectKeys,
         collapsedStatusGroupKeys,
       }),
@@ -98,6 +107,8 @@ export function SidebarModelProvider({
       list.projectNamesByKey,
       filteredProjects,
       pinnedKeys,
+      projectPinnedKeys,
+      pinnedCollapsed,
       projectionWorkspaceEntriesByKey,
     ],
   );
@@ -111,6 +122,7 @@ export function SidebarModelProvider({
       workspaceEntriesByKey,
       groupMode,
       statusGroups: projection.statusGroups,
+      pinnedGroups: projection.pinnedGroups,
       collapsedProjectKeys,
       toggleProjectCollapsed,
       shortcutModel: projection.shortcutModel,

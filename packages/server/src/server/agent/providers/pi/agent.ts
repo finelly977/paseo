@@ -5,6 +5,7 @@ import { join, resolve as resolvePath } from "node:path";
 import type { Logger } from "pino";
 import stripAnsi from "strip-ansi";
 import { z } from "zod";
+import { PI_MODES } from "@getpaseo/protocol/provider-manifest";
 
 import {
   type AgentCapabilityFlags,
@@ -91,6 +92,7 @@ const PI_BINARY_COMMAND = process.env.PI_COMMAND ?? process.env.PI_ACP_PI_COMMAN
 const PI_CATALOG_REQUEST_TIMEOUT_MS = 120_000;
 const PASEO_PI_TREE_EXTENSION_COMMAND = "paseo_tree";
 const PASEO_PI_CAPTURE_EXTENSION_COMMAND = "paseo_capture_entries";
+const PASEO_PI_MODE_EXTENSION_COMMAND = "paseo_set_permission_mode";
 const PASEO_PI_ENTRY_CAPTURE_MARKER = "PASEO_ENTRY_CAPTURE";
 const PASEO_PI_SUBMITTED_USER_ENTRY_MARKER = "PASEO_SUBMITTED_USER_ENTRY";
 const PASEO_PI_COMMAND_RESULT_MARKER = "PASEO_COMMAND_RESULT";
@@ -100,6 +102,8 @@ const QUESTION_RESPONSE_HEADER = "Response";
 const QUESTION_COMMENT_HEADER = "Comment";
 const PI_ASK_USER_FREEFORM_SENTINEL = "✏️ Type custom response...";
 const COMBINED_ASK_USER_METADATA = "ask_user_select_optional_comment";
+const DEFAULT_PI_MODE_ID = "full";
+type PiModeId = "full" | "ask" | "read-only";
 
 export const PiProviderParamsSchema = z
   .object({
@@ -179,6 +183,14 @@ const PI_THINKING_OPTIONS: ReadonlyArray<{
   { id: "xhigh", label: "XHigh", description: "Very deep reasoning" },
   { id: "max", label: "Max", description: "Extreme reasoning" },
 ] as const;
+
+function normalizePiModeId(modeId: string | null | undefined): PiModeId {
+  const resolved = modeId ?? DEFAULT_PI_MODE_ID;
+  if (resolved === "full" || resolved === "ask" || resolved === "read-only") {
+    return resolved;
+  }
+  throw new Error(`Unsupported Pi permission mode '${resolved}'`);
+}
 
 export interface PiRpcAgentClientOptions {
   logger: Logger;
@@ -623,7 +635,7 @@ function createPiMcpConfigFile(
   };
 }
 
-function createPiPaseoExtensionFile(systemPrompt?: string): PiTempFile {
+function createPiPaseoExtensionFile(systemPrompt?: string, initialModeId?: PiModeId): PiTempFile {
   const dir = mkdtempSync(join(tmpdir(), "paseo-pi-extension-"));
   const filePath = join(dir, "paseo-integration.mjs");
   writeFileSync(
@@ -676,8 +688,22 @@ function createPiPaseoExtensionFile(systemPrompt?: string): PiTempFile {
 	  );
 	}
 
+	const VALID_PERMISSION_MODES = new Set(["full", "ask", "read-only"]);
+	const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+	const APPROVAL_TOOLS = new Set(["edit", "write", "bash", "powershell"]);
+
 	export default function paseoIntegration(pi) {
 	  const submittedUserMessages = [];
+	  let permissionMode = ${JSON.stringify(initialModeId ?? DEFAULT_PI_MODE_ID)};
+	  let unrestrictedTools = [];
+
+	  function applyPermissionMode() {
+	    if (permissionMode === "read-only") {
+	      pi.setActiveTools(unrestrictedTools.filter((name) => READ_ONLY_TOOLS.has(name)));
+	      return;
+	    }
+	    pi.setActiveTools(unrestrictedTools);
+	  }
 
 	  function emitSubmittedUserEntries(ctx) {
 	    const entries = ctx.sessionManager.getEntries();
@@ -710,7 +736,24 @@ function createPiPaseoExtensionFile(systemPrompt?: string): PiTempFile {
     }
 
 	  pi.on("session_start", async (_event, ctx) => {
+	    unrestrictedTools = pi.getActiveTools();
+	    applyPermissionMode();
 	    emitEntryCapture(ctx, "session_start");
+	  });
+
+	  pi.on("tool_call", async (event, ctx) => {
+	    if (permissionMode !== "ask" || !APPROVAL_TOOLS.has(event.toolName)) {
+	      return undefined;
+	    }
+	    const detail =
+	      event.toolName === "bash" || event.toolName === "powershell"
+	        ? String(event.input?.command ?? "")
+	        : String(event.input?.path ?? event.input?.filePath ?? "");
+	    const approved = await ctx.ui.confirm(
+	      "允许 Pi 执行此操作？",
+	      detail ? event.toolName + ": " + detail : event.toolName,
+	    );
+	    return approved ? undefined : { block: true, reason: "用户拒绝了此操作" };
 	  });
 
 	  pi.on("message_end", async (event) => {
@@ -746,6 +789,25 @@ function createPiPaseoExtensionFile(systemPrompt?: string): PiTempFile {
 	        const result = await ctx.navigateTree(payload.targetId, { summarize: false });
 	        emitEntryCapture(ctx, "tree_navigation");
 	        emitCommandResult(ctx, payload.requestId, { ok: true, result });
+	      } catch (error) {
+	        const message = error instanceof Error ? error.message : String(error);
+	        emitCommandResult(ctx, payload.requestId, { ok: false, error: message });
+	        throw error;
+	      }
+	    },
+	  });
+
+	  pi.registerCommand("${PASEO_PI_MODE_EXTENSION_COMMAND}", {
+	    description: "Internal Paseo permission mode bridge",
+	    handler: async (args, ctx) => {
+	      const payload = decodePayload(args.trim());
+	      try {
+	        if (!VALID_PERMISSION_MODES.has(payload.modeId)) {
+	          throw new Error("Unsupported Pi permission mode: " + String(payload.modeId));
+	        }
+	        permissionMode = payload.modeId;
+	        applyPermissionMode();
+	        emitCommandResult(ctx, payload.requestId, { ok: true, result: { modeId: permissionMode } });
 	      } catch (error) {
 	        const message = error instanceof Error ? error.message : String(error);
 	        emitCommandResult(ctx, payload.requestId, { ok: false, error: message });
@@ -1255,7 +1317,7 @@ export class PiRpcAgentSession implements AgentSession {
   private outOfBandCompactionCompleted = false;
   private commandCache: AgentSlashCommand[] | null = null;
   private state: PiSessionState;
-  private readonly currentModeId: string | null;
+  private currentModeId: string | null;
   private closed = false;
   // Pi reports an aborted OpenAI Responses stream before the abort RPC resolves.
   // Keep the turn active until that RPC acknowledges the user-requested cancellation.
@@ -1408,15 +1470,21 @@ export class PiRpcAgentSession implements AgentSession {
   }
 
   async getAvailableModes(): Promise<AgentMode[]> {
-    return [];
+    return [...PI_MODES];
   }
 
   async getCurrentMode(): Promise<string | null> {
     return this.currentModeId;
   }
 
-  async setMode(_modeId: string): Promise<void | AgentProviderNotice> {
-    throw new Error("Pi does not expose selectable modes");
+  async setMode(modeId: string): Promise<void | AgentProviderNotice> {
+    const normalizedModeId = normalizePiModeId(modeId);
+    if (normalizedModeId === this.currentModeId) {
+      return;
+    }
+    await this.runPiModeExtensionCommand(normalizedModeId);
+    this.currentModeId = normalizedModeId;
+    this.config.modeId = normalizedModeId;
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
@@ -1542,6 +1610,14 @@ export class PiRpcAgentSession implements AgentSession {
     const resultPromise = this.waitForExtensionResult(requestId);
     const payload = Buffer.from(JSON.stringify({ targetId, requestId })).toString("base64url");
     await this.runtimeSession.prompt(`/${PASEO_PI_TREE_EXTENSION_COMMAND} ${payload}`);
+    return await resultPromise;
+  }
+
+  private async runPiModeExtensionCommand(modeId: PiModeId): Promise<unknown> {
+    const requestId = randomUUID();
+    const resultPromise = this.waitForExtensionResult(requestId);
+    const payload = Buffer.from(JSON.stringify({ modeId, requestId })).toString("base64url");
+    await this.runtimeSession.prompt(`/${PASEO_PI_MODE_EXTENSION_COMMAND} ${payload}`);
     return await resultPromise;
   }
 
@@ -2438,6 +2514,7 @@ export class PiRpcAgentClient implements AgentClient {
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
+    const modeId = normalizePiModeId(config.modeId);
     const mcpEnv = {
       ...this.runtimeSettings?.env,
       ...launchContext?.env,
@@ -2445,6 +2522,7 @@ export class PiRpcAgentClient implements AgentClient {
     const mcpConfig = await this.prepareMcpConfig(config.cwd, config.mcpServers, mcpEnv);
     const paseoExtension = createPiPaseoExtensionFile(
       composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
+      modeId,
     );
     let runtimeSession: PiRuntimeSession;
     try {
@@ -2469,6 +2547,7 @@ export class PiRpcAgentClient implements AgentClient {
         config,
         initialState: await runtimeSession.getState(),
         capabilities: capabilitiesForSession(mcpConfig !== null),
+        currentModeId: modeId,
         cleanup: combineCleanup([mcpConfig?.cleanup, paseoExtension?.cleanup]),
         extensionTimeoutMs: this.providerParams.extensionTimeoutMs,
       });
@@ -2492,6 +2571,7 @@ export class PiRpcAgentClient implements AgentClient {
 
     const persistenceMetadata = parsePersistenceMetadata(handle.metadata);
     const resumeConfig = buildResumeConfig(persistenceMetadata, overrides, this.provider);
+    const modeId = normalizePiModeId(resumeConfig.modeId);
 
     const mcpEnv = {
       ...this.runtimeSettings?.env,
@@ -2507,6 +2587,7 @@ export class PiRpcAgentClient implements AgentClient {
         resumeConfig.config.systemPrompt,
         resumeConfig.config.daemonAppendSystemPrompt,
       ),
+      modeId,
     );
     let runtimeSession: PiRuntimeSession;
     try {
@@ -2530,6 +2611,7 @@ export class PiRpcAgentClient implements AgentClient {
         config: resumeConfig.config,
         initialState: await runtimeSession.getState(),
         capabilities: capabilitiesForSession(mcpConfig !== null),
+        currentModeId: modeId,
         cleanup: combineCleanup([mcpConfig?.cleanup, paseoExtension?.cleanup]),
         extensionTimeoutMs: this.providerParams.extensionTimeoutMs,
       });
@@ -2551,7 +2633,7 @@ export class PiRpcAgentClient implements AgentClient {
           mapPiModel(model, PI_PROVIDER),
         ),
       );
-      return { models, modes: [] };
+      return { models, modes: [...PI_MODES], defaultModeId: DEFAULT_PI_MODE_ID };
     } finally {
       await runtimeSession.close();
     }

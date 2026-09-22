@@ -1,13 +1,22 @@
 import { useMemo, useRef } from "react";
 import { shallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
+import type {
+  SidebarProjectEntry,
+  SidebarWorkspacePlacement,
+} from "@/hooks/use-sidebar-workspaces-list";
 import { useSessionStore } from "@/stores/session-store";
+import { useSidebarWorkspacePinStore } from "@/stores/sidebar-workspace-pin-store";
 
 export interface PinnedSidebarKeys {
   pinnedWorkspaceKeys: string[];
   // workspaceKey -> pinnedAt ISO string, used to order by recency.
   pinnedAtByKey: Record<string, string>;
+}
+
+export interface PinnedSidebarGroups {
+  pinnedChats: SidebarWorkspacePlacement[];
+  unpinnedProjects: SidebarProjectEntry[];
 }
 
 function buildPinnedSidebarKeys(
@@ -85,8 +94,62 @@ export function usePinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSid
   }, [projects, serverIds, workspaceMaps]);
 }
 
-// 置顶只在会话所属工作区内生效：置顶会话留在原工作区，并按最近
-// 置顶时间排在该工作区其他会话之前。不再将它们提升到跨工作区全局分组。
+export function useProjectPinnedSidebarKeys(projects: SidebarProjectEntry[]): PinnedSidebarKeys {
+  const pinnedAtByWorkspaceKey = useSidebarWorkspacePinStore(
+    (state) => state.projectPinnedAtByWorkspaceKey,
+  );
+  return useMemo(() => {
+    const pinnedWorkspaceKeys: string[] = [];
+    const pinnedAtByKey: Record<string, string> = {};
+    for (const project of projects) {
+      for (const workspace of project.workspaces) {
+        const pinnedAt = pinnedAtByWorkspaceKey[workspace.workspaceKey];
+        if (!pinnedAt) continue;
+        pinnedWorkspaceKeys.push(workspace.workspaceKey);
+        pinnedAtByKey[workspace.workspaceKey] = pinnedAt;
+      }
+    }
+    return { pinnedWorkspaceKeys, pinnedAtByKey };
+  }, [pinnedAtByWorkspaceKey, projects]);
+}
+
+export function splitPinnedSidebarGroups(input: {
+  projects: SidebarProjectEntry[];
+  keys: PinnedSidebarKeys;
+}): PinnedSidebarGroups {
+  const { projects, keys } = input;
+  if (keys.pinnedWorkspaceKeys.length === 0) {
+    return { pinnedChats: [], unpinnedProjects: projects };
+  }
+  const pinnedWorkspaceKeySet = new Set(keys.pinnedWorkspaceKeys);
+  const pinnedChats: SidebarWorkspacePlacement[] = [];
+  const unpinnedProjects: SidebarProjectEntry[] = [];
+
+  for (const project of projects) {
+    const remainingWorkspaces: SidebarWorkspacePlacement[] = [];
+    for (const workspace of project.workspaces) {
+      if (pinnedWorkspaceKeySet.has(workspace.workspaceKey)) {
+        pinnedChats.push(workspace);
+      } else {
+        remainingWorkspaces.push(workspace);
+      }
+    }
+    unpinnedProjects.push(
+      remainingWorkspaces.length === project.workspaces.length
+        ? project
+        : { ...project, workspaces: remainingWorkspaces },
+    );
+  }
+
+  pinnedChats.sort((left, right) =>
+    (keys.pinnedAtByKey[right.workspaceKey] ?? "").localeCompare(
+      keys.pinnedAtByKey[left.workspaceKey] ?? "",
+    ),
+  );
+  return { pinnedChats, unpinnedProjects };
+}
+
+// 工作区内置顶不会改变所属项目，只在项目内部按最近置顶时间提前。
 export function applyWorkspaceLocalPins(input: {
   projects: SidebarProjectEntry[];
   keys: PinnedSidebarKeys;

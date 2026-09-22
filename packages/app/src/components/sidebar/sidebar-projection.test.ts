@@ -66,23 +66,30 @@ function projectionInput(options?: { groupMode?: "project" | "status" }) {
         [pinned.placement.workspaceKey]: "2026-07-12T12:00:00.000Z",
       },
     },
+    projectPinnedKeys: {
+      pinnedWorkspaceKeys: [],
+      pinnedAtByKey: {},
+    },
     workspaceEntriesByKey: new Map([
       [pinned.entry.workspaceKey, pinned.entry],
       [unpinned.entry.workspaceKey, unpinned.entry],
     ]),
     projectNamesByKey: new Map([["project", "Project"]]),
     groupMode: options?.groupMode ?? ("project" as const),
+    pinnedCollapsed: false,
     collapsedProjectKeys: new Set<string>(),
     collapsedStatusGroupKeys: new Set<string>(),
   };
 }
 
 describe("buildSidebarProjection", () => {
-  it("把置顶会话保留在原工作区内并用同一顺序生成快捷键", () => {
+  it("把全局置顶会话提升到独立分组并优先生成快捷键", () => {
     const projection = buildSidebarProjection(projectionInput());
 
-    expect(projection.projects[0]?.workspaces.map((entry) => entry.workspaceId)).toEqual([
+    expect(projection.pinnedGroups.pinnedChats.map((entry) => entry.workspaceId)).toEqual([
       "pinned",
+    ]);
+    expect(projection.projects[0]?.workspaces.map((entry) => entry.workspaceId)).toEqual([
       "unpinned",
     ]);
     expect(projection.shortcutModel.shortcutTargets).toEqual([
@@ -91,16 +98,30 @@ describe("buildSidebarProjection", () => {
     ]);
   });
 
-  it("状态视图中置顶会话仍留在它自己的状态分组", () => {
+  it("状态视图中全局置顶会话不再重复出现在状态分组", () => {
     const projection = buildSidebarProjection(projectionInput({ groupMode: "status" }));
 
-    expect(projection.statusGroups.map((group) => group.bucket)).toEqual([
-      "needs_input",
-      "running",
-    ]);
+    expect(projection.statusGroups.map((group) => group.bucket)).toEqual(["needs_input"]);
     expect(projection.shortcutModel.shortcutTargets).toEqual([
-      { serverId: "srv", workspaceId: "unpinned" },
       { serverId: "srv", workspaceId: "pinned" },
+      { serverId: "srv", workspaceId: "unpinned" },
+    ]);
+  });
+
+  it("工作区内置顶只在原项目中提前", () => {
+    const input: Parameters<typeof buildSidebarProjection>[0] = projectionInput();
+    input.pinnedKeys = { pinnedWorkspaceKeys: [], pinnedAtByKey: {} };
+    input.projectPinnedKeys = {
+      pinnedWorkspaceKeys: ["srv:unpinned"],
+      pinnedAtByKey: { "srv:unpinned": "2026-09-22T08:00:00.000Z" },
+    };
+
+    const projection = buildSidebarProjection(input);
+
+    expect(projection.pinnedGroups.pinnedChats).toEqual([]);
+    expect(projection.projects[0]?.workspaces.map((entry) => entry.workspaceId)).toEqual([
+      "unpinned",
+      "pinned",
     ]);
   });
 });

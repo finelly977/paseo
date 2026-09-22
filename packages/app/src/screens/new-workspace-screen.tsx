@@ -82,6 +82,7 @@ import type { CreatePaseoWorktreeInput } from "@getpaseo/client/internal/daemon-
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { isEmptyWorkspaceSubmission, runCreateEmptyWorkspace } from "./new-workspace-empty";
+import { shouldAutomaticallyCreateWorkspaceShell } from "./new-workspace-auto-shell";
 import {
   getWorkspaceNamingAttachments,
   remapDraftCwdToWorkspace,
@@ -1581,6 +1582,7 @@ export function NewWorkspaceScreen({
   const projectPickerAnchorRef = useRef<View>(null);
   const isolationPickerAnchorRef = useRef<View>(null);
   const hostPickerAnchorRef = useRef<View | null>(null);
+  const automaticWorkspaceCreationStartedRef = useRef(false);
   const isDraftHandoffActive = useIsNewWorkspaceDraftHandoffActive({
     draftId,
     selectedServerId,
@@ -2057,6 +2059,74 @@ export function NewWorkspaceScreen({
       toast,
     ],
   );
+
+  useEffect(() => {
+    const selectedProvider = composerState?.selectedProvider;
+    if (!selectedSourceDirectory) {
+      return;
+    }
+    if (
+      automaticWorkspaceCreationStartedRef.current ||
+      !selectedProvider ||
+      !shouldAutomaticallyCreateWorkspaceShell({
+        routeHasProject: Boolean(sourceDirectoryProp || projectId),
+        hasDraftHandoff: Boolean(draftId),
+        selectedSourceDirectory,
+        clientReady,
+        checkoutReady: checkoutStatusQuery.isSuccess,
+        isPending,
+      })
+    ) {
+      return;
+    }
+
+    automaticWorkspaceCreationStartedRef.current = true;
+    setPendingAction("empty");
+    void (async () => {
+      try {
+        await composerState.persistFormPreferences();
+        const ensuredWorkspace = await ensureWorkspace({
+          cwd: selectedSourceDirectory,
+          prompt: "",
+          attachments: [],
+          withInitialAgent: false,
+        });
+        const targetDraftId = generateDraftId();
+        navigateToWorkspace({
+          serverId: selectedServerId,
+          workspaceId: ensuredWorkspace.id,
+          target: {
+            kind: "draft",
+            draftId: targetDraftId,
+            setup: buildWorkspaceDraftSetupForCreatedWorkspace({
+              forkDraftSetup: null,
+              workspaceDirectory: ensuredWorkspace.workspaceDirectory,
+              provider: selectedProvider,
+              composerState,
+            }),
+          },
+        });
+      } catch (error) {
+        automaticWorkspaceCreationStartedRef.current = false;
+        setPendingAction(null);
+        const message = toErrorMessage(error);
+        setErrorMessage(message);
+        toast.error(message);
+      }
+    })();
+  }, [
+    checkoutStatusQuery.isSuccess,
+    clientReady,
+    composerState,
+    draftId,
+    ensureWorkspace,
+    isPending,
+    projectId,
+    selectedServerId,
+    selectedSourceDirectory,
+    sourceDirectoryProp,
+    toast,
+  ]);
 
   const renderPickerOption = useCallback(
     (props: {

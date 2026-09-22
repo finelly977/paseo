@@ -103,6 +103,7 @@ export class FakePiSession implements PiRuntimeSession {
   readonly treeNavigationRequests: string[] = [];
   readonly handoffRequests: Array<{ customInstructions?: string }> = [];
   readonly sessionNameRequests: string[] = [];
+  readonly permissionModeRequests: string[] = [];
   readonly rawFrames: Array<object & { type: string }> = [];
   capturedUserEntries: Array<{ id: string; parentId: string | null; text: string }> = [];
   abortRequested = false;
@@ -176,6 +177,7 @@ export class FakePiSession implements PiRuntimeSession {
     }
     this.handleTreeNavigationCommand(message);
     this.handleEntryCaptureCommand(message);
+    this.handlePermissionModeCommand(message);
     return this.promptAck;
   }
 
@@ -417,6 +419,24 @@ export class FakePiSession implements PiRuntimeSession {
       payload.requestId,
       typeof payload.reason === "string" ? payload.reason : "command",
     );
+  }
+
+  private handlePermissionModeCommand(message: string): void {
+    const prefix = "/paseo_set_permission_mode ";
+    if (!message.startsWith(prefix)) {
+      return;
+    }
+    const payload = JSON.parse(
+      Buffer.from(message.slice(prefix.length), "base64url").toString("utf8"),
+    ) as { modeId?: unknown; requestId?: unknown };
+    if (typeof payload.modeId !== "string" || typeof payload.requestId !== "string") {
+      return;
+    }
+    this.permissionModeRequests.push(payload.modeId);
+    this.emitExtensionCommandResult(payload.requestId, {
+      ok: true,
+      result: { modeId: payload.modeId },
+    });
   }
 
   emitEntryCapture(requestId?: string, reason = "test"): void {

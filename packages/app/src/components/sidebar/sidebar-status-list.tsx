@@ -47,7 +47,12 @@ import {
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
-import type { ToggleSidebarWorkspacePin } from "@/hooks/use-sidebar-workspace-pin";
+import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
+import {
+  useSidebarWorkspacePinController,
+  type ToggleSidebarWorkspacePin,
+} from "@/hooks/use-sidebar-workspace-pin";
+import { useSidebarWorkspacePinStore } from "@/stores/sidebar-workspace-pin-store";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useSidebarListSpacing } from "@/components/sidebar/sidebar-list-spacing";
 import { resolveSidebarHostLabel } from "@/hooks/use-sidebar-workspaces-list";
@@ -79,6 +84,7 @@ const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedCircleX = withUnistyles(CircleX);
 interface StatusWorkspaceListProps {
   groups: StatusGroup[];
+  pinnedWorkspaces: SidebarWorkspaceEntry[];
   projectNamesByKey: Map<string, string>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
   showShortcutBadges: boolean;
@@ -93,6 +99,7 @@ interface StatusWorkspaceListProps {
 
 export function SidebarStatusWorkspaceList({
   groups,
+  pinnedWorkspaces,
   projectNamesByKey,
   shortcutIndexByWorkspaceKey,
   showShortcutBadges,
@@ -112,9 +119,55 @@ export function SidebarStatusWorkspaceList({
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
+  const pinnedCollapsed = useSidebarCollapsedSectionsStore((state) => state.collapsedPinned);
+  const togglePinnedCollapsed = useSidebarCollapsedSectionsStore(
+    (state) => state.togglePinnedCollapsed,
+  );
+  const {
+    visibleItems: visiblePinnedWorkspaces,
+    expanded: pinnedWorkspacesExpanded,
+    canToggle: canTogglePinnedWorkspaces,
+    toggleExpanded: togglePinnedWorkspacesExpanded,
+  } = useLimitedSidebarGroup(pinnedWorkspaces);
   const statusShortcutIndex = showShortcutBadges ? shortcutIndexByWorkspaceKey : new Map();
   const content = (
     <>
+      {pinnedWorkspaces.length > 0 ? (
+        <View style={styles.pinnedSection} testID="sidebar-pinned-section">
+          <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
+          {pinnedCollapsed ? null : (
+            <>
+              {visiblePinnedWorkspaces.map((workspace) => (
+                <StatusWorkspaceRow
+                  key={workspace.workspaceKey}
+                  workspace={workspace}
+                  subtitle={buildStatusRowSubtitle({
+                    projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
+                    hostLabel: resolveSidebarHostLabel({
+                      serverId: workspace.serverId,
+                      localDaemonServerId,
+                      showHostLabels,
+                      hostLabelByServerId,
+                    }),
+                  })}
+                  shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
+                  showShortcutBadge={showShortcutBadges}
+                  canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+                  onToggleWorkspacePin={onToggleWorkspacePin}
+                  onWorkspacePress={onWorkspacePress}
+                />
+              ))}
+              {canTogglePinnedWorkspaces ? (
+                <SidebarGroupToggleRow
+                  expanded={pinnedWorkspacesExpanded}
+                  onPress={togglePinnedWorkspacesExpanded}
+                  testID="sidebar-pinned-show-more"
+                />
+              ) : null}
+            </>
+          )}
+        </View>
+      ) : null}
       {listHeaderComponent}
       <StatusGroupList
         groups={groups}
@@ -543,10 +596,18 @@ function StatusWorkspaceRowWithMenu({
     [renameMutation],
   );
   const isPinned = workspace.pinnedAt != null;
+  const isProjectPinned = useSidebarWorkspacePinStore(
+    (state) => state.projectPinnedAtByWorkspaceKey[workspace.workspaceKey] != null,
+  );
+  const toggleProjectWorkspacePin = useSidebarWorkspacePinController("project");
   const handleTogglePin = useCallback(() => {
     onToggleWorkspacePin(workspace);
   }, [onToggleWorkspacePin, workspace]);
   const onTogglePin = canPin ? handleTogglePin : undefined;
+  const handleToggleProjectPin = useCallback(() => {
+    toggleProjectWorkspacePin(workspace);
+  }, [toggleProjectWorkspacePin, workspace]);
+  const onToggleProjectPin = canPin ? handleToggleProjectPin : undefined;
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
@@ -637,6 +698,8 @@ function StatusWorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isProjectPinned={isProjectPinned}
+        onToggleProjectPin={onToggleProjectPin}
         codexProviderInjections={
           workspaceAgent?.provider === "codex" && supportsCodexProviderInjection
             ? (codexProviderInjections ?? [])
@@ -681,6 +744,8 @@ function StatusWorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
   codexProviderInjections,
   applyingCodexProviderInjectionId,
   onApplyCodexProviderInjection,
@@ -704,6 +769,8 @@ function StatusWorkspaceRowInner({
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isProjectPinned?: boolean;
+  onToggleProjectPin?: () => void;
   codexProviderInjections?: readonly CodexProviderInjectionMenuItem[];
   applyingCodexProviderInjectionId?: string | null;
   onApplyCodexProviderInjection?: (injectionId: string, model?: string) => void;
@@ -774,6 +841,8 @@ function StatusWorkspaceRowInner({
                     onMenuOpenChange={revalidateHover}
                     isPinned={isPinned}
                     onTogglePin={onTogglePin}
+                    isProjectPinned={isProjectPinned}
+                    onToggleProjectPin={onToggleProjectPin}
                     codexProviderInjections={codexProviderInjections}
                     applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
                     onApplyCodexProviderInjection={onApplyCodexProviderInjection}
@@ -805,6 +874,8 @@ function StatusWorkspaceActionSlot({
   onMenuOpenChange,
   isPinned,
   onTogglePin,
+  isProjectPinned,
+  onToggleProjectPin,
   onCopyPath,
   onCopyBranchName,
   onRename,
@@ -825,6 +896,8 @@ function StatusWorkspaceActionSlot({
   onMenuOpenChange: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isProjectPinned?: boolean;
+  onToggleProjectPin?: () => void;
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
   onRename?: () => void;
@@ -865,6 +938,8 @@ function StatusWorkspaceActionSlot({
             archiveShortcutKeys={archiveShortcutKeys}
             isPinned={isPinned}
             onTogglePin={onTogglePin}
+            isProjectPinned={isProjectPinned}
+            onToggleProjectPin={onToggleProjectPin}
             codexProviderInjections={codexProviderInjections}
             applyingCodexProviderInjectionId={applyingCodexProviderInjectionId}
             onApplyCodexProviderInjection={onApplyCodexProviderInjection}
@@ -901,6 +976,9 @@ const styles = StyleSheet.create((theme) => ({
     // Keep status mode's Pinned/Workspaces boundary identical to project mode.
     paddingTop: 2,
     paddingBottom: theme.spacing[4],
+  },
+  pinnedSection: {
+    marginBottom: theme.spacing[1],
   },
   statusGroupBlock: {
     marginBottom: theme.spacing[1],

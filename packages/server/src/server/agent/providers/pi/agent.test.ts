@@ -62,18 +62,32 @@ type PaseoExtensionListener = (event: unknown, context?: unknown) => unknown;
 async function loadPaseoExtensionListeners(
   extensionPath: string,
 ): Promise<Map<string, PaseoExtensionListener>> {
+  return (await loadPaseoExtensionHarness(extensionPath)).listeners;
+}
+
+async function loadPaseoExtensionHarness(extensionPath: string): Promise<{
+  listeners: Map<string, PaseoExtensionListener>;
+  getActiveTools: () => string[];
+}> {
   const listeners = new Map<string, PaseoExtensionListener>();
+  let activeTools = ["read", "grep", "find", "ls", "edit", "write", "bash", "powershell"];
   const extension = (await import(pathToFileURL(extensionPath).href)) as {
     default: (piApi: {
       on: (event: string, listener: PaseoExtensionListener) => void;
       registerCommand: () => void;
+      getActiveTools: () => string[];
+      setActiveTools: (tools: string[]) => void;
     }) => void;
   };
   extension.default({
     on: (event, listener) => listeners.set(event, listener),
     registerCommand: () => undefined,
+    getActiveTools: () => activeTools,
+    setActiveTools: (tools) => {
+      activeTools = [...tools];
+    },
   });
-  return listeners;
+  return { listeners, getActiveTools: () => [...activeTools] };
 }
 
 async function applyPaseoExtensionSystemPrompt(
@@ -136,6 +150,43 @@ test("keeps normal Pi agent sessions persisted", async () => {
 
   expect(pi.recordedLaunches[0]?.argv).not.toContain("--no-session");
 
+  await session.close();
+});
+
+test("applies Pi read-only mode through the bundled integration extension", async () => {
+  const pi = new FakePi();
+  const client = createClient(pi);
+  const session = await client.createSession(createConfig({ modeId: "read-only" }));
+  const extensionPath = pi.recordedLaunches[0]?.extensionPaths[0];
+  expect(extensionPath).toBeDefined();
+  const harness = await loadPaseoExtensionHarness(extensionPath!);
+
+  await harness.listeners.get("session_start")?.(
+    {},
+    {
+      sessionManager: { getEntries: () => [] },
+      ui: { notify: () => undefined },
+    },
+  );
+
+  expect(harness.getActiveTools()).toEqual(["read", "grep", "find", "ls"]);
+  await session.close();
+});
+
+test("asks before mutating tools in Pi ask mode", async () => {
+  const pi = new FakePi();
+  const client = createClient(pi);
+  const session = await client.createSession(createConfig({ modeId: "ask" }));
+  const extensionPath = pi.recordedLaunches[0]?.extensionPaths[0];
+  expect(extensionPath).toBeDefined();
+  const listeners = await loadPaseoExtensionListeners(extensionPath!);
+
+  await expect(
+    listeners.get("tool_call")?.(
+      { toolName: "write", input: { path: "/tmp/result.txt" } },
+      { ui: { confirm: async () => false } },
+    ),
+  ).resolves.toEqual({ block: true, reason: "用户拒绝了此操作" });
   await session.close();
 });
 
@@ -1169,6 +1220,33 @@ describe("PiRpcAgentSession", () => {
     expect(fakeSession.setThinkingLevelRequests).toEqual(["high"]);
   });
 
+  test("changes Pi permission mode through the bundled extension", async () => {
+    const { pi, session } = await createSession();
+
+    expect(await session.getAvailableModes()).toEqual([
+      expect.objectContaining({ id: "full" }),
+      expect.objectContaining({ id: "ask" }),
+      expect.objectContaining({ id: "read-only" }),
+    ]);
+    expect(await session.getCurrentMode()).toBe("full");
+
+    await session.setMode("ask");
+
+    expect(pi.latestSession().permissionModeRequests).toEqual(["ask"]);
+    expect(await session.getCurrentMode()).toBe("ask");
+    expect(session.describePersistence()?.metadata).toMatchObject({ modeId: "ask" });
+  });
+
+  test("rejects unknown Pi permission modes before starting a process", async () => {
+    const pi = new FakePi();
+    const client = createClient(pi);
+
+    await expect(client.createSession(createConfig({ modeId: "unsafe-unknown" }))).rejects.toThrow(
+      "Unsupported Pi permission mode 'unsafe-unknown'",
+    );
+    expect(pi.recordedLaunches).toEqual([]);
+  });
+
   test("materializes image prompts as text hints for text-only Pi models", async () => {
     const { pi, session } = await createSession();
     const fakeSession = pi.latestSession();
@@ -1612,7 +1690,12 @@ describe("PiRpcAgentClient", () => {
           defaultThinkingOptionId: "medium",
         },
       ],
-      modes: [],
+      modes: [
+        expect.objectContaining({ id: "full", isUnattended: true }),
+        expect.objectContaining({ id: "ask" }),
+        expect.objectContaining({ id: "read-only" }),
+      ],
+      defaultModeId: "full",
     });
     expect(pi.recordedLaunches[0]).toMatchObject({ cwd: "/workspace/with-extension" });
   });

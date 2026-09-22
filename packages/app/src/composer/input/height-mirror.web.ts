@@ -43,7 +43,10 @@ export function useComposerHeightMirror({
 
   const mirrorRef = useRef<HTMLTextAreaElement | null>(null);
 
-  useEffect(() => {
+  // 镜像必须在同一轮布局阶段先于下方的测量 effect 创建。若在普通 effect
+  // 中创建，恢复出的长草稿第一次测量时镜像尚不存在，且文本没有再次变化时
+  // 不会触发第二次测量，输入框就会一直停留在最小高度。
+  useLayoutEffect(() => {
     if (typeof document === "undefined") return;
     const mirror = document.createElement("textarea");
     mirror.setAttribute("aria-hidden", "true");

@@ -3,7 +3,7 @@ import type {
   SidebarProjectEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/sidebar-workspaces-view-model";
-import { applyWorkspaceLocalPins } from "@/hooks/use-sidebar-pins";
+import { applyWorkspaceLocalPins, splitPinnedSidebarGroups } from "@/hooks/use-sidebar-pins";
 
 function placement(workspaceKey: string): SidebarWorkspacePlacement {
   return {
@@ -86,5 +86,42 @@ describe("applyWorkspaceLocalPins", () => {
       "regular",
     ]);
     expect(result[1]?.workspaces.map((workspace) => workspace.workspaceKey)).toEqual(["other"]);
+  });
+});
+
+describe("splitPinnedSidebarGroups", () => {
+  it("把全局置顶会话提升到独立分组，并从原工作区移除", () => {
+    const projects = [project("p1", [placement("regular"), placement("pinned")])];
+    const result = splitPinnedSidebarGroups({
+      projects,
+      keys: {
+        pinnedWorkspaceKeys: ["pinned"],
+        pinnedAtByKey: { pinned: "2026-09-22T08:00:00.000Z" },
+      },
+    });
+
+    expect(result.pinnedChats.map((workspace) => workspace.workspaceKey)).toEqual(["pinned"]);
+    expect(
+      result.unpinnedProjects[0]?.workspaces.map((workspace) => workspace.workspaceKey),
+    ).toEqual(["regular"]);
+  });
+
+  it("按最近置顶时间排列全局置顶会话", () => {
+    const projects = [project("p1", [placement("older"), placement("newer")])];
+    const result = splitPinnedSidebarGroups({
+      projects,
+      keys: {
+        pinnedWorkspaceKeys: ["older", "newer"],
+        pinnedAtByKey: {
+          older: "2026-09-21T08:00:00.000Z",
+          newer: "2026-09-22T08:00:00.000Z",
+        },
+      },
+    });
+
+    expect(result.pinnedChats.map((workspace) => workspace.workspaceKey)).toEqual([
+      "newer",
+      "older",
+    ]);
   });
 });

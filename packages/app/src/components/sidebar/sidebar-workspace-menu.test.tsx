@@ -176,4 +176,34 @@ describe("SidebarWorkspaceMenu", () => {
     fireEvent.click(screen.getByTestId("codex-provider-injection-model-provider-a-model-a2"));
     expect(apply).toHaveBeenCalledWith("provider-a", "model-a2");
   });
+
+  it("keeps global and workspace-local pin actions together", () => {
+    const toggleGlobal = vi.fn();
+    const toggleProject = vi.fn();
+    render(
+      <SidebarWorkspaceMenu
+        workspaceKey="server-1:workspace-1"
+        onArchive={noop}
+        isPinned={false}
+        onTogglePin={toggleGlobal}
+        isProjectPinned={true}
+        onToggleProjectPin={toggleProject}
+      />,
+    );
+
+    const pinMenu = screen.getByTestId("sidebar-workspace-menu-pin-server-1:workspace-1");
+    const globalAction = screen.getByTestId(
+      "sidebar-workspace-menu-pin-global-server-1:workspace-1",
+    );
+    const projectAction = screen.getByTestId(
+      "sidebar-workspace-menu-pin-project-server-1:workspace-1",
+    );
+    expect(pinMenu.contains(globalAction)).toBe(true);
+    expect(pinMenu.contains(projectAction)).toBe(true);
+
+    fireEvent.click(globalAction);
+    fireEvent.click(projectAction);
+    expect(toggleGlobal).toHaveBeenCalledOnce();
+    expect(toggleProject).toHaveBeenCalledOnce();
+  });
 });
