@@ -1,6 +1,48 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
-import { resolveAgentControlsMode, resolveNextAgentModeId } from "./mode";
+import {
+  buildLiveAgentModeDefinitions,
+  resolveAgentControlsMode,
+  resolveNextAgentModeId,
+} from "./mode";
+
+describe("buildLiveAgentModeDefinitions", () => {
+  const runtimeCodexModes = [
+    { id: "auto", label: "Default Permissions" },
+    { id: "full-access", label: "Full Access" },
+    { id: "custom", label: "自定义 (config.toml)" },
+  ] satisfies AgentMode[];
+  const catalogCodexModes = [
+    { id: "auto", label: "Default Permissions", icon: "Shield", colorTier: "moderate" },
+    { id: "full-access", label: "Full Access", icon: "ShieldOff", colorTier: "dangerous" },
+    { id: "custom", label: "自定义 (config.toml)", icon: "ShieldPlus", colorTier: "moderate" },
+  ] satisfies AgentMode[];
+
+  it("gives a live session the same per-mode icons as the provider catalog", () => {
+    const modes = buildLiveAgentModeDefinitions(runtimeCodexModes, catalogCodexModes);
+
+    expect(modes.map((mode) => [mode.id, mode.icon, mode.colorTier])).toEqual([
+      ["auto", "Shield", "moderate"],
+      ["full-access", "ShieldOff", "dangerous"],
+      ["custom", "ShieldPlus", "moderate"],
+    ]);
+  });
+
+  it("keeps runtime-provided visuals over the catalog", () => {
+    const modes = buildLiveAgentModeDefinitions(
+      [{ id: "auto", label: "Auto", icon: "Bot", colorTier: "safe" }],
+      catalogCodexModes,
+    );
+
+    expect(modes[0]).toMatchObject({ icon: "Bot", colorTier: "safe" });
+  });
+
+  it("falls back to the default shield while the catalog is not loaded", () => {
+    const modes = buildLiveAgentModeDefinitions(runtimeCodexModes, undefined);
+
+    expect(modes.every((mode) => mode.icon === "ShieldCheck")).toBe(true);
+  });
+});
 
 const PLAN_MODE = { id: "plan", label: "Plan" } satisfies AgentMode;
 

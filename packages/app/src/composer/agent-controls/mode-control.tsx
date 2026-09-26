@@ -34,17 +34,15 @@ import { formatAgentModeLabel, getAgentControlHintKey } from "@/composer/agent-c
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
-import { resolveNextAgentModeId } from "@/composer/agent-controls/mode";
+import {
+  buildLiveAgentModeDefinitions,
+  resolveNextAgentModeId,
+} from "@/composer/agent-controls/mode";
 import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
 import { AgentControlIconGlyph, AgentControlTrigger } from "@/composer/agent-controls/control";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
-import {
-  getModeVisuals,
-  type AgentModeColorTier,
-  type AgentProviderDefinition,
-  type AgentProviderModeDefinition,
-} from "@getpaseo/protocol/provider-manifest";
+import { getModeVisuals, type AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 
 interface ModeIconProps {
   size?: number;
@@ -281,6 +279,7 @@ function compareAvailableModes(a: AgentMode[], b: AgentMode[]): boolean {
 export function useLiveAgentModeControl(
   serverId: string,
   agentId: string,
+  catalogEntry?: { modes?: readonly AgentMode[] } | null,
 ): AgentModeControlValue | null {
   const slice = useSessionStore(
     useShallow((state) => {
@@ -301,6 +300,7 @@ export function useLiveAgentModeControl(
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const { updatePreferences } = useFormPreferences();
   const toast = useToast();
+  const catalogModes = catalogEntry?.modes;
   const providerDefinitions = useMemo<AgentProviderDefinition[]>(() => {
     if (!slice?.provider) return [];
     return [
@@ -309,16 +309,10 @@ export function useLiveAgentModeControl(
         label: slice.provider,
         description: "",
         defaultModeId: null,
-        modes: availableModes.map(
-          (mode): AgentProviderModeDefinition => ({
-            ...mode,
-            icon: mode.icon ?? "ShieldCheck",
-            colorTier: (mode.colorTier ?? "moderate") as AgentModeColorTier,
-          }),
-        ),
+        modes: buildLiveAgentModeDefinitions(availableModes, catalogModes),
       },
     ];
-  }, [availableModes, slice?.provider]);
+  }, [availableModes, catalogModes, slice?.provider]);
 
   const handleSelectMode = useCallback(
     (modeId: string) => {

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactElement, RefObject } from "react";
-import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Pressable, StyleSheet as RNStyleSheet, Text, View } from "react-native";
@@ -47,7 +46,11 @@ import {
 } from "@/stores/navigation-active-workspace-store";
 import { normalizeWorkspaceDescriptor, useSessionStore } from "@/stores/session-store";
 import { useWorkspace } from "@/stores/session-store-hooks";
-import { buildNewWorkspaceDraftKey, generateDraftId } from "@/stores/draft-keys";
+import {
+  buildNewSessionDraftKey,
+  buildNewWorkspaceDraftKey,
+  generateDraftId,
+} from "@/stores/draft-keys";
 import { useDraftStore } from "@/stores/draft-store";
 import { useOpenAddProject } from "@/hooks/use-open-add-project";
 import { isActiveCreateFlowForDraft, useCreateFlowStore } from "@/stores/create-flow-store";
@@ -83,13 +86,18 @@ import type { AgentAttachment, ForgeSearchItem } from "@getpaseo/protocol/messag
 import type { CreatePaseoWorktreeInput } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
-import { createWorkspaceFileTabTarget } from "@/workspace/file-open";
-import { buildNewWorkspaceRoute } from "@/utils/host-routes";
 import { isEmptyWorkspaceSubmission, runCreateEmptyWorkspace } from "./new-workspace-empty";
 import {
   NewWorkspaceDraftShell,
   type NewWorkspaceDraftShellTarget,
 } from "./new-workspace-draft-shell";
+import {
+  openNewSessionDraftFilesInWorkspace,
+  releaseNewSessionDraft,
+  useNewSessionDraftShellState,
+  useRetainedNewSessionDraftId,
+  type NewSessionDraftScope,
+} from "./new-workspace/draft-shell-store";
 import {
   getWorkspaceNamingAttachments,
   remapDraftCwdToWorkspace,
@@ -957,7 +965,9 @@ function buildComposerInitialValues(input: {
   return undefined;
 }
 
-async function runCreateChatAgent(input: CreateChatAgentInput): Promise<void> {
+async function runCreateChatAgent(
+  input: CreateChatAgentInput,
+): Promise<ReturnType<typeof normalizeWorkspaceDescriptor>> {
   const { payload, composerState, ensureWorkspace, serverId, draftKey } = input;
   const { text, attachments, cwd } = payload;
   if (!composerState) {
@@ -999,6 +1009,7 @@ async function runCreateChatAgent(input: CreateChatAgentInput): Promise<void> {
     composerState,
     supportsForgeSearch: input.supportsForgeSearch,
   });
+  return ensuredWorkspace;
 }
 
 function buildComposerConfig(input: {
@@ -1559,10 +1570,10 @@ function resolveNewWorkspaceDraftShellContext(input: {
   routeProjectId?: string;
   displayName?: string;
   fallbackTitle: string;
-  draftId: string;
+  draftId: string | null;
   isGit: boolean;
 }): NewWorkspaceDraftShellContext | null {
-  if (input.isCompact || !input.sourceDirectory) {
+  if (input.isCompact || !input.sourceDirectory || !input.draftId) {
     return null;
   }
   const selectedProjectId = input.selectedProject
@@ -1578,8 +1589,57 @@ function resolveNewWorkspaceDraftShellContext(input: {
   };
 }
 
-function resolveNewWorkspaceShellDraftId(draftId: string | undefined): string {
-  return draftId?.trim() || generateDraftId();
+function resolveRetainedNewSessionDraftScope(input: {
+  routeDraftId: string | null;
+  serverId: string;
+  sourceDirectory: string | null;
+}): NewSessionDraftScope | null {
+  // 显式携带草稿标识的入口（例如分叉到新会话）使用自己的草稿；其余按项目复用后台常驻草稿。
+  if (input.routeDraftId || !input.serverId.trim() || !input.sourceDirectory) {
+    return null;
+  }
+  return { serverId: input.serverId, sourceDirectory: input.sourceDirectory };
+}
+
+function resolveNewWorkspaceComposerDraftKey(input: {
+  routeDraftId: string | null;
+  retainedDraftId: string | null;
+}): string {
+  if (input.routeDraftId) {
+    return buildNewWorkspaceDraftKey(input.routeDraftId);
+  }
+  if (input.retainedDraftId) {
+    return buildNewSessionDraftKey(input.retainedDraftId);
+  }
+  return buildNewWorkspaceDraftKey();
+}
+
+function useNewWorkspaceDraftIdentity(input: {
+  draftId: string | undefined;
+  serverId: string;
+  sourceDirectory: string | null;
+}): { shellDraftId: string | null; draftKey: string } {
+  const routeDraftId = input.draftId?.trim() || null;
+  const retainedDraftScope = useMemo(
+    () =>
+      resolveRetainedNewSessionDraftScope({
+        routeDraftId,
+        serverId: input.serverId,
+        sourceDirectory: input.sourceDirectory,
+      }),
+    [input.serverId, input.sourceDirectory, routeDraftId],
+  );
+  const retainedDraftId = useRetainedNewSessionDraftId(retainedDraftScope);
+  return {
+    shellDraftId: routeDraftId ?? retainedDraftId,
+    draftKey: resolveNewWorkspaceComposerDraftKey({ routeDraftId, retainedDraftId }),
+  };
+}
+
+/** 草稿外壳切到文件标签时输入区只是隐藏，不能继续作为当前焦点输入框接收快捷键。 */
+function useIsDraftComposerTabActive(shellContext: NewWorkspaceDraftShellContext | null): boolean {
+  const shellState = useNewSessionDraftShellState(shellContext ? shellContext.draftId : null);
+  return !shellState || shellState.activeTabId === shellState.draftTabId;
 }
 
 function NewWorkspaceTitlebarDragRegion({ hasDraftShell }: { hasDraftShell: boolean }) {
@@ -1592,7 +1652,6 @@ function NewWorkspaceTitlebarDragRegion({ hasDraftShell }: { hasDraftShell: bool
 interface NewWorkspaceScreenLayoutProps {
   shellContext: NewWorkspaceDraftShellContext | null;
   isPending: boolean;
-  onCreateDraft: () => void;
   onOpenTarget: (target: NewWorkspaceDraftShellTarget) => void;
   children: ReactElement;
 }
@@ -1602,7 +1661,6 @@ const newWorkspaceHeaderLeft = <SidebarMenuToggle />;
 function NewWorkspaceScreenLayout({
   shellContext,
   isPending,
-  onCreateDraft,
   onOpenTarget,
   children,
 }: NewWorkspaceScreenLayoutProps) {
@@ -1617,12 +1675,7 @@ function NewWorkspaceScreenLayout({
 
   return (
     <FileDropZone style={styles.container}>
-      <NewWorkspaceDraftShell
-        {...shellContext}
-        isPending={isPending}
-        onCreateDraft={onCreateDraft}
-        onOpenTarget={onOpenTarget}
-      >
+      <NewWorkspaceDraftShell {...shellContext} isPending={isPending} onOpenTarget={onOpenTarget}>
         {children}
       </NewWorkspaceDraftShell>
     </FileDropZone>
@@ -1636,7 +1689,6 @@ export function NewWorkspaceScreen({
   displayName: displayNameProp,
   draftId,
 }: NewWorkspaceScreenProps) {
-  const router = useRouter();
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -1677,7 +1729,6 @@ export function NewWorkspaceScreen({
   const projectPickerAnchorRef = useRef<View>(null);
   const isolationPickerAnchorRef = useRef<View>(null);
   const hostPickerAnchorRef = useRef<View | null>(null);
-  const shellDraftIdRef = useRef(resolveNewWorkspaceShellDraftId(draftId));
   const isDraftHandoffActive = useIsNewWorkspaceDraftHandoffActive({
     draftId,
     selectedServerId,
@@ -1732,7 +1783,11 @@ export function NewWorkspaceScreen({
   const projectIconDataByProjectKey = useProjectIconDataByProjectKey({
     projects: projectIconTargets,
   });
-  const draftKey = buildNewWorkspaceDraftKey(draftId);
+  const { shellDraftId, draftKey } = useNewWorkspaceDraftIdentity({
+    draftId,
+    serverId: selectedServerId,
+    sourceDirectory: selectedSourceDirectory,
+  });
   const forkDraftSetup = usePendingWorkspaceDraftSetup(draftId);
   const draftContextScopeKey = useDraftWorkspaceAttachmentScopeKey(draftId);
   const visibleDraftContextScopeKeys = useMemo(
@@ -2108,33 +2163,42 @@ export function NewWorkspaceScreen({
       try {
         setErrorMessage(null);
         await composerState?.persistFormPreferences();
+        let createdWorkspaceForDraft: ReturnType<typeof normalizeWorkspaceDescriptor>;
         if (isEmptyWorkspaceSubmission(payload)) {
           setPendingAction("empty");
-          await runCreateEmptyWorkspace({
+          createdWorkspaceForDraft = await runCreateEmptyWorkspace({
             payload,
             ensureWorkspace,
             serverId: selectedServerId,
             navigate: (targetServerId, workspaceId) =>
               navigateToWorkspace({ serverId: targetServerId, workspaceId }),
           });
-          return;
+        } else {
+          setPendingAction("chat");
+          createdWorkspaceForDraft = await runCreateChatAgent({
+            payload,
+            composerState,
+            forkDraftSetup,
+            ensureWorkspace,
+            serverId: selectedServerId,
+            draftKey,
+            draftId,
+            supportsForgeSearch,
+            labels: {
+              composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
+              selectModel: t("newWorkspace.errors.selectModel"),
+            },
+          });
         }
-
-        setPendingAction("chat");
-        await runCreateChatAgent({
-          payload,
-          composerState,
-          forkDraftSetup,
-          ensureWorkspace,
-          serverId: selectedServerId,
-          draftKey,
-          draftId,
-          supportsForgeSearch,
-          labels: {
-            composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
-            selectModel: t("newWorkspace.errors.selectModel"),
-          },
-        });
+        // 会话已经正式创建：草稿中打开的文件随会话进入新工作区，并释放后台常驻草稿，下次新建时得到新草稿。
+        if (shellDraftId) {
+          openNewSessionDraftFilesInWorkspace({
+            draftId: shellDraftId,
+            serverId: selectedServerId,
+            workspaceId: createdWorkspaceForDraft.id,
+          });
+          releaseNewSessionDraft(shellDraftId);
+        }
       } catch (error) {
         const message = toErrorMessage(error);
         setPendingAction(null);
@@ -2149,6 +2213,7 @@ export function NewWorkspaceScreen({
       ensureWorkspace,
       forkDraftSetup,
       selectedServerId,
+      shellDraftId,
       supportsForgeSearch,
       t,
       toast,
@@ -2194,11 +2259,9 @@ export function NewWorkspaceScreen({
               throw new Error(terminalPayload.error ?? t("workspace.terminal.unableToSubscribe"));
             }
             workspaceTarget = { kind: "terminal", terminalId: terminalPayload.terminal.id };
-          } else if (target.kind === "browser") {
+          } else {
             const { browserId } = createWorkspaceBrowser();
             workspaceTarget = { kind: "browser", browserId };
-          } else {
-            workspaceTarget = createWorkspaceFileTabTarget(target.location);
           }
           navigateToWorkspace({
             serverId: selectedServerId,
@@ -2224,25 +2287,6 @@ export function NewWorkspaceScreen({
       withConnectedClient,
     ],
   );
-
-  const handleCreateSiblingDraft = useCallback(() => {
-    if (!selectedSourceDirectory || !selectedProject) {
-      return;
-    }
-    const selectedProjectId = getHostProjectId(selectedProject, selectedServerId);
-    if (!selectedProjectId) {
-      throw new Error("无法新建会话：当前主机上的项目标识不存在");
-    }
-    router.push(
-      buildNewWorkspaceRoute({
-        serverId: selectedServerId,
-        sourceDirectory: selectedSourceDirectory,
-        displayName: selectedProject.projectName,
-        projectId: selectedProjectId,
-        draftId: generateDraftId(),
-      }),
-    );
-  }, [router, selectedProject, selectedServerId, selectedSourceDirectory]);
 
   const renderPickerOption = useCallback(
     (props: {
@@ -2372,9 +2416,10 @@ export function NewWorkspaceScreen({
     routeProjectId: projectId,
     displayName: displayNameProp,
     fallbackTitle: t("newWorkspace.title"),
-    draftId: shellDraftIdRef.current,
+    draftId: shellDraftId,
     isGit: checkoutStatusQuery.data?.isGit === true,
   });
+  const isComposerTabActive = useIsDraftComposerTabActive(draftShellContext);
   const composerContent = (
     <View style={contentStyle}>
       <NewWorkspaceTitlebarDragRegion hasDraftShell={draftShellContext !== null} />
@@ -2387,7 +2432,7 @@ export function NewWorkspaceScreen({
           externalKeyboardShift
           agentId={draftKey}
           serverId={selectedServerId}
-          isPaneFocused={true}
+          isPaneFocused={isComposerTabActive}
           onSubmitMessage={handleSubmitNewWorkspace}
           allowEmptySubmit={true}
           submitButtonAccessibilityLabel={t("newWorkspace.create")}
@@ -2419,7 +2464,6 @@ export function NewWorkspaceScreen({
     <NewWorkspaceScreenLayout
       shellContext={draftShellContext}
       isPending={isPending}
-      onCreateDraft={handleCreateSiblingDraft}
       onOpenTarget={handleOpenDraftShellTarget}
     >
       {composerContent}

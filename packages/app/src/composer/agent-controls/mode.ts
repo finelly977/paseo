@@ -1,5 +1,26 @@
 import type { DraftAgentControlsProps } from "@/composer/agent-controls";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
+import type {
+  AgentModeColorTier,
+  AgentProviderModeDefinition,
+} from "@getpaseo/protocol/provider-manifest";
+
+// Live sessions report runtime modes without visuals, while the provider catalog
+// carries the manifest icon/colorTier. Borrow them by mode id so a running agent
+// shows the same per-mode icons as the draft composer.
+export function buildLiveAgentModeDefinitions(
+  availableModes: readonly AgentMode[],
+  catalogModes: readonly AgentMode[] | undefined,
+): AgentProviderModeDefinition[] {
+  return availableModes.map((mode): AgentProviderModeDefinition => {
+    const catalogMode = catalogModes?.find((candidate) => candidate.id === mode.id);
+    return {
+      ...mode,
+      icon: mode.icon ?? catalogMode?.icon ?? "ShieldCheck",
+      colorTier: (mode.colorTier ?? catalogMode?.colorTier ?? "moderate") as AgentModeColorTier,
+    };
+  });
+}
 
 export function resolveNextAgentModeId({
   modeOptions,

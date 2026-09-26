@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { applyClearDraftRecord, pruneFinalizedDraftRecords, toDraftInputIfReady } from "./state";
+import { buildNewSessionDraftKey, buildNewWorkspaceDraftKey } from "@/stores/draft-keys";
+import {
+  applyClearDraftRecord,
+  omitEphemeralDraftRecords,
+  pruneFinalizedDraftRecords,
+  toDraftInputIfReady,
+} from "./state";
+
+describe("draft-store persistence scope", () => {
+  it("keeps retained new-session drafts out of the persisted snapshot", () => {
+    const record = {
+      input: { text: "hello", attachments: [] },
+      lifecycle: "active" as const,
+      updatedAt: 0,
+      version: 1,
+    };
+    const persistentKey = buildNewWorkspaceDraftKey("draft-fork");
+    const drafts = {
+      [persistentKey]: record,
+      [buildNewSessionDraftKey("draft-1")]: record,
+    };
+
+    expect(omitEphemeralDraftRecords(drafts)).toEqual({ [persistentKey]: record });
+  });
+
+  it("returns the same object when nothing is ephemeral", () => {
+    const drafts = {
+      [buildNewWorkspaceDraftKey()]: {
+        input: { text: "hello", attachments: [] },
+        lifecycle: "active" as const,
+        updatedAt: 0,
+        version: 1,
+      },
+    };
+
+    expect(omitEphemeralDraftRecords(drafts)).toBe(drafts);
+  });
+});
 
 describe("draft-store lifecycle", () => {
   it("prunes finalized tombstones after TTL", () => {

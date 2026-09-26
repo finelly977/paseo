@@ -19,6 +19,7 @@ import {
   isCanonicalDraftInput,
   isLegacyDraftImage,
   normalizeComposerAttachment,
+  omitEphemeralDraftRecords,
   pruneFinalizedDraftRecords,
   toDraftInputIfReady,
   type DraftInput,
@@ -415,7 +416,10 @@ export const useDraftStore = create<DraftStore>()(
       name: "paseo-drafts",
       version: DRAFT_STORE_VERSION,
       storage: draftPersistStorage,
-      partialize: ({ drafts, createModalDraft }) => ({ drafts, createModalDraft }),
+      partialize: ({ drafts, createModalDraft }) => ({
+        drafts: omitEphemeralDraftRecords(drafts),
+        createModalDraft,
+      }),
       migrate: (state) =>
         migratePersistedState(state, {
           migrateLegacyImages,

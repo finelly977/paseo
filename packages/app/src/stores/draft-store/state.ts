@@ -4,6 +4,7 @@ import {
   type UserComposerAttachment,
 } from "@/attachments/types";
 import { PluginResourceComposerAttachmentSchema } from "@/plugins/attachments";
+import { isEphemeralDraftKey } from "@/stores/draft-keys";
 import { z } from "zod";
 
 export const DRAFT_STORE_VERSION = 5;
@@ -233,6 +234,21 @@ export function pruneFinalizedDraftRecords(input: {
     next[draftKey] = record;
   }
   return changed ? next : input.drafts;
+}
+
+export function omitEphemeralDraftRecords(
+  drafts: Record<string, DraftRecord>,
+): Record<string, DraftRecord> {
+  let changed = false;
+  const next: Record<string, DraftRecord> = {};
+  for (const [draftKey, record] of Object.entries(drafts)) {
+    if (isEphemeralDraftKey(draftKey)) {
+      changed = true;
+      continue;
+    }
+    next[draftKey] = record;
+  }
+  return changed ? next : drafts;
 }
 
 export function applyClearDraftRecord(input: {

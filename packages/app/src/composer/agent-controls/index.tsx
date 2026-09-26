@@ -1520,7 +1520,6 @@ export const AgentControls = memo(function AgentControls({
   );
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   const toast = useToast();
-  const modeControl = useLiveAgentModeControl(serverId, agentId);
 
   const {
     entries: snapshotEntries,
@@ -1535,6 +1534,7 @@ export const AgentControls = memo(function AgentControls({
     () => resolveSnapshotSelectedEntry(snapshotEntries, agent?.provider),
     [snapshotEntries, agent?.provider],
   );
+  const modeControl = useLiveAgentModeControl(serverId, agentId, snapshotSelectedEntry);
 
   const models = snapshotSelectedEntry?.models ?? null;
   const selectedProviderIsLoading = snapshotSelectedEntry?.status === "loading";
