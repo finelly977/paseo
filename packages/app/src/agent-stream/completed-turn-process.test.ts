@@ -59,6 +59,7 @@ describe("完成回合过程收起展示", () => {
       seconds: 8,
     });
     const host: TurnFooterHost = {
+      kind: "assistant",
       itemId: conclusion.id,
       items: [process, divider, conclusion],
       timing: {
@@ -92,6 +93,7 @@ describe("完成回合过程收起展示", () => {
       seconds: 8,
     });
     const host: TurnFooterHost = {
+      kind: "assistant",
       itemId: conclusion.id,
       items: [process, conclusion],
       timing: undefined,

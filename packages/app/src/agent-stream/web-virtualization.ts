@@ -61,6 +61,8 @@ export function shouldAutoLoadOlderHistory(input: {
   isLoadingOlderHistory: boolean;
   clientHeight: number;
   scrollHeight: number;
+  scrollTop: number;
+  isFollowingOutput: boolean;
   historyStartThreshold: number;
 }): boolean {
   if (
@@ -73,7 +75,10 @@ export function shouldAutoLoadOlderHistory(input: {
     return false;
   }
 
-  return input.scrollHeight - input.clientHeight <= input.historyStartThreshold;
+  const viewportIsTooShort = input.scrollHeight - input.clientHeight <= input.historyStartThreshold;
+  const readingAtHistoryStart =
+    !input.isFollowingOutput && input.scrollTop <= input.historyStartThreshold;
+  return viewportIsTooShort || readingAtHistoryStart;
 }
 
 export function estimateStreamItemHeight(

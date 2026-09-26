@@ -1404,6 +1404,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               onNearHistoryStart: loadOlder,
               isLoadingOlderHistory: isLoadingOlder,
               hasOlderHistory: hasOlder,
+              historyStartCursor: historyPagination ? null : agentHistoryPagination.startCursor,
               scrollEnabled: streamScrollEnabled,
               messageParagraphSpacing,
               conversationVerticalPadding,

@@ -156,6 +156,8 @@ describe("shouldAutoLoadOlderHistory", () => {
         isLoadingOlderHistory: false,
         clientHeight: 800,
         scrollHeight: 860,
+        scrollTop: 60,
+        isFollowingOutput: true,
         historyStartThreshold: 96,
       }),
     ).toBe(true);
@@ -170,6 +172,8 @@ describe("shouldAutoLoadOlderHistory", () => {
         isLoadingOlderHistory: false,
         clientHeight: 800,
         scrollHeight: 1_200,
+        scrollTop: 400,
+        isFollowingOutput: true,
         historyStartThreshold: 96,
       }),
     ).toBe(false);
@@ -183,6 +187,8 @@ describe("shouldAutoLoadOlderHistory", () => {
       isLoadingOlderHistory: false,
       clientHeight: 800,
       scrollHeight: 860,
+      scrollTop: 60,
+      isFollowingOutput: true,
       historyStartThreshold: 96,
     };
 
@@ -192,6 +198,23 @@ describe("shouldAutoLoadOlderHistory", () => {
     );
     expect(shouldAutoLoadOlderHistory({ ...readyInput, isLoadingOlderHistory: true })).toBe(false);
     expect(shouldAutoLoadOlderHistory({ ...readyInput, hasOlderHistory: false })).toBe(false);
+  });
+
+  it("用户停在历史起点时继续补载，离开起点后停止", () => {
+    const input = {
+      historyStartReady: true,
+      isAuthoritativeHistoryReady: true,
+      hasOlderHistory: true,
+      isLoadingOlderHistory: false,
+      clientHeight: 800,
+      scrollHeight: 2_000,
+      scrollTop: 0,
+      isFollowingOutput: false,
+      historyStartThreshold: 96,
+    };
+    expect(shouldAutoLoadOlderHistory(input)).toBe(true);
+    expect(shouldAutoLoadOlderHistory({ ...input, scrollTop: 200 })).toBe(false);
+    expect(shouldAutoLoadOlderHistory({ ...input, isFollowingOutput: true })).toBe(false);
   });
 });
 

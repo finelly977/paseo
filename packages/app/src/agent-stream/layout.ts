@@ -7,6 +7,7 @@ import { continuesTurn, isTurnBoundary } from "./turn-membership";
 export type StreamToolSequence = "single" | "first" | "middle" | "last" | "none";
 
 export interface TurnFooterHost {
+  kind: "assistant" | "partial";
   itemId: string;
   items: StreamItem[];
   timing?: TurnTiming;
@@ -82,6 +83,7 @@ function createTurnFooterHost(input: {
   timingByAssistantId: Map<string, TurnTiming>;
 }): TurnFooterHost {
   return {
+    kind: "assistant",
     itemId: input.item.id,
     items: input.items,
     timing: input.timingByAssistantId.get(input.item.id),
@@ -98,6 +100,13 @@ function createTurnFooterHost(input: {
         : { allowPartialBoundary: input.allowPartialBoundary }),
     }),
   };
+}
+
+function isFailedTurnItem(item: StreamItem): boolean {
+  return (
+    (item.kind === "activity_log" && item.activityType === "error") ||
+    (item.kind === "assistant_message" && item.text.trimStart().startsWith("[System Error]"))
+  );
 }
 
 export function collectCompletedTurnProcessItemIds(input: {
@@ -117,6 +126,7 @@ export function collectCompletedTurnProcessItemIds(input: {
   let items = input.items;
   let index = input.turnEndIndex;
   let canCrossBoundary = true;
+  let laterItem: StreamItem | null = null;
 
   while (true) {
     for (
@@ -128,10 +138,11 @@ export function collectCompletedTurnProcessItemIds(input: {
       if (!item || item.kind === "user_message") {
         return processItemIds;
       }
-      const isFailureItem =
-        (item.kind === "activity_log" && item.activityType === "error") ||
-        (item.kind === "assistant_message" && item.text.trimStart().startsWith("[System Error]"));
-      if (isFailureItem) {
+      if (laterItem && !continuesTurn(item, laterItem)) {
+        return processItemIds;
+      }
+      laterItem = item;
+      if (isFailedTurnItem(item)) {
         return [];
       }
       const belongsToFinalAssistantBlockGroup =
@@ -326,6 +337,7 @@ function tryResolvePartialTurnFooter(input: {
   // 沿策略的“下方”方向收集过程项（倒序平台方向相反）；段内出现助手消息或
   // 用户消息时，该回合由正常的 completedFooter/auxiliary footer 逻辑处理。
   const processItemIds: string[] = [];
+  let previousItem: StreamItem | null = null;
   for (
     let i = input.index;
     i >= 0 && i < input.items.length;
@@ -335,11 +347,15 @@ function tryResolvePartialTurnFooter(input: {
     if (!candidate) {
       break;
     }
-    if (candidate.kind === "user_message" || candidate.kind === "assistant_message") {
+    if (previousItem && !continuesTurn(previousItem, candidate)) {
+      break;
+    }
+    previousItem = candidate;
+    if (isFailedTurnItem(candidate)) {
       return null;
     }
-    if (candidate.kind === "activity_log" || candidate.kind === "compaction") {
-      break;
+    if (candidate.kind === "user_message" || candidate.kind === "assistant_message") {
+      return null;
     }
     if (!isToolSequenceItem(candidate)) {
       break;
@@ -350,10 +366,11 @@ function tryResolvePartialTurnFooter(input: {
     return null;
   }
   return {
+    kind: "partial",
     itemId: `partial:${input.item.id}`,
     items: input.items,
     startIndex: input.index,
-    processItemIds,
+    processItemIds: processItemIds.toReversed(),
   };
 }
 
@@ -554,9 +571,45 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
     activeTurnId,
   });
 
+  return reconcilePartialTurnFooters(
+    { history, liveHead, auxiliaryTurnFooter },
+    input.messageSpacing,
+  );
+}
+
+function reconcilePartialTurnFooters(layout: StreamLayout, messageSpacing: number): StreamLayout {
+  const { history, liveHead, auxiliaryTurnFooter } = layout;
+  // 历史分页和实时尾部属于同一条时间线。正常回合已经拥有的过程不能再被
+  // 局部分页生成的临时 footer 接管，否则同一段会留下多个“已处理”入口。
+  const assistantProcessItemIds = new Set<string>(auxiliaryTurnFooter?.processItemIds);
+  for (const row of [...history, ...liveHead]) {
+    if (row.completedFooter?.kind === "assistant") {
+      for (const id of row.completedFooter.processItemIds) assistantProcessItemIds.add(id);
+    }
+  }
+  const removeCoveredPartialFooters = (rows: StreamLayoutItem[]): StreamLayoutItem[] => {
+    let result = rows;
+    for (const [index, row] of rows.entries()) {
+      const footer = row.completedFooter;
+      if (
+        footer?.kind !== "partial" ||
+        !footer.processItemIds.some((id) => assistantProcessItemIds.has(id))
+      ) {
+        continue;
+      }
+      if (result === rows) result = rows.slice();
+      result[index] = {
+        ...row,
+        completedFooter: null,
+        gapBelow: getGapBetweenStreamItems(row.item, row.belowItem, messageSpacing),
+      };
+    }
+    return result;
+  };
+
   return {
-    history,
-    liveHead,
+    history: removeCoveredPartialFooters(history),
+    liveHead: removeCoveredPartialFooters(liveHead),
     auxiliaryTurnFooter,
   };
 }

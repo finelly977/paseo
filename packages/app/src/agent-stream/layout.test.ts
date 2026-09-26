@@ -809,8 +809,37 @@ describe("layoutStream", () => {
       (item) => item.completedFooter?.itemId === `partial:${thoughtItem.id}`,
     )?.completedFooter;
     expect(host).toBeDefined();
-    expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id, toolItem2.id]);
+    expect(host?.processItemIds).toEqual([toolItem2.id, toolItem.id, thoughtItem.id]);
   });
+
+  it.each(["web", "android"] as const)(
+    "%s 分页过程跨历史区与实时区时只生成一个已处理入口",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        agentStatus: "idle",
+        tail: [thought("process-thought", 1), toolCall("process-tool", 2)],
+        head: [assistantMessage("final-answer", 3)],
+      });
+      expect(footerAssistantIds(layout)).toEqual(["final-answer"]);
+    },
+  );
+
+  it.each(["web", "android"] as const)(
+    "%s 无用户消息的自主回合不会把前一个回合的最终答复收起",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        tail: [
+          toolCall("first-tool", 1, "first-turn"),
+          assistantMessage("first-answer", 2, undefined, "first-turn"),
+          toolCall("second-tool", 3, "second-turn"),
+          assistantMessage("second-answer", 4, undefined, "second-turn"),
+        ],
+      });
+      expect(layout.auxiliaryTurnFooter?.processItemIds).toEqual(["second-tool"]);
+    },
+  );
 
   it("智能体运行中时，历史分页从回合中间开始的过程项仍直接收起", () => {
     const thoughtItem = thought("thought-1", 1);
@@ -825,7 +854,7 @@ describe("layoutStream", () => {
     const host = [...layout.history, ...layout.liveHead].find((item) =>
       item.completedFooter?.itemId.startsWith("partial:"),
     )?.completedFooter;
-    expect(host?.processItemIds).toEqual([thoughtItem.id, toolItem.id]);
+    expect(host?.processItemIds).toEqual([toolItem.id, thoughtItem.id]);
   });
 
   it.each(["web", "android"] as const)(
@@ -889,4 +918,26 @@ describe("layoutStream", () => {
     expect(host).toBeDefined();
     expect(new Set(host?.processItemIds)).toEqual(new Set([thoughtItem.id, toolItem.id]));
   });
+
+  it.each(["web", "android"] as const)(
+    "%s 不把分页窗口内的失败过程标记为已处理并收起",
+    (platform) => {
+      const layout = layoutFor({
+        platform,
+        agentStatus: "error",
+        tail: [
+          thought("failed-thought", 1),
+          toolCall("failed-tool", 2),
+          {
+            kind: "activity_log",
+            id: "failure",
+            timestamp: timestamp(3),
+            activityType: "error",
+            message: "回合失败",
+          },
+        ],
+      });
+      expect(footerAssistantIds(layout)).toEqual([]);
+    },
+  );
 });

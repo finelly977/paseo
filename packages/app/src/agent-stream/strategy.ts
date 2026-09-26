@@ -75,6 +75,7 @@ export interface StreamRenderInput {
   onNearHistoryStart: () => void;
   isLoadingOlderHistory: boolean;
   hasOlderHistory: boolean;
+  historyStartCursor?: string | null;
   scrollEnabled: boolean;
   messageParagraphSpacing: number;
   conversationVerticalPadding?: number;
