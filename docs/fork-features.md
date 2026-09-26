@@ -583,3 +583,15 @@
 - `packages/app/src/screens/settings-screen.tsx`
 - `packages/protocol/src/messages.ts`
 - `packages/server/src/server/agent/tools/paseo-tools.ts`
+
+### 27. 内置终端低对比度文字可读性
+
+- 内置终端对普通文字启用 4.5:1 的最低对比度校正。Shell 命令预测使用 ANSI 亮黑色、256 色深灰或 RGB 灰色时，会根据实际背景调整显示颜色，不再因默认深色主题而接近不可见；切换浅色或其他主题后继续按新背景计算。
+- 校正只发生在客户端文字渲染层，本机与远程 Linux 等主机使用相同规则。不改写 Shell 配置、ANSI 输出、背景调色板、输入内容或终端快照；显式弱化文字仍沿用 xterm 的弱化语义。
+- 网页、Electron 和移动端 WebView 共用该运行时设置。
+
+主要涉及：
+
+- `packages/app/src/terminal/runtime/terminal-emulator-runtime.ts`
+- `packages/app/src/terminal/runtime/terminal-emulator-runtime.browser.test.ts`
+- `packages/app/src/terminal/webview/terminal-emulator-webview-html.ts`

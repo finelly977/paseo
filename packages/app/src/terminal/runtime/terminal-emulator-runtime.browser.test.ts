@@ -2,6 +2,7 @@ import { page } from "@vitest/browser/context";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
 import { encodeTerminalOutput, TerminalEmulatorRuntime } from "./terminal-emulator-runtime";
+import { darkTheme, lightTheme } from "@/styles/theme";
 
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: class WebglAddon {
@@ -41,6 +42,26 @@ interface MountedTerminal {
 }
 
 const mountedTerminals: MountedTerminal[] = [];
+
+function colorLuminance(cssColor: string): number {
+  const channels = cssColor.match(/^rgb\((\d+), (\d+), (\d+)\)$/);
+  if (!channels) throw new Error(`无法读取终端显示颜色：${cssColor}`);
+  const [red, green, blue] = channels.slice(1).map((channel) => {
+    const value = Number(channel) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
+function renderedTextContrast(host: HTMLElement, text: string): number {
+  const span = Array.from(host.querySelectorAll<HTMLElement>(".xterm-rows span")).find(
+    (element) => element.textContent === text,
+  );
+  if (!span) throw new Error(`终端没有显示预期文字：${text}`);
+  const foreground = colorLuminance(getComputedStyle(span).color);
+  const background = colorLuminance(getComputedStyle(host).backgroundColor);
+  return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+}
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
@@ -177,6 +198,41 @@ afterEach(() => {
 });
 
 describe("terminal emulator runtime in a real browser", () => {
+  it.each([
+    { name: "ANSI 亮黑色", code: "90" },
+    { name: "256 色深灰", code: "38;5;238" },
+    { name: "RGB 深灰", code: "38;2;42;42;42" },
+  ])("让 $name 命令预测在深色背景上保持可读", async ({ code }) => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+    mounted.runtime.setTheme({ theme: darkTheme.colors.terminal });
+    const suggestion = "status --short";
+    mounted.runtime.write({ data: terminalOutput(`$ git \x1b[${code}m${suggestion}\x1b[0m\r\n`) });
+    await waitFor({ predicate: () => mounted.host.textContent?.includes(suggestion) === true });
+
+    expect(renderedTextContrast(mounted.host, suggestion)).toBeGreaterThanOrEqual(4.5);
+    expect(mounted.inputs).toEqual([]);
+  });
+
+  it("已打开的终端切换浅色主题后也会校正低对比度预测文字", async () => {
+    await page.viewport(900, 600);
+    const mounted = createTerminalHost({ width: 720, height: 360 });
+    const suggestion = "status --short";
+    mounted.runtime.setTheme({ theme: darkTheme.colors.terminal });
+    mounted.runtime.write({
+      data: terminalOutput(`$ git \x1b[38;2;230;230;230m${suggestion}\x1b[0m\r\n`),
+    });
+    await waitFor({ predicate: () => mounted.host.textContent?.includes(suggestion) === true });
+    const terminal = window.__paseoTerminal;
+    mounted.runtime.setTheme({ theme: lightTheme.colors.terminal });
+    await nextFrame();
+    await nextFrame();
+
+    expect(window.__paseoTerminal).toBe(terminal);
+    expect(renderedTextContrast(mounted.host, suggestion)).toBeGreaterThanOrEqual(4.5);
+    expect(mounted.inputs).toEqual([]);
+  });
+
   it("passes configured scrollback to xterm", async () => {
     await page.viewport(900, 600);
     createTerminalHost({ width: 720, height: 360, scrollback: 42_000 });

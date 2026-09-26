@@ -237,7 +237,9 @@ export class TerminalEmulatorRuntime {
       fontSize: resolveTerminalFontSize(input.fontSize),
       lineHeight: 1.0,
       macOptionIsMeta: true,
-      minimumContrastRatio: 1,
+      // Shell 预测可能使用亮黑、256 色或 RGB 深灰，交由渲染器按背景校正，
+      // 不改写远端 ANSI 输出或调色板，并保留终端原有的弱化文字语义。
+      minimumContrastRatio: 4.5,
       rescaleOverlappingGlyphs: true,
       scrollbar: {
         width: 8,
