@@ -8,6 +8,27 @@ import {
 import { CodexAppServerClient } from "./app-server-transport.js";
 
 describe("Codex app-server transport", () => {
+  test("主动关闭立即拒绝所有并发请求，迟到响应不能使请求成功", async () => {
+    const child = createCodexAppServerChildProcess();
+    const client = new CodexAppServerClient(child, createTestLogger());
+    const failures = Promise.allSettled([
+      client.request("thread/resume", { threadId: "thread-1" }, 1000),
+      client.request("thread/read", { threadId: "thread-1", includeTurns: true }, 1000),
+    ]);
+    const closing = client.dispose();
+    expect(client.dispose()).toBe(closing);
+    await closing;
+    child.stdout.write('{"id":1,"result":{"thread":{"id":"thread-1"}}}\n');
+    child.stdout.write('{"id":2,"result":{"thread":{"id":"thread-1","turns":[]}}}\n');
+    expect(await failures).toEqual([
+      { status: "rejected", reason: new Error("Codex app-server client is closed") },
+      { status: "rejected", reason: new Error("Codex app-server client is closed") },
+    ]);
+    await client.dispose();
+    child.stdout.end();
+    child.stderr.end();
+  });
+
   test("进程异常退出时只通知一次并拒绝尚未完成的请求", async () => {
     const child = createCodexAppServerChildProcess();
     const client = new CodexAppServerClient(child, createTestLogger());

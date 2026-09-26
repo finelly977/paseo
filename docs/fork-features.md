@@ -394,6 +394,7 @@
 
 ### 17. 启动阶段按需初始化与并发控制
 
+- Codex 老会话连接时并发恢复原生运行时和读取完整原生历史，不再等恢复结束后才开始读历史；历史通过临时独立的 Codex app-server 读取，避免同一进程内部串行处理大历史请求。守护进程全局最多同时存在两个此类读取进程，读完、失败或取消后释放，排队期间已关闭的会话不会再创建读取进程。即使 Paseo 已保存完整时间线，也仍独立读取 Codex 当前记录，保留用户在官方 App 或 CLI 中新增的对话。两项成功后才完成初始化并对齐历史，不把恢复响应或本地缓存当作独立读取的替代品；恢复或读取失败会关闭本次提供方进程，主动关闭连接也会立即终止所有未完成的请求等待，迟到响应不会把已关闭会话重新标记为可用。原生归档的历史查看与主动恢复时取消归档的既有语义保持不变。
 - 守护进程完成监听后，在后台并发预加载已开启 Provider 的模型目录：先按最近活跃会话（“上次会话”）所在目录预热工作区范围，再预热全局范围；预加载与其它启动进程并发、不阻塞守护进程接受连接，未开启的 Provider 只标记不可用而不拉起 CLI，仍受共享的提供方探测并发限制约束，之后打开新建智能体表单或模型选择器时无需再等待模型列表探测。Grok 的模型目录、功能和诊断探测只删除本次成功创建并取得标识的原生会话；清理顺序固定为关闭 ACP 会话、终止探测进程、执行 Grok 原生删除，仅列出现有会话或在新建会话前失败时不会误删历史。
 - 应用连接守护进程时不会立即启动所有智能体 CLI 做可用性与模型探测；隐藏的新建智能体表单和非焦点会话控制栏不会在后台触发探测，避免与首屏会话、时间线和 Git 状态加载争抢进程、磁盘和事件循环资源。
 - 打开并聚焦已有会话时会立即请求当前工作目录的提供商快照，主动预热模型目录和配置，使模型选择器首次展开即可使用；同一主机和目录共享查询缓存，不重复探测。新建智能体、会话导入和提供方设置等依赖完整提供方信息的界面仍在打开时加载；老会话的模型选择器只在快照尚未就绪时定向刷新当前智能体提供方。
@@ -410,6 +411,8 @@
 - `packages/app/src/composer/agent-controls/`
 - `packages/app/src/screens/workspace/workspace-screen.tsx`
 - `packages/server/src/server/agent/provider-snapshot-manager.ts`
+- `packages/server/src/server/agent/providers/codex-app-server-agent.ts`
+- `packages/server/src/server/agent/providers/codex/app-server-transport.ts`
 - `packages/server/src/server/bootstrap.ts`
 - `packages/server/src/server/session/checkout/checkout-session.ts`
 - `packages/server/src/server/session.ts`

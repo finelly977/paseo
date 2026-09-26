@@ -61,6 +61,14 @@ The daemon validates that the epoch is current and the exact source sequence sti
 
 ## Resume behavior
 
+Codex 冷恢复保留独立的原生历史读取：运行时恢复与 `thread/read(includeTurns: true)`
+通过不同的 Codex app-server 并发发起，避免同一进程串行处理大历史。临时历史进程全局最多
+两个，只初始化、读取、不恢复线程也不发送回合，读取结束即释放。两项成功后才投影、对齐历史
+并完成初始化。Paseo 已有的完整时间线和恢复响应都不能
+替代这次读取，因为官方 App 或 CLI 可能已写入新对话。任一请求失败都会关闭该次连接并拒绝其余
+未完成请求；关闭后到达的响应不能重新发布历史或把会话标记为就绪。这一并发只缩短提供方加载
+的串行等待，不代表界面已经实现“历史先显示、运行时后台恢复”的独立状态。
+
 When a client resumes with a known cursor, it catches up after that cursor to completion. It does not replace the view with a latest tail page, because tail pagination can skip the middle of a long background run.
 
 When a client resumes without a cursor, it fetches the latest tail page.

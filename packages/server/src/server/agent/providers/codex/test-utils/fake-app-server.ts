@@ -46,6 +46,8 @@ type CodexAppServerChildProcess = ChildProcessWithoutNullStreams & {
 
 export interface FakeCodexAppServer {
   readonly child: CodexAppServerChildProcess;
+  readonly children: readonly CodexAppServerChildProcess[];
+  spawnChild(): Promise<ChildProcessWithoutNullStreams>;
   readonly recordedRollbacks: JsonObject[];
   requests(): readonly JsonObject[];
   assertNoErrors(): void;
@@ -135,6 +137,8 @@ export function createFakeCodexAppServer(
   handlers: Record<string, FakeCodexAppServerHandler> = {},
 ): FakeCodexAppServer {
   const child = createCodexAppServerChildProcess();
+  const children = [child];
+  let initialChildSpawned = false;
   const recordedRollbacks: JsonObject[] = [];
   const responseHandlers: Record<string, FakeCodexAppServerHandler> = {
     initialize: () => ({}),
@@ -199,10 +203,9 @@ export function createFakeCodexAppServer(
     predicate: (message: JsonObject) => boolean;
     resolve: (message: JsonObject) => void;
   }>();
-  let buffer = "";
   let nextServerRequestId = 1;
 
-  function processMessage(message: JsonObject): void {
+  function processMessage(message: JsonObject, source: CodexAppServerChildProcess): void {
     messages.push(message);
     for (const waiter of Array.from(waiters)) {
       if (waiter.predicate(message)) {
@@ -225,14 +228,14 @@ export function createFakeCodexAppServer(
       .then((result) => {
         const rpcError = toJsonObject(result).__jsonRpcError;
         if (rpcError) {
-          child.stdout.write(`${JSON.stringify({ id: message.id, error: rpcError })}\n`);
+          source.stdout.write(`${JSON.stringify({ id: message.id, error: rpcError })}\n`);
           return undefined;
         }
-        child.stdout.write(`${JSON.stringify({ id: message.id, result })}\n`);
+        source.stdout.write(`${JSON.stringify({ id: message.id, result })}\n`);
         return undefined;
       })
       .catch((error) => {
-        child.stdout.write(
+        source.stdout.write(
           `${JSON.stringify({
             id: message.id,
             error: { message: error instanceof Error ? error.message : String(error) },
@@ -242,28 +245,32 @@ export function createFakeCodexAppServer(
       });
   }
 
-  child.stdin.on("data", (chunk) => {
-    buffer += chunk.toString();
-    for (;;) {
-      const newlineIndex = buffer.indexOf("\n");
-      if (newlineIndex === -1) {
-        break;
-      }
-      const line = buffer.slice(0, newlineIndex).trim();
-      buffer = buffer.slice(newlineIndex + 1);
-      if (!line) {
-        continue;
-      }
-      try {
-        const parsed: unknown = JSON.parse(line);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          processMessage(parsed as JsonObject);
+  function listenToChild(source: CodexAppServerChildProcess): void {
+    let buffer = "";
+    source.stdin.on("data", (chunk) => {
+      buffer += chunk.toString();
+      for (;;) {
+        const newlineIndex = buffer.indexOf("\n");
+        if (newlineIndex === -1) {
+          break;
         }
-      } catch (error) {
-        errors.push(error instanceof Error ? error : new Error(String(error)));
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line) {
+          continue;
+        }
+        try {
+          const parsed: unknown = JSON.parse(line);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            processMessage(parsed as JsonObject, source);
+          }
+        } catch (error) {
+          errors.push(error instanceof Error ? error : new Error(String(error)));
+        }
       }
-    }
-  });
+    });
+  }
+  listenToChild(child);
 
   function waitForMessage(
     predicate: (message: JsonObject) => boolean,
@@ -319,6 +326,17 @@ export function createFakeCodexAppServer(
 
   return {
     child,
+    children,
+    async spawnChild() {
+      if (!initialChildSpawned) {
+        initialChildSpawned = true;
+        return child;
+      }
+      const source = createCodexAppServerChildProcess();
+      children.push(source);
+      listenToChild(source);
+      return source;
+    },
     recordedRollbacks,
     requests() {
       return messages;

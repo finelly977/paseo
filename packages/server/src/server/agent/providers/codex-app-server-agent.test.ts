@@ -143,7 +143,7 @@ function createProviderWithFakeAppServer(appServer: FakeCodexAppServer): CodexAp
   }>(provider);
   internals.goalsEnabledPromise = Promise.resolve(false);
   internals.autoReviewEnabledPromise = Promise.resolve(false);
-  internals.spawnAppServer = async () => appServer.child;
+  internals.spawnAppServer = () => appServer.spawnChild();
   return provider;
 }
 
@@ -158,7 +158,7 @@ async function startPublicSteeringSession(
     createConfig({ cwd: "/workspace/project" }),
     null,
     createTestLogger(),
-    async () => appServer.child,
+    () => appServer.spawnChild(),
     { resolveSlashCommandInvocation },
   );
   const started = await session.startTurn("first");
@@ -184,7 +184,7 @@ describe("Codex active-turn steering admission", () => {
         createConfig({ cwd: "/workspace/project" }),
         null,
         createTestLogger(),
-        async () => appServer.child,
+        () => appServer.spawnChild(),
       );
       try {
         const started = await session.startTurn("hello");
@@ -434,7 +434,7 @@ async function startCompactionTurnTest(): Promise<{
     createConfig({ cwd: "/workspace/project" }),
     null,
     createTestLogger(),
-    async () => appServer.child,
+    () => appServer.spawnChild(),
   );
   const events: AgentStreamEvent[] = [];
   const terminalEvent = new Promise<TurnTerminalEvent>((resolve) => {
@@ -698,7 +698,7 @@ describe("Codex app-server provider", () => {
       createConfig({ mcpServers: { project: { type: "stdio", command: "project-tools" } } }),
       handle,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async resolveCodexLaunchCommand() {
           return "C:\\npm\\codex.cmd";
@@ -760,7 +760,7 @@ describe("Codex app-server provider", () => {
       }),
       handle,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async connectDesktopTools() {
           return null;
@@ -792,7 +792,7 @@ describe("Codex app-server provider", () => {
       createConfig(),
       { sessionId: "thread-1" },
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async connectDesktopTools() {
           return {
@@ -819,7 +819,7 @@ describe("Codex app-server provider", () => {
       createConfig(),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async connectDesktopTools() {
           return {
@@ -848,7 +848,7 @@ describe("Codex app-server provider", () => {
       createConfig(),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async connectDesktopTools() {
           return {
@@ -882,7 +882,7 @@ describe("Codex app-server provider", () => {
       createConfig(),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
       {
         async connectDesktopTools() {
           started.resolve();
@@ -1221,7 +1221,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.connect();
@@ -1271,7 +1271,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -1315,7 +1315,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -1358,7 +1358,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -1433,7 +1433,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -1480,7 +1480,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.connect();
@@ -1562,7 +1562,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.connect();
@@ -1577,6 +1577,274 @@ describe("Codex app-server provider", () => {
     });
     appServer.assertNoErrors();
     await session.close();
+  });
+
+  test("恢复未完成时已读取官方会话新增历史，并等待两项均完成后就绪", async () => {
+    const resume = Promise.withResolvers<unknown>();
+    const readerExited = Promise.withResolvers<void>();
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () => resume.promise,
+      "thread/read": () => ({
+        thread: {
+          turns: [
+            {
+              items: [
+                {
+                  type: "agentMessage",
+                  id: "official-app-message",
+                  text: "官方 App 中新增的回复",
+                  timestamp: "2026-09-26T10:00:00.000Z",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      async () => {
+        const child = await appServer.spawnChild();
+        if (appServer.children.length === 2) child.once("exit", () => readerExited.resolve());
+        return child;
+      },
+    );
+    let connected = false;
+    const connecting = session.connect().then(() => {
+      connected = true;
+      return undefined;
+    });
+    try {
+      await appServer.waitForRequest("thread/resume");
+      await expect(appServer.waitForRequest("thread/read")).resolves.toMatchObject({
+        threadId: "thread-1",
+        includeTurns: true,
+      });
+      expect(appServer.children).toHaveLength(2);
+      await readerExited.promise;
+      expect(connected).toBe(false);
+      resume.resolve({ thread: { id: "thread-1", turns: [] } });
+      await connecting;
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual([
+        {
+          type: "timeline",
+          provider: "codex",
+          timestamp: "2026-09-26T10:00:00.000Z",
+          item: {
+            type: "assistant_message",
+            messageId: "official-app-message",
+            text: "官方 App 中新增的回复",
+          },
+        },
+      ]);
+      appServer.assertNoErrors();
+    } finally {
+      resume.resolve({});
+      await connecting;
+      await session.close();
+    }
+  });
+
+  test("恢复先完成时仍等待原生历史读取，不额外重读整段历史", async () => {
+    const read = Promise.withResolvers<unknown>();
+    const appServer = createFakeCodexAppServer({ "thread/read": () => read.promise });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+    );
+    let connected = false;
+    const connecting = session.connect().then(() => {
+      connected = true;
+      return undefined;
+    });
+    try {
+      await appServer.waitForRequest("thread/resume");
+      await appServer.waitForRequest("thread/read");
+      expect(connected).toBe(false);
+      read.resolve({ thread: { turns: [] } });
+      await connecting;
+      expect(appServer.requests().filter((request) => request.method === "thread/read")).toEqual([
+        expect.objectContaining({ params: { threadId: "thread-1", includeTurns: true } }),
+      ]);
+      appServer.assertNoErrors();
+    } finally {
+      read.resolve({ thread: { turns: [] } });
+      await connecting;
+      await session.close();
+    }
+  });
+
+  test.each(["thread/resume", "thread/read"])(
+    "%s 失败时关闭进程并取消仍未完成的另一项加载",
+    async (failedMethod) => {
+      const resume = Promise.withResolvers<unknown>();
+      const read = Promise.withResolvers<unknown>();
+      const appServer = createFakeCodexAppServer({
+        "thread/resume": () => resume.promise,
+        "thread/read": () => read.promise,
+      });
+      const session = new CodexAppServerAgentSession(
+        createConfig(),
+        { sessionId: "thread-1" },
+        createTestLogger(),
+        () => appServer.spawnChild(),
+      );
+      const exits: unknown[] = [];
+      appServer.child.on("exit", (_code, signal) => exits.push(signal));
+      const failure = expect(session.connect()).rejects.toThrow("并发加载失败");
+      await appServer.waitForRequest("thread/resume");
+      await appServer.waitForRequest("thread/read");
+      const failedRequest = failedMethod === "thread/resume" ? resume : read;
+      failedRequest.reject(new Error("并发加载失败"));
+      await failure;
+      expect(exits).toEqual(["SIGTERM"]);
+      resume.resolve({});
+      read.resolve({ thread: { turns: [] } });
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual([]);
+      await session.close();
+      appServer.assertNoErrors();
+    },
+  );
+
+  test("并发加载期间关闭会话，迟到历史不会成为已就绪的会话", async () => {
+    const resume = Promise.withResolvers<unknown>();
+    const read = Promise.withResolvers<unknown>();
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () => resume.promise,
+      "thread/read": () => read.promise,
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+    );
+    const failure = expect(session.connect()).rejects.toThrow("closed");
+    await appServer.waitForRequest("thread/resume");
+    await appServer.waitForRequest("thread/read");
+    await session.close();
+    await failure;
+    resume.resolve({});
+    read.resolve({ thread: { turns: [] } });
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) history.push(event);
+    expect(history).toEqual([]);
+    expect(session.id).toBe(null);
+    appServer.assertNoErrors();
+  });
+
+  test("历史读取进程尚未启动完成时关闭，也会释放随后创建的进程", async () => {
+    const resume = Promise.withResolvers<unknown>();
+    const spawnReader = Promise.withResolvers<void>();
+    const readerStarting = Promise.withResolvers<void>();
+    const readerClosed = Promise.withResolvers<void>();
+    const appServer = createFakeCodexAppServer({ "thread/resume": () => resume.promise });
+    let spawned = 0;
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      async () => {
+        spawned++;
+        if (spawned === 2) {
+          readerStarting.resolve();
+          await spawnReader.promise;
+        }
+        const child = await appServer.spawnChild();
+        if (spawned === 2) child.once("exit", () => readerClosed.resolve());
+        return child;
+      },
+    );
+    const failure = expect(session.connect()).rejects.toThrow("closed");
+    await readerStarting.promise;
+    await session.close();
+    await failure;
+    spawnReader.resolve();
+    await readerClosed.promise;
+    expect(appServer.requests().filter((request) => request.method === "thread/read")).toEqual([]);
+    resume.resolve({});
+    appServer.assertNoErrors();
+  });
+
+  test("多个冷恢复最多同时启动两个历史读取进程，排队取消后不再启动", async () => {
+    const cases = Array.from({ length: 3 }, () => {
+      const resume = Promise.withResolvers<unknown>();
+      const read = Promise.withResolvers<unknown>();
+      const appServer = createFakeCodexAppServer({
+        "thread/resume": () => resume.promise,
+        "thread/read": () => read.promise,
+      });
+      const session = new CodexAppServerAgentSession(
+        createConfig(),
+        { sessionId: "thread-1" },
+        createTestLogger(),
+        () => appServer.spawnChild(),
+      );
+      return { session, appServer, resume, read };
+    });
+    const [first, second, queued] = cases;
+    if (!first || !second || !queued) throw new Error("并发测试缺少会话");
+    const firstConnect = first.session.connect();
+    const secondConnect = second.session.connect();
+    await first.appServer.waitForRequest("thread/read");
+    await second.appServer.waitForRequest("thread/read");
+    const queuedFailure = expect(queued.session.connect()).rejects.toThrow("closed");
+    await queued.appServer.waitForRequest("thread/resume");
+    expect(queued.appServer.children).toHaveLength(1);
+    await queued.session.close();
+    await queuedFailure;
+    first.read.resolve({ thread: { turns: [] } });
+    second.read.resolve({ thread: { turns: [] } });
+    first.resume.resolve({});
+    second.resume.resolve({});
+    await Promise.all([firstConnect, secondConnect]);
+    expect(queued.appServer.children).toHaveLength(1);
+    expect(
+      queued.appServer.requests().filter((request) => request.method === "thread/read"),
+    ).toEqual([]);
+    queued.resume.resolve({});
+    for (const entry of cases) {
+      await entry.session.close();
+      entry.appServer.assertNoErrors();
+    }
+  });
+
+  test("运行时进程在并发恢复中退出时释放独立历史进程", async () => {
+    const resume = Promise.withResolvers<unknown>();
+    const read = Promise.withResolvers<unknown>();
+    const readerClosed = Promise.withResolvers<void>();
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () => resume.promise,
+      "thread/read": () => read.promise,
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      async () => {
+        const child = await appServer.spawnChild();
+        if (appServer.children.length === 2) child.once("exit", () => readerClosed.resolve());
+        return child;
+      },
+    );
+    const failure = expect(session.connect()).rejects.toThrow("exited");
+    await appServer.waitForRequest("thread/resume");
+    await appServer.waitForRequest("thread/read");
+    appServer.disconnect();
+    await failure;
+    await readerClosed.promise;
+    resume.resolve({});
+    read.resolve({ thread: { turns: [] } });
+    await session.close();
+    appServer.assertNoErrors();
   });
 
   test("loads archived Codex history without resuming the native thread", async () => {
@@ -1601,7 +1869,11 @@ describe("Codex app-server provider", () => {
       purpose: "history",
     });
 
-    expect(threadRequests).toEqual(["thread/loaded/list", "thread/resume", "thread/read"]);
+    expect(threadRequests.filter((method) => method !== "thread/read")).toEqual([
+      "thread/loaded/list",
+      "thread/resume",
+    ]);
+    expect(threadRequests.filter((method) => method === "thread/read")).toEqual(["thread/read"]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -1635,13 +1907,13 @@ describe("Codex app-server provider", () => {
 
     const session = await provider.resumeSession(archivedThreadHandle());
 
-    expect(threadRequests).toEqual([
+    expect(threadRequests.filter((method) => method !== "thread/read")).toEqual([
       "thread/loaded/list",
       "thread/resume",
       "thread/unarchive",
       "thread/resume",
-      "thread/read",
     ]);
+    expect(threadRequests.filter((method) => method === "thread/read")).toEqual(["thread/read"]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -1689,7 +1961,7 @@ describe("Codex app-server provider", () => {
     const provider = new CodexAppServerAgentClient(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
-    ).spawnAppServer = async () => appServer.child;
+    ).spawnAppServer = () => appServer.spawnChild();
 
     await provider.unarchiveNativeSession({
       provider: "codex",
@@ -1714,7 +1986,7 @@ describe("Codex app-server provider", () => {
     const provider = new CodexAppServerAgentClient(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
-    ).spawnAppServer = async () => appServer.child;
+    ).spawnAppServer = () => appServer.spawnChild();
 
     await provider.unarchiveNativeSession({
       provider: "codex",
@@ -1746,7 +2018,7 @@ describe("Codex app-server provider", () => {
     const provider = new CodexAppServerAgentClient(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
-    ).spawnAppServer = async () => appServer.child;
+    ).spawnAppServer = () => appServer.spawnChild();
 
     await provider.unarchiveNativeSession({
       provider: "codex",
@@ -1779,7 +2051,7 @@ describe("Codex app-server provider", () => {
     const provider = new CodexAppServerAgentClient(createTestLogger());
     castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
       provider,
-    ).spawnAppServer = async () => appServer.child;
+    ).spawnAppServer = () => appServer.spawnChild();
 
     await expect(
       provider.unarchiveNativeSession({
@@ -1801,7 +2073,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.startTurn("remember first");
@@ -1827,7 +2099,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.startTurn("remember this", { clientMessageId: "client-message" });
@@ -1899,7 +2171,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.startTurn("保留第一轮", { clientMessageId: "client-first" });
@@ -1968,7 +2240,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     const resultPromise = session.run("立即停止", { clientMessageId: "client-interrupted" });
@@ -1991,7 +2263,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.startTurn("只计算一次", { clientMessageId: "client-once" });
@@ -2017,7 +2289,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const events: AgentStreamEvent[] = [];
     const unsubscribe = session.subscribe((event) => events.push(event));
@@ -2049,7 +2321,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await session.startTurn("检查项目");
@@ -2084,7 +2356,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const events: AgentStreamEvent[] = [];
     const unsubscribe = session.subscribe((event) => events.push(event));
@@ -2225,7 +2497,10 @@ describe("Codex app-server provider", () => {
       throw new Error(`resumeSession timed out; thread requests: ${threadRequests.join(", ")}`);
     }
 
-    expect(threadRequests).toEqual(["thread/loaded/list", "thread/resume"]);
+    expect(threadRequests.filter((method) => method !== "thread/read")).toEqual([
+      "thread/loaded/list",
+      "thread/resume",
+    ]);
     expect(outcome).toBe("rejected");
     appServer.assertNoErrors();
   });
@@ -3003,7 +3278,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -3219,7 +3494,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3265,7 +3540,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3300,7 +3575,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3325,7 +3600,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3381,7 +3656,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3449,7 +3724,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3486,7 +3761,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3525,7 +3800,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3742,7 +4017,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3803,7 +4078,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3831,7 +4106,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3861,7 +4136,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3893,7 +4168,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -3917,7 +4192,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     await expect(session.interrupt()).resolves.toBeUndefined();
@@ -3934,7 +4209,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const resultPromise = session.run("Start after the delayed thread.");
 
@@ -4587,7 +4862,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       { sessionId: "test-thread" },
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
 
     try {
@@ -4613,7 +4888,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const providerSubagentIds = new Set<string>();
     session.subscribe((event) => {
@@ -5713,7 +5988,7 @@ describe("Codex app-server provider", () => {
       createConfig({ cwd: "/workspace/project" }),
       null,
       createTestLogger(),
-      async () => appServer.child,
+      () => appServer.spawnChild(),
     );
     const events: AgentStreamEvent[] = [];
     const timelineEvents: Array<Extract<AgentStreamEvent, { type: "timeline" }>> = [];

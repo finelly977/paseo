@@ -46,6 +46,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import pLimit from "p-limit";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { isSystemInjectedEnvelope } from "../agent-prompt.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
@@ -138,6 +139,7 @@ function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolea
 const TURN_START_TIMEOUT_MS = 90 * 1000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
+const codexHistoryReadLimit = pLimit(2);
 // Codex treats most app-server client names as the model-request originator.
 // This reserved Codex name is non-originating, so requests keep Codex's default
 // CLI identity instead of showing up as Paseo in provider usage logs.
@@ -3452,6 +3454,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     cancelRequested: boolean;
   } | null = null;
   private client: CodexAppServerClient | null = null;
+  private historyClient: CodexAppServerClient | null = null;
   private desktopTools: CodexDesktopTools | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private activeForegroundTurnId: string | null = null;
@@ -3615,10 +3618,17 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.loadSkills();
 
       if (this.currentThreadId) {
-        await this.ensureThreadLoaded({
-          allowArchivedHistory: this.initialResumePurpose === "history",
-        });
-        await this.loadPersistedHistory();
+        // 独立读取原生历史，保留官方 App/CLI 写入的内容；读取不依赖运行时恢复。
+        const [, threadResponse] = await Promise.all([
+          this.ensureThreadLoaded({
+            allowArchivedHistory: this.initialResumePurpose === "history",
+          }),
+          this.readPersistedThread(client, this.currentThreadId),
+        ]);
+        if (this.client !== client) {
+          throw new Error("Codex session closed while connecting");
+        }
+        await this.loadPersistedHistory(threadResponse);
       }
 
       if (this.client !== client) {
@@ -3873,7 +3883,27 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
   }
 
-  private async loadPersistedHistory(threadResponse?: CodexThreadRollbackResponse): Promise<void> {
+  private readPersistedThread(owner: CodexAppServerClient, threadId: string): Promise<unknown> {
+    // 同一 app-server 会串行处理大历史请求；临时读取进程只读历史，不恢复或发送回合。
+    return codexHistoryReadLimit(async () => {
+      if (this.client !== owner) throw new Error("Codex session closed before reading history");
+      const child = await this.spawnAppServer();
+      const reader = new CodexAppServerClient(child, this.logger, () => this.traceContext());
+      try {
+        if (this.client !== owner)
+          throw new Error("Codex session closed while starting history reader");
+        this.historyClient = reader;
+        await reader.request("initialize", buildCodexAppServerInitializeParams());
+        reader.notify("initialized", {});
+        return await readCodexThread(reader, threadId);
+      } finally {
+        await reader.dispose();
+        if (this.historyClient === reader) this.historyClient = null;
+      }
+    });
+  }
+
+  private async loadPersistedHistory(threadResponse?: unknown): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const client = this.client;
     const threadId = this.currentThreadId;
@@ -4306,20 +4336,24 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
-  private async releaseTerminatedDesktopTools(desktopTools: CodexDesktopTools): Promise<void> {
-    try {
-      await desktopTools.dispose();
-    } catch (error) {
-      this.logger.error({ err: error }, "Failed to release desktop tools after Codex exited");
+  private async releaseTerminatedResources(
+    desktopTools: CodexDesktopTools | null,
+    historyClient: CodexAppServerClient | null,
+  ): Promise<void> {
+    const results = await Promise.allSettled([desktopTools?.dispose(), historyClient?.dispose()]);
+    for (const result of results) {
+      if (result.status === "rejected") {
+        this.logger.error({ err: result.reason }, "Failed to release resources after Codex exited");
+      }
     }
   }
 
   private handleUnexpectedTermination(error: Error): void {
+    const historyClient = this.historyClient;
+    this.historyClient = null;
     const desktopTools = this.desktopTools;
     this.desktopTools = null;
-    if (desktopTools) {
-      void this.releaseTerminatedDesktopTools(desktopTools);
-    }
+    void this.releaseTerminatedResources(desktopTools, historyClient);
     this.connected = false;
     const startOwnsFailure = this.pendingForegroundStart !== null;
     const hasActiveRootTurn =
@@ -4958,13 +4992,19 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.suppressNextRetriedUserMessage = false;
     this.resetTurnTrackingState();
     const client = this.client;
+    const historyClient = this.historyClient;
     const desktopTools = this.desktopTools;
     this.client = null;
+    this.historyClient = null;
     this.desktopTools = null;
     this.connected = false;
     this.currentThreadId = null;
     this.currentTurnId = null;
-    const cleanup = await Promise.allSettled([client?.dispose(), desktopTools?.dispose()]);
+    const cleanup = await Promise.allSettled([
+      client?.dispose(),
+      historyClient?.dispose(),
+      desktopTools?.dispose(),
+    ]);
     const failures: unknown[] = cleanup.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     );
