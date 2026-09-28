@@ -390,6 +390,48 @@ class ObservedPlacements {
 }
 
 describe("observed workspace placement", () => {
+  test("单个项目变化只校准该根目录，定期扫描仍覆盖全部项目", async () => {
+    const observed = new ObservedPlacements([
+      { id: "one", root: "one" },
+      { id: "two", root: "two" },
+      { id: "three", root: "three" },
+    ]);
+    await observed.start();
+    observed.change("one", ".git");
+    await observed.advanceBy(DEBOUNCE_MS);
+    expect(observed.gitReads).toBe(1);
+    observed.change("two", ".git");
+    observed.change("three", null);
+    await observed.advanceBy(DEBOUNCE_MS);
+    expect(observed.gitReads).toBe(3);
+    await observed.advanceBy(RESCAN_INTERVAL_MS);
+    expect(observed.gitReads).toBe(6);
+    observed.dispose();
+  });
+
+  test("校准执行期间其他项目的新事件不会丢失", async () => {
+    const observed = new ObservedPlacements([
+      { id: "one", root: "one" },
+      { id: "two", root: "two", workspaces: [{ id: "ws-two", cwd: "two" }] },
+      { id: "three", root: "three" },
+    ]);
+    await observed.start();
+    const gate = observed.holdNextReconciliation();
+    observed.change("one", ".git");
+    const first = observed.advanceBy(DEBOUNCE_MS);
+    await gate.started;
+    observed.makeProjectGit("two");
+    const changed = observed.waitForWorkspaceBatch();
+    observed.change("two", ".git");
+    await observed.advanceBy(DEBOUNCE_MS);
+    gate.release();
+    await first;
+    await changed;
+    expect(observed.gitReads).toBe(2);
+    expect((await observed.placement("ws-two"))?.kind).toBe("local_checkout");
+    observed.dispose();
+  });
+
   test("installs and publishes a new project before add resolves without Git feedback", async () => {
     const observed = new ObservedPlacements([]);
     await observed.start();

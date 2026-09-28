@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
+import { selectProjectedTimelinePage } from "../../../server/src/server/agent/timeline-projection";
 import {
   buildOptimisticUserMessage,
   createUserMessage,
@@ -139,6 +140,70 @@ function makeSubmittedUserMessage(
 }
 
 describe("timeline turn membership compatibility", () => {
+  it("真实服务端分页逐页合并后，72个片段的长回复只显示一次", () => {
+    const text = Array.from({ length: 72 }, (_, index) => `片段${index}。`).join("");
+    const rows = [
+      {
+        seq: 1,
+        timestamp: new Date(1000).toISOString(),
+        item: { type: "user_message" as const, text: "旧问题" },
+      },
+      ...Array.from({ length: 72 }, (_, index) => ({
+        seq: index + 2,
+        timestamp: new Date(2000 + index).toISOString(),
+        item: {
+          type: "assistant_message" as const,
+          messageId: "long-answer",
+          text: `片段${index}。`,
+        },
+      })),
+      ...Array.from({ length: 90 }, (_, index) => ({
+        seq: index + 74,
+        timestamp: new Date(3000 + index).toISOString(),
+        item: { type: "user_message" as const, text: `后续问题${index}` },
+      })),
+    ];
+    let tail: StreamItem[] = [];
+    let cursor: TimelineCursor | undefined;
+    const pages = [];
+    for (let index = 0; index < 3; index++) {
+      const direction = index === 0 ? "tail" : "before";
+      const page = selectProjectedTimelinePage({
+        rows,
+        direction,
+        cursorSeq: cursor?.startSeq,
+        limit: 40,
+      });
+      const result = processTimelineResponse({
+        ...baseTimelineInput,
+        currentTail: tail,
+        currentCursor: cursor,
+        isInitializing: index === 0,
+        hasActiveInitDeferred: index === 0,
+        payload: {
+          ...baseTimelineInput.payload,
+          direction,
+          projection: "projected",
+          startCursor: page.startSeq === null ? null : { seq: page.startSeq },
+          endCursor: page.endSeq === null ? null : { seq: page.endSeq },
+          entries: page.entries.map((entry) => ({ ...entry, provider: "codex" })),
+          hasOlder: page.hasOlder,
+          hasNewer: page.hasNewer,
+        },
+      });
+      tail = result.tail;
+      cursor = result.cursor ?? undefined;
+      pages.push(page);
+    }
+    expect(pages.at(-1)?.hasOlder).toBe(false);
+    expect(getAssistantTexts(tail)).toEqual([text]);
+    expect(getUserTexts(tail)).toEqual([
+      "旧问题",
+      ...Array.from({ length: 90 }, (_, index) => `后续问题${index}`),
+    ]);
+    expect(cursor).toEqual({ epoch: "epoch-1", startSeq: 1, endSeq: 163 });
+  });
+
   it("hydrates tagged rows while retaining legacy rows without a turn ID", () => {
     const hydrated = hydrateStreamState([
       {

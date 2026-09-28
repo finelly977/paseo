@@ -133,6 +133,7 @@ export class WorkspaceReconciliationService {
   private disposed = false;
   private started = false;
   private reconciling = false;
+  private readonly changedRoots = new Set<string>();
   private reconcileQueuedMode: "metadata" | "full" | null = null;
 
   constructor(options: WorkspaceReconciliationServiceOptions) {
@@ -189,27 +190,33 @@ export class WorkspaceReconciliationService {
   }
 
   /** Reconciles mutable Git facts only; never archives missing records. */
-  async reconcileGitMetadata(): Promise<ReconciliationResult> {
+  async reconcileGitMetadata(roots?: ReadonlySet<string>): Promise<ReconciliationResult> {
     const start = Date.now();
     const changes: ReconciliationChange[] = [];
     const [projects, workspaces] = await Promise.all([
       this.projectRegistry.list(),
       this.workspaceRegistry.list(),
     ]);
+    const selectedProjects = projects.filter(
+      (project) =>
+        !project.archivedAt &&
+        (!roots || [...roots].some((root) => areEquivalentPaths(root, project.rootPath))) &&
+        this.inspectDirectory(project.rootPath) === "directory",
+    );
+    const selectedIds = new Set(selectedProjects.map((project) => project.projectId));
     const workspacesByProject = new Map<string, PersistedWorkspaceRecord[]>();
     for (const workspace of workspaces) {
-      if (workspace.archivedAt || this.inspectDirectory(workspace.cwd) !== "directory") continue;
+      if (
+        !selectedIds.has(workspace.projectId) ||
+        workspace.archivedAt ||
+        this.inspectDirectory(workspace.cwd) !== "directory"
+      )
+        continue;
       const siblings = workspacesByProject.get(workspace.projectId) ?? [];
       siblings.push(workspace);
       workspacesByProject.set(workspace.projectId, siblings);
     }
-    await this.reconcileGitMetadataForProjects(
-      projects.filter(
-        (project) => !project.archivedAt && this.inspectDirectory(project.rootPath) === "directory",
-      ),
-      workspacesByProject,
-      changes,
-    );
+    await this.reconcileGitMetadataForProjects(selectedProjects, workspacesByProject, changes);
     if (changes.length > 0) this.onChanges?.(changes);
     return { changesApplied: changes, durationMs: Date.now() - start };
   }
@@ -424,7 +431,7 @@ export class WorkspaceReconciliationService {
           { recursive: false },
           (_event, filename) => {
             if (filename === null || filename.toString() === ".git") {
-              this.scheduleObservedReconciliation();
+              this.scheduleObservedReconciliation(project.rootPath);
             }
           },
           (error) => {
@@ -449,8 +456,10 @@ export class WorkspaceReconciliationService {
     }
   }
 
-  private scheduleObservedReconciliation(): void {
-    if (this.disposed || this.debounceTimer) return;
+  private scheduleObservedReconciliation(rootPath: string): void {
+    if (this.disposed) return;
+    this.changedRoots.add(rootPath);
+    if (this.debounceTimer) return;
     this.debounceTimer = this.clock.setTimeout(() => {
       this.debounceTimer = null;
       return this.reconcileObservedGitMetadata();
@@ -468,9 +477,12 @@ export class WorkspaceReconciliationService {
       return;
     }
     this.reconciling = true;
+    const roots = new Set(this.changedRoots);
+    this.changedRoots.clear();
     try {
       await this.syncProjectRootWatches();
-      const result = mode === "full" ? await this.runOnce() : await this.reconcileGitMetadata();
+      const result =
+        mode === "full" ? await this.runOnce() : await this.reconcileGitMetadata(roots);
       const workspaceIds = new Set<string>();
       const projectIds = new Set<string>();
       for (const change of result.changesApplied) {

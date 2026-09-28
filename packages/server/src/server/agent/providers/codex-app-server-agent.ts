@@ -46,7 +46,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import pLimit from "p-limit";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { isSystemInjectedEnvelope } from "../agent-prompt.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
@@ -84,7 +83,13 @@ import {
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import {
+  CodexThreadReadResponseSchema,
+  readCodexThread,
+  type CodexThreadReadResponse,
+} from "./codex/thread-history.js";
 import { connectCodexDesktopTools, type CodexDesktopTools } from "./codex/desktop-tools.js";
+import { CodexLaunchProbe } from "./codex/launch-probe.js";
 import {
   CODEX_MODEL_CAPACITY_MESSAGE,
   isCodexModelCapacityMessage,
@@ -139,7 +144,6 @@ function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolea
 const TURN_START_TIMEOUT_MS = 90 * 1000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
-const codexHistoryReadLimit = pLimit(2);
 // Codex treats most app-server client names as the model-request originator.
 // This reserved Codex name is non-originating, so requests keep Codex's default
 // CLI identity instead of showing up as Paseo in provider usage logs.
@@ -274,6 +278,7 @@ interface CodexAppServerClientLike {
 interface CodexAppServerAgentDeps {
   connectDesktopTools?: typeof connectCodexDesktopTools;
   resolveCodexLaunchCommand?: () => Promise<string>;
+  resolveCodexVersion?: () => Promise<string>;
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   customProvider?: {
     id: string;
@@ -637,7 +642,16 @@ async function resolveCodexLaunch(
   });
 }
 
-async function checkCodexLaunchAvailable(launch: ResolvedProviderLaunch) {
+const codexLaunchProbe = new CodexLaunchProbe({
+  checkAvailability: probeCodexLaunchAvailability,
+  readVersion: resolveBinaryVersion,
+});
+
+function checkCodexLaunchAvailable(launch: ResolvedProviderLaunch) {
+  return codexLaunchProbe.checkAvailability(launch);
+}
+
+async function probeCodexLaunchAvailability(launch: ResolvedProviderLaunch) {
   return checkProviderLaunchAvailable(launch, {
     command: "codex",
     resolvePath: findDefaultCodexBinary,
@@ -2128,26 +2142,6 @@ function threadItemToTimelineEntries(
   return [timelineItem, ...mcpToolResultImagesToTimeline(item)];
 }
 
-const CodexThreadReadResponseSchema = z
-  .object({
-    thread: z
-      .object({
-        turns: z
-          .array(
-            z
-              .object({
-                items: z.array(z.unknown()).default([]),
-              })
-              .passthrough(),
-          )
-          .default([]),
-      })
-      .passthrough()
-      .default({ turns: [] }),
-  })
-  .passthrough();
-
-type CodexThreadReadResponse = z.infer<typeof CodexThreadReadResponseSchema>;
 type CodexThreadReadRequest = (threadId: string) => Promise<unknown>;
 
 async function requestCodexThreadHistory(
@@ -2245,13 +2239,6 @@ async function loadCodexThreadHistoryTimeline(params: {
     },
   );
   return { timeline, subAgentRoutes };
-}
-
-function readCodexThread(client: CodexAppServerClientLike, threadId: string): Promise<unknown> {
-  return client.request("thread/read", {
-    threadId,
-    includeTurns: true,
-  });
 }
 
 export async function forkCodexThread(
@@ -3454,7 +3441,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     cancelRequested: boolean;
   } | null = null;
   private client: CodexAppServerClient | null = null;
-  private historyClient: CodexAppServerClient | null = null;
   private desktopTools: CodexDesktopTools | null = null;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private activeForegroundTurnId: string | null = null;
@@ -3618,13 +3604,11 @@ export class CodexAppServerAgentSession implements AgentSession {
       await this.loadSkills();
 
       if (this.currentThreadId) {
-        // 独立读取原生历史，保留官方 App/CLI 写入的内容；读取不依赖运行时恢复。
-        const [, threadResponse] = await Promise.all([
-          this.ensureThreadLoaded({
-            allowArchivedHistory: this.initialResumePurpose === "history",
-          }),
-          this.readPersistedThread(client, this.currentThreadId),
-        ]);
+        // 轻量恢复后完整读取官方历史，全部核对完成才进入可用状态。
+        await this.ensureThreadLoaded({
+          allowArchivedHistory: this.initialResumePurpose === "history",
+        });
+        const threadResponse = await readCodexThread(client, this.currentThreadId);
         if (this.client !== client) {
           throw new Error("Codex session closed while connecting");
         }
@@ -3883,26 +3867,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
   }
 
-  private readPersistedThread(owner: CodexAppServerClient, threadId: string): Promise<unknown> {
-    // 同一 app-server 会串行处理大历史请求；临时读取进程只读历史，不恢复或发送回合。
-    return codexHistoryReadLimit(async () => {
-      if (this.client !== owner) throw new Error("Codex session closed before reading history");
-      const child = await this.spawnAppServer();
-      const reader = new CodexAppServerClient(child, this.logger, () => this.traceContext());
-      try {
-        if (this.client !== owner)
-          throw new Error("Codex session closed while starting history reader");
-        this.historyClient = reader;
-        await reader.request("initialize", buildCodexAppServerInitializeParams());
-        reader.notify("initialized", {});
-        return await readCodexThread(reader, threadId);
-      } finally {
-        await reader.dispose();
-        if (this.historyClient === reader) this.historyClient = null;
-      }
-    });
-  }
-
   private async loadPersistedHistory(threadResponse?: unknown): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const client = this.client;
@@ -3978,7 +3942,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     options: { allowArchivedHistory?: boolean } = {},
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
-    const params: Record<string, unknown> = { threadId: this.currentThreadId };
+    const params: Record<string, unknown> = {
+      threadId: this.currentThreadId,
+      excludeTurns: true,
+    };
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
@@ -4336,24 +4303,20 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
-  private async releaseTerminatedResources(
+  private async releaseTerminatedDesktopTools(
     desktopTools: CodexDesktopTools | null,
-    historyClient: CodexAppServerClient | null,
   ): Promise<void> {
-    const results = await Promise.allSettled([desktopTools?.dispose(), historyClient?.dispose()]);
-    for (const result of results) {
-      if (result.status === "rejected") {
-        this.logger.error({ err: result.reason }, "Failed to release resources after Codex exited");
-      }
+    try {
+      await desktopTools?.dispose();
+    } catch (error) {
+      this.logger.error({ err: error }, "Failed to release desktop tools after Codex exited");
     }
   }
 
   private handleUnexpectedTermination(error: Error): void {
-    const historyClient = this.historyClient;
-    this.historyClient = null;
     const desktopTools = this.desktopTools;
     this.desktopTools = null;
-    void this.releaseTerminatedResources(desktopTools, historyClient);
+    void this.releaseTerminatedDesktopTools(desktopTools);
     this.connected = false;
     const startOwnsFailure = this.pendingForegroundStart !== null;
     const hasActiveRootTurn =
@@ -4992,19 +4955,13 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.suppressNextRetriedUserMessage = false;
     this.resetTurnTrackingState();
     const client = this.client;
-    const historyClient = this.historyClient;
     const desktopTools = this.desktopTools;
     this.client = null;
-    this.historyClient = null;
     this.desktopTools = null;
     this.connected = false;
     this.currentThreadId = null;
     this.currentTurnId = null;
-    const cleanup = await Promise.allSettled([
-      client?.dispose(),
-      historyClient?.dispose(),
-      desktopTools?.dispose(),
-    ]);
+    const cleanup = await Promise.allSettled([client?.dispose(), desktopTools?.dispose()]);
     const failures: unknown[] = cleanup.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     );
@@ -7235,8 +7192,6 @@ export class CodexAppServerAgentSession implements AgentSession {
 export class CodexAppServerAgentClient implements AgentClient {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
-  private goalsEnabledPromise: Promise<boolean> | null = null;
-  private autoReviewEnabledPromise: Promise<boolean> | null = null;
 
   constructor(
     private readonly logger: Logger,
@@ -7257,54 +7212,32 @@ export class CodexAppServerAgentClient implements AgentClient {
     };
   }
 
-  private resolveGoalsEnabled(): Promise<boolean> {
-    if (!this.goalsEnabledPromise) {
-      this.goalsEnabledPromise = (async () => {
-        try {
-          const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
-          const versionOutput = await resolveBinaryVersion(launchPrefix.command);
-          const enabled = codexVersionAtLeast(versionOutput, CODEX_GOALS_MIN_VERSION);
-          this.logger.trace(
-            {
-              provider: CODEX_PROVIDER,
-              versionOutput,
-              enabled,
-            },
-            "provider.codex.config.goals_resolved",
-          );
-          return enabled;
-        } catch (error) {
-          this.logger.warn({ err: error }, "Failed to probe codex version for goals gate");
-          return false;
-        }
-      })();
+  private async resolveFeatureEnabled(
+    feature: "goals" | "auto-review",
+    minVersion: readonly [number, number, number],
+  ): Promise<boolean> {
+    try {
+      const versionOutput = this.deps.resolveCodexVersion
+        ? await this.deps.resolveCodexVersion()
+        : await codexLaunchProbe.readVersion(await resolveCodexLaunch(this.runtimeSettings));
+      const enabled = codexVersionAtLeast(versionOutput, minVersion);
+      this.logger.trace(
+        { provider: CODEX_PROVIDER, feature, versionOutput, enabled },
+        "provider.codex.config.feature_resolved",
+      );
+      return enabled;
+    } catch (error) {
+      this.logger.warn({ err: error, feature }, "Failed to probe codex feature availability");
+      return false;
     }
-    return this.goalsEnabledPromise;
+  }
+
+  private resolveGoalsEnabled(): Promise<boolean> {
+    return this.resolveFeatureEnabled("goals", CODEX_GOALS_MIN_VERSION);
   }
 
   private resolveAutoReviewEnabled(): Promise<boolean> {
-    if (!this.autoReviewEnabledPromise) {
-      this.autoReviewEnabledPromise = (async () => {
-        try {
-          const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
-          const versionOutput = await resolveBinaryVersion(launchPrefix.command);
-          const enabled = codexVersionAtLeast(versionOutput, CODEX_AUTO_REVIEW_MIN_VERSION);
-          this.logger.trace(
-            {
-              provider: CODEX_PROVIDER,
-              versionOutput,
-              enabled,
-            },
-            "provider.codex.config.auto_review_resolved",
-          );
-          return enabled;
-        } catch (error) {
-          this.logger.warn({ err: error }, "Failed to probe codex version for auto-review gate");
-          return false;
-        }
-      })();
-    }
-    return this.autoReviewEnabledPromise;
+    return this.resolveFeatureEnabled("auto-review", CODEX_AUTO_REVIEW_MIN_VERSION);
   }
 
   private async spawnAppServer(
@@ -7549,7 +7482,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   async getDiagnostic(): Promise<{ diagnostic: string }> {
     try {
       const launch = await resolveCodexLaunch(this.runtimeSettings);
-      const availability = await checkCodexLaunchAvailable(launch);
+      const availability = await probeCodexLaunchAvailability(launch);
       const entries: Array<{ label: string; value: string }> = [
         ...(await buildCommandResolutionDiagnosticRows(launch, {
           knownBinaryNames: ["codex"],

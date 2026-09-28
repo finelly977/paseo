@@ -332,6 +332,27 @@ function createService(options?: CreateServiceTestOptions) {
 }
 
 describe("WorkspaceGitServiceImpl", () => {
+  test("远端强制刷新复用已加载的本地状态，完整刷新仍重新读取本地", async () => {
+    const getCheckoutStatus = vi.fn(async (cwd: string) => createCheckoutStatus(cwd));
+    const getPullRequestStatus = vi.fn(async () => createPullRequestStatusResult());
+    const service = createService({ getCheckoutStatus, getPullRequestStatus });
+    try {
+      await service.getSnapshot(REPO_CWD, { force: true, scope: "forge", reason: "first-pr" });
+      await service.getSnapshot(REPO_CWD, { force: true, scope: "forge", reason: "refresh-pr" });
+      expect(getCheckoutStatus).toHaveBeenCalledTimes(1);
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(2);
+      await service.getSnapshot(REPO_CWD, {
+        force: true,
+        includeForge: false,
+        reason: "refresh-local",
+      });
+      expect(getCheckoutStatus).toHaveBeenCalledTimes(2);
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(2);
+    } finally {
+      await service.dispose();
+    }
+  });
+
   test("多个仓库的远端查询阻塞时，新的本地状态仍有独立并发槽位", async () => {
     const gate = createDeferred<PullRequestStatusResult>();
     const getPullRequestStatus = vi.fn(() => gate.promise);
@@ -397,9 +418,16 @@ describe("WorkspaceGitServiceImpl", () => {
     async (order) => {
       const pr = createDeferred<PullRequestStatusResult>();
       const getPullRequestStatus = vi.fn(() => pr.promise);
-      const service = createService({ getPullRequestStatus });
+      const getCheckoutStatus = vi.fn(async (cwd: string) => createCheckoutStatus(cwd));
+      const service = createService({ getPullRequestStatus, getCheckoutStatus });
       const readLocal = () => service.getSnapshot(REPO_CWD, { includeForge: false });
-      const readForge = () => service.getSnapshot(REPO_CWD, { includeForge: true });
+      const readForge = () =>
+        service.getSnapshot(REPO_CWD, {
+          force: true,
+          scope: "forge",
+          includeForge: true,
+          reason: "checkout-pr-status",
+        });
       const requests =
         order === "local-first" ? [readLocal(), readForge()] : [readForge(), readLocal()];
       const local = requests[order === "local-first" ? 0 : 1]!;
@@ -411,6 +439,7 @@ describe("WorkspaceGitServiceImpl", () => {
       try {
         await vi.advanceTimersByTimeAsync(0);
         expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
+        expect(getCheckoutStatus).toHaveBeenCalledTimes(1);
         expect(localReady).toBe(true);
         expect((await local).git.currentBranch).toBe("main");
       } finally {

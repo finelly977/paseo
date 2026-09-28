@@ -1193,6 +1193,7 @@ export class CheckoutSession {
         force: true,
         includeForge: true,
         reason: "checkout-pr-status",
+        scope: "forge",
       });
       this.host.emit({
         type: "checkout_pr_status_response",

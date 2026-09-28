@@ -1505,6 +1505,7 @@ describe("CheckoutSession", () => {
             force: true,
             includeForge: true,
             reason: "checkout-pr-status",
+            scope: "forge",
           },
         },
       ]);

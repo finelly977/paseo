@@ -30,6 +30,7 @@ import {
   getCheckoutWorktreeState,
   getPullRequestStatus,
   getCheckoutStatus,
+  getCheckoutMetadata,
   checkoutResolvedBranch,
   listBranchSuggestions,
   mergeToBase,
@@ -257,6 +258,65 @@ describe("checkout git utilities", () => {
     __resetCheckoutShortstatCacheForTests();
     __resetPullRequestStatusCacheForTests();
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("轻量元数据保持工作区归属且不扫描文件或比较提交", async () => {
+    writeFileSync(join(repoDir, "dirty.txt"), "untracked");
+    const expected = await getCheckoutStatus(repoDir);
+    startGitCommandMetrics();
+    const metadata = await getCheckoutMetadata(repoDir);
+    const metrics = stopGitCommandMetrics();
+    expect(metadata).toEqual({
+      isGit: true,
+      repoRoot: repoDir.replaceAll("\\", "/"),
+      mainRepoRoot: null,
+      currentBranch: "main",
+      remoteUrl: null,
+      isPaseoOwnedWorktree: false,
+    });
+    expect(expected).toMatchObject(metadata);
+    expect(metrics.commands.map((command) => command.args[0])).not.toContain("status");
+    expect(metrics.commands.map((command) => command.args[0])).not.toContain("diff");
+    expect(metrics.commands.map((command) => command.args[0])).not.toContain("rev-list");
+    expect(metrics.total).toBeLessThanOrEqual(6);
+  });
+
+  it("轻量元数据识别非 Git 目录、分离 HEAD 和普通 worktree", async () => {
+    const directory = join(tempDir, "directory");
+    mkdirSync(directory);
+    await expect(getCheckoutMetadata(directory)).resolves.toEqual({ isGit: false });
+    const worktree = join(tempDir, "detached");
+    execFileSync("git", ["worktree", "add", "--detach", worktree], { cwd: repoDir });
+    const metadata = await getCheckoutMetadata(worktree);
+    expect(metadata).toEqual({
+      isGit: true,
+      repoRoot: worktree.replaceAll("\\", "/"),
+      mainRepoRoot: repoDir,
+      currentBranch: null,
+      remoteUrl: null,
+      isPaseoOwnedWorktree: false,
+    });
+    expect(await getCheckoutStatus(worktree)).toMatchObject(metadata);
+  });
+
+  it("轻量元数据保持 Paseo 创建的 worktree 归属", async () => {
+    const worktree = await createLegacyWorktreeForTest({
+      branchName: "metadata-feature",
+      cwd: repoDir,
+      baseBranch: "main",
+      worktreeSlug: "metadata-feature",
+      paseoHome,
+    });
+    const metadata = await getCheckoutMetadata(worktree.worktreePath, { paseoHome });
+    expect(metadata).toEqual({
+      isGit: true,
+      repoRoot: worktree.worktreePath.replaceAll("\\", "/"),
+      mainRepoRoot: repoDir,
+      currentBranch: "metadata-feature",
+      remoteUrl: null,
+      isPaseoOwnedWorktree: true,
+    });
+    expect(await getCheckoutStatus(worktree.worktreePath, { paseoHome })).toMatchObject(metadata);
   });
 
   it("throws NotGitRepoError for non-git directories", async () => {

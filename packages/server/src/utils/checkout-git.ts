@@ -1816,6 +1816,39 @@ async function inspectCheckoutContext(
   };
 }
 
+export type CheckoutMetadata =
+  | { isGit: false }
+  | Pick<
+      CheckoutStatusGit,
+      "isGit" | "repoRoot" | "mainRepoRoot" | "currentBranch" | "remoteUrl" | "isPaseoOwnedWorktree"
+    >;
+
+// 项目归属校准不需要扫描工作区文件、比较提交或查询 PR 目标。
+export async function getCheckoutMetadata(
+  cwd: string,
+  context?: CheckoutContext,
+): Promise<CheckoutMetadata> {
+  const inspected = await inspectCheckoutContext(cwd, context);
+  if (!inspected) return { isGit: false };
+  const mainRepoRoot = await getMainRepoRootFromCommonDir(cwd, inspected.gitCommonDir, context);
+  let isPaseoOwnedWorktree = false;
+  if (inspected.paseoWorktree.isPaseoOwnedWorktree) {
+    const metadata = readPaseoWorktreeMetadata(inspected.paseoWorktree.worktreeRoot);
+    isPaseoOwnedWorktree = Boolean(metadata?.baseRefName ?? (await resolveBaseRef(cwd)));
+  }
+  return {
+    isGit: true,
+    repoRoot: inspected.worktreeRoot,
+    mainRepoRoot:
+      isPaseoOwnedWorktree || resolve(mainRepoRoot) !== resolve(inspected.worktreeRoot)
+        ? mainRepoRoot
+        : null,
+    currentBranch: inspected.currentBranch,
+    remoteUrl: inspected.remoteUrl,
+    isPaseoOwnedWorktree,
+  };
+}
+
 function buildPullRequestLookupTargetFromBranchConfig(
   input: PullRequestLookupTargetBranchConfig,
 ): PullRequestStatusLookupTarget {

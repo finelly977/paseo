@@ -18,6 +18,7 @@ import {
   getCheckoutSnapshotFacts,
   getCheckoutShortstat,
   getCheckoutStatus,
+  getCheckoutMetadata,
   getCheckoutWorktreeState,
   getPullRequestStatus,
   forgeAuthStateFromError,
@@ -298,6 +299,7 @@ export type WorkspaceGitSnapshotOptions =
     }
   | {
       force: true;
+      scope?: "all" | "forge";
       includeForge?: boolean;
       reason: string;
     };
@@ -340,6 +342,7 @@ interface WorkspaceGitServiceDependencies {
   getCheckoutSnapshotFacts: typeof getCheckoutSnapshotFacts;
   getCheckoutRefDerivedState: typeof getCheckoutRefDerivedState;
   getCheckoutStatus: typeof getCheckoutStatus;
+  getCheckoutMetadata: typeof getCheckoutMetadata;
   getCheckoutShortstat: typeof getCheckoutShortstat;
   getCheckoutWorktreeState: typeof getCheckoutWorktreeState;
   getCheckoutDiff: typeof getCheckoutDiff;
@@ -496,6 +499,7 @@ function buildDefaultWorkspaceGitServiceDeps(
     getCheckoutSnapshotFacts,
     getCheckoutRefDerivedState,
     getCheckoutStatus,
+    getCheckoutMetadata,
     getCheckoutShortstat,
     getCheckoutWorktreeState,
     getCheckoutDiff,
@@ -694,6 +698,11 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     cwd = resolve(cwd);
     const request = this.normalizeRefreshRequest(options, "getSnapshot", true);
     const target = this.ensureWorkspaceTarget(cwd);
+    if (options?.force && options.scope === "forge") {
+      // 复用首屏正在进行的本地读取，而不是在其后再排一遍完整扫描。
+      await this.getSnapshot(cwd, { includeForge: false });
+      return this.requestForgeSnapshot(target, { ...request, includeForge: true });
+    }
     if (!request.force && target.latestSnapshot) {
       if (request.includeForge && target.latestForgeLoadedAtMs === null) {
         return this.requestForgeSnapshot(target, request);
@@ -707,7 +716,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   async getCheckout(cwd: string): Promise<ProjectCheckoutLitePayload> {
     this.assertNotDisposed();
     const normalizedCwd = resolve(cwd);
-    const status = await this.deps.getCheckoutStatus(normalizedCwd, {
+    const status = await this.deps.getCheckoutMetadata(normalizedCwd, {
       paseoHome: this.paseoHome,
       worktreesRoot: this.worktreesRoot,
       logger: this.logger,

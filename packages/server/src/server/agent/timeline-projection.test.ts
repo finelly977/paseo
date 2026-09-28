@@ -477,6 +477,50 @@ describe("selectTimelineWindowByProjectedLimit", () => {
 });
 
 describe("selectProjectedTimelinePage", () => {
+  test("向前补页按完整消息计数，长回复不会跨页重复返回", () => {
+    const rows: AgentTimelineRow[] = [
+      { seq: 1, timestamp: "2026-01-01T00:00:00Z", item: { type: "user_message", text: "旧问题" } },
+      ...Array.from({ length: 72 }, (_, index) => ({
+        seq: index + 2,
+        timestamp: "2026-01-01T00:00:01Z",
+        item: {
+          type: "assistant_message" as const,
+          messageId: "long-answer",
+          text: `片段${index}。`,
+        },
+      })),
+      ...Array.from({ length: 90 }, (_, index) => ({
+        seq: index + 74,
+        timestamp: "2026-01-01T00:00:02Z",
+        item: { type: "user_message" as const, text: `后续问题${index}` },
+      })),
+    ];
+    const pages = [];
+    let cursorSeq = 164;
+    for (let index = 0; index < 3; index++) {
+      const page = selectProjectedTimelinePage({ rows, direction: "before", cursorSeq, limit: 40 });
+      pages.push(page);
+      if (page.startSeq === null) throw new Error("补页必须推进游标");
+      cursorSeq = page.startSeq;
+    }
+    expect(pages.map((page) => page.entries.length)).toEqual([40, 40, 12]);
+    expect(pages.map((page) => page.startSeq)).toEqual([124, 84, 1]);
+    expect(pages.at(-1)?.hasOlder).toBe(false);
+    expect(
+      pages
+        .flatMap((page) => page.entries)
+        .filter((entry) => entry.item.type === "assistant_message"),
+    ).toHaveLength(1);
+    expect(
+      pages.flatMap((page) => page.entries).find((entry) => entry.item.type === "assistant_message")
+        ?.item,
+    ).toEqual({
+      type: "assistant_message",
+      messageId: "long-answer",
+      text: Array.from({ length: 72 }, (_, index) => `片段${index}。`).join(""),
+    });
+  });
+
   function toolRow(seq: number, status: "running" | "completed"): AgentTimelineRow {
     return {
       seq,
@@ -628,7 +672,7 @@ describe("selectProjectedTimelinePage", () => {
     });
   });
 
-  test("before page includes a wide tool whose earlier source range is before the cursor", () => {
+  test("向前补页只返回有实际来源的条目，不反复携带跨过整段历史的工具", () => {
     const rows: AgentTimelineRow[] = [
       toolRow(1, "running"),
       ...Array.from({ length: 498 }, (_, index) => ({
@@ -646,9 +690,59 @@ describe("selectProjectedTimelinePage", () => {
       limit: 100,
     });
 
-    expect(page.entries.some((entry) => entry.item.type === "tool_call")).toBe(true);
-    expect(page.endSeq).toBeLessThan(500);
+    expect(page.entries.some((entry) => entry.item.type === "tool_call")).toBe(false);
+    expect(page.entries).toHaveLength(100);
+    expect(page.startSeq).toBe(400);
+    expect(page.endSeq).toBe(499);
     expect(page.hasOlder).toBe(true);
+    const firstPage = selectProjectedTimelinePage({
+      rows,
+      direction: "before",
+      cursorSeq: 2,
+      limit: 1,
+    });
+    expect(firstPage.entries).toHaveLength(1);
+    expect(firstPage.entries[0]?.item).toEqual(toolRow(500, "completed").item);
+    expect(firstPage.startSeq).toBe(1);
+    expect(firstPage.endSeq).toBe(1);
+    expect(firstPage.hasOlder).toBe(false);
+  });
+
+  test("向前补页的宽工具不能使游标越过未加载的中间消息", () => {
+    const rows: AgentTimelineRow[] = [
+      toolRow(1, "running"),
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:00Z",
+        item: { type: "user_message", text: "不能漏掉" },
+      },
+      toolRow(3, "completed"),
+    ];
+    const latest = selectProjectedTimelinePage({
+      rows,
+      direction: "before",
+      cursorSeq: 4,
+      limit: 1,
+    });
+    expect(latest.entries).toHaveLength(1);
+    expect(latest.startSeq).toBe(3);
+    expect(latest.endSeq).toBe(3);
+    expect(latest.hasOlder).toBe(true);
+    const middle = selectProjectedTimelinePage({
+      rows,
+      direction: "before",
+      cursorSeq: 3,
+      limit: 1,
+    });
+    expect(middle.entries.map((entry) => entry.item)).toEqual([rows[1].item]);
+    expect(middle.startSeq).toBe(2);
+    const all = selectProjectedTimelinePage({ rows, direction: "before", cursorSeq: 4, limit: 0 });
+    expect(all.entries.map((entry) => entry.item)).toEqual([
+      toolRow(3, "completed").item,
+      rows[1].item,
+    ]);
+    expect(all.startSeq).toBe(1);
+    expect(all.hasOlder).toBe(false);
   });
 
   test("tail page includes a wide tool when its completion is the newest seq", () => {

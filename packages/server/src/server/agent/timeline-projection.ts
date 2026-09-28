@@ -1,5 +1,5 @@
 import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
-import type { AgentTimelineRow } from "./agent-manager.js";
+import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 
 export type TimelineProjectionMode = "canonical" | "projected";
 
@@ -370,16 +370,6 @@ function getTimelineBounds(
   return { minSeq: first.seq, maxSeq: last.seq };
 }
 
-function selectEntriesOverlappingSeqRange(input: {
-  entries: readonly TimelineProjectionEntry[];
-  startSeq: number;
-  endSeq: number;
-}): TimelineProjectionEntry[] {
-  return input.entries.filter(
-    (entry) => entry.seqStart <= input.endSeq && entry.seqEnd >= input.startSeq,
-  );
-}
-
 function firstSourceSeqInRange(
   entry: TimelineProjectionEntry,
   startSeq: number,
@@ -441,6 +431,45 @@ function selectProjectedEntriesAfter(input: {
     entries: selectedEntries,
     endSeq: endSeq >= input.startSeq ? endSeq : null,
   };
+}
+
+function selectProjectedEntriesBefore(input: {
+  entries: readonly TimelineProjectionEntry[];
+  rows: readonly AgentTimelineRow[];
+  minSeq: number;
+  endSeq: number;
+  limit: number;
+}): { entries: TimelineProjectionEntry[]; startSeq: number | null } {
+  const eligible = input.entries
+    .map((entry, index) => {
+      const lastRange = entry.sourceSeqRanges.findLast(
+        (range) => range.startSeq <= input.endSeq && range.endSeq >= input.minSeq,
+      );
+      if (!lastRange) return null;
+      return { entry, index, lastSourceSeq: Math.min(lastRange.endSeq, input.endSeq) };
+    })
+    .filter((candidate) => candidate !== null)
+    .sort((left, right) => right.lastSourceSeq - left.lastSourceSeq || right.index - left.index);
+  const selected = input.limit === 0 ? eligible : eligible.slice(0, input.limit);
+  const entries = selected
+    .sort((left, right) => left.index - right.index)
+    .map(({ entry }) => entry);
+  const ranges = entries
+    .flatMap((entry) => entry.sourceSeqRanges)
+    .sort((left, right) => right.endSeq - left.endSeq);
+  // 以完整投影项计数，游标越过其已覆盖的全部片段；不把同一回复切成多个重复页面。
+  // 工具生命周期可能有不连续的来源，不能越过未包含的中间消息。
+  let startSeq = input.endSeq + 1;
+  let rangeIndex = 0;
+  for (const row of input.rows.toReversed()) {
+    if (row.seq > input.endSeq) continue;
+    if (row.seq < input.minSeq || row.seq !== startSeq - 1) break;
+    while (ranges[rangeIndex] && ranges[rangeIndex].startSeq > row.seq) rangeIndex++;
+    const range = ranges[rangeIndex];
+    if (!range || row.seq > range.endSeq) break;
+    startSeq = row.seq;
+  }
+  return { entries, startSeq: startSeq <= input.endSeq ? startSeq : null };
 }
 
 export function selectProjectedTimelinePage(input: {
@@ -508,11 +537,9 @@ export function selectProjectedTimelinePage(input: {
     };
   }
 
-  let startSeq: number;
-  let endSeq: number;
   if (input.direction === "after") {
     const cursorSeq = input.cursorSeq ?? bounds.minSeq - 1;
-    startSeq = Math.max(bounds.minSeq, cursorSeq + 1);
+    const startSeq = Math.max(bounds.minSeq, cursorSeq + 1);
     const selected = selectProjectedEntriesAfter({
       entries: projectedAll,
       rows: input.rows,
@@ -527,28 +554,22 @@ export function selectProjectedTimelinePage(input: {
       hasOlder: startSeq > bounds.minSeq,
       hasNewer: selected.endSeq !== null && selected.endSeq < bounds.maxSeq,
     };
-  } else {
-    const cursorSeq = input.cursorSeq ?? bounds.maxSeq + 1;
-    endSeq = Math.min(bounds.maxSeq, cursorSeq - 1);
-    startSeq = limit === 0 ? bounds.minSeq : Math.max(bounds.minSeq, cursorSeq - limit);
   }
 
-  if (startSeq > endSeq) {
-    return {
-      entries: [],
-      startSeq: null,
-      endSeq: null,
-      hasOlder: startSeq > bounds.minSeq,
-      hasNewer: endSeq < bounds.maxSeq,
-    };
-  }
-
-  const entries = selectEntriesOverlappingSeqRange({ entries: projectedAll, startSeq, endSeq });
-  return {
-    entries,
-    startSeq,
+  const cursorSeq = input.cursorSeq ?? bounds.maxSeq + 1;
+  const endSeq = Math.min(bounds.maxSeq, cursorSeq - 1);
+  const selected = selectProjectedEntriesBefore({
+    entries: projectedAll,
+    rows: input.rows,
+    minSeq: bounds.minSeq,
     endSeq,
-    hasOlder: startSeq > bounds.minSeq,
+    limit,
+  });
+  return {
+    entries: selected.entries,
+    startSeq: selected.startSeq,
+    endSeq: selected.startSeq === null ? null : endSeq,
+    hasOlder: selected.startSeq !== null && selected.startSeq > bounds.minSeq,
     hasNewer: endSeq < bounds.maxSeq,
   };
 }

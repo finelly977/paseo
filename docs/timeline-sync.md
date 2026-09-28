@@ -31,6 +31,10 @@ Large unbounded timeline responses can exceed relay frame limits, so catch-up us
 
 Page limits are projected-item targets. A tool call lifecycle is one projected item even if it spans many source sequence numbers, and assistant/reasoning chunks are merged before counting. The response carries `seqStart`, `seqEnd`, `sourceSeqRanges`, and `collapsed` so clients can advance sequence cursors without rendering delta rows.
 
+向前补载也必须按合并后的条目计数，返回整条助手回复时，起始游标应一次跨过该回复已经覆盖的全部流式片段。
+不能按原始片段每 40 条切页、却在每页返回同一条完整回复，否则客户端会把它当作几页不同历史重复拼接。
+工具生命周期的来源可能不连续，游标只能越过本页真正覆盖的连续记录，不能跨过尚未返回的中间消息；仅被工具首尾序号包围、没有实际来源落入本页的工具不重复返回。
+
 When the app fetches `direction: "after"` and the daemon responds with `hasNewer: true`, the app must immediately fetch the next page from `endCursor`. The catch-up is complete only when `hasNewer: false`.
 
 Initialization timeouts guard lack of catch-up progress, not the full multi-page sync. A successful page that queues the next `after` page refreshes the watchdog.
@@ -67,13 +71,15 @@ The daemon validates that the epoch is current and the exact source sequence sti
 
 ## Resume behavior
 
-Codex 冷恢复保留独立的原生历史读取：运行时恢复与 `thread/read(includeTurns: true)`
-通过不同的 Codex app-server 并发发起，避免同一进程串行处理大历史。临时历史进程全局最多
-两个，只初始化、读取、不恢复线程也不发送回合，读取结束即释放。两项成功后才投影、对齐历史
-并完成初始化。Paseo 已有的完整时间线和恢复响应都不能
-替代这次读取，因为官方 App 或 CLI 可能已写入新对话。任一请求失败都会关闭该次连接并拒绝其余
-未完成请求；关闭后到达的响应不能重新发布历史或把会话标记为就绪。这一并发只缩短提供方加载
-的串行等待，不代表界面已经实现“历史先显示、运行时后台恢复”的独立状态。
+Codex 冷恢复使用单个 app-server，通过 `thread/resume(excludeTurns: true)` 轻量恢复运行时，
+再完整读取官方当前历史。`paginated` 格式先按升序分页读取回合头（`itemsView: notLoaded`），
+再读取跨回合正文，每页最多 100 条；按回合和条目身份去重并检测游标循环。
+`legacy` 格式使用原生完整读取接口，这是存储格式分支，不是分页失败后的降级。
+
+所有页和子智能体历史读取完成后，才执行既有投影、元数据对齐和完整快照提交，再返回可用状态。
+不提前发布部分历史，不在对话过程中后台替换整段时间线，不额外创建独立历史读取进程。
+即使 Paseo 已缓存完整时间线，仍读取官方最新历史，保留官方 App 或 CLI 新增的对话。
+读取失败会关闭本次连接，取消未完成的请求；迟到响应不会把已关闭会话重新发布为可用。
 
 When a client resumes with a known cursor, it catches up after that cursor to completion. It does not replace the view with a latest tail page, because tail pagination can skip the middle of a long background run.
 

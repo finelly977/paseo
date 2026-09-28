@@ -57,6 +57,50 @@ describe("daemon E2E - timeline window", () => {
     await ctx.cleanup();
   }, 60_000);
 
+  test("连续获取旧历史页时，72片段长回复在WebSocket上只返回一次", async () => {
+    const cwd = ctx.daemon.paseoHome;
+    const agent = await ctx.client.createAgent({ provider: "codex", cwd, modeId: "full-access" });
+    const manager = ctx.daemon.daemon.agentManager;
+    await manager.appendTimelineItem(agent.id, { type: "user_message", text: "旧问题" });
+    for (let index = 0; index < 72; index++) {
+      await manager.appendTimelineItem(agent.id, {
+        type: "assistant_message",
+        messageId: "long-answer",
+        text: `片段${index}。`,
+      });
+    }
+    for (let index = 0; index < 90; index++) {
+      await manager.appendTimelineItem(agent.id, {
+        type: "user_message",
+        text: `后续问题${index}`,
+      });
+    }
+    const tail = await ctx.client.fetchAgentTimeline(agent.id, { direction: "tail", limit: 40 });
+    const pages = [tail];
+    for (let index = 0; index < 2; index++) {
+      const cursor = pages[index].startCursor;
+      if (!cursor) throw new Error("历史分页缺少起始游标");
+      pages.push(
+        await ctx.client.fetchAgentTimeline(agent.id, { direction: "before", cursor, limit: 40 }),
+      );
+    }
+    expect(pages.map((page) => page.entries.length)).toEqual([40, 40, 12]);
+    expect(pages.at(-1)?.hasOlder).toBe(false);
+    expect(pages.at(-1)?.startCursor?.seq).toBe(1);
+    expect(
+      pages
+        .flatMap((page) => page.entries)
+        .filter((entry) => entry.item.type === "assistant_message")
+        .map((entry) => entry.item),
+    ).toEqual([
+      {
+        type: "assistant_message",
+        messageId: "long-answer",
+        text: Array.from({ length: 72 }, (_, index) => `片段${index}。`).join(""),
+      },
+    ]);
+  });
+
   test("canonical tail limit returns one finalized committed assistant row at the window boundary", async () => {
     const cwd = tmpCwd();
     try {

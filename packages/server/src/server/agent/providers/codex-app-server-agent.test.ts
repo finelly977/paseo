@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -135,14 +136,13 @@ function createSession(
 }
 
 function createProviderWithFakeAppServer(appServer: FakeCodexAppServer): CodexAppServerAgentClient {
-  const provider = new CodexAppServerAgentClient(createTestLogger());
+  const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+    resolveCodexVersion: async () => "0.0.0",
+    resolveCodexLaunchCommand: async () => process.execPath,
+  });
   const internals = castInternals<{
-    goalsEnabledPromise: Promise<boolean> | null;
-    autoReviewEnabledPromise: Promise<boolean> | null;
     spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>;
   }>(provider);
-  internals.goalsEnabledPromise = Promise.resolve(false);
-  internals.autoReviewEnabledPromise = Promise.resolve(false);
   internals.spawnAppServer = () => appServer.spawnChild();
   return provider;
 }
@@ -1579,79 +1579,34 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
-  test("恢复未完成时已读取官方会话新增历史，并等待两项均完成后就绪", async () => {
+  test("单进程恢复后完整读取官方历史，所有分页完成前不发布就绪", async () => {
     const resume = Promise.withResolvers<unknown>();
-    const readerExited = Promise.withResolvers<void>();
+    const lastPage = Promise.withResolvers<unknown>();
+    const lastPageRequested = Promise.withResolvers<void>();
     const appServer = createFakeCodexAppServer({
       "thread/resume": () => resume.promise,
-      "thread/read": () => ({
-        thread: {
-          turns: [
-            {
-              items: [
-                {
-                  type: "agentMessage",
-                  id: "official-app-message",
-                  text: "官方 App 中新增的回复",
-                  timestamp: "2026-09-26T10:00:00.000Z",
-                },
-              ],
-            },
-          ],
-        },
-      }),
-    });
-    const session = new CodexAppServerAgentSession(
-      createConfig(),
-      { sessionId: "thread-1" },
-      createTestLogger(),
-      async () => {
-        const child = await appServer.spawnChild();
-        if (appServer.children.length === 2) child.once("exit", () => readerExited.resolve());
-        return child;
+      "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+      "thread/turns/list": () => ({ data: [{ id: "turn-1", items: [] }], nextCursor: null }),
+      "thread/items/list": (params) => {
+        const { cursor, sortDirection } = z
+          .object({ cursor: z.string().nullable(), sortDirection: z.literal("asc") })
+          .parse(params);
+        expect(sortDirection).toBe("asc");
+        if (cursor === null) {
+          return {
+            data: [
+              {
+                turnId: "turn-1",
+                item: { id: "earlier", type: "agentMessage", text: "较早的历史" },
+              },
+            ],
+            nextCursor: "last",
+          };
+        }
+        lastPageRequested.resolve();
+        return lastPage.promise;
       },
-    );
-    let connected = false;
-    const connecting = session.connect().then(() => {
-      connected = true;
-      return undefined;
     });
-    try {
-      await appServer.waitForRequest("thread/resume");
-      await expect(appServer.waitForRequest("thread/read")).resolves.toMatchObject({
-        threadId: "thread-1",
-        includeTurns: true,
-      });
-      expect(appServer.children).toHaveLength(2);
-      await readerExited.promise;
-      expect(connected).toBe(false);
-      resume.resolve({ thread: { id: "thread-1", turns: [] } });
-      await connecting;
-      const history: AgentStreamEvent[] = [];
-      for await (const event of session.streamHistory()) history.push(event);
-      expect(history).toEqual([
-        {
-          type: "timeline",
-          provider: "codex",
-          timestamp: "2026-09-26T10:00:00.000Z",
-          item: {
-            type: "assistant_message",
-            messageId: "official-app-message",
-            text: "官方 App 中新增的回复",
-          },
-        },
-      ]);
-      appServer.assertNoErrors();
-    } finally {
-      resume.resolve({});
-      await connecting;
-      await session.close();
-    }
-  });
-
-  test("恢复先完成时仍等待原生历史读取，不额外重读整段历史", async () => {
-    const read = Promise.withResolvers<unknown>();
-    const appServer = createFakeCodexAppServer({ "thread/read": () => read.promise });
     const session = new CodexAppServerAgentSession(
       createConfig(),
       { sessionId: "thread-1" },
@@ -1664,30 +1619,65 @@ describe("Codex app-server provider", () => {
       return undefined;
     });
     try {
-      await appServer.waitForRequest("thread/resume");
-      await appServer.waitForRequest("thread/read");
+      expect(await appServer.waitForRequest("thread/resume")).toMatchObject({
+        threadId: "thread-1",
+        excludeTurns: true,
+      });
+      expect(appServer.requests().filter((request) => request.method === "thread/read")).toEqual(
+        [],
+      );
+      resume.resolve({ thread: { id: "thread-1", turns: [] } });
+      await lastPageRequested.promise;
       expect(connected).toBe(false);
-      read.resolve({ thread: { turns: [] } });
+      const prematureHistory: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) prematureHistory.push(event);
+      expect(prematureHistory).toEqual([]);
+      lastPage.resolve({
+        data: [
+          {
+            turnId: "turn-1",
+            item: {
+              id: "official-app-message",
+              type: "agentMessage",
+              text: "官方 App 中新增的回复",
+            },
+          },
+        ],
+        nextCursor: null,
+      });
       await connecting;
+      expect(connected).toBe(true);
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history.map((event) => (event.type === "timeline" ? event.item : event))).toEqual([
+        { type: "assistant_message", messageId: "earlier", text: "较早的历史" },
+        {
+          type: "assistant_message",
+          messageId: "official-app-message",
+          text: "官方 App 中新增的回复",
+        },
+      ]);
+      expect(appServer.children).toHaveLength(1);
       expect(appServer.requests().filter((request) => request.method === "thread/read")).toEqual([
-        expect.objectContaining({ params: { threadId: "thread-1", includeTurns: true } }),
+        expect.objectContaining({ params: { threadId: "thread-1", includeTurns: false } }),
       ]);
       appServer.assertNoErrors();
     } finally {
-      read.resolve({ thread: { turns: [] } });
+      resume.resolve({});
+      lastPage.resolve({ data: [], nextCursor: null });
       await connecting;
       await session.close();
     }
   });
 
-  test.each(["thread/resume", "thread/read"])(
-    "%s 失败时关闭进程并取消仍未完成的另一项加载",
+  test.each(["thread/resume", "thread/turns/list", "thread/items/list"])(
+    "%s 失败时关闭单个进程，不发布半份历史",
     async (failedMethod) => {
-      const resume = Promise.withResolvers<unknown>();
-      const read = Promise.withResolvers<unknown>();
       const appServer = createFakeCodexAppServer({
-        "thread/resume": () => resume.promise,
-        "thread/read": () => read.promise,
+        "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+        "thread/turns/list": () => ({ data: [{ id: "turn-1", items: [] }], nextCursor: null }),
+        "thread/items/list": () => ({ data: [], nextCursor: null }),
+        [failedMethod]: () => Promise.reject(new Error("原生加载失败")),
       });
       const session = new CodexAppServerAgentSession(
         createConfig(),
@@ -1697,90 +1687,31 @@ describe("Codex app-server provider", () => {
       );
       const exits: unknown[] = [];
       appServer.child.on("exit", (_code, signal) => exits.push(signal));
-      const failure = expect(session.connect()).rejects.toThrow("并发加载失败");
-      await appServer.waitForRequest("thread/resume");
-      await appServer.waitForRequest("thread/read");
-      const failedRequest = failedMethod === "thread/resume" ? resume : read;
-      failedRequest.reject(new Error("并发加载失败"));
-      await failure;
+      await expect(session.connect()).rejects.toThrow("原生加载失败");
       expect(exits).toEqual(["SIGTERM"]);
-      resume.resolve({});
-      read.resolve({ thread: { turns: [] } });
+      expect(appServer.children).toHaveLength(1);
       const history: AgentStreamEvent[] = [];
       for await (const event of session.streamHistory()) history.push(event);
       expect(history).toEqual([]);
+      expect(
+        appServer
+          .requests()
+          .filter((request) => request.method === "thread/read")
+          .map((request) => request.params),
+      ).not.toContainEqual({ threadId: "thread-1", includeTurns: true });
       await session.close();
       appServer.assertNoErrors();
     },
   );
 
-  test("并发加载期间关闭会话，迟到历史不会成为已就绪的会话", async () => {
-    const resume = Promise.withResolvers<unknown>();
-    const read = Promise.withResolvers<unknown>();
-    const appServer = createFakeCodexAppServer({
-      "thread/resume": () => resume.promise,
-      "thread/read": () => read.promise,
-    });
-    const session = new CodexAppServerAgentSession(
-      createConfig(),
-      { sessionId: "thread-1" },
-      createTestLogger(),
-      () => appServer.spawnChild(),
-    );
-    const failure = expect(session.connect()).rejects.toThrow("closed");
-    await appServer.waitForRequest("thread/resume");
-    await appServer.waitForRequest("thread/read");
-    await session.close();
-    await failure;
-    resume.resolve({});
-    read.resolve({ thread: { turns: [] } });
-    const history: AgentStreamEvent[] = [];
-    for await (const event of session.streamHistory()) history.push(event);
-    expect(history).toEqual([]);
-    expect(session.id).toBe(null);
-    appServer.assertNoErrors();
-  });
-
-  test("历史读取进程尚未启动完成时关闭，也会释放随后创建的进程", async () => {
-    const resume = Promise.withResolvers<unknown>();
-    const spawnReader = Promise.withResolvers<void>();
-    const readerStarting = Promise.withResolvers<void>();
-    const readerClosed = Promise.withResolvers<void>();
-    const appServer = createFakeCodexAppServer({ "thread/resume": () => resume.promise });
-    let spawned = 0;
-    const session = new CodexAppServerAgentSession(
-      createConfig(),
-      { sessionId: "thread-1" },
-      createTestLogger(),
-      async () => {
-        spawned++;
-        if (spawned === 2) {
-          readerStarting.resolve();
-          await spawnReader.promise;
-        }
-        const child = await appServer.spawnChild();
-        if (spawned === 2) child.once("exit", () => readerClosed.resolve());
-        return child;
-      },
-    );
-    const failure = expect(session.connect()).rejects.toThrow("closed");
-    await readerStarting.promise;
-    await session.close();
-    await failure;
-    spawnReader.resolve();
-    await readerClosed.promise;
-    expect(appServer.requests().filter((request) => request.method === "thread/read")).toEqual([]);
-    resume.resolve({});
-    appServer.assertNoErrors();
-  });
-
-  test("多个冷恢复最多同时启动两个历史读取进程，排队取消后不再启动", async () => {
-    const cases = Array.from({ length: 3 }, () => {
-      const resume = Promise.withResolvers<unknown>();
+  test.each(["主动关闭", "进程退出"])(
+    "分页途中%s，取消请求且迟到响应不能恢复就绪",
+    async (cause) => {
       const read = Promise.withResolvers<unknown>();
       const appServer = createFakeCodexAppServer({
-        "thread/resume": () => resume.promise,
-        "thread/read": () => read.promise,
+        "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+        "thread/turns/list": () => ({ data: [{ id: "turn-1", items: [] }], nextCursor: null }),
+        "thread/items/list": () => read.promise,
       });
       const session = new CodexAppServerAgentSession(
         createConfig(),
@@ -1788,63 +1719,99 @@ describe("Codex app-server provider", () => {
         createTestLogger(),
         () => appServer.spawnChild(),
       );
-      return { session, appServer, resume, read };
-    });
-    const [first, second, queued] = cases;
-    if (!first || !second || !queued) throw new Error("并发测试缺少会话");
-    const firstConnect = first.session.connect();
-    const secondConnect = second.session.connect();
-    await first.appServer.waitForRequest("thread/read");
-    await second.appServer.waitForRequest("thread/read");
-    const queuedFailure = expect(queued.session.connect()).rejects.toThrow("closed");
-    await queued.appServer.waitForRequest("thread/resume");
-    expect(queued.appServer.children).toHaveLength(1);
-    await queued.session.close();
-    await queuedFailure;
-    first.read.resolve({ thread: { turns: [] } });
-    second.read.resolve({ thread: { turns: [] } });
-    first.resume.resolve({});
-    second.resume.resolve({});
-    await Promise.all([firstConnect, secondConnect]);
-    expect(queued.appServer.children).toHaveLength(1);
-    expect(
-      queued.appServer.requests().filter((request) => request.method === "thread/read"),
-    ).toEqual([]);
-    queued.resume.resolve({});
-    for (const entry of cases) {
-      await entry.session.close();
-      entry.appServer.assertNoErrors();
-    }
-  });
+      const failure = expect(session.connect()).rejects.toThrow(
+        cause === "主动关闭" ? "closed" : "exited",
+      );
+      await appServer.waitForRequest("thread/items/list");
+      if (cause === "主动关闭") await session.close();
+      else appServer.disconnect();
+      await failure;
+      read.resolve({
+        data: [{ turnId: "turn-1", item: { id: "late", type: "agentMessage", text: "迟到响应" } }],
+        nextCursor: null,
+      });
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual([]);
+      await session.close();
+      expect(session.id).toBe(null);
+      appServer.assertNoErrors();
+    },
+  );
 
-  test("运行时进程在并发恢复中退出时释放独立历史进程", async () => {
-    const resume = Promise.withResolvers<unknown>();
-    const read = Promise.withResolvers<unknown>();
-    const readerClosed = Promise.withResolvers<void>();
+  test("父线程与子智能体都使用原生分页，并保留子轨道正文", async () => {
     const appServer = createFakeCodexAppServer({
-      "thread/resume": () => resume.promise,
-      "thread/read": () => read.promise,
+      "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+      "thread/turns/list": () => ({ data: [{ id: "turn-1", items: [] }], nextCursor: null }),
+      "thread/items/list": (params) => {
+        const { threadId } = z.object({ threadId: z.string() }).parse(params);
+        if (threadId === "thread-1") {
+          return {
+            data: [
+              {
+                turnId: "turn-1",
+                item: {
+                  type: "subAgentActivity",
+                  id: "child-started",
+                  kind: "started",
+                  agentThreadId: "child-thread",
+                  agentPath: "/root/child",
+                },
+              },
+            ],
+            nextCursor: null,
+          };
+        }
+        expect(threadId).toBe("child-thread");
+        return {
+          data: [
+            {
+              turnId: "turn-1",
+              item: { type: "agentMessage", id: "child-answer", text: "子智能体原生历史" },
+            },
+          ],
+          nextCursor: null,
+        };
+      },
     });
     const session = new CodexAppServerAgentSession(
       createConfig(),
       { sessionId: "thread-1" },
       createTestLogger(),
-      async () => {
-        const child = await appServer.spawnChild();
-        if (appServer.children.length === 2) child.once("exit", () => readerClosed.resolve());
-        return child;
-      },
+      () => appServer.spawnChild(),
     );
-    const failure = expect(session.connect()).rejects.toThrow("exited");
-    await appServer.waitForRequest("thread/resume");
-    await appServer.waitForRequest("thread/read");
-    appServer.disconnect();
-    await failure;
-    await readerClosed.promise;
-    resume.resolve({});
-    read.resolve({ thread: { turns: [] } });
-    await session.close();
-    appServer.assertNoErrors();
+    try {
+      await session.connect();
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "provider_subagent",
+            event: expect.objectContaining({
+              type: "timeline",
+              item: expect.objectContaining({
+                type: "assistant_message",
+                text: "子智能体原生历史",
+              }),
+            }),
+          }),
+        ]),
+      );
+      expect(
+        appServer
+          .requests()
+          .filter((request) => request.method === "thread/items/list")
+          .map((request) => request.params),
+      ).toEqual([
+        { threadId: "thread-1", cursor: null, limit: 100, sortDirection: "asc" },
+        { threadId: "child-thread", cursor: null, limit: 100, sortDirection: "asc" },
+      ]);
+      expect(appServer.children).toHaveLength(1);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
   });
 
   test("loads archived Codex history without resuming the native thread", async () => {
@@ -1860,7 +1827,7 @@ describe("Codex app-server provider", () => {
       },
       "thread/read": () => {
         threadRequests.push("thread/read");
-        return { thread: { turns: [] } };
+        return { thread: { historyMode: "legacy", turns: [] } };
       },
     });
     const provider = createProviderWithFakeAppServer(appServer);
@@ -1873,7 +1840,10 @@ describe("Codex app-server provider", () => {
       "thread/loaded/list",
       "thread/resume",
     ]);
-    expect(threadRequests.filter((method) => method === "thread/read")).toEqual(["thread/read"]);
+    expect(threadRequests.filter((method) => method === "thread/read")).toEqual([
+      "thread/read",
+      "thread/read",
+    ]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -1900,7 +1870,7 @@ describe("Codex app-server provider", () => {
       },
       "thread/read": () => {
         threadRequests.push("thread/read");
-        return { thread: { turns: [] } };
+        return { thread: { historyMode: "legacy", turns: [] } };
       },
     });
     const provider = createProviderWithFakeAppServer(appServer);
@@ -1913,7 +1883,10 @@ describe("Codex app-server provider", () => {
       "thread/unarchive",
       "thread/resume",
     ]);
-    expect(threadRequests.filter((method) => method === "thread/read")).toEqual(["thread/read"]);
+    expect(threadRequests.filter((method) => method === "thread/read")).toEqual([
+      "thread/read",
+      "thread/read",
+    ]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -2451,7 +2424,7 @@ describe("Codex app-server provider", () => {
       },
       "thread/read": () => {
         threadRequests.push("thread/read");
-        return { thread: { turns: [] } };
+        return { thread: { historyMode: "legacy", turns: [] } };
       },
       getUserSavedConfig: () => {
         threadRequests.push("getUserSavedConfig");
@@ -2469,39 +2442,16 @@ describe("Codex app-server provider", () => {
     });
     const provider = createProviderWithFakeAppServer(appServer);
 
-    const outcome = await Promise.race([
-      provider
-        .resumeSession({
-          sessionId: "archived-thread-id",
-          metadata: {
-            cwd: "/tmp/codex-question-test",
-            modeId: "auto",
-            model: "gpt-5.4",
-          },
-        })
-        .then(
-          () => "resolved" as const,
-          (error) => {
-            expect(error).toBeInstanceOf(Error);
-            expect((error as Error).message).toContain(
-              "no tool-call found for thread id archived-thread-id",
-            );
-            return "rejected" as const;
-          },
-        ),
-      new Promise<"timed_out">((resolve) => setTimeout(() => resolve("timed_out"), 500)),
-    ]);
-
-    if (outcome === "timed_out") {
-      appServer.child.kill("SIGTERM");
-      throw new Error(`resumeSession timed out; thread requests: ${threadRequests.join(", ")}`);
-    }
-
+    await expect(
+      provider.resumeSession({
+        sessionId: "archived-thread-id",
+        metadata: { cwd: "/tmp/codex-question-test", modeId: "auto", model: "gpt-5.4" },
+      }),
+    ).rejects.toThrow("no tool-call found for thread id archived-thread-id");
     expect(threadRequests.filter((method) => method !== "thread/read")).toEqual([
       "thread/loaded/list",
       "thread/resume",
     ]);
-    expect(outcome).toBe("rejected");
     appServer.assertNoErrors();
   });
 
@@ -4438,6 +4388,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -4468,6 +4419,7 @@ describe("Codex app-server provider", () => {
     }
 
     expect(requests.map((request) => [request.method, request.params])).toEqual([
+      ["thread/read", { threadId: "test-thread", includeTurns: false }],
       ["thread/read", { threadId: "test-thread", includeTurns: true }],
     ]);
     expect(history).toEqual([
@@ -4502,6 +4454,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -4569,6 +4522,7 @@ describe("Codex app-server provider", () => {
         if (threadId !== "test-thread") {
           return {
             thread: {
+              historyMode: "legacy",
               turns: [
                 {
                   items: [
@@ -4585,6 +4539,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -4744,10 +4699,11 @@ describe("Codex app-server provider", () => {
           return {};
         }
         if ((params as { threadId?: string }).threadId !== "test-thread") {
-          return { thread: { turns: [] } };
+          return { thread: { historyMode: "legacy", turns: [] } };
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -4823,6 +4779,7 @@ describe("Codex app-server provider", () => {
         if (threadId === "test-thread") {
           return {
             thread: {
+              historyMode: "legacy",
               turns: [
                 {
                   items: [
@@ -4841,6 +4798,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -4962,6 +4920,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 startedAt: 1_778_832_941,
@@ -5026,6 +4985,7 @@ describe("Codex app-server provider", () => {
         }
         return {
           thread: {
+            historyMode: "legacy",
             turns: [
               {
                 items: [
@@ -5379,7 +5339,7 @@ describe("Codex app-server provider", () => {
     expect(session.currentThreadId).toBe("archived-thread-id");
     expect(requests).toEqual([
       { method: "thread/loaded/list", params: {} },
-      { method: "thread/resume", params: { threadId: "archived-thread-id" } },
+      { method: "thread/resume", params: { threadId: "archived-thread-id", excludeTurns: true } },
     ]);
   });
 
