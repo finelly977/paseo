@@ -720,7 +720,12 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       );
 
       if (payload.conversationIndex) {
-        setAgentConversationIndex(serverId, agentId, payload.conversationIndex);
+        setAgentConversationIndex(
+          serverId,
+          agentId,
+          payload.conversationIndex,
+          payload.conversationIndexVersion,
+        );
       }
 
       setAgentTimelineHasOlder(serverId, (prev) => {

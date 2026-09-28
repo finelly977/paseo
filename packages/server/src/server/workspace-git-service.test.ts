@@ -332,6 +332,95 @@ function createService(options?: CreateServiceTestOptions) {
 }
 
 describe("WorkspaceGitServiceImpl", () => {
+  test("多个仓库的远端查询阻塞时，新的本地状态仍有独立并发槽位", async () => {
+    const gate = createDeferred<PullRequestStatusResult>();
+    const getPullRequestStatus = vi.fn(() => gate.promise);
+    const service = createService({ getPullRequestStatus });
+    const requests = Array.from({ length: WORKSPACE_GIT_REFRESH_CONCURRENCY }, (_, index) =>
+      service.getSnapshot(path.resolve(`/tmp/remote-${index}`)),
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(WORKSPACE_GIT_REFRESH_CONCURRENCY);
+      const local = await service.getSnapshot(REPO_CWD, { includeForge: false });
+      expect(local.git.currentBranch).toBe("main");
+    } finally {
+      gate.resolve(createPullRequestStatusResult());
+      await Promise.all(requests);
+      await service.dispose();
+    }
+  });
+
+  test("远端查询期间切换分支，不发布旧分支的 PR", async () => {
+    const gate = createDeferred<PullRequestStatusResult>();
+    let branch = "main";
+    const getPullRequestStatus = vi
+      .fn()
+      .mockImplementationOnce(() => gate.promise)
+      .mockResolvedValue(createPullRequestStatusResult({ status: null }));
+    const service = createService({
+      getPullRequestStatus,
+      getCheckoutStatus: vi.fn(async (cwd: string) =>
+        createCheckoutStatus(cwd, { currentBranch: branch }),
+      ),
+      getCheckoutSnapshotFacts: vi.fn(async (cwd: string) => ({
+        ...createCheckoutSnapshotFacts(cwd),
+        currentBranch: branch,
+        pullRequestLookupTarget: { headRef: branch },
+      })),
+    });
+    const pending = service.getSnapshot(REPO_CWD);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
+      branch = "next";
+      const local = await service.getSnapshot(REPO_CWD, {
+        force: true,
+        includeForge: false,
+        reason: "branch-change",
+      });
+      expect(local.git.currentBranch).toBe("next");
+      gate.resolve(createPullRequestStatusResult());
+      const refreshed = await pending;
+      expect(getPullRequestStatus).toHaveBeenCalledTimes(2);
+      expect(refreshed.git.currentBranch).toBe("next");
+      expect(refreshed.forge.pullRequest).toBeNull();
+    } finally {
+      gate.resolve(createPullRequestStatusResult());
+      await pending;
+      await service.dispose();
+    }
+  });
+
+  test.each(["local-first", "forge-first"])(
+    "远端 PR 未完成时本地状态仍可返回：%s",
+    async (order) => {
+      const pr = createDeferred<PullRequestStatusResult>();
+      const getPullRequestStatus = vi.fn(() => pr.promise);
+      const service = createService({ getPullRequestStatus });
+      const readLocal = () => service.getSnapshot(REPO_CWD, { includeForge: false });
+      const readForge = () => service.getSnapshot(REPO_CWD, { includeForge: true });
+      const requests =
+        order === "local-first" ? [readLocal(), readForge()] : [readForge(), readLocal()];
+      const local = requests[order === "local-first" ? 0 : 1]!;
+      let localReady = false;
+      void local.then(() => {
+        localReady = true;
+        return undefined;
+      });
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        expect(getPullRequestStatus).toHaveBeenCalledTimes(1);
+        expect(localReady).toBe(true);
+        expect((await local).git.currentBranch).toBe("main");
+      } finally {
+        pr.resolve(createPullRequestStatusResult());
+        await Promise.all(requests);
+        await service.dispose();
+      }
+    },
+  );
+
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -1131,8 +1220,8 @@ describe("WorkspaceGitServiceImpl", () => {
     await flushPromises();
 
     expect(getPullRequestStatus).toHaveBeenCalledTimes(2);
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith(
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenLastCalledWith(
       createSnapshot(REPO_CWD, {
         forge: {
           pullRequest: {

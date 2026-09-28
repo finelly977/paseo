@@ -51,6 +51,12 @@ The first load of an agent without a local cursor is different: it fetches a bou
 
 桌面端的已完成过程会在渲染后折叠，因此最新尾页的源记录虽然很多，可见高度仍可能只剩一两个回合入口。如果折叠后的内容短到无法形成超过历史起点阈值的滚动范围，网页视口必须主动请求更早一页；每次内容几何实际变化后才允许继续请求，直到用户可以正常向上滚动或历史耗尽。相同内容与几何只能自动请求一次，避免失败时循环请求；点击索引和用户滚动仍可显式重试。
 
+## 历史导航索引
+
+导航正文与索引分开复用：客户端只在实际保存索引副本后，随下一次历史请求提交该副本的内容版本。服务端根据时间线代际和索引完整内容生成版本；版本一致时省略索引数组，仍返回正文分页。原位修正、清空和时间线替换都可使版本变化，不能仅用条数或末尾序号判定相同。客户端清空副本时同时清空版本。
+
+网页端保留全部索引数据，只挂载可见刻度和邻近预渲染区；滚动、悬停和方向键跳转按全量索引位置计算，不能把窗口内下标当作历史位置。提供方消息标识可能重复，已有时间线位置时优先按位置区分刻度和匹配跳转目标，不按正文或标识删除旧历史。
+
 ## Durable item anchors
 
 Provider message IDs are not guaranteed for every displayed item. Paseo-generated system errors are one example. Rendered item indices are not durable either because pagination and projection can merge source rows.
@@ -89,6 +95,8 @@ When a client resumes without a cursor, it fetches the latest tail page.
 助手消息分界线；匹配后保留实时记录原有的回合归属和片段位置，不能再追加一条提供方完整消息。
 如果旧版本已经在同一用户回合内留下标识相同但没有回合归属的提供方副本，下一次对齐应删除该
 副本并把修正后的时间线重新持久化。
+
+历史对齐在单次操作内建立用户身份候选、结构候选、助手连续片段分组和用户边界索引，避免每条提供方消息都扫描全部规范记录或重新拼接助手正文。候选仍按原有顺序匹配，保留重复用户文本、完整元数据、回合归属与既有副本清理规则；优化不改变官方历史读取与完整快照提交的先后关系。
 
 ## Client replica lifetime
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { reconcileProviderHistory } from "./history-reconciliation.js";
+import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 
 const user = (text: string, id?: string) => ({
   type: "user_message" as const,
@@ -15,6 +16,38 @@ const assistant = (text: string, messageId: string) => ({
 });
 
 describe("reconcileProviderHistory", () => {
+  test("长历史索引保持重复正文的顺序和每个片段的回合归属", () => {
+    const canonical: AgentTimelineRow[] = [];
+    const provider = [];
+    for (let index = 0; index < 500; index++) {
+      const prompt = user("继续", `user-${index}`);
+      canonical.push(
+        {
+          seq: canonical.length + 1,
+          timestamp: "2026-01-01T00:00:00Z",
+          item: prompt,
+          turnId: `turn-${index}`,
+        },
+        {
+          seq: canonical.length + 2,
+          timestamp: "2026-01-01T00:00:00Z",
+          item: assistant(`回答 ${index} `, `live-${index}`),
+          turnId: `turn-${index}`,
+        },
+        {
+          seq: canonical.length + 3,
+          timestamp: "2026-01-01T00:00:00Z",
+          item: assistant("完成", `live-${index}`),
+          turnId: `turn-${index}`,
+        },
+      );
+      provider.push(
+        { item: prompt },
+        { item: assistant(`回答 ${index} 完成`, `official-${index}`) },
+      );
+    }
+    expect(reconcileProviderHistory(canonical, provider)).toEqual(canonical);
+  });
   test("puts missing provider prefix before a newer durable suffix while preserving suffix metadata", () => {
     const rows = reconcileProviderHistory(
       [

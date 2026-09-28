@@ -4,6 +4,9 @@ import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
+  getHistoryIndexEntryKey,
+  matchesHistoryIndexEntry,
+  resolveHistoryIndexWindow,
   getHistoryIndexWaveScale,
   HISTORY_INDEX_MAX_HEIGHT,
   HISTORY_INDEX_MARKER_PITCH,
@@ -44,6 +47,28 @@ function assistant(id: string, text: string): StreamItem {
 }
 
 describe("conversation history index model", () => {
+  it("重复提供方标识不覆盖不同历史位置，跳转只匹配目标位置", () => {
+    const first = summaryEntry("reused-provider-id", 1);
+    const second = summaryEntry("reused-provider-id", 20);
+    expect(getHistoryIndexEntryKey(first)).not.toBe(getHistoryIndexEntryKey(second));
+    expect(matchesHistoryIndexEntry(first, second)).toBe(false);
+    expect(matchesHistoryIndexEntry(loadedEntry("loaded-id", 20), second)).toBe(true);
+    expect(matchesHistoryIndexEntry(loadedEntry("reused-provider-id"), second)).toBe(false);
+  });
+
+  it("三千轮只取可见窗口与预渲染边界，仍可定位第一轮和最后一轮", () => {
+    expect(resolveHistoryIndexWindow({ entryCount: 3000, scrollTop: 0, railHeight: 480 })).toEqual({
+      start: 0,
+      end: 68,
+    });
+    expect(
+      resolveHistoryIndexWindow({ entryCount: 3000, scrollTop: 23524, railHeight: 480 }),
+    ).toEqual({ start: 2932, end: 3000 });
+    expect(resolveHistoryIndexWindow({ entryCount: 0, scrollTop: 0, railHeight: 480 })).toEqual({
+      start: 0,
+      end: 0,
+    });
+  });
   it("builds a prompt title and assistant preview for each turn", () => {
     const entries = buildConversationHistoryIndex([
       user("u1", "提交推送\n请检查状态"),

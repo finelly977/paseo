@@ -8,6 +8,31 @@ type WorkspaceFetchResult = Awaited<ReturnType<DaemonClient["fetchWorkspaces"]>>
 type ProjectListResult = Awaited<ReturnType<DaemonClient["listProjects"]>>;
 
 class FakeDirectoryClient {
+  timelineRequests: Parameters<DaemonClient["fetchAgentTimeline"]>[1][] = [];
+  async fetchAgentTimeline(
+    _agentId: string,
+    request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+  ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
+    this.timelineRequests.push(request);
+    return {
+      requestId: "timeline",
+      agentId: _agentId,
+      agent: null,
+      direction: "tail",
+      projection: "projected",
+      epoch: "epoch",
+      reset: false,
+      staleCursor: false,
+      gap: false,
+      window: { minSeq: 0, maxSeq: 0, nextSeq: 1 },
+      startCursor: null,
+      endCursor: null,
+      hasOlder: false,
+      hasNewer: false,
+      entries: [],
+      error: null,
+    };
+  }
   fetchAgentsCalls = 0;
   fetchWorkspacesCalls = 0;
   listProjectsCalls = 0;
@@ -111,6 +136,27 @@ afterEach(() => {
 });
 
 describe("DirectorySync session readiness", () => {
+  it("只有实际保存索引副本后才在后续分页声明版本", async () => {
+    const serverId = "timeline-index-version";
+    const { client, directory } = createDirectory(serverId);
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    try {
+      await directory.fetchTimeline("agent-1", { direction: "tail" });
+      store.setAgentConversationIndex(serverId, "agent-1", [], "index-v1");
+      await directory.fetchTimeline("agent-1", { direction: "before" });
+      store.clearSession(serverId);
+      store.initializeSession(serverId, client as unknown as DaemonClient, 2);
+      await directory.fetchTimeline("agent-1", { direction: "tail" });
+      expect(client.timelineRequests.map((request) => request?.conversationIndexVersion)).toEqual([
+        undefined,
+        "index-v1",
+        undefined,
+      ]);
+    } finally {
+      directory.dispose();
+    }
+  });
   it("waits for workspace capability metadata before choosing the workspace protocol", async () => {
     const serverId = "workspace-metadata";
     const { client, directory } = createDirectory(serverId);

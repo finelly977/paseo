@@ -629,6 +629,7 @@ export interface FetchAgentOptions {
 }
 type LegacyFetchAgentOptions = Omit<FetchAgentOptions, "agentId">;
 export interface FetchAgentTimelineOptions {
+  conversationIndexVersion?: string;
   direction?: FetchAgentTimelineDirection;
   cursor?: FetchAgentTimelineCursor;
   limit?: number;
@@ -2890,6 +2891,7 @@ export class DaemonClient {
       type: "fetch_agent_timeline_request",
       agentId,
       requestId: resolvedRequestId,
+      conversationIndexVersion: options.conversationIndexVersion,
       ...(options.direction ? { direction: options.direction } : {}),
       ...(options.cursor ? { cursor: options.cursor } : {}),
       ...(typeof options.limit === "number" ? { limit: options.limit } : {}),

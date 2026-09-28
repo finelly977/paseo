@@ -66,6 +66,31 @@ function conversationItems(prefix: string, count: number): StreamItem[] {
 }
 
 describe("智能体任务状态", () => {
+  it("索引版本与副本同时保存，相同正文保留引用，未带版本的响应取消旧版本", () => {
+    initializeTestSession();
+    const store = useSessionStore.getState();
+    const entries = [
+      {
+        messageId: "u1",
+        clientMessageId: null,
+        text: "问题",
+        assistantPreview: "回答",
+        timestamp: "2026-09-28T00:00:00Z",
+        seqStart: 1,
+      },
+    ];
+    store.setAgentConversationIndex("test-server", "agent-1", entries, "v1");
+    store.setAgentConversationIndex("test-server", "agent-1", structuredClone(entries), "v2");
+    const session = useSessionStore.getState().sessions["test-server"]!;
+    expect(session.agentConversationIndex.get("agent-1")).toBe(entries);
+    expect(session.agentConversationIndexVersion.get("agent-1")).toBe("v2");
+    store.setAgentConversationIndex("test-server", "agent-1", entries);
+    expect(
+      useSessionStore
+        .getState()
+        .sessions["test-server"]!.agentConversationIndexVersion.has("agent-1"),
+    ).toBe(false);
+  });
   it("接收实时任务快照并在任务清空后移除状态", () => {
     initializeTestSession();
     const tasks: TodoEntry[] = [

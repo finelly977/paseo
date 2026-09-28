@@ -6,6 +6,7 @@ import React, {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type UIEvent as ReactUIEvent,
   type RefObject,
 } from "react";
@@ -15,8 +16,10 @@ import { StyleSheet } from "react-native-unistyles";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import {
   getHistoryIndexWaveScale,
+  getHistoryIndexEntryKey,
   getStreamItemDomId,
   resolveHistoryIndexRailLayout,
+  resolveHistoryIndexWindow,
 } from "./history-index-model";
 import type { StreamViewportHandle } from "./strategy";
 
@@ -158,6 +161,7 @@ function ConversationHistoryIndexMarker({
   );
   const handleFocus = useCallback(() => setIsFocused(true), []);
   const handleBlur = useCallback(() => setIsFocused(false), []);
+  const markerData = useMemo(() => ({ historyIndex: entry.sourceIndex }), [entry.sourceIndex]);
   const handlePress = useCallback(() => {
     if (onNavigate) {
       void onNavigate(entry);
@@ -168,6 +172,7 @@ function ConversationHistoryIndexMarker({
 
   return (
     <Pressable
+      dataSet={markerData}
       pointerEvents="auto"
       accessibilityLabel={t("agentStream.historyIndex.jumpTo", { title: entry.title })}
       style={markerStyle}
@@ -204,6 +209,7 @@ export function ConversationHistoryIndex({
   const [reduceMotion, setReduceMotion] = useState(false);
   const pointerFrameRef = useRef<number | null>(null);
   const pointerOffsetRef = useRef<number | null>(null);
+  const pendingFocusRef = useRef<number | null>(null);
   const railLayout = useMemo(
     () =>
       resolveHistoryIndexRailLayout({
@@ -217,6 +223,12 @@ export function ConversationHistoryIndex({
     () => (railLayout.markerCount > 0 ? entries : []),
     [entries, railLayout.markerCount],
   );
+  const markerWindow = resolveHistoryIndexWindow({
+    entryCount: visibleEntries.length,
+    scrollTop: railScrollTop,
+    railHeight: railLayout.railHeight,
+  });
+  const renderedEntries = visibleEntries.slice(markerWindow.start, markerWindow.end);
   const entryByDomId = useMemo(
     () => new Map(entries.map((entry) => [getStreamItemDomId(entry.id), entry])),
     [entries],
@@ -274,7 +286,8 @@ export function ConversationHistoryIndex({
       return;
     }
     const observer = new ResizeObserver((observed) => {
-      setBandHeight(observed[0]?.contentRect.height ?? 0);
+      const height = observed[0]?.contentRect.height;
+      if (height !== undefined && height > 0) setBandHeight(height);
     });
     observer.observe(band);
     return () => observer.disconnect();
@@ -357,6 +370,55 @@ export function ConversationHistoryIndex({
     setRailScrollTop(maxScroll);
   }, [entries.length, railLayout]);
 
+  const handleKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (!(event.target instanceof HTMLElement)) return;
+      const marker = event.target.closest<HTMLElement>("[data-history-index]");
+      if (!marker) return;
+      const current = Number(marker.dataset.historyIndex);
+      let next: number;
+      switch (event.key) {
+        case "ArrowUp":
+          next = current - 1;
+          break;
+        case "ArrowDown":
+          next = current + 1;
+          break;
+        case "Home":
+          next = 0;
+          break;
+        case "End":
+          next = entries.length - 1;
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      next = Math.max(0, Math.min(entries.length - 1, next));
+      const rail = event.currentTarget;
+      const top = next * railLayout.markerPitch;
+      const scrollTop = Math.max(0, Math.min(top, rail.scrollHeight - rail.clientHeight));
+      rail.scrollTop = scrollTop;
+      userScrolledAwayRef.current =
+        scrollTop < rail.scrollHeight - rail.clientHeight - RAIL_BOTTOM_EPSILON;
+      setRailScrollTop(scrollTop);
+      const target = rail.querySelector<HTMLElement>(`[data-history-index="${next}"]`);
+      if (target) target.focus();
+      else pendingFocusRef.current = next;
+    },
+    [entries.length, railLayout.markerPitch],
+  );
+
+  useEffect(() => {
+    const index = pendingFocusRef.current;
+    if (index === null) return;
+    const marker = railRef.current?.querySelector<HTMLElement>(`[data-history-index="${index}"]`);
+    if (marker) {
+      marker.focus();
+      pendingFocusRef.current = null;
+    }
+  }, [markerWindow.start, markerWindow.end]);
+
   const handleMarkerNavigate = useCallback(
     (entry: ConversationHistoryIndexEntry) => {
       dismissHover();
@@ -420,16 +482,7 @@ export function ConversationHistoryIndex({
       setActiveId(null);
       return;
     }
-    let closestMarkerId: string | null = null;
-    let closestMarkerDistance = Number.POSITIVE_INFINITY;
-    for (const entry of visibleEntries) {
-      const distance = Math.abs(entry.sourceIndex - closestEntry.sourceIndex);
-      if (distance < closestMarkerDistance) {
-        closestMarkerDistance = distance;
-        closestMarkerId = entry.id;
-      }
-    }
-    setActiveId(closestMarkerId);
+    setActiveId(getHistoryIndexEntryKey(closestEntry));
   }, [entryByDomId, visibleEntries]);
 
   useEffect(() => {
@@ -485,17 +538,18 @@ export function ConversationHistoryIndex({
           onMouseLeave={handleMouseLeave}
           onScroll={handleRailScroll}
           onClickCapture={handleClickCapture}
+          onKeyDown={handleKeyDown}
         >
           <div style={railContentStyle}>
-            {visibleEntries.map((entry, index) => (
+            {renderedEntries.map((entry, index) => (
               <ConversationHistoryIndexMarker
-                key={entry.id}
+                key={getHistoryIndexEntryKey(entry)}
                 entry={entry}
-                offset={index * railLayout.markerPitch}
+                offset={(markerWindow.start + index) * railLayout.markerPitch}
                 contentPixelHeight={railLayout.contentHeight}
                 visiblePixelHeight={railLayout.railHeight}
-                isActive={activeId === entry.id}
-                isPointerHovered={hoveredIndex === index}
+                isActive={activeId === getHistoryIndexEntryKey(entry)}
+                isPointerHovered={hoveredIndex === markerWindow.start + index}
                 pointerFraction={pointerFraction}
                 reduceMotion={reduceMotion}
                 viewportRef={viewportRef}

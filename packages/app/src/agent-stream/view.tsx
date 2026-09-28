@@ -113,6 +113,7 @@ import { ConversationHistoryIndex } from "./history-index";
 import {
   buildConversationHistoryIndex,
   buildConversationHistoryIndexFromSummaries,
+  matchesHistoryIndexEntry,
   getStreamItemDomId,
   mergeConversationHistoryIndexEntries,
   type ConversationHistoryIndexEntry,
@@ -779,15 +780,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       }
       return buildConversationHistoryIndex(items);
     }, [streamLayout.history, streamLayout.liveHead]);
+    const historyIndexSummaries = useMemo(
+      () => buildConversationHistoryIndexFromSummaries(conversationIndexSummaries),
+      [conversationIndexSummaries],
+    );
     const historyIndexEntries = useMemo(() => {
-      const loadedSummaries = buildConversationHistoryIndexFromSummaries(
-        conversationIndexSummaries,
-      );
       return mergeConversationHistoryIndexEntries({
-        summaries: loadedSummaries,
+        summaries: historyIndexSummaries,
         loaded: loadedHistoryIndexEntries,
       });
-    }, [conversationIndexSummaries, loadedHistoryIndexEntries]);
+    }, [historyIndexSummaries, loadedHistoryIndexEntries]);
 
     const findLoadedHistoryAnchorId = useCallback(
       (entry: ConversationHistoryIndexEntry): string | null => {
@@ -799,8 +801,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         const match = items.find(
           (item) =>
             item.kind === "user_message" &&
-            (item.id === entry.id ||
-              (entry.seqStart !== undefined && item.timelineCursor?.seq === entry.seqStart)),
+            (entry.seqStart === undefined
+              ? item.id === entry.id
+              : item.timelineCursor?.seq === entry.seqStart),
         );
         return match?.id ?? null;
       },
@@ -811,10 +814,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       if (!pendingHistoryNavigation) {
         return;
       }
-      const loaded = loadedHistoryIndexEntries.find(
-        (entry) =>
-          entry.id === pendingHistoryNavigation.id ||
-          (entry.seqStart !== undefined && entry.seqStart === pendingHistoryNavigation.seqStart),
+      const loaded = loadedHistoryIndexEntries.find((entry) =>
+        matchesHistoryIndexEntry(entry, pendingHistoryNavigation),
       );
       if (!loaded) {
         return;
@@ -825,10 +826,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const navigateHistoryIndex = useCallback(
       async (entry: ConversationHistoryIndexEntry) => {
-        const loaded = loadedHistoryIndexEntries.find(
-          (candidate) =>
-            candidate.id === entry.id ||
-            (candidate.seqStart !== undefined && candidate.seqStart === entry.seqStart),
+        const loaded = loadedHistoryIndexEntries.find((candidate) =>
+          matchesHistoryIndexEntry(candidate, entry),
         );
         if (loaded) {
           setPendingHistoryNavigation(null);

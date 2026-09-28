@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 import { projectTimelineRows } from "./timeline-projection.js";
 
@@ -44,4 +45,27 @@ export function buildAgentConversationIndex(rows: readonly AgentTimelineRow[]) {
   }
 
   return entries;
+}
+
+export function getAgentConversationIndexVersion(
+  epoch: string,
+  entries: ReturnType<typeof buildAgentConversationIndex>,
+): string {
+  // 记录可原位修正，不能只用条数或最大序号判定索引未变。
+  return createHash("sha256").update(epoch).update(JSON.stringify(entries)).digest("hex");
+}
+
+interface ConversationIndexPayload {
+  conversationIndexVersion: string;
+  conversationIndex?: ReturnType<typeof buildAgentConversationIndex>;
+}
+
+export function selectAgentConversationIndexPayload(input: {
+  epoch: string;
+  entries: ReturnType<typeof buildAgentConversationIndex>;
+  knownVersion: string | undefined;
+}): ConversationIndexPayload {
+  const conversationIndexVersion = getAgentConversationIndexVersion(input.epoch, input.entries);
+  if (input.knownVersion === conversationIndexVersion) return { conversationIndexVersion };
+  return { conversationIndexVersion, conversationIndex: input.entries };
 }

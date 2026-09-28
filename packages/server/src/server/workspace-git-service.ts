@@ -400,6 +400,7 @@ interface WorkspaceGitTarget {
   forgePrStatusPollSubscription: { unsubscribe: () => void } | null;
   forgePrStatusPollKey: string | null;
   refreshState: WorkspaceGitRefreshState;
+  forgeRefreshState: WorkspaceGitRefreshState;
   latestGit: WorkspaceGitRuntimeSnapshot["git"] | null;
   latestGitLoadedAtMs: number | null;
   latestForge: WorkspaceGitRuntimeSnapshot["forge"] | null;
@@ -528,6 +529,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly deps: WorkspaceGitServiceDependencies;
   private readonly forgeResolver: ForgeResolver;
   private readonly workspaceRefreshLimit = pLimit({
+    concurrency: WORKSPACE_GIT_REFRESH_CONCURRENCY,
+    rejectOnClear: true,
+  });
+  private readonly forgeRefreshLimit = pLimit({
     concurrency: WORKSPACE_GIT_REFRESH_CONCURRENCY,
     rejectOnClear: true,
   });
@@ -690,6 +695,9 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const request = this.normalizeRefreshRequest(options, "getSnapshot", true);
     const target = this.ensureWorkspaceTarget(cwd);
     if (!request.force && target.latestSnapshot) {
+      if (request.includeForge && target.latestForgeLoadedAtMs === null) {
+        return this.requestForgeSnapshot(target, request);
+      }
       return target.latestSnapshot;
     }
 
@@ -991,6 +999,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     this.disposed = true;
     this.disposeController.abort(new WorkspaceGitServiceDisposedError());
     this.workspaceRefreshLimit.clearQueue();
+    this.forgeRefreshLimit.clearQueue();
     this.workspaceObservationSetupLimit.clearQueue();
 
     for (const target of this.workspaceTargets.values()) {
@@ -1162,6 +1171,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       forgePrStatusPollSubscription: null,
       forgePrStatusPollKey: null,
       refreshState: { status: "idle" },
+      forgeRefreshState: { status: "idle" },
       latestGit: null,
       latestGitLoadedAtMs: null,
       latestForge: null,
@@ -2652,7 +2662,78 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     }
   }
 
-  private requestWorkspaceSnapshot(
+  private async requestWorkspaceSnapshot(
+    target: WorkspaceGitTarget,
+    request: WorkspaceGitRefreshRequest,
+  ): Promise<WorkspaceGitRuntimeSnapshot> {
+    // 本地刷新完成即释放并发槽位和本地读者；远端超时不能延长它们的等待。
+    const snapshot = await this.requestLocalSnapshot(target, { ...request, includeForge: false });
+    if (!request.includeForge) {
+      return snapshot;
+    }
+    return this.requestForgeSnapshot(target, request);
+  }
+
+  private requestForgeSnapshot(
+    target: WorkspaceGitTarget,
+    request: WorkspaceGitRefreshRequest,
+  ): Promise<WorkspaceGitRuntimeSnapshot> {
+    const active = target.forgeRefreshState;
+    if (active.status === "in-flight") {
+      if (request.queueIfBusy || (request.force && !active.request.force)) {
+        active.queued = this.mergeRefreshRequests(active.queued, request);
+      }
+      return active.promise;
+    }
+    const promise = this.runForgeRefreshLoop(target, request).finally(() => {
+      target.forgeRefreshState = { status: "idle" };
+    });
+    target.forgeRefreshState = { status: "in-flight", promise, request, queued: null };
+    return promise;
+  }
+
+  private async runForgeRefreshLoop(
+    target: WorkspaceGitTarget,
+    initialRequest: WorkspaceGitRefreshRequest,
+  ): Promise<WorkspaceGitRuntimeSnapshot> {
+    let request = initialRequest;
+    while (!this.disposed && !target.closed) {
+      if (target.refreshState.status === "in-flight") {
+        await target.refreshState.promise;
+      }
+      const facts = target.latestFacts;
+      if (!facts) {
+        throw new Error("Forge refresh requires local checkout facts");
+      }
+      const lookupKey = forgeFactsKey(facts);
+      const forge = await this.forgeRefreshLimit(() =>
+        this.refreshForgeSnapshot(target, request, facts),
+      );
+      if (target.refreshState.status === "in-flight") {
+        await target.refreshState.promise;
+      }
+      if (this.disposed || target.closed) {
+        break;
+      }
+      // 查询期间可以切换分支；旧分支的远端结果不得覆盖新分支。
+      if (!target.latestFacts || lookupKey !== forgeFactsKey(target.latestFacts)) {
+        continue;
+      }
+      target.latestForge = forge;
+      target.latestForgeLoadedAtMs = this.deps.now().getTime();
+      this.rememberSnapshot(target, this.combineSnapshot(target), { notify: request.notify });
+      const state = target.forgeRefreshState;
+      if (state.status !== "in-flight" || !state.queued) {
+        break;
+      }
+      request = state.queued;
+      state.queued = null;
+      state.request = request;
+    }
+    return this.combineSnapshot(target);
+  }
+
+  private requestLocalSnapshot(
     target: WorkspaceGitTarget,
     request: WorkspaceGitRefreshRequest,
   ): Promise<WorkspaceGitRuntimeSnapshot> {
@@ -2873,10 +2954,6 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     if (!facts) {
       facts = await this.refreshGitSnapshot(target, request);
     }
-    if (request.includeForge) {
-      await this.refreshForgeSnapshot(target, request, facts);
-    }
-
     const snapshot = this.combineSnapshot(target);
     target.latestSnapshotLoadedAtMs = this.deps.now().getTime();
     return snapshot;
@@ -3004,7 +3081,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
 
     if (previousForgePrStatusPollKey !== this.getForgePrStatusPollKey(target)) {
       target.latestForge = buildForgeUnavailableSnapshot();
-      target.latestForgeLoadedAtMs = target.latestGitLoadedAtMs;
+      target.latestForgeLoadedAtMs = null;
     }
     return facts;
   }
@@ -3013,7 +3090,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     target: WorkspaceGitTarget,
     request: WorkspaceGitRefreshRequest,
     facts: CheckoutSnapshotFacts,
-  ): Promise<void> {
+  ): Promise<WorkspaceGitRuntimeSnapshot["forge"]> {
     const remoteUrl = target.latestGit?.remoteUrl ?? null;
     const resolution = await this.forgeResolver.resolveFromRemoteUrlAsync(remoteUrl);
     // Every forge gates on the resolver alone: a cloud host matches synchronously
@@ -3021,9 +3098,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     // this async resolution populates), so GitHub Enterprise is no longer gated
     // out by a cloud-only identity check.
     if (!resolution) {
-      target.latestForge = buildUnresolvedRemoteForgeSnapshot(remoteUrl);
-      target.latestForgeLoadedAtMs = this.deps.now().getTime();
-      return;
+      return buildUnresolvedRemoteForgeSnapshot(remoteUrl);
     }
     const forgeService: ForgeService = resolution.service;
     const forceForge = request.force && request.includeForge;
@@ -3042,8 +3117,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     });
     // Carry the resolved forge (probe-aware) so the wire projection labels
     // self-managed GitLab hosts correctly instead of falling back to "github".
-    target.latestForge = { ...forgeSnapshot, forge: resolution.forge };
-    target.latestForgeLoadedAtMs = this.deps.now().getTime();
+    return { ...forgeSnapshot, forge: resolution.forge };
   }
 
   private combineSnapshot(target: WorkspaceGitTarget): WorkspaceGitRuntimeSnapshot {
@@ -3545,6 +3619,13 @@ function buildWorkspaceForgePrStatusPollKey({
     target.headSha ?? null,
     target.headRepositoryOwner ?? null,
   ]);
+}
+
+function forgeFactsKey(facts: CheckoutSnapshotFacts): string {
+  if (!facts.isGit) {
+    return "not-git";
+  }
+  return JSON.stringify([facts.remoteUrl, facts.currentBranch, facts.pullRequestLookupTarget]);
 }
 
 function computeGenericForgeNextInterval(

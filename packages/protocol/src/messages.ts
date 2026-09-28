@@ -1734,6 +1734,8 @@ export const FetchAgentTimelineRequestMessageSchema = z.object({
   type: z.literal("fetch_agent_timeline_request"),
   agentId: z.string(),
   requestId: z.string(),
+  // COMPAT(conversationIndexVersion): v0.2.2 新增可选协商，2027-03-28 复查。
+  conversationIndexVersion: z.string().optional(),
   direction: z.enum(["tail", "before", "after"]).optional(),
   cursor: AgentTimelineCursorSchema.optional(),
   // 0 means "all matching rows for this query window".
@@ -4234,6 +4236,7 @@ export const FetchAgentTimelineResponseMessageSchema = z.object({
     // COMPAT(timelineMergeWindow): v0.2.6 新增，2027-02-28 后移除可选兼容。
     mergeWindow: z.boolean().optional(),
     entries: z.array(AgentTimelineEntryPayloadSchema),
+    conversationIndexVersion: z.string().optional(),
     conversationIndex: z
       .array(
         z.object({

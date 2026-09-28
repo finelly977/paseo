@@ -19,6 +19,19 @@ export interface ConversationHistoryIndexEntry {
   seqStart?: number;
 }
 
+export function getHistoryIndexEntryKey(entry: ConversationHistoryIndexEntry): string {
+  return entry.seqStart === undefined ? entry.id : `timeline-${entry.seqStart}`;
+}
+
+export function matchesHistoryIndexEntry(
+  candidate: ConversationHistoryIndexEntry,
+  target: ConversationHistoryIndexEntry,
+): boolean {
+  return target.seqStart === undefined
+    ? candidate.id === target.id
+    : candidate.seqStart === target.seqStart;
+}
+
 export interface ConversationHistoryIndexSummary {
   messageId: string | null;
   clientMessageId: string | null;
@@ -162,6 +175,26 @@ export function mergeConversationHistoryIndexEntries(params: {
 /** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
 export const HISTORY_INDEX_MARKER_PITCH = 8;
 export const HISTORY_INDEX_MAX_HEIGHT = 480;
+
+interface HistoryIndexWindow {
+  start: number;
+  end: number;
+}
+
+export function resolveHistoryIndexWindow(input: {
+  entryCount: number;
+  scrollTop: number;
+  railHeight: number;
+}): HistoryIndexWindow {
+  if (input.railHeight <= 0 || input.entryCount === 0) return { start: 0, end: 0 };
+  const overscan = 8;
+  const start = Math.max(0, Math.floor(input.scrollTop / HISTORY_INDEX_MARKER_PITCH) - overscan);
+  const end = Math.min(
+    input.entryCount,
+    Math.ceil((input.scrollTop + input.railHeight) / HISTORY_INDEX_MARKER_PITCH) + overscan,
+  );
+  return { start: Math.min(start, end), end };
+}
 
 export interface HistoryIndexRailLayout {
   markerCount: number;

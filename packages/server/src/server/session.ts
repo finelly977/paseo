@@ -106,6 +106,7 @@ import {
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import {
   buildAgentConversationIndex,
+  selectAgentConversationIndexPayload,
   LEGACY_CONVERSATION_INDEX_LIMIT,
 } from "./agent/agent-conversation-index.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
@@ -6812,6 +6813,11 @@ export class Session {
       const conversationIndex = supportsFullConversationIndex
         ? fullConversationIndex
         : fullConversationIndex.slice(-LEGACY_CONVERSATION_INDEX_LIMIT);
+      const conversationIndexPayload = selectAgentConversationIndexPayload({
+        epoch: selectedTimeline.timeline.epoch,
+        entries: conversationIndex,
+        knownVersion: msg.conversationIndexVersion,
+      });
       const supportsReasoningMerge = source
         ? this.supportsForSource(CLIENT_CAPS.reasoningMergeEnum, source)
         : this.supports(CLIENT_CAPS.reasoningMergeEnum);
@@ -6847,7 +6853,7 @@ export class Session {
                 ? entry.collapsed
                 : entry.collapsed.filter((value) => value !== "reasoning_merge"),
             })),
-            conversationIndex,
+            ...conversationIndexPayload,
             error: null,
           },
         },

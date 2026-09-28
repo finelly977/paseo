@@ -145,12 +145,15 @@ describe("ConversationHistoryIndex web rail", () => {
     return rail;
   }
 
-  function waveScales(rail: HTMLElement): number[] {
+  function waveScales(rail: HTMLElement): Map<number, number> {
     const markers = rail.querySelectorAll('div[aria-hidden="true"]');
-    return Array.from(markers, (marker) => {
-      const match = (marker as HTMLElement).style.transform.match(/scaleX\(([\d.]+)\)/);
-      return match ? Number(match[1]) : 0;
-    });
+    return new Map(
+      Array.from(markers, (marker): [number, number] => {
+        const match = (marker as HTMLElement).style.transform.match(/scaleX\(([\d.]+)\)/);
+        const index = Number(marker.parentElement?.getAttribute("data-history-index"));
+        return [index, match ? Number(match[1]) : 0];
+      }),
+    );
   }
 
   it("索引超出轨道高度时默认显示最新（底部）", () => {
@@ -185,11 +188,11 @@ describe("ConversationHistoryIndex web rail", () => {
     });
 
     const scales = waveScales(rail);
-    expect(scales.length).toBe(200);
+    expect(scales.size).toBeLessThan(100);
     // 指针分数 = (240 + 1124) / 1592 ≈ 0.857 → 第 171 个刻度最大
-    expect(scales[171]).toBeCloseTo(2.75, 1);
-    expect(scales[0]).toBe(1);
-    expect(scales[30]).toBe(1);
+    expect(scales.get(171)).toBeCloseTo(2.75, 1);
+    expect(scales.get(199)).toBe(1);
+    expect(scales.has(0)).toBe(false);
   });
 
   it("轨道滚动到历史位置后悬停仍产生山峰动画", async () => {
@@ -219,8 +222,8 @@ describe("ConversationHistoryIndex web rail", () => {
 
     const scales = waveScales(rail);
     // 指针分数 = (240 + 500) / 1592 ≈ 0.465 → 第 92 个刻度最大
-    expect(scales[92]).toBeCloseTo(2.75, 1);
-    expect(scales[0]).toBe(1);
+    expect(scales.get(92)).toBeCloseTo(2.75, 1);
+    expect(scales.get(60)).toBe(1);
   });
 
   it("条目远超轨道高度时，悬停波浪仍只在可见区域内局部出现", async () => {
@@ -247,12 +250,12 @@ describe("ConversationHistoryIndex web rail", () => {
     });
 
     const scales = waveScales(rail);
-    expect(scales.length).toBe(1000);
+    expect(scales.size).toBeLessThan(100);
     // 指针内容坐标 = (240 + 7524) + 6 = 7770，第 970 个刻度中心 = 7766
-    expect(scales[970]).toBeCloseTo(2.75, 1);
+    expect(scales.get(970)).toBeCloseTo(2.75, 1);
     // 波浪半径 = 480 * 0.14 ≈ 67px，约 8 个刻度：可见区域内远离指针处完全不动
-    expect(scales[900]).toBe(1);
-    expect(scales[0]).toBe(1);
+    expect(scales.get(999)).toBe(1);
+    expect(scales.has(0)).toBe(false);
   });
 });
 

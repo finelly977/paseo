@@ -409,6 +409,7 @@ export interface SessionState {
   agentTimelineHasOlder: Map<string, boolean>;
   agentTimelineOlderFetchInFlight: Map<string, boolean>;
   agentConversationIndex: Map<string, AgentConversationIndexEntry[]>;
+  agentConversationIndexVersion: Map<string, string>;
   historySyncGeneration: number;
   agentHistorySyncGeneration: Map<string, number>;
   agentAuthoritativeHistoryApplied: Map<string, boolean>;
@@ -543,6 +544,7 @@ interface SessionStoreActions {
     serverId: string,
     agentId: string,
     entries: AgentConversationIndexEntry[],
+    version?: string,
   ) => void;
   bumpHistorySyncGeneration: (serverId: string) => void;
   markAgentHistorySynchronized: (serverId: string, agentId: string) => void;
@@ -797,6 +799,7 @@ function createInitialSessionState(
     agentTimelineHasOlder: new Map(),
     agentTimelineOlderFetchInFlight: new Map(),
     agentConversationIndex: new Map(),
+    agentConversationIndexVersion: new Map(),
     historySyncGeneration: 0,
     agentHistorySyncGeneration: new Map(),
     agentAuthoritativeHistoryApplied: new Map(),
@@ -1547,23 +1550,34 @@ export const useSessionStore = create<SessionStore>()(
         });
       },
 
-      setAgentConversationIndex: (serverId, agentId, entries) => {
+      setAgentConversationIndex: (serverId, agentId, entries, version) => {
         set((prev) => {
           const session = prev.sessions[serverId];
           if (!session) {
             return prev;
           }
           const current = session.agentConversationIndex.get(agentId);
-          if (current && equal(current, entries)) {
+          const unchanged = current !== undefined && equal(current, entries);
+          if (unchanged && session.agentConversationIndexVersion.get(agentId) === version) {
             return prev;
           }
           const next = new Map(session.agentConversationIndex);
-          next.set(agentId, entries);
+          next.set(agentId, unchanged ? current : entries);
+          const versions = new Map(session.agentConversationIndexVersion);
+          if (version === undefined) {
+            versions.delete(agentId);
+          } else {
+            versions.set(agentId, version);
+          }
           return {
             ...prev,
             sessions: {
               ...prev.sessions,
-              [serverId]: { ...session, agentConversationIndex: next },
+              [serverId]: {
+                ...session,
+                agentConversationIndex: next,
+                agentConversationIndexVersion: versions,
+              },
             },
           };
         });

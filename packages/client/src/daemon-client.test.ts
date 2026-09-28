@@ -1134,6 +1134,7 @@ test("honors explicit fetchAgentTimeline timeout below the session RPC default",
 
   const responsePromise = client.fetchAgentTimeline("agent-1", {
     requestId: "req-timeline-1",
+    conversationIndexVersion: "index-version-1",
     direction: "tail",
     limit: 0,
     conversationLimit: 50,
@@ -1155,6 +1156,7 @@ test("honors explicit fetchAgentTimeline timeout below the session RPC default",
   expect(parseSentFrame(mock.sent[0])).toEqual({
     type: "fetch_agent_timeline_request",
     requestId: "req-timeline-1",
+    conversationIndexVersion: "index-version-1",
     agentId: "agent-1",
     direction: "tail",
     limit: 0,

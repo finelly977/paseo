@@ -26,6 +26,13 @@ type AssistantCanonicalCandidate = CanonicalCandidate & {
   row: AgentTimelineRow & { item: AssistantMessageItem };
 };
 
+interface HistoryMatchIndex {
+  identities: Map<string, CanonicalCandidate[]>;
+  structures: Map<string, CanonicalCandidate[]>;
+  assistantGroups: Map<string, AssistantCanonicalCandidate[][]>;
+  userPrefix: number[];
+}
+
 const ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN = "\n\n---\n\n";
 
 /** 按提供方顺序对齐规范时间线元数据，不凭空推断回合归属。 */
@@ -45,17 +52,23 @@ export function reconcileProviderHistory(
     used: false,
   }));
   const structuralCounts = countStructuralOccurrences(canonicalRows, providerEntries);
+  const index = buildHistoryMatchIndex(remaining);
   const providerRows = providerEntries.map((entry) => {
-    const match = takeMatch(remaining, entry.item, structuralCounts);
+    const match = takeMatch(index, entry.item, structuralCounts);
     return { entry, match };
   });
   const rows: AgentTimelineRow[] = [];
-  const emittedCanonicalIndexes = findRedundantProviderAssistantRows(remaining, providerRows);
+  const emittedCanonicalIndexes = findRedundantProviderAssistantRows(
+    remaining,
+    providerRows,
+    index,
+  );
+  let prefixEnd = 0;
 
   for (const { entry, match } of providerRows) {
     if (match) {
-      for (const candidate of remaining) {
-        if (candidate.canonicalIndex >= match.canonicalIndex) break;
+      while (prefixEnd < match.canonicalIndex) {
+        const candidate = remaining[prefixEnd++]!;
         if (!emittedCanonicalIndexes.has(candidate.canonicalIndex)) {
           rows.push({ ...candidate.row });
           emittedCanonicalIndexes.add(candidate.canonicalIndex);
@@ -83,20 +96,27 @@ export function reconcileProviderHistory(
       }
     }
   }
-  rows.forEach((row, index) => {
-    row.seq = index + 1;
+  rows.forEach((row, position) => {
+    row.seq = position + 1;
   });
   return rows;
 }
 
 function takeMatch(
-  remaining: CanonicalCandidate[],
+  index: HistoryMatchIndex,
   provider: AgentTimelineItem,
   structuralCounts: Map<string, { canonical: number; provider: number }>,
 ): ProviderHistoryMatch | null {
-  const strong = remaining.find(
-    (candidate) => !candidate.used && hasSharedIdentity(candidate.row, provider),
-  );
+  let strong: CanonicalCandidate | undefined;
+  if (provider.type === "user_message") {
+    for (const identity of [provider.clientMessageId, provider.messageId]) {
+      if (!identity) continue;
+      const candidate = index.identities.get(identity)?.find((entry) => !entry.used);
+      if (candidate && (!strong || candidate.canonicalIndex < strong.canonicalIndex)) {
+        strong = candidate;
+      }
+    }
+  }
   if (strong) {
     strong.used = true;
     return {
@@ -108,9 +128,7 @@ function takeMatch(
   }
 
   const assistantChunks =
-    provider.type === "assistant_message"
-      ? findAssistantMessageChunkMatch(remaining, provider)
-      : null;
+    provider.type === "assistant_message" ? findAssistantMessageChunkMatch(index, provider) : null;
   if (assistantChunks) {
     for (const candidate of assistantChunks) {
       candidate.used = true;
@@ -124,9 +142,9 @@ function takeMatch(
     };
   }
 
-  const structural = remaining.find(
-    (candidate) => !candidate.used && structurallyMatches(candidate.row.item, provider),
-  );
+  const structural = index.structures
+    .get(structuralLookupKey(provider))
+    ?.find((candidate) => !candidate.used && structurallyMatches(candidate.row.item, provider));
   if (!structural) return null;
   structural.used = true;
   const key = structuralKey(provider);
@@ -140,15 +158,11 @@ function takeMatch(
 }
 
 function findAssistantMessageChunkMatch(
-  remaining: CanonicalCandidate[],
+  index: HistoryMatchIndex,
   provider: AssistantMessageItem,
 ): AssistantCanonicalCandidate[] | null {
-  const matchingGroups = collectAssistantMessageGroups(remaining).filter(
-    (group) =>
-      group.every((candidate) => !candidate.used) &&
-      normalizeAssistantMessageText(group.map((candidate) => candidate.row.item.text).join("")) ===
-        normalizeAssistantMessageText(provider.text),
-  );
+  const groups = index.assistantGroups.get(normalizeAssistantMessageText(provider.text)) ?? [];
+  const matchingGroups = groups.filter((group) => group.every((candidate) => !candidate.used));
   const firstGroup = matchingGroups[0];
   if (!firstGroup) {
     return null;
@@ -167,7 +181,7 @@ function findAssistantMessageChunkMatch(
     matchingGroups.find(
       (group) =>
         group.some((candidate) => candidate.row.turnId !== undefined) &&
-        !hasUserMessageBetween(remaining, firstGroupEnd, group.at(-1)!.canonicalIndex),
+        !hasUserMessageBetween(index.userPrefix, firstGroupEnd, group.at(-1)!.canonicalIndex),
     ) ?? firstGroup
   );
 }
@@ -219,9 +233,9 @@ function findRedundantProviderAssistantRows(
     entry: ProviderHistoryTimelineEntry;
     match: ProviderHistoryMatch | null;
   }>,
+  index: HistoryMatchIndex,
 ): Set<number> {
   const redundant = new Set<number>();
-  const groups = collectAssistantMessageGroups(candidates);
   for (const { entry, match } of providerRows) {
     if (
       entry.item.type !== "assistant_message" ||
@@ -233,6 +247,7 @@ function findRedundantProviderAssistantRows(
     ) {
       continue;
     }
+    const groups = index.assistantGroups.get(normalizeAssistantMessageText(entry.item.text)) ?? [];
     for (const group of groups) {
       const first = group[0]!;
       const last = group.at(-1)!;
@@ -240,10 +255,7 @@ function findRedundantProviderAssistantRows(
         group.some((candidate) => candidate.used) ||
         first.row.turnId !== undefined ||
         first.row.item.messageId !== entry.item.messageId ||
-        normalizeAssistantMessageText(
-          group.map((candidate) => candidate.row.item.text).join(""),
-        ) !== normalizeAssistantMessageText(entry.item.text) ||
-        hasUserMessageBetween(candidates, last.canonicalIndex, match.canonicalIndex)
+        hasUserMessageBetween(index.userPrefix, last.canonicalIndex, match.canonicalIndex)
       ) {
         continue;
       }
@@ -257,15 +269,68 @@ function findRedundantProviderAssistantRows(
 }
 
 function hasUserMessageBetween(
-  candidates: readonly CanonicalCandidate[],
+  userPrefix: readonly number[],
   leftIndex: number,
   rightIndex: number,
 ): boolean {
   const start = Math.min(leftIndex, rightIndex) + 1;
   const end = Math.max(leftIndex, rightIndex);
-  return candidates
-    .slice(start, end)
-    .some((candidate) => candidate.row.item.type === "user_message");
+  return start < end && userPrefix[end]! > userPrefix[start]!;
+}
+
+function buildHistoryMatchIndex(candidates: CanonicalCandidate[]): HistoryMatchIndex {
+  const index: HistoryMatchIndex = {
+    identities: new Map(),
+    structures: new Map(),
+    assistantGroups: new Map(),
+    userPrefix: [0],
+  };
+  for (const candidate of candidates) {
+    const { row } = candidate;
+    const isUser = row.item.type === "user_message";
+    index.userPrefix.push(index.userPrefix.at(-1)! + Number(isUser));
+    if (row.item.type === "user_message") {
+      const identities = new Set([
+        row.item.clientMessageId,
+        row.item.messageId,
+        row.providerMessageId,
+      ]);
+      for (const identity of identities) {
+        if (!identity) continue;
+        const matches = index.identities.get(identity) ?? [];
+        matches.push(candidate);
+        index.identities.set(identity, matches);
+      }
+    }
+    const key = structuralLookupKey(row.item);
+    const matches = index.structures.get(key) ?? [];
+    matches.push(candidate);
+    index.structures.set(key, matches);
+  }
+  // 分组只取决于规范记录的相邻位置，不随匹配过程改变；正文只拼接一次。
+  for (const group of collectAssistantMessageGroups(candidates)) {
+    const text = normalizeAssistantMessageText(
+      group.map((candidate) => candidate.row.item.text).join(""),
+    );
+    const matches = index.assistantGroups.get(text) ?? [];
+    matches.push(group);
+    index.assistantGroups.set(text, matches);
+  }
+  return index;
+}
+
+function structuralLookupKey(item: AgentTimelineItem): string {
+  // 非用户条目仍由深比较判定，保留对象字段顺序不同但内容相同的匹配语义。
+  switch (item.type) {
+    case "user_message":
+      return `user:${item.text}`;
+    case "tool_call":
+      return `tool:${item.callId}`;
+    case "assistant_message":
+      return `assistant:${item.text}`;
+    default:
+      return item.type;
+  }
 }
 
 function mergeMatchedRow(
@@ -302,16 +367,6 @@ function structuralKey(item: AgentTimelineItem): string {
   return item.type === "user_message"
     ? `user:${item.text}`
     : `${item.type}:${JSON.stringify(item)}`;
-}
-
-function hasSharedIdentity(row: AgentTimelineRow, provider: AgentTimelineItem): boolean {
-  if (row.item.type !== "user_message" || provider.type !== "user_message") return false;
-  const identities = [row.item.clientMessageId, row.item.messageId, row.providerMessageId].filter(
-    Boolean,
-  );
-  return identities.some(
-    (identity) => identity === provider.clientMessageId || identity === provider.messageId,
-  );
 }
 
 function structurallyMatches(left: AgentTimelineItem, right: AgentTimelineItem): boolean {
