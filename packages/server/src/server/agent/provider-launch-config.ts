@@ -1,4 +1,5 @@
 import { isAbsolute } from "node:path";
+import { LRUCache } from "lru-cache";
 import {
   executableExists,
   findExecutable,
@@ -121,6 +122,32 @@ export async function checkProviderLaunchAvailable(
     available: resolvedPath !== null,
     resolvedPath,
   };
+}
+
+const launchAvailability = new LRUCache<string, Promise<ProviderLaunchAvailability>>({ max: 64 });
+
+// 可用性检查与正式启动共享短期探测；手动诊断仍使用上面的实时检查。
+export function getProviderLaunchAvailability(
+  launch: ResolvedProviderLaunch,
+): Promise<ProviderLaunchAvailability> {
+  const key = JSON.stringify([launch, process.env.PATH, process.env.PATHEXT, process.cwd()]);
+  const existing = launchAvailability.get(key);
+  if (existing) return existing;
+  const pending = checkProviderLaunchAvailable(launch).then(
+    (availability) => {
+      if (launchAvailability.get(key) === pending) {
+        if (availability.available) launchAvailability.set(key, pending, { ttl: 60_000 });
+        else launchAvailability.delete(key);
+      }
+      return availability;
+    },
+    (error: unknown) => {
+      if (launchAvailability.get(key) === pending) launchAvailability.delete(key);
+      throw error;
+    },
+  );
+  launchAvailability.set(key, pending);
+  return pending;
 }
 
 export async function resolveProviderCommandPrefix(

@@ -1,10 +1,11 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
   checkProviderLaunchAvailable,
+  getProviderLaunchAvailability,
   createProviderEnv,
   migrateProviderSettings,
   ProviderOverrideSchema,
@@ -45,6 +46,37 @@ function createExecutable(dir: string, name: string, body = "echo test-version\n
     path: file,
   };
 }
+
+test("并发与串行启动复用一次可执行文件探测，路径变化不会共用结果", async () => {
+  const directory = makeTempDir();
+  const counter = path.join(directory, "probes.txt");
+  const executable = createExecutable(directory, "provider-probe");
+  writeFileSync(
+    executable.path,
+    process.platform === "win32"
+      ? `@echo probe>>"${counter}"\r\n@echo version\r\n`
+      : `#!/bin/sh\necho probe >> '${counter}'\necho version\n`,
+  );
+  const launch = await resolveProviderLaunch({ defaultBinary: executable.path });
+  await Promise.all(Array.from({ length: 8 }, () => getProviderLaunchAvailability(launch)));
+  await getProviderLaunchAvailability(launch);
+  expect(readFileSync(counter, "utf8").trim().split(/\r?\n/)).toEqual(["probe"]);
+  process.env.PATH = `${directory}${path.delimiter}${originalPath}`;
+  await getProviderLaunchAvailability(launch);
+  expect(readFileSync(counter, "utf8").trim().split(/\r?\n/)).toEqual(["probe", "probe"]);
+});
+
+test("缺失的程序不缓存，安装后下一次立即可用", async () => {
+  const directory = makeTempDir();
+  const file = path.join(
+    directory,
+    process.platform === "win32" ? "new-provider.cmd" : "new-provider",
+  );
+  const launch = await resolveProviderLaunch({ defaultBinary: file });
+  expect((await getProviderLaunchAvailability(launch)).available).toBe(false);
+  createExecutable(directory, "new-provider");
+  expect((await getProviderLaunchAvailability(launch)).available).toBe(true);
+});
 
 describe("resolveProviderCommandPrefix", () => {
   test("uses resolved default command in default mode", async () => {

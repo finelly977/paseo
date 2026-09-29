@@ -1,3 +1,4 @@
+import { LRUCache } from "lru-cache";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -43,6 +44,7 @@ import { importSessionFromPersistence } from "../../provider-session-import.js";
 import { runProviderTurn } from "../provider-runner.js";
 import {
   checkProviderLaunchAvailable,
+  getProviderLaunchAvailability,
   resolveProviderLaunch,
   type ProviderRuntimeSettings,
   type ResolvedProviderLaunch,
@@ -1442,12 +1444,11 @@ export class PiRpcAgentSession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-    await this.requestEntryCapture("history");
-    yield* streamPiHistory(
-      this.provider,
-      await this.runtimeSession.getMessages(),
-      this.capturedUserEntries,
-    );
+    const [messages] = await Promise.all([
+      this.runtimeSession.getMessages(),
+      this.requestEntryCapture("history"),
+    ]);
+    yield* streamPiHistory(this.provider, messages, this.capturedUserEntries);
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -2498,6 +2499,8 @@ export class PiRpcAgentClient implements AgentClient {
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly providerParams: PiProviderParams;
   private readonly runtime: PiRuntime;
+  private readonly metadataProbes = new LRUCache<string, Promise<PiModel[]>>({ max: 32 });
+  private readonly mcpAdapterProbes = new LRUCache<string, Promise<boolean>>({ max: 32 });
 
   constructor(options: PiRpcAgentClientOptions) {
     this.provider = PI_PROVIDER;
@@ -2624,19 +2627,13 @@ export class PiRpcAgentClient implements AgentClient {
   }
 
   async fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
-    const runtimeSession = await this.runtime.startSession({
-      cwd: options.scope === "global" ? homedir() : options.cwd,
-    });
-    try {
-      const models = transformPiModels(
-        (await runtimeSession.getAvailableModels(PI_CATALOG_REQUEST_TIMEOUT_MS)).map((model) =>
-          mapPiModel(model, PI_PROVIDER),
-        ),
-      );
-      return { models, modes: [...PI_MODES], defaultModeId: DEFAULT_PI_MODE_ID };
-    } finally {
-      await runtimeSession.close();
-    }
+    const cwd = options.scope === "global" ? homedir() : options.cwd;
+    const models = await this.probeMetadata(cwd, undefined, options.force);
+    return {
+      models: transformPiModels(models.map((model) => mapPiModel(model, PI_PROVIDER))),
+      modes: [...PI_MODES],
+      defaultModeId: DEFAULT_PI_MODE_ID,
+    };
   }
 
   async listFeatures(_config: AgentSessionConfig): Promise<AgentFeature[]> {
@@ -2667,7 +2664,7 @@ export class PiRpcAgentClient implements AgentClient {
   async isAvailable(): Promise<boolean> {
     try {
       const launch = await this.resolvePiLaunch();
-      const availability = await checkProviderLaunchAvailable(launch);
+      const availability = await getProviderLaunchAvailability(launch);
       return availability.available;
     } catch {
       return false;
@@ -2715,20 +2712,93 @@ export class PiRpcAgentClient implements AgentClient {
   }
 
   private async detectMcpAdapter(cwd: string, env?: Record<string, string>): Promise<boolean> {
-    const runtimeSession = await this.runtime.startSession({ cwd, env }).catch((error) => {
-      this.logger.debug({ err: error, cwd }, "Pi MCP adapter probe failed to start");
-      return null;
-    });
-    if (!runtimeSession) {
-      return false;
-    }
+    const probeEnv = this.metadataEnvironment(env);
+    const key = this.metadataKey(cwd, probeEnv);
+    const existing = this.mcpAdapterProbes.get(key);
+    if (existing) return existing;
+    const commands = (async () => {
+      const session = await this.runtime.startSession({ cwd, env: probeEnv, noSession: true });
+      try {
+        return await session.getCommands();
+      } finally {
+        await session.close();
+      }
+    })();
+    return this.rememberMcpProbe(key, commands);
+  }
+
+  private metadataEnvironment(env?: Record<string, string>): Record<string, string> {
+    // 身份变量只用于正在运行的会话，不影响同目录的只读能力探测。
+    const probeEnv = { ...this.runtimeSettings?.env, ...env };
+    delete probeEnv.PASEO_AGENT_ID;
+    delete probeEnv.PASEO_AGENT_CWD;
+    return probeEnv;
+  }
+
+  private metadataKey(cwd: string, env: Record<string, string>): string {
+    return JSON.stringify([
+      resolvePath(cwd),
+      Object.entries(env).sort(([a], [b]) => a.localeCompare(b)),
+      process.env.PATH,
+      process.env.PI_CODING_AGENT_DIR,
+    ]);
+  }
+
+  private rememberMcpProbe(key: string, commands: Promise<PiRpcSlashCommand[]>): Promise<boolean> {
+    const probe = commands
+      .then((list) => {
+        if (this.mcpAdapterProbes.get(key) === probe)
+          this.mcpAdapterProbes.set(key, probe, { ttl: 60_000 });
+        return list.some(isPiMcpAdapterCommand);
+      })
+      .catch((error: unknown) => {
+        if (this.mcpAdapterProbes.get(key) === probe) this.mcpAdapterProbes.delete(key);
+        throw error;
+      });
+    this.mcpAdapterProbes.set(key, probe);
+    return probe;
+  }
+
+  private probeMetadata(
+    cwd: string,
+    env?: Record<string, string>,
+    force = false,
+  ): Promise<PiModel[]> {
+    const probeEnv = this.metadataEnvironment(env);
+    const key = this.metadataKey(cwd, probeEnv);
+    const existing = this.metadataProbes.get(key);
+    if (existing && !force) return existing;
+    const probe = this.loadMetadata(cwd, probeEnv, key)
+      .then((metadata) => {
+        if (this.metadataProbes.get(key) === probe)
+          this.metadataProbes.set(key, probe, { ttl: 60_000 });
+        return metadata;
+      })
+      .catch((error: unknown) => {
+        if (this.metadataProbes.get(key) === probe) this.metadataProbes.delete(key);
+        throw error;
+      });
+    this.metadataProbes.set(key, probe);
+    return probe;
+  }
+
+  private async loadMetadata(
+    cwd: string,
+    env: Record<string, string>,
+    key: string,
+  ): Promise<PiModel[]> {
+    const session = this.runtime.startSession({ cwd, env, noSession: true });
+    const commands = session.then((runtime) => runtime.getCommands());
+    const adapter = this.rememberMcpProbe(key, commands);
     try {
-      return (await runtimeSession.getCommands()).some(isPiMcpAdapterCommand);
-    } catch (error) {
-      this.logger.debug({ err: error, cwd }, "Pi MCP adapter probe failed");
-      return false;
+      const [models] = await Promise.all([
+        session.then((runtime) => runtime.getAvailableModels(PI_CATALOG_REQUEST_TIMEOUT_MS)),
+        commands,
+        adapter,
+      ]);
+      return models;
     } finally {
-      await runtimeSession.close().catch(() => undefined);
+      await (await session).close();
     }
   }
 

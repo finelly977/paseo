@@ -36,6 +36,12 @@ Pi and OMP control-plane RPCs wait 60 seconds by default. Override the provider'
 
 Pi import discovery reads Pi's persisted JSONL session files because Pi RPC does not expose a recent-session listing command. Resume and full history hydration still go through `pi --mode rpc` using the session file as `nativeHandle`.
 
+Pi 的 MCP 能力检查按目录与环境短期复用。模型预热在同一个 `--no-session` 探测进程内同时读取命令和模型；恢复只等待命令能力，不等待慢模型目录。无预热时仍保留独立能力探测，因为 `--mcp-config` 必须在正式进程启动前决定。不可为了省进程把未知 MCP 参数直接交给不支持适配器的 Pi。原生消息与扩展捕获的用户条目标识可并行读取，但必须全部成功后再生成权威历史。
+
+OpenCode 的模型元数据缓存以服务事件源（服务代际）和工作目录隔离，有界缓存 60 秒，强制目录刷新绕过旧结果。会话历史不缓存、不截断，恢复时同时读取会话回退边界与完整消息并等待两者成功。
+
+Grok/通用 ACP 恢复成功返回的模型目录可以服务同目录的紧接着的目录请求；自定义启动环境和有专用模型解析器的提供方不走此复用。恢复响应未带模型目录时正常执行专门探测。不得把 `session/load` 换成没有历史回放的 `session/resume` 来伪造加载提速。
+
 The Pi 0.87 RPC protocol exposes several capabilities that Paseo does not yet surface as dedicated product controls: native steering and follow-up queues (including queue clearing and delivery modes), session fork/clone and branch-summary workflows, auto-retry control and retry cancellation, HTML export, provider-session naming, direct RPC shell execution, and fire-and-forget extension surfaces such as status text, widgets, title changes, and editor-prefill requests. Model/thinking selection, compaction, automatic compaction, session resume/import, conversation rewind, slash commands, images, extension questions, and MCP-through-adapter are already covered. Pi's own documentation explicitly says that core Pi does not include native subagents, plan mode, permission popups, built-in todos, background shell jobs, or built-in MCP; those are extension/package choices rather than missing Paseo mappings.
 
 OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled.

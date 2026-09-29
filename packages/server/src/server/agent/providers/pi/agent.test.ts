@@ -153,6 +153,109 @@ test("keeps normal Pi agent sessions persisted", async () => {
   await session.close();
 });
 
+test("Pi 模型预热与同目录 MCP 恢复共用一次无持久化探测", async () => {
+  const pi = new FakePi();
+  pi.queueCommands([{ name: "mcp", source: "extension" }]);
+  const client = createClient(pi);
+  const config = createConfig({
+    mcpServers: { paseo: { type: "http", url: "http://127.0.0.1:6768/mcp" } },
+  });
+  await client.fetchCatalog({ scope: "workspace", cwd: config.cwd, force: false });
+  const session = await client.resumeSession(
+    {
+      provider: "pi",
+      sessionId: "history",
+      nativeHandle: "/tmp/history.jsonl",
+      metadata: { cwd: config.cwd },
+    },
+    config,
+    { env: { PASEO_AGENT_ID: "agent-1", PASEO_AGENT_CWD: config.cwd } },
+  );
+  expect(pi.recordedLaunches).toHaveLength(2);
+  expect(pi.recordedLaunches[0].noSession).toBe(true);
+  expect(session.capabilities.supportsMcpServers).toBe(true);
+  expect(pi.recordedLaunches[1].session).toBe("/tmp/history.jsonl");
+  await session.close();
+});
+
+test("Pi 并发预热共享探测，强制刷新和目录变更重新探测", async () => {
+  const pi = new FakePi();
+  const client = createClient(pi);
+  const options = { scope: "workspace" as const, cwd: "/workspace", force: false };
+  await Promise.all(Array.from({ length: 8 }, () => client.fetchCatalog(options)));
+  expect(pi.recordedLaunches).toHaveLength(1);
+  await client.fetchCatalog({ ...options, force: true });
+  await client.fetchCatalog({ ...options, cwd: "/other" });
+  expect(pi.recordedLaunches.map((launch) => [launch.cwd, launch.noSession])).toEqual([
+    ["/workspace", true],
+    ["/workspace", true],
+    ["/other", true],
+  ]);
+});
+
+test("Pi 不同运行环境的 MCP 能力分别探测", async () => {
+  const pi = new FakePi();
+  const client = createClient(pi);
+  const config = createConfig({
+    mcpServers: { paseo: { type: "http", url: "http://127.0.0.1:6768/mcp" } },
+  });
+  const first = await client.createSession(config, { env: { CUSTOM_TOOLS: "one" } });
+  const second = await client.createSession(config, { env: { CUSTOM_TOOLS: "two" } });
+  expect(pi.recordedLaunches).toHaveLength(4);
+  expect(
+    pi.recordedLaunches.filter((launch) => launch.noSession).map((launch) => launch.env),
+  ).toEqual([{ CUSTOM_TOOLS: "one" }, { CUSTOM_TOOLS: "two" }]);
+  await first.close();
+  await second.close();
+});
+
+test("Pi 模型目录尚未返回时，已完成的能力检查不阻塞会话恢复", async () => {
+  const modelsReady = Promise.withResolvers<void>();
+  const pi = new FakePi();
+  pi.queueCommands([{ name: "mcp", source: "extension" }]);
+  pi.queueSessionSetup((session) => {
+    session.availableModelsReady = modelsReady.promise;
+  });
+  const client = createClient(pi);
+  const config = createConfig({
+    mcpServers: { paseo: { type: "http", url: "http://127.0.0.1:6768/mcp" } },
+  });
+  const catalog = client.fetchCatalog({ scope: "workspace", cwd: config.cwd, force: false });
+  try {
+    const session = await client.resumeSession(
+      {
+        provider: "pi",
+        sessionId: "old",
+        nativeHandle: "/tmp/old.jsonl",
+        metadata: { cwd: config.cwd },
+      },
+      config,
+    );
+    expect(pi.recordedLaunches).toHaveLength(2);
+    expect(session.capabilities.supportsMcpServers).toBe(true);
+    await session.close();
+  } finally {
+    modelsReady.resolve();
+    await catalog;
+  }
+});
+
+test("Pi 能力探测失败后不缓存错误，也不假装没有 MCP", async () => {
+  const pi = new FakePi();
+  pi.queueSessionSetup((session) => {
+    session.getCommandsError = new Error("get_commands failed");
+  });
+  const client = createClient(pi);
+  const options = { scope: "workspace" as const, cwd: "/workspace", force: false };
+  await expect(client.fetchCatalog(options)).rejects.toThrow("get_commands failed");
+  expect(await client.fetchCatalog(options)).toEqual({
+    models: [],
+    modes: expect.any(Array),
+    defaultModeId: "full",
+  });
+  expect(pi.recordedLaunches).toHaveLength(2);
+});
+
 test("applies Pi read-only mode through the bundled integration extension", async () => {
   const pi = new FakePi();
   const client = createClient(pi);
@@ -1990,7 +2093,7 @@ describe("PiRpcAgentClient", () => {
     expect(pi.recordedLaunches).toHaveLength(2);
     expect(pi.recordedLaunches[0]).toMatchObject({
       cwd: "/tmp/paseo-pi-rpc-test",
-      argv: ["pi", "--mode", "rpc"],
+      argv: ["pi", "--mode", "rpc", "--no-session"],
     });
     const actualLaunch = pi.recordedLaunches[1]!;
     expect(actualLaunch.extensionPaths).toHaveLength(1);

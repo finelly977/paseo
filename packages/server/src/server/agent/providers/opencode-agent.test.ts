@@ -298,6 +298,146 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     model: TEST_MODEL,
   });
 
+  test("同一服务和目录并发恢复只读取一次模型元数据，不同目录独立读取", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const clients = Array.from({ length: 3 }, () => new TestOpenCodeClient());
+    for (const fake of clients) runtime.enqueueClient(fake);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const sessions = await Promise.all([
+      client.resumeSession({
+        provider: "opencode",
+        sessionId: "one",
+        metadata: { cwd: "/workspace/one" },
+      }),
+      client.resumeSession({
+        provider: "opencode",
+        sessionId: "two",
+        metadata: { cwd: "/workspace/one" },
+      }),
+      client.resumeSession({
+        provider: "opencode",
+        sessionId: "three",
+        metadata: { cwd: "/workspace/two" },
+      }),
+    ]);
+    expect(clients.map((fake) => fake.calls.providerList.length)).toEqual([1, 0, 1]);
+    await Promise.all(sessions.map((session) => session.close()));
+  });
+
+  test("OpenCode 服务换代后相同目录必须重新读取模型元数据", async () => {
+    class Generations extends TestOpenCodeHarness {
+      currentEvents = { ...this.events };
+      override async acquireCurrent() {
+        return { ...(await super.acquireCurrent()), events: this.currentEvents };
+      }
+    }
+    const runtime = new Generations();
+    const clients = Array.from({ length: 3 }, () => new TestOpenCodeClient());
+    for (const fake of clients) runtime.enqueueClient(fake);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const handle = { provider: "opencode", sessionId: "old", metadata: { cwd: "/workspace" } };
+    const first = await client.resumeSession(handle);
+    runtime.currentEvents = { ...runtime.events };
+    const second = await client.resumeSession(handle);
+    const third = await client.resumeSession(handle);
+    expect(clients.map((fake) => fake.calls.providerList.length)).toEqual([1, 1, 0]);
+    await Promise.all([first.close(), second.close(), third.close()]);
+  });
+
+  test("OpenCode 强制目录刷新绕过旧模型元数据缓存", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const first = new TestOpenCodeClient();
+    const second = new TestOpenCodeClient();
+    second.providerListResponse = {
+      data: { connected: ["test"], all: [{ id: "test", source: "env", models: {} }] },
+    };
+    runtime.enqueueClient(first);
+    runtime.enqueueClient(second);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.resumeSession({
+      provider: "opencode",
+      sessionId: "old",
+      metadata: { cwd: "/workspace" },
+    });
+    try {
+      await client.fetchCatalog({ scope: "workspace", cwd: "/workspace", force: true });
+      expect(first.calls.providerList).toHaveLength(1);
+      expect(second.calls.providerList).toHaveLength(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("OpenCode 完整历史与会话元数据并行请求，不提前返回部分历史", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const fake = new TestOpenCodeClient();
+    const metadata = Promise.withResolvers<void>();
+    const messagesStarted = Promise.withResolvers<void>();
+    fake.sessionGetImplementation = async () => {
+      await metadata.promise;
+      return { data: { id: "old" } };
+    };
+    fake.sessionMessagesImplementation = async () => {
+      messagesStarted.resolve();
+      return { data: [] };
+    };
+    runtime.enqueueClient(fake);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const session = await client.resumeSession({
+      provider: "opencode",
+      sessionId: "old",
+      metadata: { cwd: "/workspace" },
+    });
+    const history = session.streamHistory();
+    const first = history.next();
+    try {
+      await messagesStarted.promise;
+      expect(fake.calls.sessionMessages).toEqual([{ sessionID: "old", directory: "/workspace" }]);
+      metadata.resolve();
+      expect(await first).toEqual({ done: true, value: undefined });
+    } finally {
+      metadata.resolve();
+      await session.close();
+    }
+  });
+
+  test("OpenCode 历史错误不伪装成空记录，模型读取失败允许再次恢复", async () => {
+    const runtime = new TestOpenCodeHarness();
+    const failed = new TestOpenCodeClient();
+    failed.providerListResponse = { error: "unavailable" };
+    runtime.enqueueClient(failed);
+    const recovered = new TestOpenCodeClient();
+    recovered.sessionMessagesResponse = { error: "history unavailable" };
+    runtime.enqueueClient(recovered);
+    const client = new OpenCodeAgentClient(logger, undefined, {
+      serverManager: runtime,
+      createClient: runtime.createClient,
+    });
+    const handle = { provider: "opencode", sessionId: "old", metadata: { cwd: "/workspace" } };
+    await expect(client.resumeSession(handle)).rejects.toThrow(
+      "Failed to fetch OpenCode providers",
+    );
+    const session = await client.resumeSession(handle);
+    try {
+      expect(recovered.calls.providerList).toHaveLength(1);
+      await expect(session.streamHistory().next()).rejects.toThrow("history unavailable");
+    } finally {
+      await session.close();
+    }
+  });
+
   test("creates a session with valid id and provider", async () => {
     const cwd = tmpCwd();
     const runtime = new TestOpenCodeHarness();

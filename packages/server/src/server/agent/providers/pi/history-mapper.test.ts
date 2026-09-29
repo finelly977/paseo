@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentStreamEvent } from "../../agent-sdk-types.js";
-import { streamPiHistory, type PiCapturedUserMessageEntry } from "./history-mapper.js";
+import {
+  PiHistoryMapper,
+  streamPiHistory,
+  type PiCapturedUserMessageEntry,
+} from "./history-mapper.js";
 import type { PiAgentMessage } from "./rpc-types.js";
 
 async function collectHistory(
@@ -16,6 +20,46 @@ async function collectHistory(
 }
 
 describe("Pi history mapper", () => {
+  test("批次边界保留用户标识、助手编号和工具生命周期，完整结果与原映射相同", async () => {
+    const messages: PiAgentMessage[] = Array.from({ length: 127 }, (_, index) => ({
+      role: "user",
+      content: `question ${index}`,
+    }));
+    messages.push(
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "cross-batch", name: "read", arguments: { path: "note.txt" } },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "cross-batch",
+        toolName: "read",
+        content: [{ type: "text", text: "complete contents" }],
+      },
+      { role: "user", content: "last question" },
+      { role: "assistant", content: [{ type: "text", text: "last answer" }] },
+    );
+    const users = Array.from({ length: 128 }, (_, index) => ({
+      id: `entry-${index}`,
+      text: `question ${index}`,
+    }));
+    const history = await collectHistory(messages, users);
+    expect(history).toEqual(new PiHistoryMapper("pi", users).mapMessages(messages));
+    expect(history.at(-2)).toMatchObject({
+      item: { type: "user_message", messageId: "entry-127", text: "last question" },
+    });
+    expect(history.at(-3)).toMatchObject({
+      item: {
+        type: "tool_call",
+        callId: "cross-batch",
+        status: "completed",
+        detail: { filePath: "note.txt" },
+      },
+    });
+  });
+
   test("replays user, assistant, reasoning, and completed tool calls", async () => {
     await expect(
       collectHistory([

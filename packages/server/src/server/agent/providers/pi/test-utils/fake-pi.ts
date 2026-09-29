@@ -126,6 +126,8 @@ export class FakePiSession implements PiRuntimeSession {
   compactError: Error | null = null;
   emitCompactEnd = true;
   getStateError: Error | null = null;
+  getCommandsError: Error | null = null;
+  availableModelsReady: Promise<void> | null = null;
   promptAck: PiPromptAck = {};
   branchResponse: { text?: string; cancelled?: boolean } = { text: "" };
   readonly branchRequests: string[] = [];
@@ -236,6 +238,7 @@ export class FakePiSession implements PiRuntimeSession {
   }
 
   async getAvailableModels(_timeoutMs?: number | null): Promise<PiModel[]> {
+    if (this.availableModelsReady) await this.availableModelsReady;
     return this.models;
   }
 
@@ -289,6 +292,7 @@ export class FakePiSession implements PiRuntimeSession {
   }
 
   async getCommands(): Promise<PiRpcSlashCommand[]> {
+    if (this.getCommandsError) throw this.getCommandsError;
     return this.commands;
   }
 

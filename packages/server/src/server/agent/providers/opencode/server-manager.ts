@@ -5,12 +5,12 @@ import net from "node:net";
 import path from "node:path";
 import type { Logger } from "pino";
 
-import { findExecutable } from "../../../../executable-resolution/executable-resolution.js";
 import { spawnProcess, type SpawnProcessOptions } from "../../../../utils/spawn.js";
 import { terminateWithTreeKill, type ProcessTerminator } from "../../../../utils/tree-kill.js";
 import type { ManagedProcessRegistry } from "../../../managed-processes/managed-processes.js";
 import {
   createProviderEnvSpec,
+  getProviderLaunchAvailability,
   resolveProviderCommandPrefix,
   type ProviderRuntimeSettings,
 } from "../../provider-launch-config.js";
@@ -593,7 +593,11 @@ function generationLogContext(server: OpenCodeServerGeneration): Record<string, 
   };
 }
 async function resolveOpenCodeBinary(): Promise<string> {
-  const found = await findExecutable("opencode");
+  const { resolvedPath: found } = await getProviderLaunchAvailability({
+    command: "opencode",
+    args: [],
+    source: "default",
+  });
   if (!found) {
     throw new Error(
       "OpenCode binary not found. Install OpenCode (https://github.com/opencode-ai/opencode) and ensure it is available in your shell PATH.",

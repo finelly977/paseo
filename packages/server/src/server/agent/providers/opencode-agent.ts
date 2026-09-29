@@ -1,3 +1,5 @@
+import { LRUCache } from "lru-cache";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import {
   createOpencodeClient,
   type AssistantMessage as OpenCodeAssistantMessage,
@@ -63,6 +65,7 @@ import {
 } from "../create-agent-mode.js";
 import {
   checkProviderLaunchAvailable,
+  getProviderLaunchAvailability,
   createProviderEnvSpec,
   resolveProviderLaunch,
   type ProviderRuntimeSettings,
@@ -1327,6 +1330,10 @@ export const __openCodeInternals = {
   },
 };
 
+type OpenCodeProviders = NonNullable<
+  Awaited<ReturnType<OpencodeClient["provider"]["list"]>>["data"]
+>;
+
 interface OpenCodeAgentClientDeps {
   serverManager?: OpenCodeServerManagerLike;
   createClient?: OpenCodeClientFactory;
@@ -1352,7 +1359,10 @@ export class OpenCodeAgentClient implements AgentClient {
   private readonly resolveHomeDir: () => string;
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
-  private readonly modelContextWindows = new Map<string, number>();
+  private readonly providerLists = new WeakMap<
+    OpenCodeEventSource,
+    LRUCache<string, Promise<OpenCodeProviders>>
+  >();
   private readonly bridge?: OpenCodeBridge;
 
   constructor(
@@ -1418,7 +1428,7 @@ export class OpenCodeAgentClient implements AgentClient {
         throw new Error("OpenCode session creation returned no data");
       }
 
-      await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
+      const providers = await this.readProviders(client, openCodeConfig.cwd, acquisition.events);
       const unbindBridge = this.bindBridgeSession(session.id, launchContext);
 
       return new OpenCodeAgentSession(
@@ -1426,7 +1436,7 @@ export class OpenCodeAgentClient implements AgentClient {
         client,
         session.id,
         this.logger,
-        new Map(this.modelContextWindows),
+        buildOpenCodeModelContextWindowLookup(providers),
         acquisition.events,
         acquisition.release,
         options?.persistSession,
@@ -1472,7 +1482,7 @@ export class OpenCodeAgentClient implements AgentClient {
     });
 
     try {
-      await this.populateModelContextWindowCache(client, openCodeConfig.cwd);
+      const providers = await this.readProviders(client, openCodeConfig.cwd, acquisition.events);
       const unbindBridge = this.bindBridgeSession(handle.sessionId, launchContext);
 
       return new OpenCodeAgentSession(
@@ -1480,7 +1490,7 @@ export class OpenCodeAgentClient implements AgentClient {
         client,
         handle.sessionId,
         this.logger,
-        new Map(this.modelContextWindows),
+        buildOpenCodeModelContextWindowLookup(providers),
         acquisition.events,
         acquisition.release,
         undefined,
@@ -1540,7 +1550,7 @@ export class OpenCodeAgentClient implements AgentClient {
 
       const client = this.createOpenCodeClient({ baseUrl: url, directory });
       const [models, modes] = await Promise.all([
-        this.fetchModelsFromClient(client, directory),
+        this.fetchModelsFromClient(client, directory, acquisition.events, options.force),
         this.fetchModesFromClient(client, directory),
       ]);
       return { models, modes };
@@ -1671,7 +1681,7 @@ export class OpenCodeAgentClient implements AgentClient {
       commandConfig: this.runtimeSettings?.command,
       defaultBinary: "opencode",
     });
-    const availability = await checkProviderLaunchAvailable(launch);
+    const availability = await getProviderLaunchAvailability(launch);
     return availability.available;
   }
 
@@ -1727,24 +1737,10 @@ export class OpenCodeAgentClient implements AgentClient {
   private async fetchModelsFromClient(
     client: OpencodeClient,
     directory: string,
+    events: OpenCodeEventSource,
+    force: boolean,
   ): Promise<AgentModelDefinition[]> {
-    const response = await openCodeMetadataLimit(() =>
-      withTimeout(
-        client.provider.list({ directory }),
-        OPENCODE_PROVIDER_LIST_TIMEOUT_MS,
-        `OpenCode provider.list timed out after ${OPENCODE_PROVIDER_LIST_TIMEOUT_MS / 1000}s - server may not be authenticated or connected to any providers`,
-      ),
-    );
-
-    if (response.error) {
-      throw new Error(`Failed to fetch OpenCode providers: ${JSON.stringify(response.error)}`);
-    }
-
-    const providers = response.data;
-    if (!providers) {
-      return [];
-    }
-
+    const providers = await this.readProviders(client, directory, events, force);
     const connectedProviderIds = new Set(providers.connected);
 
     const isAccessible = (provider: { id: string; source: string }): boolean =>
@@ -1757,28 +1753,56 @@ export class OpenCodeAgentClient implements AgentClient {
           "or log in to OpenCode Go via the console.",
       );
     }
-
     const models: AgentModelDefinition[] = [];
-    this.modelContextWindows.clear();
     for (const provider of providers.all) {
-      if (!isAccessible(provider)) {
-        continue;
-      }
-
+      if (!isAccessible(provider)) continue;
       for (const [modelId, model] of Object.entries(provider.models)) {
-        const definition = buildOpenCodeModelDefinition(provider, modelId, model);
-        const contextWindowMaxTokens = extractOpenCodeModelContextWindow(model);
-        if (contextWindowMaxTokens !== undefined) {
-          this.modelContextWindows.set(
-            buildOpenCodeModelLookupKey(provider.id, modelId),
-            contextWindowMaxTokens,
-          );
-        }
-        models.push(definition);
+        models.push(buildOpenCodeModelDefinition(provider, modelId, model));
       }
     }
-
     return models;
+  }
+
+  private readProviders(
+    client: OpencodeClient,
+    directory: string,
+    events: OpenCodeEventSource,
+    force = false,
+  ): Promise<OpenCodeProviders> {
+    // 按服务代际隔离，重启或独占服务不能使用另一个服务的模型/凭据配置。
+    let cache = this.providerLists.get(events);
+    if (!cache) {
+      cache = new LRUCache({ max: 64, ttl: 60_000 });
+      this.providerLists.set(events, cache);
+    }
+    const existing = cache.get(directory);
+    if (existing && !force) return existing;
+    const pending = this.fetchProviders(client, directory).catch((error: unknown) => {
+      if (cache.get(directory) === pending) cache.delete(directory);
+      throw error;
+    });
+    cache.set(directory, pending);
+    return pending;
+  }
+
+  private async fetchProviders(
+    client: OpencodeClient,
+    directory: string,
+  ): Promise<OpenCodeProviders> {
+    const response = await openCodeMetadataLimit(() =>
+      withTimeout(
+        client.provider.list({ directory }),
+        OPENCODE_PROVIDER_LIST_TIMEOUT_MS,
+        `OpenCode provider.list timed out after ${OPENCODE_PROVIDER_LIST_TIMEOUT_MS / 1000}s - server may not be authenticated or connected to any providers`,
+      ),
+    );
+
+    if (response.error) {
+      throw new Error(`Failed to fetch OpenCode providers: ${JSON.stringify(response.error)}`);
+    }
+
+    if (!response.data) throw new Error("OpenCode provider.list returned no data");
+    return response.data;
   }
 
   private async fetchModesFromClient(
@@ -1809,22 +1833,6 @@ export class OpenCodeAgentClient implements AgentClient {
       throw new Error(`OpenCodeAgentClient received config for provider '${config.provider}'`);
     }
     return normalizeOpenCodeConfig({ ...config, provider: "opencode" });
-  }
-
-  private async populateModelContextWindowCache(
-    client: OpencodeClient,
-    cwd: string,
-  ): Promise<void> {
-    const response = await openCodeMetadataLimit(() => client.provider.list({ directory: cwd }));
-    if (response.error || !response.data) {
-      return;
-    }
-
-    const lookup = buildOpenCodeModelContextWindowLookup(response.data);
-    this.modelContextWindows.clear();
-    for (const [modelLookupKey, contextWindowMaxTokens] of lookup.entries()) {
-      this.modelContextWindows.set(modelLookupKey, contextWindowMaxTokens);
-    }
   }
 }
 
@@ -4525,27 +4533,24 @@ class OpenCodeAgentSession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-    const sessionResponse = await this.client.session.get({
-      sessionID: this.sessionId,
-      directory: this.config.cwd,
-    });
-    const response = await this.client.session.messages({
-      sessionID: this.sessionId,
-      directory: this.config.cwd,
-    });
-
-    if (response.error || !response.data) {
-      return;
+    const [sessionResponse, response] = await Promise.all([
+      this.client.session.get({ sessionID: this.sessionId, directory: this.config.cwd }),
+      this.client.session.messages({ sessionID: this.sessionId, directory: this.config.cwd }),
+    ]);
+    if (sessionResponse.error || !sessionResponse.data) {
+      throw new Error(
+        `Failed to load OpenCode session: ${toDiagnosticErrorMessage(sessionResponse.error)}`,
+      );
     }
-
-    const messages = filterOpenCodeRevertedMessages(
-      response.data,
-      sessionResponse.error ? null : sessionResponse.data?.revert,
-    );
-    for (const message of messages) {
-      for (const event of buildOpenCodeReplayTimelineEvents(message)) {
-        yield event;
-      }
+    if (response.error || !response.data) {
+      throw new Error(
+        `Failed to load OpenCode history: ${toDiagnosticErrorMessage(response.error)}`,
+      );
+    }
+    const messages = filterOpenCodeRevertedMessages(response.data, sessionResponse.data.revert);
+    for (let index = 0; index < messages.length; index++) {
+      if (index % 128 === 0) await yieldToEventLoop();
+      yield* buildOpenCodeReplayTimelineEvents(messages[index]);
     }
   }
 

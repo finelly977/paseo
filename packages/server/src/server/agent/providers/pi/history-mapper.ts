@@ -1,4 +1,5 @@
 import type { AgentStreamEvent, AgentTimelineItem, ToolCallDetail } from "../../agent-sdk-types.js";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type { PiAgentMessage, PiImageContent, PiTextContent } from "./rpc-types.js";
 import {
   extractTextFromToolResult,
@@ -248,10 +249,9 @@ export async function* streamPiHistory(
   hooks: PiHistoryMapperHooks = {},
 ): AsyncGenerator<AgentStreamEvent> {
   const mapper = new PiHistoryMapper(provider, userEntries, hooks);
-  for (const event of mapper.mapMessages(messages)) {
-    if (event) {
-      yield event;
-    }
+  for (let start = 0; start < messages.length; start += 128) {
+    await yieldToEventLoop();
+    yield* mapper.mapMessages(messages.slice(start, start + 128));
   }
 }
 

@@ -1,3 +1,5 @@
+import { LRUCache } from "lru-cache";
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -96,7 +98,7 @@ import {
 } from "../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import {
-  checkProviderLaunchAvailable,
+  getProviderLaunchAvailability,
   createProviderEnvSpec,
   resolveProviderLaunch,
   type ProviderRuntimeSettings,
@@ -426,7 +428,7 @@ interface ACPAgentClientOptions {
   cleanupNativeSession?: (sessionId: string) => Promise<void>;
 }
 
-interface ACPAgentSessionOptions {
+export interface ACPAgentSessionOptions {
   provider: string;
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
@@ -728,6 +730,9 @@ export function deriveFeaturesFromACP(
 
 export class ACPAgentClient implements AgentClient {
   readonly provider: string;
+  private readonly sessionCatalogs = new LRUCache<string, Promise<ProviderCatalog | null>>({
+    max: 32,
+  });
   readonly capabilities: AgentCapabilityFlags;
 
   protected readonly logger: Logger;
@@ -799,7 +804,7 @@ export class ACPAgentClient implements AgentClient {
     options?: AgentCreateSessionOptions,
   ): Promise<AgentSession> {
     this.assertProvider(config);
-    const session = new ACPAgentSession(
+    const session = this.createSessionInstance(
       { ...config, provider: this.provider },
       {
         provider: this.provider,
@@ -828,8 +833,12 @@ export class ACPAgentClient implements AgentClient {
         cleanupNativeSession: this.cleanupNativeSession,
       },
     );
-    await session.initializeNewSession();
-    return session;
+    return this.initializeSession(
+      session,
+      () => session.initializeNewSession(),
+      config.cwd,
+      launchContext,
+    );
   }
 
   async resumeSession(
@@ -853,7 +862,7 @@ export class ACPAgentClient implements AgentClient {
       provider: this.provider,
       cwd,
     };
-    const session = new ACPAgentSession(mergedConfig, {
+    const session = this.createSessionInstance(mergedConfig, {
       provider: this.provider,
       logger: this.logger,
       runtimeSettings: this.runtimeSettings,
@@ -878,11 +887,74 @@ export class ACPAgentClient implements AgentClient {
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
     });
-    await session.initializeResumedSession();
-    return session;
+    return this.initializeSession(
+      session,
+      () => session.initializeResumedSession(),
+      cwd,
+      launchContext,
+    );
+  }
+
+  protected createSessionInstance(
+    config: AgentSessionConfig,
+    options: ACPAgentSessionOptions,
+  ): ACPAgentSession {
+    return new ACPAgentSession(config, options);
+  }
+
+  private async initializeSession(
+    session: ACPAgentSession,
+    initialize: () => Promise<void>,
+    cwd: string,
+    launchContext?: AgentLaunchContext,
+  ): Promise<AgentSession> {
+    const ready = initialize();
+    const hasCustomEnv = Object.keys(launchContext?.env ?? {}).some(
+      (name) => name !== "PASEO_AGENT_ID" && name !== "PASEO_AGENT_CWD",
+    );
+    if (this.catalogModelResolver || hasCustomEnv) {
+      await ready;
+      return session;
+    }
+    const catalog = ready.then(() => session.getCatalog());
+    this.sessionCatalogs.set(cwd, catalog);
+    try {
+      const loaded = await catalog;
+      if (this.sessionCatalogs.get(cwd) === catalog) {
+        if (loaded) this.sessionCatalogs.set(cwd, catalog, { ttl: 60_000 });
+        else this.sessionCatalogs.delete(cwd);
+      }
+      return session;
+    } catch (error) {
+      if (this.sessionCatalogs.get(cwd) === catalog) this.sessionCatalogs.delete(cwd);
+      try {
+        await session.close();
+      } catch (closeError) {
+        this.logger.error(
+          { err: closeError, initializationError: error },
+          "Failed to close ACP session after catalog initialization failure",
+        );
+      }
+      throw error;
+    }
   }
 
   async fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
+    const cwd = options.scope === "global" ? homedir() : options.cwd;
+    if (options.force) this.sessionCatalogs.delete(cwd);
+    const resumedCatalog = this.sessionCatalogs.get(cwd);
+    if (resumedCatalog) {
+      const catalog = await withTimeout(
+        resumedCatalog,
+        options.timeoutMs ?? ACP_CATALOG_TIMEOUT_MS,
+        "ACP session catalog initialization timed out",
+      );
+      if (catalog) return catalog;
+    }
+    return this.probeCatalog(options);
+  }
+
+  protected async probeCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
     const cwd = options.scope === "global" ? homedir() : options.cwd;
     const timeoutMs = options.timeoutMs ?? ACP_CATALOG_TIMEOUT_MS;
     let probe: UninitializedACPProcess | null = null;
@@ -1316,7 +1388,7 @@ export class ACPAgentClient implements AgentClient {
       commandConfig: this.runtimeSettings?.command,
       defaultBinary: this.defaultCommand[0],
     });
-    const availability = await checkProviderLaunchAvailable(prefix);
+    const availability = await getProviderLaunchAvailability(prefix);
     if (!availability.available) {
       throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
     }
@@ -1385,7 +1457,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private submittedUserMessageTurnId: string | null = null;
   private readonly toolCalls = new Map<string, ACPToolSnapshot>();
   private readonly terminalEntries = new Map<string, TerminalEntry>();
-  private readonly persistedHistory: AgentTimelineItem[] = [];
+  private persistedHistory: AgentTimelineItem[] = [];
   private readonly initialHandle?: AgentPersistenceHandle;
 
   private readonly config: AgentSessionConfig;
@@ -1629,12 +1701,31 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     if (!this.historyPending || this.persistedHistory.length === 0) {
       return;
     }
-    const history = [...this.persistedHistory];
-    this.persistedHistory.length = 0;
+    const history = this.persistedHistory;
+    this.persistedHistory = [];
     this.historyPending = false;
-    for (const item of history) {
-      yield { type: "timeline", provider: this.provider, item };
+    for (let index = 0; index < history.length; index++) {
+      if (index % 128 === 0) await yieldToEventLoop();
+      yield { type: "timeline", provider: this.provider, item: history[index] };
     }
+  }
+
+  getCatalog(): ProviderCatalog | null {
+    // session/load 可以合法省略目录；不能用这类响应覆盖完整的模型选择列表。
+    if (!this.availableModels && !this.configOptions.some((option) => option.category === "model"))
+      return null;
+    const models = deriveModelDefinitionsFromACP(
+      this.provider,
+      {
+        currentModelId: this.currentModel ?? "",
+        availableModels: this.availableModels ?? [],
+      },
+      this.configOptions,
+    );
+    return {
+      models: this.modelTransformer ? this.modelTransformer(models) : models,
+      modes: [...this.availableModes],
+    };
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -2433,7 +2524,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       commandConfig: this.runtimeSettings?.command,
       defaultBinary: this.defaultCommand[0],
     });
-    const availability = await checkProviderLaunchAvailable(prefix);
+    const availability = await getProviderLaunchAvailability(prefix);
     if (!availability.available) {
       throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
     }

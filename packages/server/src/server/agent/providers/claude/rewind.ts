@@ -40,7 +40,7 @@ export async function revertClaudeConversation(input: {
   messageId: string;
   cwd?: string;
   resolveMessageId?: (messageId: string) => string | Promise<string>;
-  setSessionId: (sessionId: string) => void;
+  setSessionId: (sessionId: string) => void | Promise<void>;
 }): Promise<void> {
   if (!input.sessionId) {
     throw new Error("Claude session is not ready for rewind");
@@ -54,7 +54,7 @@ export async function revertClaudeConversation(input: {
     sessionId: input.sessionId,
     cwd: input.cwd,
   });
-  input.setSessionId(fork.sessionId);
+  await input.setSessionId(fork.sessionId);
 }
 
 export async function revertClaudeFiles(input: {
@@ -76,7 +76,7 @@ export async function revertClaudeConversationAndFiles(input: {
   messageId: string;
   cwd?: string;
   resolveMessageId?: (messageId: string) => string | Promise<string>;
-  setSessionId: (sessionId: string) => void;
+  setSessionId: (sessionId: string) => void | Promise<void>;
 }): Promise<void> {
   await revertClaudeFiles({
     query: input.query,

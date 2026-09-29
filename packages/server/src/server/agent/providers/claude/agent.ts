@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -111,9 +112,11 @@ import {
   type ProviderCatalog,
   type ResolveAgentDefaultModeInput,
 } from "../../agent-sdk-types.js";
+import { readClaudeHistoryRecords, type ClaudeHistoryEntry } from "./history-reader.js";
 import { importSessionFromPersistence } from "../../provider-session-import.js";
 import {
   checkProviderLaunchAvailable,
+  getProviderLaunchAvailability,
   createProviderEnv,
   createProviderEnvSpec,
   resolveProviderLaunch,
@@ -1504,7 +1507,7 @@ export class ClaudeAgentClient implements AgentClient {
       cwd: merged.cwd,
     };
     const claudeConfig = this.assertConfig(mergedConfig);
-    return new ClaudeAgentSession(claudeConfig, {
+    const session = new ClaudeAgentSession(claudeConfig, {
       defaults: this.defaults,
       runtimeSettings: this.runtimeSettings,
       handle,
@@ -1514,6 +1517,8 @@ export class ClaudeAgentClient implements AgentClient {
       queryFactory: this.queryFactory,
       resolveBinary: this.resolveBinary,
     });
+    await session.loadPersistedHistory(handle.sessionId);
+    return session;
   }
 
   async fetchCatalog(_options: FetchCatalogOptions): Promise<ProviderCatalog> {
@@ -1604,7 +1609,7 @@ export class ClaudeAgentClient implements AgentClient {
       commandConfig: this.runtimeSettings?.command,
       defaultBinary: "claude",
     });
-    const availability = await checkProviderLaunchAvailable(launch);
+    const availability = await getProviderLaunchAvailability(launch);
     return availability.available;
   }
 
@@ -1648,7 +1653,7 @@ async function resolveClaudeBinary(runtimeSettings?: ProviderRuntimeSettings): P
     commandConfig: runtimeSettings?.command,
     defaultBinary: "claude",
   });
-  const availability = await checkProviderLaunchAvailable(launch);
+  const availability = await getProviderLaunchAvailability(launch);
   if (availability.available) {
     return availability.resolvedPath ?? launch.command;
   }
@@ -1664,7 +1669,7 @@ export async function resolveClaudeCodeVersion(
     commandConfig: runtimeSettings?.command,
     defaultBinary: "claude",
   });
-  const availability = await checkProviderLaunchAvailable(launch);
+  const availability = await getProviderLaunchAvailability(launch);
   if (!availability.available) {
     throw new Error("Claude binary not found while resolving Claude Code version");
   }
@@ -2070,7 +2075,6 @@ class ClaudeAgentSession implements AgentSession {
       }
       this.claudeSessionId = handle.sessionId;
       this.persistence = handle;
-      this.loadPersistedHistory(handle.sessionId);
     } else {
       this.claudeSessionId = null;
       this.persistence = null;
@@ -2720,9 +2724,7 @@ class ClaudeAgentSession implements AgentSession {
       messageId: target.messageId,
       cwd: this.config.cwd,
       resolveMessageId: (messageId) => this.resolveClaudeMessageId(messageId),
-      setSessionId: (sessionId) => {
-        this.rebindConversationSession(sessionId);
-      },
+      setSessionId: (sessionId) => this.rebindConversationSession(sessionId),
     });
   }
 
@@ -2901,7 +2903,7 @@ class ClaudeAgentSession implements AgentSession {
     return candidates;
   }
 
-  private rebindConversationSession(sessionId: string): void {
+  private async rebindConversationSession(sessionId: string): Promise<void> {
     const oldSessionId = this.claudeSessionId;
     this.claudeSessionId = sessionId;
     this.pendingFreshSessionId = null;
@@ -2915,7 +2917,7 @@ class ClaudeAgentSession implements AgentSession {
     this.emittedUserMessageIds.clear();
     this.rewindTurnAnchors.length = 0;
     this.taskState.reset();
-    this.loadPersistedHistory(sessionId);
+    await this.loadPersistedHistory(sessionId);
     if (oldSessionId && oldSessionId !== sessionId) {
       this.dispatchEvents([
         {
@@ -4705,73 +4707,28 @@ class ClaudeAgentSession implements AgentSession {
     }
   }
 
-  private loadPersistedHistory(sessionId: string): void {
-    try {
-      this.taskState.reset();
-      const historyPath = this.resolveHistoryPath(sessionId);
-      if (!historyPath || !fs.existsSync(historyPath)) {
-        return;
-      }
-      const content = fs.readFileSync(historyPath, "utf8");
-      this.ingestPersistedHistory(content);
-      this.ingestPersistedSidechains(content, readClaudeSidechainHistory(historyPath));
-    } catch {
-      // ignore history load failures
-    }
-  }
-
-  private ingestPersistedHistory(content: string): void {
-    if (!content) {
-      return;
-    }
-
+  async loadPersistedHistory(sessionId: string): Promise<void> {
+    this.taskState.reset();
+    const historyPath = this.resolveHistoryPath(sessionId);
+    if (!historyPath) return;
+    const { parents, sidechains } = await readClaudeHistoryRecords(historyPath);
     const timeline: PersistedTimelineEntry[] = [];
-    for (const line of content.split(/\r?\n/)) {
-      this.ingestPersistedHistoryLine(line, timeline);
+    for (let index = 0; index < parents.length; index++) {
+      this.ingestPersistedHistoryEntry(parents[index], timeline);
+      if ((index + 1) % 128 === 0) await yieldToEventLoop();
     }
-
-    if (timeline.length > 0) {
-      this.persistedHistory = [...this.persistedHistory, ...timeline];
-      this.historyPending = true;
-    }
+    const providerEvents = await buildClaudePersistedSidechainEvents(parents, sidechains, (entry) =>
+      this.convertHistoryEntry(entry),
+    );
+    this.persistedHistory = timeline;
+    this.persistedProviderSubagentEvents = providerEvents;
+    this.historyPending = timeline.length > 0 || providerEvents.length > 0;
   }
 
-  private ingestPersistedSidechains(parentContent: string, sidechainContents: string[]): void {
-    const parentEntries = parseClaudeHistoryRecords(parentContent).filter(
-      (entry) => entry.isSidechain !== true,
-    );
-    const sidechainEntries = [parentContent, ...sidechainContents]
-      .flatMap(parseClaudeHistoryRecords)
-      .filter((entry) => entry.isSidechain === true && typeof entry.agentId === "string");
-    if (sidechainEntries.length === 0) {
-      return;
-    }
-    this.persistedProviderSubagentEvents.push(
-      ...buildClaudePersistedSidechainEvents(parentEntries, sidechainEntries, (entry) =>
-        this.convertHistoryEntry(entry),
-      ),
-    );
-    this.historyPending = true;
-  }
-
-  private ingestPersistedHistoryLine(line: string, timeline: PersistedTimelineEntry[]): void {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return;
-    }
-
-    let entry: Record<string, unknown>;
-    try {
-      const parsed: unknown = JSON.parse(trimmed);
-      const record = toObjectRecord(parsed);
-      if (!record) {
-        return;
-      }
-      entry = record;
-    } catch {
-      return;
-    }
-
+  private ingestPersistedHistoryEntry(
+    entry: ClaudeHistoryEntry,
+    timeline: PersistedTimelineEntry[],
+  ): void {
     if (entry.isSidechain) {
       return;
     }
@@ -5513,46 +5470,6 @@ function normalizeHistoryBlocks(content: unknown): ClaudeContentChunk[] | null {
   return null;
 }
 
-function parseClaudeHistoryRecords(content: string): ClaudeHistoryEntry[] {
-  const entries: ClaudeHistoryEntry[] = [];
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const entry = toObjectRecord(JSON.parse(trimmed));
-      if (entry) entries.push(entry);
-    } catch {
-      // Ignore individual corrupt history rows, matching the parent history replay behavior.
-    }
-  }
-  return entries;
-}
-
-function readClaudeSidechainHistory(historyPath: string): string[] {
-  const sessionDirectory = path.join(
-    path.dirname(historyPath),
-    path.basename(historyPath, ".jsonl"),
-  );
-  const sidechainDirectory = path.join(sessionDirectory, "subagents");
-  if (!fs.existsSync(sidechainDirectory)) return [];
-
-  const contents: string[] = [];
-  const directories = [sidechainDirectory];
-  while (directories.length > 0) {
-    const directory = directories.pop();
-    if (!directory) continue;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        directories.push(entryPath);
-      } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
-        contents.push(fs.readFileSync(entryPath, "utf8"));
-      }
-    }
-  }
-  return contents;
-}
-
 interface ClaudeHistoricalSubagentToolCall {
   name?: string;
   subagentType?: string;
@@ -5627,11 +5544,12 @@ function groupClaudeSidechainEntries(
   return entriesByAgentId;
 }
 
-function buildClaudePersistedSidechainEvents(
+async function buildClaudePersistedSidechainEvents(
   parentEntries: ClaudeHistoryEntry[],
   sidechainEntries: ClaudeHistoryEntry[],
   convertEntry: (entry: ClaudeHistoryEntry) => AgentTimelineItem[],
-): Extract<AgentStreamEvent, { type: "provider_subagent" }>[] {
+): Promise<Extract<AgentStreamEvent, { type: "provider_subagent" }>[]> {
+  if (sidechainEntries.length === 0) return [];
   const events: Extract<AgentStreamEvent, { type: "provider_subagent" }>[] = [];
   const toolCalls = readClaudeHistoricalSubagentToolCalls(parentEntries);
   const toolResults = readClaudeHistoricalSubagentToolResults(parentEntries, toolCalls);
@@ -5644,13 +5562,13 @@ function buildClaudePersistedSidechainEvents(
       continue;
     }
     events.push(
-      ...buildClaudePersistedSidechainAgentEvents(
+      ...(await buildClaudePersistedSidechainAgentEvents(
         agentId,
         entries,
         toolCalls,
         toolResults,
         convertEntry,
-      ),
+      )),
     );
   }
   return events;
@@ -5662,13 +5580,13 @@ function resolveClaudeHistoricalSubagentTitle(
   return toolCall?.name ?? toolCall?.description ?? toolCall?.subagentType ?? "Claude subagent";
 }
 
-function buildClaudePersistedSidechainAgentEvents(
+async function buildClaudePersistedSidechainAgentEvents(
   agentId: string,
   entries: ClaudeHistoryEntry[],
   toolCalls: ReadonlyMap<string, ClaudeHistoricalSubagentToolCall>,
   toolResults: ReadonlyMap<string, { toolCallId: string; failed: boolean }>,
   convertEntry: (entry: ClaudeHistoryEntry) => AgentTimelineItem[],
-): Extract<AgentStreamEvent, { type: "provider_subagent" }>[] {
+): Promise<Extract<AgentStreamEvent, { type: "provider_subagent" }>[]> {
   const result = toolResults.get(agentId);
   const id = result?.toolCallId ?? agentId;
   const toolCall = result ? toolCalls.get(result.toolCallId) : undefined;
@@ -5688,7 +5606,9 @@ function buildClaudePersistedSidechainAgentEvents(
       },
     },
   ];
-  for (const entry of entries) {
+  for (let index = 0; index < entries.length; index++) {
+    if (index % 128 === 0) await yieldToEventLoop();
+    const entry = entries[index];
     const timestamp = normalizeProviderReplayTimestamp(entry.timestamp);
     for (const item of convertEntry(entry)) {
       events.push({
@@ -5715,18 +5635,6 @@ function buildClaudePersistedSidechainAgentEvents(
     },
   });
   return events;
-}
-
-interface ClaudeHistoryEntry {
-  type?: unknown;
-  subtype?: unknown;
-  isCompactSummary?: unknown;
-  isSidechain?: unknown;
-  agentId?: unknown;
-  timestamp?: unknown;
-  uuid?: unknown;
-  message?: { content?: unknown; [key: string]: unknown };
-  [key: string]: unknown;
 }
 
 function mapAssistantHistoryBlocksWithMessageId(
