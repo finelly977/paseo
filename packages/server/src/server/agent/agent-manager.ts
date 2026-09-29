@@ -1714,15 +1714,20 @@ export class AgentManager {
     await this.registry.applySnapshot(agent, {
       internal: agent.internal,
     });
-    const stored = await this.registry.get(agentId);
-    if (!stored) {
+    const snapshot = await this.registry.get(agentId);
+    if (!snapshot) {
       throw new Error(`Agent ${agentId} not found in storage after snapshot`);
     }
 
-    const { archivedAt } = await this.markRecordArchived(stored);
-    agent.updatedAt = new Date(archivedAt);
+    // Codex 不允许归档仍被 app-server 加载的线程，必须先释放活动运行时。
     await this.closeAgent(agentId);
     this.discardRetainedAgentState(agentId);
+
+    const stored = await this.registry.get(agentId);
+    if (!stored) {
+      throw new Error(`Agent ${agentId} not found in storage after runtime release`);
+    }
+    const { archivedAt } = await this.markRecordArchived(stored);
 
     await this.cascadeArchiveChildren(agentId);
 
@@ -1759,9 +1764,8 @@ export class AgentManager {
     const archivedAt = new Date().toISOString();
     const archivedRecord = buildArchivedAgentRecord(record, { archivedAt, updatedAt: archivedAt });
 
+    await this.archiveNativeSession(record.provider, record.persistence);
     await registry.upsert(archivedRecord);
-
-    await this.archiveNativeSessionBestEffort(record.provider, record.persistence);
 
     if (this.agents.has(record.id)) {
       this.notifyAgentState(record.id);
@@ -2028,6 +2032,8 @@ export class AgentManager {
       await this.persistSnapshot(liveAgent, {
         internal: liveAgent.internal,
       });
+      await this.closeAgent(agentId);
+      this.discardRetainedAgentState(agentId);
     }
 
     const record = await registry.get(agentId);
@@ -2036,9 +2042,8 @@ export class AgentManager {
     }
 
     const nextRecord = buildArchivedAgentRecord(record, { archivedAt });
+    await this.archiveNativeSession(record.provider, record.persistence);
     await registry.upsert(nextRecord);
-
-    await this.archiveNativeSessionBestEffort(record.provider, record.persistence);
 
     if (this.agents.has(agentId)) {
       this.notifyAgentState(agentId);
@@ -5075,17 +5080,24 @@ export class AgentManager {
     provider: AgentProvider,
     persistence: AgentPersistenceHandle | null | undefined,
   ): Promise<void> {
-    if (!persistence) return;
-    const client = this.clients.get(provider);
-    if (!client?.archiveNativeSession) return;
     try {
-      await client.archiveNativeSession(persistence);
+      await this.archiveNativeSession(provider, persistence);
     } catch (error) {
       this.logger.warn(
-        { error, provider, sessionId: persistence.sessionId },
+        { error, provider, sessionId: persistence?.sessionId },
         "Failed to archive native session (best-effort)",
       );
     }
+  }
+
+  private async archiveNativeSession(
+    provider: AgentProvider,
+    persistence: AgentPersistenceHandle | null | undefined,
+  ): Promise<void> {
+    if (!persistence) return;
+    const client = this.clients.get(provider);
+    if (!client?.archiveNativeSession) return;
+    await client.archiveNativeSession(persistence);
   }
 
   private async unarchiveNativeSession(

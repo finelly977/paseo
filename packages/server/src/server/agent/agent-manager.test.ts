@@ -1134,10 +1134,14 @@ class NativeArchiveRecordingClient extends TestAgentClient {
   readonly unarchivedHandles: AgentPersistenceHandle[] = [];
   readArchivedAtDuringUnarchive: (() => Promise<string | null | undefined>) | null = null;
   archivedAtDuringUnarchive: string | null | undefined;
+  archiveFailure: Error | null = null;
   unarchiveFailure: Error | null = null;
 
   async archiveNativeSession(handle: AgentPersistenceHandle): Promise<void> {
     this.archivedHandles.push(handle);
+    if (this.archiveFailure) {
+      throw this.archiveFailure;
+    }
   }
 
   async unarchiveNativeSession(handle: AgentPersistenceHandle): Promise<void> {
@@ -5398,14 +5402,14 @@ test("archiveSnapshot clears persisted attention and normalizes running status",
   const archivedRecord = await manager.archiveSnapshot(snapshot.id, archivedAt);
 
   expect(archivedRecord.archivedAt).toBe(archivedAt);
-  expect(archivedRecord.lastStatus).toBe("idle");
+  expect(archivedRecord.lastStatus).toBe("closed");
   expect(archivedRecord.requiresAttention).toBe(false);
   expect(archivedRecord.attentionReason).toBeNull();
   expect(archivedRecord.attentionTimestamp).toBeNull();
 
   const persisted = await storage.get(snapshot.id);
   expect(persisted?.archivedAt).toBe(archivedAt);
-  expect(persisted?.lastStatus).toBe("idle");
+  expect(persisted?.lastStatus).toBe("closed");
   expect(persisted?.requiresAttention).toBe(false);
   expect(persisted?.attentionReason).toBeNull();
   expect(persisted?.attentionTimestamp).toBeNull();
@@ -8067,7 +8071,50 @@ test("archiveAgent persists archivedAt and updatedAt before emitting closed stat
   expect(
     Math.abs(new Date(stored!.updatedAt).getTime() - new Date(archivedAt).getTime()),
   ).toBeLessThanOrEqual(5);
-  expect(lifecycles.slice(-2)).toEqual(["idle", "closed"]);
+  expect(lifecycles.slice(-2)).toEqual(["closed", "closed"]);
+});
+
+test("archiveAgent closes the live runtime before archiving the native session", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-archive-order-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new NativeArchiveRecordingClient();
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const agent = await manager.createAgent(
+    { provider: "codex", cwd: workdir, title: "Native archive order" },
+    undefined,
+    { workspaceId: undefined },
+  );
+  const statesDuringArchive: Array<"loaded" | "released"> = [];
+  client.archiveNativeSession = async (handle) => {
+    statesDuringArchive.push(manager.getAgent(agent.id) ? "loaded" : "released");
+    client.archivedHandles.push(handle);
+  };
+
+  await manager.archiveAgent(agent.id);
+
+  expect(statesDuringArchive).toEqual(["released"]);
+  expect((await storage.get(agent.id))?.archivedAt).toEqual(expect.any(String));
+  rmSync(workdir, { recursive: true, force: true });
+});
+
+test("archiveAgent keeps the Paseo record active when native archive fails", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-archive-failure-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const client = new NativeArchiveRecordingClient();
+  client.archiveFailure = new Error("native thread is still loaded");
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const agent = await manager.createAgent(
+    { provider: "codex", cwd: workdir, title: "Native archive failure" },
+    undefined,
+    { workspaceId: undefined },
+  );
+
+  await expect(manager.archiveAgent(agent.id)).rejects.toThrow("native thread is still loaded");
+
+  expect(manager.getAgent(agent.id)).toBeNull();
+  expect((await storage.get(agent.id))?.archivedAt).toBeUndefined();
+  expect(client.archivedHandles).toHaveLength(1);
+  rmSync(workdir, { recursive: true, force: true });
 });
 
 test("fires onAgentArchived for archived parent and cascaded children", async () => {

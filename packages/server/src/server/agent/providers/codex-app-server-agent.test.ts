@@ -1948,6 +1948,31 @@ describe("Codex app-server provider", () => {
     appServer.assertNoErrors();
   });
 
+  test("archives a persisted Codex thread through app-server", async () => {
+    const threadRequests: Array<{ method: string; params: unknown }> = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/archive": (params) => {
+        threadRequests.push({ method: "thread/archive", params });
+        return {};
+      },
+    });
+    const provider = new CodexAppServerAgentClient(createTestLogger());
+    castInternals<{ spawnAppServer: () => Promise<ChildProcessWithoutNullStreams> }>(
+      provider,
+    ).spawnAppServer = () => appServer.spawnChild();
+
+    await provider.archiveNativeSession({
+      provider: "codex",
+      sessionId: "persisted-thread-id",
+      nativeHandle: "native-thread-id",
+    });
+
+    expect(threadRequests).toEqual([
+      { method: "thread/archive", params: { threadId: "native-thread-id" } },
+    ]);
+    appServer.assertNoErrors();
+  });
+
   test("unarchives a persisted Codex thread using sessionId when nativeHandle is absent", async () => {
     const threadRequests: Array<{ method: string; params: unknown }> = [];
     const appServer = createFakeCodexAppServer({
