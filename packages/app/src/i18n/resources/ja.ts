@@ -1389,6 +1389,7 @@ export const ja: TranslationResources = {
     details: "詳細",
   },
   startup: {
+    localHostStarting: "ローカルホストを起動して接続しています…",
     errorTitle: "問題が発生しました",
     errorDescription:
       "ローカルサーバーの起動に失敗しました。この問題が続く場合は、以下のログを添えてGitHubでIssueを作成してください。",

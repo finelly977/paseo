@@ -1419,6 +1419,7 @@ export const es: TranslationResources = {
     details: "Detalles",
   },
   startup: {
+    localHostStarting: "Iniciando y conectando con el host local…",
     errorTitle: "algo salió mal",
     errorDescription:
       "El servidor local no pudo iniciarse. Si esto continúa sucediendo, informe el problema enGitHube incluya los registros a continuación.",

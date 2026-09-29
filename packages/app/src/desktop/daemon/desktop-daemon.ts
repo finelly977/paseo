@@ -131,6 +131,14 @@ export async function getDesktopDaemonStatus(): Promise<DesktopDaemonStatus> {
   return parseDesktopDaemonStatus(await invokeDesktopCommand("desktop_daemon_status"));
 }
 
+export async function getDesktopDaemonIdentity(): Promise<{ serverId: string }> {
+  const raw = await invokeDesktopCommand<unknown>("desktop_daemon_identity");
+  if (!isRecord(raw) || typeof raw.serverId !== "string" || !raw.serverId.trim()) {
+    throw new Error("Unexpected desktop daemon identity response.");
+  }
+  return { serverId: raw.serverId.trim() };
+}
+
 export async function startDesktopDaemon(): Promise<DesktopDaemonStatus> {
   return parseDesktopDaemonStatus(await invokeDesktopCommand("start_desktop_daemon"));
 }

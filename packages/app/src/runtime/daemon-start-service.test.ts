@@ -39,6 +39,15 @@ function makeStatus(overrides: Partial<DesktopDaemonStatus> = {}): DesktopDaemon
 }
 
 describe("DaemonStartService", () => {
+  it("未就绪的桌面状态不能登记为可用连接", async () => {
+    const fake = createFakeStore();
+    const service = new DaemonStartService({
+      store: fake.store,
+      startDesktopDaemon: async () => makeStatus({ status: "starting", error: "仍未就绪" }),
+    });
+    expect(await service.start()).toEqual({ ok: false, error: "仍未就绪" });
+    expect(fake.upserts).toEqual([]);
+  });
   it("upserts the connection on a successful daemon start", async () => {
     const fake = createFakeStore();
     const service = new DaemonStartService({

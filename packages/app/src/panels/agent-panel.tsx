@@ -40,6 +40,7 @@ import { COMPACT_FORM_FACTOR_WIDTH, useIsCompactFormFactor } from "@/constants/l
 import { isNative, isWeb } from "@/constants/platform";
 import { useAgentAttentionClear } from "@/hooks/use-agent-attention-clear";
 import { useAgentInitialization } from "@/hooks/use-agent-initialization";
+import { useLocalHostStartup } from "@/hooks/use-local-host-startup";
 import { useAgentInputDraft, type AgentInputDraft } from "@/composer/draft/input-draft";
 import {
   type AgentScreenAgent,
@@ -519,6 +520,7 @@ function AgentPanelContent({
   const runtimeIsConnected = useHostRuntimeIsConnected(runtimeServerId);
   const runtimeConnectionStatus = useHostRuntimeConnectionStatus(runtimeServerId);
   const runtimeLastError = useHostRuntimeLastError(runtimeServerId);
+  const localStartup = useLocalHostStartup(runtimeServerId);
   const hasCachedAgent = useSessionStore((state) => {
     if (!resolvedServerId || !resolvedAgentId) return false;
     const session = state.sessions[resolvedServerId];
@@ -541,6 +543,20 @@ function AgentPanelContent({
   const lastConnectionError = runtimeLastError;
 
   if (!resolvedServerId || (!runtimeClient && !hasCachedAgent)) {
+    if (localStartup.status) {
+      return (
+        <View style={styles.centerState}>
+          <Text style={styles.statusText}>
+            {localStartup.status === "starting"
+              ? t("startup.localHostStarting")
+              : localStartup.error}
+          </Text>
+          {localStartup.status === "error" ? (
+            <Button onPress={localStartup.retry}>{t("common.actions.retry")}</Button>
+          ) : null}
+        </View>
+      );
+    }
     return (
       <AgentSessionUnavailableState
         serverLabel={serverLabel}
@@ -786,13 +802,14 @@ function ChatAgentContent({
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
 }) {
   const { t } = useTranslation();
+  const localStartup = useLocalHostStartup(serverId);
   const isPaneVisible = useRetainedPanelActive();
   const { api: toastApi, toast: toastState, dismiss: dismissToast } = useToastHost();
   const { isArchivingAgent } = useArchiveAgent();
   const streamViewRef = useRef<AgentStreamViewHandle>(null);
   const clearOnAgentBlurRef = useRef<() => void>(() => {});
   const wasPaneFocusedRef = useRef(isPaneFocused);
-  const reconnectToastArmedRef = useRef(false);
+  const reconnectToastArmedRef = useRef<string | null>(null);
   const initAttemptTokenRef = useRef(0);
   const routeBottomAnchorRequestRef = useRef<{
     routeKey: string;
@@ -887,25 +904,49 @@ function ChatAgentContent({
     clearOnAgentBlurRef.current = attentionController.clearOnAgentBlur;
   }, [attentionController.clearOnAgentBlur]);
 
+  const startupFailed = localStartup.status === "error";
+  const retryLocalStartup = localStartup.retry;
+
   useEffect(() => {
     if (connectionStatus === "online") {
       if (reconnectToastArmedRef.current) {
-        reconnectToastArmedRef.current = false;
+        reconnectToastArmedRef.current = null;
         dismissToast();
       }
       return;
     }
-    if (connectionStatus === "idle") {
+    if (connectionStatus === "idle" && !localStartup.status) {
       return;
     }
-    if (!reconnectToastArmedRef.current) {
-      reconnectToastArmedRef.current = true;
-      toastApi.show(t("agentPanel.states.reconnecting"), {
+    let reconnectMessage = t("agentPanel.states.reconnecting");
+    if (localStartup.status === "starting") reconnectMessage = t("startup.localHostStarting");
+    if (localStartup.status === "error" && localStartup.error)
+      reconnectMessage = localStartup.error;
+    if (reconnectToastArmedRef.current !== reconnectMessage) {
+      reconnectToastArmedRef.current = reconnectMessage;
+      const content = startupFailed ? (
+        <View>
+          <Text style={styles.statusText}>{reconnectMessage}</Text>
+          <Button onPress={retryLocalStartup}>{t("common.actions.retry")}</Button>
+        </View>
+      ) : (
+        reconnectMessage
+      );
+      toastApi.show(content, {
         durationMs: null,
         testID: "agent-reconnecting-toast",
       });
     }
-  }, [connectionStatus, dismissToast, toastApi, t]);
+  }, [
+    connectionStatus,
+    dismissToast,
+    toastApi,
+    t,
+    localStartup.error,
+    startupFailed,
+    retryLocalStartup,
+    localStartup.status,
+  ]);
 
   const isArchivingCurrentAgent = Boolean(agentId && isArchivingAgent({ serverId, agentId }));
 

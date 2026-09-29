@@ -1355,7 +1355,7 @@ export class HostRuntimeStore {
   private queuedAgentDrainInFlight = new Set<string>();
   private directorySyncByServer = new Map<string, DirectorySync>();
   private configuredOverrideBootstrapInFlight: Promise<void> | null = null;
-  private bootStarted = false;
+  private bootPromise: Promise<void> | null = null;
   private storage: HostRuntimeStorage;
   private replicaCache: ReplicaCache;
   private readonly revokePushNotifications: typeof revokePushNotifications;
@@ -1400,12 +1400,9 @@ export class HostRuntimeStore {
     return this.hostRegistryLoaded;
   }
 
-  boot(): void {
-    if (this.bootStarted) {
-      return;
-    }
-    this.bootStarted = true;
-    void this.runBoot();
+  boot(): Promise<void> {
+    if (!this.bootPromise) this.bootPromise = this.runBoot();
+    return this.bootPromise;
   }
 
   private async runBoot(): Promise<void> {
@@ -1675,12 +1672,13 @@ export class HostRuntimeStore {
     connection: HostConnection;
     label?: string;
     timeoutMs?: number;
+    expectedServerId?: string;
   }): Promise<{ profile: HostProfile; serverId: string; hostname: string | null }> {
     if (input.connection.type === "relay") {
       throw new Error("Cannot probe a relay connection without a server id.");
     }
     const probeHost: HostProfile = {
-      serverId: "",
+      serverId: input.expectedServerId ?? "",
       label: input.label ?? input.connection.id,
       lifecycle: {},
       connections: [input.connection],
@@ -1693,6 +1691,22 @@ export class HostRuntimeStore {
       connection: input.connection,
       ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
     });
+    if (input.expectedServerId && serverId !== input.expectedServerId) {
+      await client.close();
+      throw new Error(`Expected daemon ${input.expectedServerId}, received ${serverId}`);
+    }
+    const alreadyConnected =
+      input.expectedServerId && this.getSnapshot(serverId)?.connectionStatus === "online";
+    if (alreadyConnected && this.getClient(serverId) !== client) {
+      // 常规重连可能在本次握手期间完成，不能替换它并再次触发会话恢复。
+      await client.close();
+      const profile = await this.upsertHostConnection({
+        serverId,
+        label: input.label ?? hostname ?? undefined,
+        connection: input.connection,
+      });
+      return { profile, serverId, hostname };
+    }
     const profile = await this.upsertHostConnection({
       serverId,
       label: input.label ?? hostname ?? undefined,
@@ -1784,6 +1798,8 @@ export class HostRuntimeStore {
     serverId: string;
     hostname: string | null;
   }): Promise<HostProfile> {
+    // 本地就绪可能早于缓存恢复；只等待注册表，不能等待远程主机联网。
+    await this.bootPromise;
     const normalizedListenAddress = input.listenAddress.trim();
     const serverId = input.serverId.trim();
     const connection = connectionFromListen(normalizedListenAddress);
@@ -1793,10 +1809,22 @@ export class HostRuntimeStore {
     if (!serverId) {
       throw new Error("Desktop daemon did not return a server id.");
     }
+    const host = this.hosts.find((profile) => profile.serverId === serverId);
+    const savedConnection = host?.connections.find((saved) => saved.id === connection.id);
+    const localConnection = savedConnection ?? connection;
+    if (this.getSnapshot(serverId)?.connectionStatus !== "online") {
+      // 桌面进程已确认监听就绪，直接采用这次握手，跳过离线探测退避。
+      const result = await this.probeAndUpsertConnection({
+        connection: localConnection,
+        expectedServerId: serverId,
+        label: input.hostname ?? undefined,
+      });
+      return result.profile;
+    }
     return this.upsertHostConnection({
       serverId,
       label: input.hostname ?? undefined,
-      connection,
+      connection: localConnection,
     });
   }
 

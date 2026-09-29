@@ -1385,6 +1385,7 @@ export const en = {
     details: "Details",
   },
   startup: {
+    localHostStarting: "Starting and connecting to the local host…",
     errorTitle: "Something went wrong",
     errorDescription:
       "The local server failed to start. If this keeps happening, please report the issue on GitHub and include the logs below.",

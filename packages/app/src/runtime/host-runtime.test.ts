@@ -1368,6 +1368,184 @@ describe("HostRuntimeController", () => {
 });
 
 describe("HostRuntimeStore", () => {
+  it("桌面就绪登记等待本机注册表，但不等待远程连接", async () => {
+    const remote = makeHost({ serverId: "remote" });
+    const registry = createDeferred<string | null>();
+    const remoteConnection =
+      createDeferred<Awaited<ReturnType<HostRuntimeControllerDeps["connectToDaemon"]>>>();
+    const memory = createMemoryHostRuntimeStorage({ "@paseo:e2e": "1" });
+    const connectedHosts: string[] = [];
+    const store = new HostRuntimeStore({
+      storage: {
+        ...memory,
+        getItem: async (key) =>
+          key === "@paseo:daemon-registry" ? registry.promise : memory.getItem(key),
+      },
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => {
+          connectedHosts.push(host.serverId);
+          if (host.serverId === "remote") return remoteConnection.promise;
+          return {
+            client: makeConnectedProbeClient(1) as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: "local",
+          };
+        },
+        getClientId: async () => "test-client",
+      },
+    });
+    try {
+      const boot = store.boot();
+      const local = store.upsertConnectionFromListen({
+        serverId: "local",
+        listenAddress: "127.0.0.1:6767",
+        hostname: "local",
+      });
+      expect(connectedHosts).toEqual([]);
+      registry.resolve(JSON.stringify([remote]));
+      await boot;
+      await local;
+      expect(store.getHosts().map((host) => host.serverId)).toEqual(["remote", "local"]);
+      expect(connectedHosts).toContain("local");
+    } finally {
+      store.syncHosts([]);
+      remoteConnection.resolve({
+        client: makeConnectedProbeClient(1) as unknown as DaemonClient,
+        serverId: "remote",
+        hostname: "remote",
+      });
+    }
+  });
+
+  it("桌面就绪后直接连接，保留已有密码且不等待离线探测间隔", async () => {
+    const local = makeHost({
+      serverId: "local",
+      connections: [
+        {
+          id: "direct:localhost:6767",
+          type: "directTcp",
+          endpoint: "localhost:6767",
+          useTls: false,
+          password: "saved",
+        },
+      ],
+    });
+    let ready = false;
+    const attempts: HostConnection[] = [];
+    const storage = createMemoryHostRuntimeStorage({
+      "@paseo:e2e": "1",
+      "@paseo:daemon-registry": JSON.stringify([local]),
+    });
+    const store = new HostRuntimeStore({
+      storage,
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host, connection }) => {
+          attempts.push(connection);
+          if (!ready) throw new Error("not listening");
+          return {
+            client: makeConnectedProbeClient(1) as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: "local",
+          };
+        },
+        getClientId: async () => "test-client",
+      },
+    });
+    try {
+      await store.boot();
+      await store.runProbeCycleNow("local");
+      const before = attempts.length;
+      ready = true;
+      await store.upsertConnectionFromListen({
+        serverId: "local",
+        listenAddress: "127.0.0.1:6767",
+        hostname: "local",
+      });
+      expect(attempts.slice(before)).toEqual(local.connections);
+      expect(store.getHosts()[0].connections).toEqual(local.connections);
+    } finally {
+      store.syncHosts([]);
+    }
+  });
+
+  it("桌面登记遇到错误主机时关闭连接且不污染主机列表", async () => {
+    const client = makeConnectedProbeClient(1);
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage(),
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async () => ({
+          client: client as unknown as DaemonClient,
+          serverId: "other",
+          hostname: "other",
+        }),
+        getClientId: async () => "test-client",
+      },
+    });
+    await expect(
+      store.upsertConnectionFromListen({
+        serverId: "local",
+        listenAddress: "127.0.0.1:6767",
+        hostname: "local",
+      }),
+    ).rejects.toThrow("Expected daemon local");
+    expect(store.getHosts()).toEqual([]);
+    expect(client.isDisposed()).toBe(true);
+  });
+
+  it("常规重连先完成时关闭迟到握手，不替换在线连接", async () => {
+    const lateClient = makeConnectedProbeClient(1);
+    const activeClient = makeConnectedProbeClient(1);
+    const late =
+      createDeferred<Awaited<ReturnType<HostRuntimeControllerDeps["connectToDaemon"]>>>();
+    const started = createDeferred<void>();
+    let attempts = 0;
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage(),
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => {
+          attempts += 1;
+          if (attempts === 1) {
+            started.resolve();
+            return late.promise;
+          }
+          return {
+            client: activeClient as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: "local",
+          };
+        },
+        getClientId: async () => "test-client",
+      },
+    });
+    try {
+      const connection = store.upsertConnectionFromListen({
+        serverId: "local",
+        listenAddress: "127.0.0.1:6767",
+        hostname: "local",
+      });
+      await started.promise;
+      await store.upsertDirectConnection({ serverId: "local", endpoint: "localhost:6767" });
+      await store.runProbeCycleNow("local");
+      expect(store.getSnapshot("local")?.connectionStatus).toBe("online");
+      const generation = store.getSnapshot("local")?.clientGeneration;
+      late.resolve({
+        client: lateClient as unknown as DaemonClient,
+        serverId: "local",
+        hostname: "local",
+      });
+      await connection;
+      expect(store.getClient("local")).toBe(activeClient);
+      expect(store.getSnapshot("local")?.clientGeneration).toBe(generation);
+      expect(lateClient.isDisposed()).toBe(true);
+    } finally {
+      store.syncHosts([]);
+    }
+  });
+
   it("revokes push notifications before removing a host", async () => {
     const host = makeHost({ connections: [makeHost().connections[0]!] });
     const revocation = createDeferred<void>();

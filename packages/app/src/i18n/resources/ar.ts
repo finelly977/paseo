@@ -1377,6 +1377,7 @@ export const ar: TranslationResources = {
     details: "التفاصيل",
   },
   startup: {
+    localHostStarting: "جارٍ بدء المضيف المحلي والاتصال به…",
     errorTitle: "حدث خطأ ما",
     errorDescription:
       "فشل الخادم المحلي في البدء. إذا استمر حدوث ذلك، فيرجى الإبلاغ عن المشكلة على GitHub وتضمين السجلات أدناه.",

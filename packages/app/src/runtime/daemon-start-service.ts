@@ -20,6 +20,9 @@ export async function upsertDesktopDaemonConnection(
   store: DaemonConnectionStore,
   daemon: DesktopDaemonStatus,
 ): Promise<DaemonStartResult> {
+  if (daemon.status !== "running") {
+    return { ok: false, error: daemon.error ?? "Desktop daemon is not ready." };
+  }
   const listenAddress = daemon.listen?.trim() ?? "";
   const serverId = daemon.serverId.trim();
   if (!listenAddress) {

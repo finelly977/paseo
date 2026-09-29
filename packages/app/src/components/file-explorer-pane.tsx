@@ -50,6 +50,7 @@ import {
 } from "@/file-explorer/tree";
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
+import { useLocalHostStartup } from "@/hooks/use-local-host-startup";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
 
@@ -237,6 +238,7 @@ export function FileExplorerPane({
 
   const normalizedWorkspaceRoot = useMemo(() => workspaceRoot.trim(), [workspaceRoot]);
   const isLocalDaemon = useIsLocalDaemon(serverId);
+  const localStartup = useLocalHostStartup(serverId);
   const { canOpenInFileManager, openInFileManager } = useOpenInFileManager({
     workspacePath: normalizedWorkspaceRoot,
     isLocalExecution: isLocalDaemon,
@@ -648,6 +650,27 @@ export function FileExplorerPane({
     return (
       <View style={styles.centerState}>
         <Text style={styles.errorText}>{t("workspace.fileExplorer.states.unavailable")}</Text>
+      </View>
+    );
+  }
+
+  if (localStartup.status) {
+    return (
+      <View style={styles.centerState}>
+        {localStartup.status === "starting" ? (
+          <Text style={styles.loadingText} accessibilityLiveRegion="polite">
+            {t("startup.localHostStarting")}
+          </Text>
+        ) : (
+          <>
+            <Text style={styles.errorText}>{localStartup.error}</Text>
+            <Pressable style={styles.retryButton} onPress={localStartup.retry}>
+              <Text style={styles.retryButtonText}>
+                {t("workspace.fileExplorer.actions.retry")}
+              </Text>
+            </Pressable>
+          </>
+        )}
       </View>
     );
   }

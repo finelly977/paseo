@@ -1420,6 +1420,7 @@ export const fr: TranslationResources = {
     details: "Détails",
   },
   startup: {
+    localHostStarting: "Démarrage et connexion à l’hôte local…",
     errorTitle: "Quelque chose s'est mal passé",
     errorDescription:
       "Le serveur local n'a pas pu démarrer. Si cela continue, veuillez signaler le problème surGitHubet inclure les journaux ci-dessous.",

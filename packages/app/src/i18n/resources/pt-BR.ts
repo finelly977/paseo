@@ -1404,6 +1404,7 @@ export const ptBR: TranslationResources = {
     details: "Detalhes",
   },
   startup: {
+    localHostStarting: "Iniciando e conectando ao host local…",
     errorTitle: "Algo deu errado",
     errorDescription:
       "O servidor local falhou ao iniciar. Se isso continuar acontecendo, reporte o problema no GitHub e inclua os logs abaixo.",

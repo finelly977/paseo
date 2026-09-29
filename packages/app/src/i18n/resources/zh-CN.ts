@@ -1359,6 +1359,7 @@ export const zhCN: TranslationResources = {
     details: "详情",
   },
   startup: {
+    localHostStarting: "正在启动并连接本地主机…",
     errorTitle: "出现问题",
     errorDescription: "本地服务器启动失败。如果持续发生，请在 GitHub 报告问题并附上下方日志。",
     logs: {

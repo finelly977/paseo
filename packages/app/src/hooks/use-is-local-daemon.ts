@@ -1,26 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { getDesktopDaemonStatus, shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
+import { getDesktopDaemonIdentity, shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 
 const DESKTOP_DAEMON_SERVER_ID_QUERY_KEY = ["desktop-daemon-server-id"] as const;
-
-interface DesktopDaemonServerIdResult {
-  serverId: string | null;
-}
-
-async function loadDesktopDaemonServerId(): Promise<DesktopDaemonServerIdResult> {
-  const status = await getDesktopDaemonStatus();
-  const serverId = status.serverId.trim();
-  return {
-    serverId: serverId.length > 0 ? serverId : null,
-  };
-}
 
 function useLocalDaemonServerIdQuery() {
   const isDesktopApp = shouldUseDesktopDaemon();
 
   return useQuery({
     queryKey: DESKTOP_DAEMON_SERVER_ID_QUERY_KEY,
-    queryFn: loadDesktopDaemonServerId,
+    queryFn: getDesktopDaemonIdentity,
     enabled: isDesktopApp,
     staleTime: Infinity,
     gcTime: Infinity,

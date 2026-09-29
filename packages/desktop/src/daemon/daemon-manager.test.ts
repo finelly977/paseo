@@ -7,6 +7,8 @@ import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { getBundledCliShimPath } from "../integrations/cli-install";
 import {
   createDaemonCommandHandlers,
+  type DaemonStartupDeps,
+  type DesktopDaemonStatus,
   prestartDesktopDaemon,
   registerDaemonManager,
 } from "./daemon-manager";
@@ -346,87 +348,63 @@ describe("daemon-manager commands", () => {
     );
   });
 
-  it("uses a stale reachable desktop daemon when the version matches", async () => {
-    mocks.runExternalCliJsonCommand.mockResolvedValue({
-      localDaemon: "stale_pid",
-      connectedDaemon: "reachable",
-      serverId: "server-1",
-      pid: 7675,
-      listen: "127.0.0.1:6767",
-      hostname: "dev-host",
-      daemonVersion: "1.2.3",
-      desktopManaged: true,
-    });
-    const handlers = createDaemonCommandHandlers();
-
-    await expect(handlers.start_desktop_daemon()).resolves.toEqual({
+  function status(overrides: Partial<DesktopDaemonStatus> = {}): DesktopDaemonStatus {
+    return {
       serverId: "server-1",
       status: "running",
       listen: "127.0.0.1:6767",
       hostname: "dev-host",
-      pid: null,
+      pid: 4242,
       home: mocks.paseoHome,
       version: "1.2.3",
       desktopManaged: true,
       error: null,
-    });
+      ...overrides,
+    };
+  }
 
+  function startup(...responses: Array<DesktopDaemonStatus | Error>) {
+    let calls = 0;
+    const deps: DaemonStartupDeps = {
+      async resolveReadiness() {
+        calls += 1;
+        const response = responses.shift();
+        if (!response) throw new Error("未提供就绪检查响应");
+        if (response instanceof Error) throw response;
+        return response;
+      },
+    };
+    return { deps, calls: () => calls };
+  }
+
+  it("复用已确认可连接且版本一致的服务，不启动完整诊断", async () => {
+    const fake = startup(status({ pid: null }));
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).resolves.toEqual(
+      status({ pid: null }),
+    );
+    expect(fake.calls()).toBe(1);
     expect(mocks.spawnProcess).not.toHaveBeenCalled();
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
   });
 
-  it("restarts a stale reachable desktop daemon when the version differs", async () => {
+  it("托管服务版本不同仍通过原停止流程重启", async () => {
+    const fake = startup(status({ version: "1.2.2" }), status());
     mocks.runExternalCliJsonCommand
-      .mockResolvedValueOnce({
-        localDaemon: "stale_pid",
-        connectedDaemon: "reachable",
-        serverId: "server-1",
-        pid: 7675,
-        listen: "127.0.0.1:6767",
-        hostname: "dev-host",
-        daemonVersion: "1.2.2",
-        desktopManaged: true,
-      })
-      .mockResolvedValueOnce({
-        localDaemon: "stale_pid",
-        connectedDaemon: "reachable",
-        serverId: "server-1",
-        pid: 7675,
-        listen: "127.0.0.1:6767",
-        daemonVersion: "1.2.2",
-        desktopManaged: true,
-      })
-      .mockResolvedValueOnce({ action: "stopped" })
-      .mockResolvedValueOnce({
-        localDaemon: "stopped",
-        connectedDaemon: "unreachable",
-        serverId: "",
-      })
       .mockResolvedValueOnce({
         localDaemon: "running",
         connectedDaemon: "reachable",
-        serverId: "server-2",
-        pid: 8888,
+        serverId: "server-1",
+        pid: 4242,
         listen: "127.0.0.1:6767",
-        hostname: "dev-host",
-        daemonVersion: "1.2.3",
         desktopManaged: true,
-      });
+      })
+      .mockResolvedValueOnce({ action: "stopped" })
+      .mockResolvedValueOnce({ localDaemon: "stopped", serverId: "server-1" });
     mocks.spawnProcess.mockReturnValue(createMockChildProcess());
-    const handlers = createDaemonCommandHandlers();
-
-    await expect(handlers.start_desktop_daemon()).resolves.toEqual({
-      serverId: "server-2",
-      status: "running",
-      listen: "127.0.0.1:6767",
-      hostname: "dev-host",
-      pid: 8888,
-      home: mocks.paseoHome,
-      version: "1.2.3",
-      desktopManaged: true,
-      error: null,
-    });
-
-    expect(mocks.runExternalCliJsonCommand).toHaveBeenNthCalledWith(3, [
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).resolves.toEqual(
+      status(),
+    );
+    expect(mocks.runExternalCliJsonCommand).toHaveBeenNthCalledWith(2, [
       "daemon",
       "stop",
       "--json",
@@ -436,42 +414,30 @@ describe("daemon-manager commands", () => {
       "--kill-timeout",
       "5",
     ]);
-    expect(mocks.spawnProcess).toHaveBeenCalled();
+    expect(mocks.spawnProcess).toHaveBeenCalledTimes(1);
   });
 
-  it("starts the managed daemon detached from desktop stdio and reports daemon log failures", async () => {
-    mkdirSync(mocks.paseoHome, { recursive: true });
-    writeFileSync(
-      `${mocks.paseoHome}/daemon.log`,
-      ["old log line", "recent daemon failure"].join("\n"),
+  it("非托管服务版本不同也不自动停止", async () => {
+    const running = status({ desktopManaged: false, version: "different" });
+    const fake = startup(running);
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).resolves.toEqual(
+      running,
     );
-    mocks.runExternalCliJsonCommand.mockResolvedValue({
-      localDaemon: "stopped",
-      connectedDaemon: "unreachable",
-      serverId: "",
-    });
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
+    expect(mocks.spawnProcess).not.toHaveBeenCalled();
+  });
+
+  it("后台启动失败仍显示守护进程日志", async () => {
+    mkdirSync(mocks.paseoHome, { recursive: true });
+    writeFileSync(`${mocks.paseoHome}/daemon.log`, "recent daemon failure");
+    const fake = startup(status({ status: "stopped", pid: null }));
     mocks.spawnProcess.mockImplementation(() => {
       const child = createMockChildProcess();
       scheduleFailedStartup(child);
       return child;
     });
-    const handlers = createDaemonCommandHandlers();
-
-    let thrown: Error | null = null;
-    try {
-      await handlers.start_desktop_daemon();
-    } catch (error) {
-      thrown = error instanceof Error ? error : new Error(String(error));
-    }
-
-    expect(thrown).toBeInstanceOf(Error);
-    const message = thrown?.message ?? "";
-    const recentLogsLabel = message.match(/Recent logs \(([^)]*)\):/)?.[1];
-    expect(message).toContain("Daemon failed to start: exit code 1");
-    expect(recentLogsLabel?.split(/[\\/]/).at(-1)).toBe("daemon.log");
-    expect(message).toContain("recent daemon failure");
-    expect(mocks.createNodeEntrypointInvocation).toHaveBeenCalledWith(
-      expect.objectContaining({ args: [] }),
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).rejects.toThrow(
+      "recent daemon failure",
     );
     expect(mocks.spawnProcess).toHaveBeenCalledWith(
       "node",
@@ -487,80 +453,50 @@ describe("daemon-manager commands", () => {
     );
   });
 
-  it("shares one in-flight start between launch prestart and renderer startup", async () => {
-    mocks.runExternalCliJsonCommand
-      .mockResolvedValueOnce({
-        localDaemon: "stopped",
-        connectedDaemon: "unreachable",
-        serverId: "",
-      })
-      .mockResolvedValueOnce({
-        localDaemon: "running",
-        connectedDaemon: "reachable",
-        serverId: "server-1",
-        pid: 4242,
-        listen: "127.0.0.1:6767",
-        hostname: "dev-host",
-        daemonVersion: "1.2.3",
-        desktopManaged: true,
-      });
+  it("预启动和渲染器启动共用一次轻量就绪流程", async () => {
+    const fake = startup(status({ status: "stopped", pid: null }), status());
     mocks.spawnProcess.mockReturnValue(createMockChildProcess());
-    const handlers = createDaemonCommandHandlers();
-
-    const [prestartResult, rendererResult] = await Promise.all([
-      prestartDesktopDaemon(),
-      handlers.start_desktop_daemon(),
+    const [prestartResult, result] = await Promise.all([
+      prestartDesktopDaemon(fake.deps),
+      createDaemonCommandHandlers(fake.deps).start_desktop_daemon(),
     ]);
-
     expect(prestartResult).toBeUndefined();
-    expect(rendererResult).toMatchObject({
-      status: "running",
-      serverId: "server-1",
-      listen: "127.0.0.1:6767",
-    });
+    expect(result).toEqual(status());
+    expect(fake.calls()).toBe(2);
     expect(mocks.spawnProcess).toHaveBeenCalledTimes(1);
-    expect(mocks.runExternalCliJsonCommand).toHaveBeenCalledTimes(2);
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
   });
 
-  it("passes stale lock reclaim only after a live desktop daemon is confirmed unresponsive", async () => {
-    mocks.runExternalCliJsonCommand.mockResolvedValue({
-      localDaemon: "unresponsive",
-      connectedDaemon: "unreachable",
-      serverId: "",
-      pid: 7675,
-      listen: "127.0.0.1:6767",
-      desktopManaged: true,
-    });
+  it("服务连接暂时超时时等待就绪，不重复创建或回收进程", async () => {
+    const fake = startup(status({ status: "starting", error: "Connection timed out" }), status());
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).resolves.toEqual(
+      status(),
+    );
+    expect(mocks.spawnProcess).not.toHaveBeenCalled();
+    expect(mocks.runExternalCliJsonCommand).not.toHaveBeenCalled();
+  });
+
+  it("只有已确认无法连接的托管进程才尝试回收陈旧锁", async () => {
+    const fake = startup(status({ status: "errored" }));
     mocks.spawnProcess.mockImplementation(() => {
       const child = createMockChildProcess();
       scheduleFailedStartup(child);
       return child;
     });
-
-    await expect(createDaemonCommandHandlers().start_desktop_daemon()).rejects.toThrow(
-      "Daemon failed to start: exit code 1",
+    await expect(createDaemonCommandHandlers(fake.deps).start_desktop_daemon()).rejects.toThrow(
+      "exit code 1",
     );
-
     expect(mocks.createNodeEntrypointInvocation).toHaveBeenCalledWith(
       expect.objectContaining({ args: ["--reclaim-stale-pid-lock"] }),
     );
   });
 
-  it("does not pass stale lock reclaim when the status command fails", async () => {
-    mocks.runExternalCliJsonCommand.mockRejectedValue(new Error("status command failed"));
-    mocks.spawnProcess.mockImplementation(() => {
-      const child = createMockChildProcess();
-      scheduleFailedStartup(child);
-      return child;
-    });
-
-    await expect(createDaemonCommandHandlers().start_desktop_daemon()).rejects.toThrow(
-      "Daemon failed to start: exit code 1",
-    );
-
-    expect(mocks.createNodeEntrypointInvocation).toHaveBeenCalledWith(
-      expect.objectContaining({ args: [] }),
-    );
+  it("检查异常立即失败，不再盲目拉起第二个进程，并允许重试", async () => {
+    const fake = startup(new Error("status failed"), status());
+    const handlers = createDaemonCommandHandlers(fake.deps);
+    await expect(handlers.start_desktop_daemon()).rejects.toThrow("status failed");
+    await expect(handlers.start_desktop_daemon()).resolves.toEqual(status());
+    expect(mocks.spawnProcess).not.toHaveBeenCalled();
   });
 
   it("returns the Electron main-process log tail from electron-log", () => {

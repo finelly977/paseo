@@ -1404,6 +1404,7 @@ export const ru: TranslationResources = {
     details: "Подробности",
   },
   startup: {
+    localHostStarting: "Запуск и подключение к локальному хосту…",
     errorTitle: "Что- то пошло не так",
     errorDescription:
       "Локальный сервер не удалось запустить. Если это повторяется, сообщите о проблеме на GitHub и приложите журналы ниже.",

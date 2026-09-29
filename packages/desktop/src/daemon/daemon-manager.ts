@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
 import log from "electron-log/main";
-import { resolvePaseoHome, spawnProcess } from "@getpaseo/server";
+import { getOrCreateServerId, resolvePaseoHome, spawnProcess } from "@getpaseo/server";
 import {
   copyAttachmentFileToManagedStorage,
   deleteManagedAttachmentFile,
@@ -46,10 +46,11 @@ import { assertTrustedIpcSender } from "../security/trusted-renderer.js";
 import { isRunningUnderARM64Translation } from "../system/arm64-translation.js";
 import { getDesktopAppLogs } from "../diagnostics/app-logs.js";
 import { tailFile } from "../diagnostics/tail-file.js";
+import { resolveDaemonReadiness } from "./readiness.js";
 
 const DAEMON_LOG_FILENAME = "daemon.log";
 const STARTUP_POLL_INTERVAL_MS = 200;
-const STARTUP_POLL_MAX_ATTEMPTS = 150;
+const STARTUP_TIMEOUT_MS = 30_000;
 const DETACHED_STARTUP_GRACE_MS = 1200;
 const LOCAL_DAEMON_OVERRIDE_ENV_VAR = "EXPO_PUBLIC_LOCAL_DAEMON";
 
@@ -79,6 +80,14 @@ export interface DesktopDaemonStatus {
   desktopManaged: boolean;
   error: string | null;
 }
+
+export interface DaemonStartupDeps {
+  resolveReadiness(): Promise<DesktopDaemonStatus>;
+}
+
+const daemonStartupDeps: DaemonStartupDeps = {
+  resolveReadiness: () => resolveDaemonReadiness(getPaseoHome()),
+};
 
 interface DesktopDaemonLogs {
   logPath: string;
@@ -346,20 +355,26 @@ function buildStartupFailureError(result: {
   return new Error(parts.join("\n\n"));
 }
 
-async function pollForRunningDaemon(): Promise<DesktopDaemonStatus> {
+async function pollForRunningDaemon(deps: DaemonStartupDeps): Promise<DesktopDaemonStatus> {
+  const startedAt = performance.now();
   async function poll(attempt: number): Promise<DesktopDaemonStatus> {
-    if (attempt >= STARTUP_POLL_MAX_ATTEMPTS) return resolveDesktopDaemonStatus();
-    const status = await resolveDesktopDaemonStatus();
-    if (attempt === 0 || attempt === STARTUP_POLL_MAX_ATTEMPTS - 1 || attempt % 10 === 9) {
+    const status = await deps.resolveReadiness();
+    if (attempt === 0 || status.status === "running" || attempt % 10 === 9) {
       logDesktopDaemonLifecycle("polling daemon status after detached start", {
         attempt: attempt + 1,
         status: status.status,
         pid: status.pid,
         listen: status.listen,
         serverId: status.serverId || null,
+        elapsedMs: Math.round(performance.now() - startedAt),
       });
     }
     if (status.status === "running" && status.serverId && status.listen) return status;
+    if (performance.now() - startedAt >= STARTUP_TIMEOUT_MS) {
+      throw new Error(
+        `Daemon did not become ready within ${STARTUP_TIMEOUT_MS}ms: ${status.error ?? status.status}`,
+      );
+    }
     await sleep(STARTUP_POLL_INTERVAL_MS);
     return poll(attempt + 1);
   }
@@ -368,10 +383,11 @@ async function pollForRunningDaemon(): Promise<DesktopDaemonStatus> {
 
 let daemonStartPromise: Promise<DesktopDaemonStatus> | null = null;
 
-async function performDaemonStart(): Promise<DesktopDaemonStatus> {
+async function performDaemonStart(deps: DaemonStartupDeps): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
 
-  const current = await resolveDesktopDaemonStatus();
+  const startedAt = performance.now();
+  let current = await deps.resolveReadiness();
   logDesktopDaemonLifecycle("initial status check before start", {
     status: current.status,
     pid: current.pid,
@@ -379,7 +395,11 @@ async function performDaemonStart(): Promise<DesktopDaemonStatus> {
     serverId: current.serverId || null,
     error: current.error,
     desktopManaged: current.desktopManaged,
+    elapsedMs: Math.round(performance.now() - startedAt),
   });
+  if (current.status === "starting") {
+    current = await pollForRunningDaemon(deps);
+  }
   if (current.status === "running") {
     if (shouldRestartForVersion(current)) {
       logDesktopDaemonLifecycle("daemon version mismatch, restarting", {
@@ -477,15 +497,15 @@ async function performDaemonStart(): Promise<DesktopDaemonStatus> {
     throw buildStartupFailureError(result);
   }
 
-  return pollForRunningDaemon();
+  return pollForRunningDaemon(deps);
 }
 
-function startDaemon(): Promise<DesktopDaemonStatus> {
+function startDaemon(deps: DaemonStartupDeps): Promise<DesktopDaemonStatus> {
   if (daemonStartPromise) {
     return daemonStartPromise;
   }
 
-  const startPromise = performDaemonStart().finally(() => {
+  const startPromise = performDaemonStart(deps).finally(() => {
     if (daemonStartPromise === startPromise) {
       daemonStartPromise = null;
     }
@@ -494,7 +514,9 @@ function startDaemon(): Promise<DesktopDaemonStatus> {
   return startPromise;
 }
 
-export async function prestartDesktopDaemon(): Promise<void> {
+export async function prestartDesktopDaemon(
+  deps: DaemonStartupDeps = daemonStartupDeps,
+): Promise<void> {
   if (process.env[LOCAL_DAEMON_OVERRIDE_ENV_VAR]?.trim()) {
     logDesktopDaemonLifecycle("跳过桌面守护进程预启动：已配置自定义本地守护进程");
     return;
@@ -506,7 +528,7 @@ export async function prestartDesktopDaemon(): Promise<void> {
     return;
   }
 
-  await startDaemon();
+  await startDaemon(deps);
 }
 
 export async function stopDesktopDaemon(
@@ -529,10 +551,10 @@ export async function stopDesktopDaemon(
   return statusAfter ?? (await resolveDesktopDaemonStatus());
 }
 
-async function restartDaemon(): Promise<DesktopDaemonStatus> {
+async function restartDaemon(deps: DaemonStartupDeps): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
   await stopDesktopDaemon("restart");
-  return startDaemon();
+  return startDaemon(deps);
 }
 
 function getDaemonLogs(): DesktopDaemonLogs {
@@ -598,7 +620,9 @@ async function resolveRequestedReleaseChannel(
 // IPC registration
 // ---------------------------------------------------------------------------
 
-export function createDaemonCommandHandlers(): Record<string, DesktopCommandHandler> {
+export function createDaemonCommandHandlers(
+  deps: DaemonStartupDeps = daemonStartupDeps,
+): Record<string, DesktopCommandHandler> {
   return {
     ...createDesktopSettingsCommandHandlers({ settingsStore: getDesktopSettingsStore() }),
     desktop_get_runtime_info: () => ({
@@ -606,9 +630,10 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
       runningUnderARM64Translation: isRunningUnderARM64Translation(),
     }),
     desktop_daemon_status: () => resolveDesktopDaemonStatus(),
-    start_desktop_daemon: () => startDaemon(),
+    desktop_daemon_identity: () => ({ serverId: getOrCreateServerId(getPaseoHome()) }),
+    start_desktop_daemon: () => startDaemon(deps),
     stop_desktop_daemon: (args) => stopDesktopDaemon(parseDesktopDaemonStopReason(args)),
-    restart_desktop_daemon: () => restartDaemon(),
+    restart_desktop_daemon: () => restartDaemon(deps),
     desktop_daemon_logs: () => getDaemonLogs(),
     desktop_app_logs: () => getDesktopAppLogs(),
     desktop_daemon_pairing: () => getDaemonPairing(),
