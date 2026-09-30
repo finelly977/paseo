@@ -70,7 +70,13 @@ import {
 import { createPathEquivalenceMatcher } from "../../../utils/path.js";
 import { spawnProcess } from "../../../utils/spawn.js";
 import { extractCodexTerminalSessionId, nonEmptyString } from "./tool-call-mapper-utils.js";
-import { buildCodexFeatures, codexModelSupportsFastMode } from "./codex-feature-definitions.js";
+import {
+  buildCodexFeatures,
+  CodexServiceTierSchema,
+  normalizeCodexServiceTier,
+  resolveCodexFastServiceTier,
+  resolveCodexServiceTier,
+} from "./codex-feature-definitions.js";
 import {
   CodexAppServerClient,
   CodexAppServerRpcError,
@@ -276,6 +282,10 @@ interface CodexAppServerClientLike {
 }
 
 interface CodexAppServerAgentDeps {
+  spawnAppServer?: (
+    launchEnv?: Record<string, string>,
+    options?: { goalsEnabled?: boolean; agentId?: string },
+  ) => Promise<ChildProcessWithoutNullStreams>;
   connectDesktopTools?: typeof connectCodexDesktopTools;
   resolveCodexLaunchCommand?: () => Promise<string>;
   resolveCodexVersion?: () => Promise<string>;
@@ -532,6 +542,20 @@ export function normalizeCodexOutputSchema(schema: unknown): Record<string, unkn
 interface CodexConfiguredDefaults {
   model?: string;
   thinkingOptionId?: string;
+  serviceTier: string | null;
+  fastModeEnabled: boolean;
+}
+
+interface CodexModelCatalog {
+  models: CodexModel[];
+  defaults: CodexConfiguredDefaults;
+  configuration: Record<string, unknown>;
+}
+
+interface CodexModelCatalogRequest {
+  client: CodexAppServerClient;
+  cwd?: string;
+  overrides?: Record<string, unknown> | null;
 }
 
 interface PersistedTimelineEntry {
@@ -547,16 +571,6 @@ interface PersistedSubAgentRoute {
 interface CodexThreadHistoryProjection {
   timeline: PersistedTimelineEntry[];
   subAgentRoutes: PersistedSubAgentRoute[];
-}
-
-function mergeCodexConfiguredDefaults(
-  primary: CodexConfiguredDefaults,
-  fallback: CodexConfiguredDefaults,
-): CodexConfiguredDefaults {
-  return {
-    model: primary.model ?? fallback.model,
-    thinkingOptionId: primary.thinkingOptionId ?? fallback.thinkingOptionId,
-  };
 }
 
 function codexMicrosoftStorePackageRoot(): string | null {
@@ -983,43 +997,37 @@ function isCodexAlreadyIdleInterrupt(error: unknown): boolean {
 }
 
 // Codex app-server API response types
-interface CodexReasoningEffortEntry {
-  reasoningEffort?: string;
-  description?: string;
-}
+const CodexReasoningEffortEntrySchema = z.object({
+  reasoningEffort: z.string().optional(),
+  description: z.string().optional(),
+});
+type CodexReasoningEffortEntry = z.infer<typeof CodexReasoningEffortEntrySchema>;
 
-interface CodexModel {
-  id: string;
-  displayName?: string;
-  description?: string;
-  isDefault?: boolean;
-  model?: string;
-  defaultReasoningEffort?: string;
-  supportedReasoningEfforts?: CodexReasoningEffortEntry[];
-}
+const CodexModelSchema = z.object({
+  id: z.string(),
+  displayName: z.string().optional(),
+  description: z.string().optional(),
+  isDefault: z.boolean().optional(),
+  model: z.string().optional(),
+  defaultReasoningEffort: z.string().optional(),
+  supportedReasoningEfforts: z.array(CodexReasoningEffortEntrySchema).optional(),
+  serviceTiers: z.array(CodexServiceTierSchema).optional().default([]),
+  defaultServiceTier: z.string().nullable().optional(),
+});
+type CodexModel = z.infer<typeof CodexModelSchema>;
 
 const CodexModelListResponseSchema = z.object({
-  data: z
-    .array(
-      z.object({
-        id: z.string(),
-        displayName: z.string().optional(),
-        description: z.string().optional(),
-        isDefault: z.boolean().optional(),
-        model: z.string().optional(),
-        defaultReasoningEffort: z.string().optional(),
-        supportedReasoningEfforts: z
-          .array(
-            z.object({
-              reasoningEffort: z.string().optional(),
-              description: z.string().optional(),
-            }),
-          )
-          .optional(),
-      }),
-    )
-    .optional(),
+  data: z.array(CodexModelSchema),
+  nextCursor: z.string().nullable().optional(),
 });
+
+function findCodexModel(
+  models: readonly CodexModel[],
+  modelId: string | undefined,
+): CodexModel | undefined {
+  if (modelId === undefined) return undefined;
+  return models.find((candidate) => candidate.id === modelId || candidate.model === modelId);
+}
 
 function filterCodexThreadsByCwd(
   threads: Array<Record<string, unknown>>,
@@ -3209,45 +3217,44 @@ const CodexNotificationSchema = z.union([
     ),
 ]);
 
-async function readCodexConfiguredDefaults(
-  client: CodexAppServerClient,
-  logger: Logger,
-): Promise<CodexConfiguredDefaults> {
-  let savedConfigDefaults: CodexConfiguredDefaults = {};
-  try {
-    const response = toObjectRecord(await client.request("getUserSavedConfig", {}));
-    const config = toObjectRecord(response?.config);
-    const modelValue = typeof config?.model === "string" ? config.model : undefined;
-    const thinkingOptionValue =
-      typeof config?.modelReasoningEffort === "string" ? config.modelReasoningEffort : null;
-    savedConfigDefaults = {
-      model: normalizeCodexModelId(modelValue),
-      thinkingOptionId: normalizeCodexThinkingOptionId(thinkingOptionValue),
-    };
-  } catch (error) {
-    logger.debug({ error }, "Failed to read Codex saved config defaults");
-  }
+const CodexConfiguredDefaultsSchema = z.object({
+  model: z.string().nullable().optional(),
+  model_reasoning_effort: z.string().nullable().optional(),
+  service_tier: z.string().nullable().optional(),
+  features: z.object({ fast_mode: z.boolean().optional() }).nullable().optional(),
+});
 
-  if (savedConfigDefaults.model && savedConfigDefaults.thinkingOptionId) {
-    return savedConfigDefaults;
+async function readCodexModelCatalog(input: CodexModelCatalogRequest): Promise<CodexModelCatalog> {
+  const { client, cwd } = input;
+  const [rawModels, rawConfig] = await Promise.all([
+    client.request("model/list", { limit: 100 }),
+    client.request("config/read", cwd ? { cwd } : {}),
+  ]);
+  const firstPage = CodexModelListResponseSchema.parse(rawModels);
+  const models = [...firstPage.data];
+  let cursor = firstPage.nextCursor ?? null;
+  while (cursor !== null) {
+    const response = CodexModelListResponseSchema.parse(
+      await client.request("model/list", { limit: 100, cursor }),
+    );
+    models.push(...response.data);
+    cursor = response.nextCursor ?? null;
   }
-
-  let configReadDefaults: CodexConfiguredDefaults = {};
-  try {
-    const response = toObjectRecord(await client.request("config/read", {}));
-    const config = toObjectRecord(response?.config);
-    const modelValue = typeof config?.model === "string" ? config.model : undefined;
-    const thinkingOptionValue =
-      typeof config?.model_reasoning_effort === "string" ? config.model_reasoning_effort : null;
-    configReadDefaults = {
-      model: normalizeCodexModelId(modelValue),
-      thinkingOptionId: normalizeCodexThinkingOptionId(thinkingOptionValue),
-    };
-  } catch (error) {
-    logger.debug({ error }, "Failed to read Codex config defaults");
-  }
-
-  return mergeCodexConfiguredDefaults(savedConfigDefaults, configReadDefaults);
+  const { config: configuration } = z
+    .object({ config: z.record(z.string(), z.unknown()) })
+    .parse(rawConfig);
+  const config = CodexConfiguredDefaultsSchema.parse(configuration);
+  const overrides = CodexConfiguredDefaultsSchema.parse(input.overrides ?? {});
+  const fastModeEnabled = overrides.features?.fast_mode ?? config.features?.fast_mode ?? true;
+  const defaults: CodexConfiguredDefaults = {
+    model: normalizeCodexModelId(overrides.model ?? config.model),
+    thinkingOptionId: normalizeCodexThinkingOptionId(
+      overrides.model_reasoning_effort ?? config.model_reasoning_effort,
+    ),
+    serviceTier: normalizeCodexServiceTier(overrides.service_tier ?? config.service_tier),
+    fastModeEnabled,
+  };
+  return { models, defaults, configuration };
 }
 
 interface CodexSkillPromptBlock {
@@ -3453,7 +3460,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   private capacityCandidateAssistantIds = new Set<string>();
   private currentTurnHasSubstantiveTimelineOutput = false;
   private cachedRuntimeInfo: AgentRuntimeInfo | null = null;
-  private serviceTier: "fast" | null = null;
+  private serviceTier: string | null = null;
+  private modelCatalog: CodexModelCatalog | null = null;
   private planModeEnabled = false;
   private historyPending = false;
   private persistedHistory: PersistedTimelineEntry[] = [];
@@ -3538,9 +3546,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.currentMode = config.modeId;
     this.config = config;
     this.config.thinkingOptionId = normalizeCodexThinkingOptionId(this.config.thinkingOptionId);
-    if (this.config.featureValues?.fast_mode && codexModelSupportsFastMode(this.config.model)) {
-      this.serviceTier = "fast";
-    }
+    if (this.config.featureValues?.fast_mode === true) this.serviceTier = "priority";
+    if (this.config.featureValues?.fast_mode === false) this.serviceTier = "default";
     if (this.config.featureValues?.plan_mode) {
       this.planModeEnabled = true;
     }
@@ -3556,9 +3563,10 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   get features(): AgentFeature[] {
+    const fastServiceTierId = this.fastServiceTierId();
     return buildCodexFeatures({
-      modelId: this.config.model,
-      fastModeEnabled: this.serviceTier === "fast",
+      fastServiceTierId,
+      fastModeEnabled: fastServiceTierId !== null && this.serviceTier === fastServiceTierId,
       planModeEnabled: this.planModeEnabled,
       planModeAvailable: this.hasPlanCollaborationMode(),
     });
@@ -3585,12 +3593,15 @@ export class CodexAppServerAgentSession implements AgentSession {
       await client.request("initialize", buildCodexAppServerInitializeParams());
       client.notify("initialized", {});
 
+      const overrides = this.buildCodexInnerConfig();
+      this.modelCatalog = await readCodexModelCatalog({ client, cwd: this.config.cwd, overrides });
       const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
       const codexLaunchCommand = await this.deps.resolveCodexLaunchCommand?.();
       const desktopTools = await connectDesktopTools({
         client,
         cwd: this.config.cwd,
-        overrides: this.buildCodexInnerConfig() ?? {},
+        overrides: overrides ?? {},
+        configuration: this.modelCatalog.configuration,
         logger: this.logger,
         codexLaunchCommand,
       });
@@ -3600,6 +3611,11 @@ export class CodexAppServerAgentSession implements AgentSession {
       }
       this.desktopTools = desktopTools;
 
+      const modelOverride = this.config.model;
+      const { model, thinkingOptionId } = await this.resolveModelAndThinking();
+      this.config.model = model;
+      this.config.thinkingOptionId = thinkingOptionId;
+      this.serviceTier = this.resolveServiceTier();
       await this.loadCollaborationModes();
       await this.loadSkills();
 
@@ -3607,6 +3623,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         // 轻量恢复后完整读取官方历史，全部核对完成才进入可用状态。
         await this.ensureThreadLoaded({
           allowArchivedHistory: this.initialResumePurpose === "history",
+          model: modelOverride,
         });
         const threadResponse = await readCodexThread(client, this.currentThreadId);
         if (this.client !== client) {
@@ -3782,7 +3799,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
 
     if (featureId === "fast_mode") {
-      this.serviceTier = value ? "fast" : null;
+      this.serviceTier = value ? this.fastServiceTierId() : "default";
       this.cachedRuntimeInfo = null;
       return;
     }
@@ -3939,13 +3956,15 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private async ensureThreadLoaded(
-    options: { allowArchivedHistory?: boolean } = {},
+    options: { allowArchivedHistory?: boolean; model?: string } = { model: this.config.model },
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const params: Record<string, unknown> = {
       threadId: this.currentThreadId,
       excludeTurns: true,
+      ...(options.model ? { model: options.model } : {}),
     };
+    if (this.config.featureValues?.fast_mode !== undefined) params.serviceTier = this.serviceTier;
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,
@@ -3967,7 +3986,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       if (ids.includes(this.currentThreadId)) {
         return;
       }
-      await this.client.request("thread/resume", params);
+      this.syncThreadSettings(await this.client.request("thread/resume", params));
     } catch (error) {
       const threadId = this.currentThreadId;
       const message = error instanceof Error ? error.message : String(error);
@@ -3989,7 +4008,7 @@ export class CodexAppServerAgentSession implements AgentSession {
             throw unarchiveError;
           }
         }
-        await this.client.request("thread/resume", params);
+        this.syncThreadSettings(await this.client.request("thread/resume", params));
         this.logger.info({ threadId }, "已取消归档 Codex 原生会话并恢复活动智能体");
         return;
       }
@@ -4585,9 +4604,18 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async setModel(modelId: string | null): Promise<void> {
+    const previousFastTierId = this.fastServiceTierId();
+    const fastModeEnabled = previousFastTierId !== null && this.serviceTier === previousFastTierId;
     this.config.model = modelId ?? undefined;
-    if (!codexModelSupportsFastMode(this.config.model)) {
-      this.serviceTier = null;
+    if (this.modelCatalog) {
+      const { model, thinkingOptionId } = await this.resolveModelAndThinking();
+      this.config.model = model;
+      this.config.thinkingOptionId = thinkingOptionId;
+      if (this.config.featureValues?.fast_mode !== undefined) {
+        this.serviceTier = this.resolveServiceTier();
+      } else if (fastModeEnabled) {
+        this.serviceTier = this.fastServiceTierId() ?? "default";
+      }
     }
     this.refreshResolvedCollaborationMode();
     this.cachedRuntimeInfo = null;
@@ -4604,12 +4632,13 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
     if (featureId === "fast_mode") {
-      if (Boolean(value) && !codexModelSupportsFastMode(this.config.model)) {
+      const enabled = z.boolean().parse(value);
+      if (enabled && this.fastServiceTierId() === null) {
         throw new Error(
           `Codex fast mode is not available for model '${this.config.model ?? "default"}'`,
         );
       }
-      this.applyFeatureValue("fast_mode", Boolean(value));
+      this.applyFeatureValue("fast_mode", enabled);
       return;
     }
     if (featureId === "plan_mode") {
@@ -4958,6 +4987,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const desktopTools = this.desktopTools;
     this.client = null;
     this.desktopTools = null;
+    this.modelCatalog = null;
     this.connected = false;
     this.currentThreadId = null;
     this.currentTurnId = null;
@@ -5129,12 +5159,17 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (!this.client) {
       throw new Error("Codex client is not initialized");
     }
-    let configuredDefaults: CodexConfiguredDefaults = {};
     let model = this.config.model;
     let thinkingOptionId = normalizeCodexThinkingOptionId(this.config.thinkingOptionId);
-    if (!model || !thinkingOptionId) {
-      configuredDefaults = await readCodexConfiguredDefaults(this.client, this.logger);
+    if (model && thinkingOptionId) return { model, thinkingOptionId };
+    if (!this.modelCatalog) {
+      this.modelCatalog = await readCodexModelCatalog({
+        client: this.client,
+        cwd: this.config.cwd,
+        overrides: this.buildCodexInnerConfig(),
+      });
     }
+    const { models, defaults: configuredDefaults } = this.modelCatalog;
     if (!model) {
       model = configuredDefaults.model;
     }
@@ -5143,21 +5178,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
 
     if (!model || !thinkingOptionId) {
-      const modelResponse = toObjectRecord(await this.client.request("model/list", {}));
-      const modelData = Array.isArray(modelResponse?.data) ? modelResponse.data : [];
-      const models = modelData
-        .map((m) => {
-          const record = toObjectRecord(m);
-          return {
-            id: typeof record?.id === "string" ? record.id : "",
-            isDefault: !!record?.isDefault,
-            defaultReasoningEffort:
-              typeof record?.defaultReasoningEffort === "string"
-                ? record.defaultReasoningEffort
-                : undefined,
-          };
-        })
-        .filter((m) => m.id);
       const defaultModel = models.find((m) => m.isDefault) ?? models[0];
       if (!defaultModel) {
         throw new Error("No models available from Codex app-server");
@@ -5176,6 +5196,37 @@ export class CodexAppServerAgentSession implements AgentSession {
       throw new Error("Unable to resolve Codex model");
     }
     return { model, thinkingOptionId };
+  }
+
+  private fastServiceTierId(): string | null {
+    if (!this.modelCatalog || !this.modelCatalog.defaults.fastModeEnabled) return null;
+    const model = findCodexModel(this.modelCatalog.models, this.config.model);
+    return model ? resolveCodexFastServiceTier(model.serviceTiers) : null;
+  }
+
+  private resolveServiceTier(): string | null {
+    if (!this.modelCatalog) throw new Error("Codex model catalog is not initialized");
+    const model = findCodexModel(this.modelCatalog.models, this.config.model);
+    return resolveCodexServiceTier({
+      fastModePreference: z.boolean().optional().parse(this.config.featureValues?.fast_mode),
+      fastServiceTierId: this.fastServiceTierId(),
+      configuredServiceTier: this.modelCatalog.defaults.serviceTier,
+      defaultServiceTier: model?.defaultServiceTier ?? null,
+    });
+  }
+
+  private syncThreadSettings(response: unknown): void {
+    const parsed = z
+      .object({
+        model: z.string().optional(),
+        serviceTier: z.string().nullable().optional(),
+      })
+      .parse(response);
+    if (parsed.model !== undefined) this.config.model = parsed.model;
+    if (parsed.serviceTier !== undefined)
+      this.serviceTier = normalizeCodexServiceTier(parsed.serviceTier);
+    this.refreshResolvedCollaborationMode();
+    this.cachedRuntimeInfo = null;
   }
 
   private async ensureThread(): Promise<void> {
@@ -5200,6 +5251,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
     const params: Record<string, unknown> = {
       model,
+      ...(this.serviceTier !== null ? { serviceTier: this.serviceTier } : {}),
       ...(modelProvider ? { modelProvider } : {}),
       cwd: this.config.cwd ?? null,
       approvalPolicy,
@@ -5210,6 +5262,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
     applyApprovalsReviewerParam(params, preset);
     const rawResponse = await this.client.request("thread/start", params);
+    this.syncThreadSettings(rawResponse);
     const response = toObjectRecord(rawResponse);
     const threadRecord = toObjectRecord(response?.thread);
     const threadId = typeof threadRecord?.id === "string" ? threadRecord.id : undefined;
@@ -7244,6 +7297,7 @@ export class CodexAppServerAgentClient implements AgentClient {
     launchEnv?: Record<string, string>,
     options?: { goalsEnabled?: boolean; agentId?: string },
   ): Promise<ChildProcessWithoutNullStreams> {
+    if (this.deps.spawnAppServer) return this.deps.spawnAppServer(launchEnv, options);
     const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
     const args = [...launchPrefix.args, "app-server"];
     if (options?.goalsEnabled) {
@@ -7408,10 +7462,7 @@ export class CodexAppServerAgentClient implements AgentClient {
       await client.request("initialize", buildCodexAppServerInitializeParams());
       client.notify("initialized", {});
 
-      const rawResponse = await client.request("model/list", {});
-      const parsedResponse = CodexModelListResponseSchema.safeParse(rawResponse);
-      const models = parsedResponse.success ? (parsedResponse.data.data ?? []) : [];
-      const configuredDefaults = await readCodexConfiguredDefaults(client, this.logger);
+      const { models, defaults: configuredDefaults } = await readCodexModelCatalog({ client });
       const configuredDefaultModelId = configuredDefaults.model;
       const configuredDefaultThinkingOptionId = configuredDefaults.thinkingOptionId;
       const hasConfiguredDefaultModel =
@@ -7425,6 +7476,41 @@ export class CodexAppServerAgentClient implements AgentClient {
           hasConfiguredDefaultModel,
         }),
       );
+    } finally {
+      await client.dispose();
+    }
+  }
+
+  async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
+    if (!config.model) return [];
+    const child = await this.spawnAppServer();
+    const client = new CodexAppServerClient(child, this.logger);
+    try {
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+      const overrides = {
+        ...config.extra?.codex,
+        ...buildCodexCustomProviderConfig(this.runtimeSettings, this.deps.customProvider),
+      };
+      const { models, defaults } = await readCodexModelCatalog({
+        client,
+        cwd: config.cwd,
+        overrides,
+      });
+      const model = findCodexModel(models, config.model);
+      const fastServiceTierId =
+        model && defaults.fastModeEnabled ? resolveCodexFastServiceTier(model.serviceTiers) : null;
+      const serviceTier = resolveCodexServiceTier({
+        fastModePreference: z.boolean().optional().parse(config.featureValues?.fast_mode),
+        fastServiceTierId,
+        configuredServiceTier: defaults.serviceTier,
+        defaultServiceTier: model?.defaultServiceTier ?? null,
+      });
+      return buildCodexFeatures({
+        fastServiceTierId,
+        fastModeEnabled: fastServiceTierId !== null && serviceTier === fastServiceTierId,
+        planModeEnabled: config.featureValues?.plan_mode === true,
+      });
     } finally {
       await client.dispose();
     }
@@ -7548,6 +7634,8 @@ function buildCodexModelDefinition(
       model: model.model,
       defaultReasoningEffort: model.defaultReasoningEffort,
       supportedReasoningEfforts: model.supportedReasoningEfforts,
+      serviceTiers: model.serviceTiers,
+      defaultServiceTier: model.defaultServiceTier,
     },
   };
 }

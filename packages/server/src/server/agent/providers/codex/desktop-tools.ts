@@ -592,6 +592,7 @@ function runtimeEnv({
 interface DesktopConnectionOptions {
   client: Pick<CodexAppServerClient, "request">;
   cwd: string | undefined;
+  configuration: unknown;
   overrides: Record<string, unknown>;
   logger: Logger;
   codexLaunchCommand?: string;
@@ -601,12 +602,10 @@ export async function connectCodexDesktopTools(
   options: DesktopConnectionOptions,
 ): Promise<CodexDesktopTools | null> {
   if (process.platform !== "win32" || hasDesktopOverride(options.overrides)) return null;
-  const response = await options.client.request("config/read", { cwd: options.cwd });
-  const parsed = z.object({ config: z.unknown() }).parse(response);
   return acquireCodexDesktopTools({
     client: options.client,
     platform: process.platform,
-    configuration: parsed.config,
+    configuration: options.configuration,
     overrides: options.overrides,
     logger: options.logger,
     codexLaunchCommand: options.codexLaunchCommand,

@@ -77,7 +77,7 @@ interface CodexSessionTestAccess {
   handleNotification(method: string, params: unknown): void;
   loadPersistedHistory(): Promise<void>;
   refreshResolvedCollaborationMode(): void;
-  serviceTier: "fast" | null;
+  serviceTier: string | null;
   planModeEnabled: boolean;
   collaborationModes: CollaborationModeRecord[];
   config: AgentSessionConfig;
@@ -137,13 +137,10 @@ function createSession(
 
 function createProviderWithFakeAppServer(appServer: FakeCodexAppServer): CodexAppServerAgentClient {
   const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+    spawnAppServer: () => appServer.spawnChild(),
     resolveCodexVersion: async () => "0.0.0",
     resolveCodexLaunchCommand: async () => process.execPath,
   });
-  const internals = castInternals<{
-    spawnAppServer: () => Promise<ChildProcessWithoutNullStreams>;
-  }>(provider);
-  internals.spawnAppServer = () => appServer.spawnChild();
   return provider;
 }
 
@@ -633,6 +630,7 @@ let buffer = "";
 function resultFor(method, params) {
   if (method === "initialize") return {};
   if (method === "config/read") return { config: {} };
+  if (method === "model/list") return { data: [{ id: "gpt-5.4", isDefault: true, defaultReasoningEffort: "medium" }] };
   if (method === "collaborationMode/list") return { data: [] };
   if (method === "skills/list") {
     const cwds = params && params.cwds;
@@ -2474,6 +2472,7 @@ describe("Codex app-server provider", () => {
       }),
     ).rejects.toThrow("no tool-call found for thread id archived-thread-id");
     expect(threadRequests.filter((method) => method !== "thread/read")).toEqual([
+      "model/list",
       "thread/loaded/list",
       "thread/resume",
     ]);
@@ -5364,7 +5363,10 @@ describe("Codex app-server provider", () => {
     expect(session.currentThreadId).toBe("archived-thread-id");
     expect(requests).toEqual([
       { method: "thread/loaded/list", params: {} },
-      { method: "thread/resume", params: { threadId: "archived-thread-id", excludeTurns: true } },
+      {
+        method: "thread/resume",
+        params: { threadId: "archived-thread-id", excludeTurns: true, model: "gpt-5.4" },
+      },
     ]);
   });
 
@@ -6374,7 +6376,7 @@ describe("Codex app-server provider", () => {
       selectedActionId: "implement",
     });
 
-    expect(asInternals(session).serviceTier).toBe("fast");
+    expect(asInternals(session).serviceTier).toBe("priority");
     expect(asInternals(session).planModeEnabled).toBe(false);
     expect(asInternals(session).config.featureValues).toEqual({
       plan_mode: false,
@@ -6428,7 +6430,7 @@ describe("Codex app-server provider", () => {
       selectedActionId: "implement",
     });
 
-    expect(asInternals(session).serviceTier).toBeNull();
+    expect(asInternals(session).serviceTier).toBe("default");
     expect(asInternals(session).planModeEnabled).toBe(false);
     expect(asInternals(session).config.featureValues).toEqual({
       plan_mode: false,
@@ -6502,7 +6504,7 @@ describe("Codex app-server provider", () => {
     const turnStartCall = request.mock.calls.find(([method]) => method === "turn/start");
     expect(turnStartCall?.[1]).toEqual(
       expect.objectContaining({
-        serviceTier: "fast",
+        serviceTier: "priority",
         collaborationMode: expect.objectContaining({
           mode: "code",
         }),
