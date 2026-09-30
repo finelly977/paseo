@@ -86,6 +86,10 @@
 - 缩小连续助手内容块、普通段落、标题和分隔线之间的垂直间距；Markdown 横线固定使用原主题间距的一半，横线自身独占上下留白，不再与相邻段落间距叠加；压缩上下文分割线使用更短的上下留白。时间线列表统一负责消息外间距，助手消息和回合尾部不再重复叠加内外两层空白。
 - 设置的“外观”页分别提供对话区域与工作区列表的像素级间距控制。对话可独立调整消息、段落、压缩分割线、区域上下边距和区域左右边距；侧栏可独立调整工作区、会话、行内上下留白和列表左右边距。修改立即作用于网页虚拟化列表、原生列表以及项目和状态两种侧栏分组，Markdown 横线由自身样式持有上下留白，压缩分割线由自身设置持有上下留白，均不再与消息外间距重复叠加。
 - 超过 12 行或 1200 个字符的用户消息默认只展示 8 行，用户可以展开或收起；复制消息仍复制完整原文。
+- 已发送用户消息不再使用独立气泡底色，与对话区域共享背景；助手回合末尾的复制、分叉图标和耗时文字采用更紧凑的尺寸，保留原有操作范围。输入框发送与停止按钮使用随亮暗主题反转的黑白配色，停止图标缩小为居中的实心方块。
+- 左侧导航、会话名称和辅助文字统一使用与工作区名称相同的前景亮度，不再降低会话名称透明度；项目和状态两种分组都不显示会话行末的增删行数，右侧 Git 面板和顶部 Git 操作仍保留差异信息。
+- 宽屏工作区及新会话草稿顶部不再重复展示标签中已有的标题，保留导航和操作按钮；紧凑布局继续显示标题。已固定智能体的会话打开模型选择时直接进入该智能体模型列表，桌面下拉和紧凑底部面板一致；新会话仍保留智能体与配置档案选择。
+- 助手 Markdown 正文识别结束粗体标记前多余的空白及紧接中文标点的结束标记，避免显示残留星号；正常强调、代码块、行内代码、转义字符和复制原文保持不变，文件预览继续使用标准 Markdown 规则。
 - 助手消息中的本地文件链接优先按可见路径文本解析，Windows 盘符路径的末尾行号会作为编辑器定位信息，不会误并入文件名；本机桌面会话支持右键在系统文件管理器中定位已解析文件，远端会话和外部网址不显示该操作，外部网址仍按网页链接打开。
 - 保留内容层级和可读性，但减少长对话中大面积无效留白。
 - 默认 Dark 主题使用中性黑灰层级：应用与工作区背景固定为 `#111111`，主要前景固定为 `#E6E6E6`，侧栏、输入框、浮层、悬停和边框只通过亮度区分，不再带绿色或蓝灰色偏；强调色使用 `#0169CC`，成功、警告、错误等语义状态继续保留独立颜色。Zinc、Midnight、Claude 和 Ghostty 等用户主动选择的暗色变体保持原样。
@@ -100,6 +104,10 @@
 - `packages/app/src/hooks/use-settings/storage.ts`
 - `packages/app/src/screens/settings/appearance/appearance-section.tsx`
 - `packages/app/src/components/message.tsx`
+- `packages/app/src/composer/`
+- `packages/app/src/components/model-browser-view.ts`
+- `packages/app/src/utils/assistant-markdown-parser.ts`
+- `packages/app/src/screens/new-workspace-draft-shell.tsx`
 - `packages/app/src/components/sidebar-workspace-list.tsx`
 - `packages/app/src/components/sidebar/`
 - `packages/app/src/components/user-message-collapse.ts`

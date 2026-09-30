@@ -43,9 +43,7 @@ test.describe("Branch switcher", () => {
   // releases stale sessions from the previous spec; one retry stabilizes it.
   test.describe.configure({ retries: 1 });
 
-  test("a custom workspace title stays in the header while the diff panel switches the real branch", async ({
-    page,
-  }) => {
+  test("切换真实分支时侧栏保留自定义工作区名，宽屏顶部不重复标题", async ({ page }) => {
     test.setTimeout(90_000);
     const serverId = getServerId();
     const workspace = await seedWorkspace({
@@ -66,13 +64,11 @@ test.describe("Branch switcher", () => {
         title: customTitle,
       });
 
-      // The header shows the custom title verbatim (a plain static title), never a
-      // branch name, and the branch switcher does not live in the header.
-      const headerTitle = page
-        .getByTestId("workspace-header-title")
-        .filter({ visible: true })
-        .first();
-      await expect(headerTitle).toHaveText(customTitle, { timeout: 30_000 });
+      const workspaceTitle = page.getByTestId(
+        `sidebar-workspace-row-${serverId}:${workspace.workspaceId}`,
+      );
+      await expect(workspaceTitle).toContainText(customTitle, { timeout: 30_000 });
+      await expect(page.getByTestId("workspace-header-title")).toHaveCount(0);
       await expectNoBranchSwitcherInWorkspaceHeader(page);
 
       // The diff panel's switcher tracks the real branch ("main"), not the title,
@@ -83,7 +79,7 @@ test.describe("Branch switcher", () => {
       await expectWorkspaceBranch(page, "dev");
 
       // The custom title is unaffected by the branch switch.
-      await expect(headerTitle).toHaveText(customTitle, { timeout: 30_000 });
+      await expect(workspaceTitle).toContainText(customTitle, { timeout: 30_000 });
 
       await expect
         .poll(

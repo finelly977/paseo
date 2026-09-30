@@ -33,7 +33,6 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import { type GestureType } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
-import { DiffStat } from "@/components/diff-stat";
 import {
   CircleAlert,
   ChevronDown,
@@ -106,7 +105,6 @@ import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
   SidebarWorkspaceShortcutBadge,
-  SidebarWorkspaceTrailingActionBase,
   SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
 } from "@/components/sidebar/sidebar-workspace-row-content";
@@ -423,7 +421,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 14,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
   textHovered: {
     color: theme.colors.foreground,
@@ -730,7 +728,7 @@ function WorkspaceRowRightGroup({
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
   const showKebabInSlot = showKebab && !showShortcut;
-  const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
+  const shouldRenderActionSlot = Boolean(onArchive);
 
   return (
     <>
@@ -739,16 +737,6 @@ function WorkspaceRowRightGroup({
       ) : null}
       {shouldRenderActionSlot ? (
         <SidebarWorkspaceTrailingActionSlot>
-          <SidebarWorkspaceTrailingActionBase
-            visible={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
-          >
-            {workspace.diffStat ? (
-              <DiffStat
-                additions={workspace.diffStat.additions}
-                deletions={workspace.diffStat.deletions}
-              />
-            ) : null}
-          </SidebarWorkspaceTrailingActionBase>
           <SidebarWorkspaceTrailingActionOverlay visible={showKebabInSlot}>
             {onArchive ? (
               <SidebarWorkspaceMenu
@@ -1302,9 +1290,7 @@ function WorkspaceRowInner({
                 workspace={workspace}
                 subtitle={subtitle}
                 scriptIconKind={scriptIconKind}
-                isHovered={isHovered}
                 isLoading={isArchiving || isCreating}
-                isCreating={isCreating}
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
@@ -2932,7 +2918,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   newWorkspaceGhostText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,
@@ -2961,7 +2947,7 @@ const styles = StyleSheet.create((theme) => ({
     textAlign: "center",
   },
   emptyText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     textAlign: "center",
   },
@@ -3049,7 +3035,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
   projectActionButtonText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
   },
   projectIconActionButton: {
@@ -3190,7 +3176,7 @@ const styles = StyleSheet.create((theme) => ({
     zIndex: 1,
   },
   workspaceArchivingText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     fontWeight: "600",
   },
@@ -3199,15 +3185,8 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     lineHeight: 20,
-    opacity: 0.76,
     flex: 1,
     minWidth: 0,
-  },
-  workspaceBranchTextCreating: {
-    opacity: 0.92,
-  },
-  workspaceBranchTextHovered: {
-    opacity: 1,
   },
   workspacePrBadgeRow: {
     flexDirection: "row",
@@ -3216,7 +3195,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingLeft: WORKSPACE_STATUS_DOT_WIDTH + theme.spacing[2],
   },
   workspaceCreatingText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
   },

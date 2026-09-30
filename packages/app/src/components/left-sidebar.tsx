@@ -1004,7 +1004,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingBottom: theme.spacing[1],
   },
   workspacesSectionTitle: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
   },
@@ -1096,7 +1096,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
   footerAddProjectLabelHovered: {
     color: theme.colors.foreground,

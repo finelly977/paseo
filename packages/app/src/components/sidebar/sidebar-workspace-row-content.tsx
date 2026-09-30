@@ -113,9 +113,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   workspace,
   subtitle,
   scriptIconKind = null,
-  isHovered,
   isLoading,
-  isCreating = false,
   shortcutNumber = null,
   showShortcutBadge = false,
   reserveIdleStatusIndicatorSpace = true,
@@ -124,9 +122,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   workspace: SidebarWorkspaceEntry;
   subtitle?: string | null;
   scriptIconKind?: SidebarWorkspaceScriptIconKind | null;
-  isHovered: boolean;
   isLoading: boolean;
-  isCreating?: boolean;
   shortcutNumber?: number | null;
   showShortcutBadge?: boolean;
   /** Keep the empty leading slot when the workspace has no active status. */
@@ -141,10 +137,8 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     () => [
       styles.workspaceBranchText,
       scriptIconKind ? styles.workspaceBranchTextWithAccessory : styles.workspaceBranchTextFlexible,
-      isHovered && styles.workspaceBranchTextHovered,
-      isCreating && styles.workspaceBranchTextCreating,
     ],
-    [scriptIconKind, isHovered, isCreating],
+    [scriptIconKind],
   );
 
   return (
@@ -415,7 +409,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 14,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
   textHovered: {
     color: theme.colors.foreground,
@@ -456,12 +450,11 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   shortcutBadgeText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.medium,
     lineHeight: 14,
   },
-  hidden: { opacity: 0 },
   trailingActionSlot: {
     position: "relative",
     minWidth: 18,
@@ -487,17 +480,6 @@ export function SidebarWorkspaceShortcutBadge({ number }: { number: number }) {
 
 export function SidebarWorkspaceTrailingActionSlot({ children }: { children: ReactNode }) {
   return <View style={sidebarWorkspaceRowStyles.trailingActionSlot}>{children}</View>;
-}
-
-export function SidebarWorkspaceTrailingActionBase({
-  visible,
-  children,
-}: {
-  visible: boolean;
-  children: ReactNode;
-}) {
-  if (!children) return null;
-  return <View style={visible ? undefined : sidebarWorkspaceRowStyles.hidden}>{children}</View>;
 }
 
 export function SidebarWorkspaceTrailingActionOverlay({
@@ -568,7 +550,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     lineHeight: 20,
-    opacity: 0.76,
     minWidth: 0,
   },
   workspaceBranchTextFlexible: {
@@ -590,14 +571,8 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
   },
-  workspaceBranchTextCreating: {
-    opacity: 0.92,
-  },
-  workspaceBranchTextHovered: {
-    opacity: 1,
-  },
   workspaceSubtitle: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     lineHeight: 14,
   },

@@ -20,6 +20,7 @@ const FIXED_MODEL_VIEWPORT_HEIGHT =
   MODEL_LIST_TOP_INSET + MODEL_ROW_STRIDE * MODEL_VIEWPORT_VISIBLE_ROWS;
 
 interface CompactModelSheetProps {
+  providerLocked: boolean;
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
   selectedModel: string;
@@ -44,6 +45,7 @@ function shortModelLabel(label: string): string {
 }
 
 export function CompactModelSheet({
+  providerLocked,
   providers,
   selectedProvider,
   selectedModel,
@@ -65,6 +67,7 @@ export function CompactModelSheet({
   const usesBottomSheet = useIsCompactFormFactor();
   const [isOpen, setIsOpen] = useState(false);
   const browser = useModelBrowser({
+    providerLocked,
     providers,
     selectedProvider,
     selectedModel,

@@ -57,7 +57,7 @@ const styles = StyleSheet.create((theme) => ({
     userSelect: "none",
   },
   title: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
   },

@@ -1254,26 +1254,32 @@ function WorkspaceHeaderTitleBar({
   onViewScriptTerminal,
   onOpenUrlInBrowserTab,
 }: WorkspaceHeaderTitleBarProps) {
+  let compactTitle: ReactNode = null;
+  if (isMobile && isLoading) {
+    compactTitle = (
+      <View style={styles.headerTitleTextGroup}>
+        <View style={styles.headerTitleSkeleton} />
+      </View>
+    );
+  } else if (isMobile) {
+    compactTitle = (
+      <View style={styles.headerTitleTextGroup}>
+        <ScreenTitle testID="workspace-header-title">{title}</ScreenTitle>
+        {showSubtitle ? (
+          <Text
+            testID="workspace-header-subtitle"
+            style={styles.headerProjectTitle}
+            numberOfLines={1}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
   return (
     <View style={styles.headerTitleContainer}>
-      {isLoading ? (
-        <View style={styles.headerTitleTextGroup}>
-          <View style={styles.headerTitleSkeleton} />
-        </View>
-      ) : (
-        <View style={styles.headerTitleTextGroup}>
-          <ScreenTitle testID="workspace-header-title">{title}</ScreenTitle>
-          {showSubtitle ? (
-            <Text
-              testID="workspace-header-subtitle"
-              style={styles.headerProjectTitle}
-              numberOfLines={1}
-            >
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-      )}
+      {compactTitle}
       <View style={styles.compactHeaderMenuCluster}>
         <WorkspaceHeaderMenu
           normalizedServerId={normalizedServerId}

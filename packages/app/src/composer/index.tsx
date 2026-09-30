@@ -902,9 +902,9 @@ function ComposerCancelButton({
     ? t("composer.cancel.cancelingAgent")
     : t("composer.cancel.stopAgent");
   const icon = isCancellingAgent ? (
-    <ActivityIndicator size={buttonIconSize} color="white" />
+    <ThemedCancelActivityIndicator size={buttonIconSize} uniProps={cancelColorMapping} />
   ) : (
-    <Square size={buttonIconSize} color="white" fill="white" />
+    <ThemedCancelSquare size={12} uniProps={cancelSquareMapping} />
   );
   const shortcutNode = agentInterruptKeys ? <Shortcut chord={agentInterruptKeys} /> : null;
   return (
@@ -2234,7 +2234,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     width: 24,
     height: 24,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.palette.red[600],
+    backgroundColor:
+      theme.colorScheme === "dark" ? theme.colors.palette.white : theme.colors.palette.black,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: theme.spacing[1],
@@ -2329,6 +2330,15 @@ const styles = StyleSheet.create((theme: Theme) => ({
 })) as unknown as Record<string, object>;
 
 const ThemedPencil = withUnistyles(Pencil);
+const ThemedCancelSquare = withUnistyles(Square);
+const ThemedCancelActivityIndicator = withUnistyles(ActivityIndicator);
+const cancelColorMapping = (theme: Theme) => ({
+  color: theme.colorScheme === "dark" ? theme.colors.palette.black : theme.colors.palette.white,
+});
+const cancelSquareMapping = (theme: Theme) => {
+  const color = cancelColorMapping(theme).color;
+  return { color, fill: color };
+};
 const ThemedArrowUp = withUnistyles(ArrowUp);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
 const ThemedCircleDot = withUnistyles(CircleDot);

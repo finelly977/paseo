@@ -374,7 +374,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     marginBottom: theme.spacing[4],
   },
   bubble: {
-    backgroundColor: theme.colors.surface3,
+    backgroundColor: "transparent",
     borderRadius: theme.borderRadius["2xl"],
     borderTopRightRadius: theme.borderRadius.sm,
     paddingHorizontal: theme.spacing[4],
@@ -796,7 +796,7 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
   },
   labelSizer: {
     color: theme.colors.foregroundMuted,
-    fontSize: STREAM_METADATA_FONT_SIZE,
+    fontSize: 11,
     opacity: 0,
   },
   labelOverlay: {
@@ -804,7 +804,7 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     top: 0,
     left: 0,
     color: theme.colors.foregroundMuted,
-    fontSize: STREAM_METADATA_FONT_SIZE,
+    fontSize: 11,
   },
 }));
 
@@ -1420,9 +1420,9 @@ export const TurnCopyButton = memo(function TurnCopyButton({
           ? turnCopyButtonStylesheet.iconHoveredColor.color
           : turnCopyButtonStylesheet.iconColor.color;
         return copied ? (
-          <Check size={16} color={iconColor} />
+          <Check size={12} color={iconColor} />
         ) : (
-          <Copy size={16} color={iconColor} />
+          <Copy size={12} color={iconColor} />
         );
       }}
     </Pressable>

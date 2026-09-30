@@ -151,7 +151,7 @@ const styles = StyleSheet.create((theme) => ({
   label: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
   labelHighlighted: {
     color: theme.colors.foreground,

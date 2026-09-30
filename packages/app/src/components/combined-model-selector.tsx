@@ -24,6 +24,7 @@ const foregroundMutedMapping = (theme: Theme) => ({
 function noop() {}
 
 interface CombinedModelSelectorProps {
+  providerLocked?: boolean;
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
   selectedModel: string;
@@ -64,6 +65,7 @@ interface CombinedModelSelectorProps {
 }
 
 export function CombinedModelSelector({
+  providerLocked = false,
   providers,
   selectedProvider,
   selectedModel,
@@ -91,6 +93,7 @@ export function CombinedModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [isContentReady, setIsContentReady] = useState(isWeb);
   const browser = useModelBrowser({
+    providerLocked,
     providers,
     selectedProvider,
     selectedModel,

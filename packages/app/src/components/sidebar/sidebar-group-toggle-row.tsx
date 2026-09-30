@@ -92,7 +92,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   text: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,

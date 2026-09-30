@@ -19,7 +19,6 @@ import {
   CircleDot,
   CircleX,
 } from "lucide-react-native";
-import { DiffStat } from "@/components/diff-stat";
 import { useToast } from "@/contexts/toast-context";
 import { useMutation } from "@tanstack/react-query";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
@@ -36,7 +35,6 @@ import { useClearWorkspaceAttention } from "@/hooks/use-clear-workspace-attentio
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
-  SidebarWorkspaceTrailingActionBase,
   SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
 } from "@/components/sidebar/sidebar-workspace-row-content";
@@ -799,7 +797,7 @@ function StatusWorkspaceRowInner({
         const showShortcut = showShortcutBadge && shortcutNumber !== null;
         const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
         const showKebabInSlot = showKebab && !showShortcut;
-        const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
+        const shouldRenderActionSlot = Boolean(onArchive);
         const workspaceRowStyle = getStatusWorkspaceRowStyle({
           selected,
           isHovered,
@@ -826,7 +824,6 @@ function StatusWorkspaceRowInner({
                 workspace={workspace}
                 subtitle={subtitle}
                 scriptIconKind={scriptIconKind}
-                isHovered={isHovered}
                 isLoading={isArchiving}
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
@@ -836,7 +833,6 @@ function StatusWorkspaceRowInner({
                   <StatusWorkspaceActionSlot
                     workspace={workspace}
                     sessionId={workspace.providerSessionId}
-                    showBase={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
                     showKebab={showKebabInSlot}
                     onMenuOpenChange={revalidateHover}
                     isPinned={isPinned}
@@ -869,7 +865,6 @@ function StatusWorkspaceRowInner({
 function StatusWorkspaceActionSlot({
   workspace,
   sessionId,
-  showBase,
   showKebab,
   onMenuOpenChange,
   isPinned,
@@ -891,7 +886,6 @@ function StatusWorkspaceActionSlot({
 }: {
   workspace: SidebarWorkspaceEntry;
   sessionId: string | null;
-  showBase: boolean;
   showKebab: boolean;
   onMenuOpenChange: () => void;
   isPinned?: boolean;
@@ -913,14 +907,6 @@ function StatusWorkspaceActionSlot({
 }) {
   return (
     <SidebarWorkspaceTrailingActionSlot>
-      <SidebarWorkspaceTrailingActionBase visible={showBase}>
-        {workspace.diffStat ? (
-          <DiffStat
-            additions={workspace.diffStat.additions}
-            deletions={workspace.diffStat.deletions}
-          />
-        ) : null}
-      </SidebarWorkspaceTrailingActionBase>
       <SidebarWorkspaceTrailingActionOverlay visible={showKebab}>
         {showKebab && onArchive ? (
           <SidebarWorkspaceMenu

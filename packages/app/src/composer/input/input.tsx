@@ -447,12 +447,12 @@ function SendButtonContent({
   buttonIconSize: number;
 }) {
   if (isSubmitLoading) {
-    return <ThemedActivityIndicator size={buttonIconSize} uniProps={iconAccentForegroundMapping} />;
+    return <ThemedActivityIndicator size={buttonIconSize} uniProps={submitIconColorMapping} />;
   }
   if (submitIcon === "return") {
-    return <ThemedCornerDownLeft size={buttonIconSize} uniProps={iconAccentForegroundMapping} />;
+    return <ThemedCornerDownLeft size={buttonIconSize} uniProps={submitIconColorMapping} />;
   }
-  return <ThemedArrowUp size={buttonIconSize} uniProps={iconAccentForegroundMapping} />;
+  return <ThemedArrowUp size={buttonIconSize} uniProps={submitIconColorMapping} />;
 }
 
 interface DesktopKeyPressContext {
@@ -1945,7 +1945,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     width: 24,
     height: 24,
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.accent,
+    backgroundColor:
+      theme.colorScheme === "dark" ? theme.colors.palette.white : theme.colors.palette.black,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: theme.spacing[1],
@@ -2014,7 +2015,9 @@ const ThemedTextInput = withUnistyles(TextInput);
 
 const iconForegroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const iconForegroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const iconAccentForegroundMapping = (theme: Theme) => ({ color: theme.colors.accentForeground });
+const submitIconColorMapping = (theme: Theme) => ({
+  color: theme.colorScheme === "dark" ? theme.colors.palette.black : theme.colors.palette.white,
+});
 const textInputPlaceholderColorMapping = (theme: Theme) => ({
   placeholderTextColor: theme.colors.surface4,
 });

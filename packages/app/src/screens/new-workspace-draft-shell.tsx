@@ -24,6 +24,7 @@ import {
   FloatingPanelPortalHostNameProvider,
 } from "@/components/ui/floating-panel-portal";
 import { getIsElectron } from "@/constants/platform";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { FilePane } from "@/file-pane/pane";
 import { WorkspaceActions } from "@/git/workspace-actions";
@@ -212,10 +213,11 @@ interface DraftHeaderProps extends DraftHeaderMenuProps, DraftHeaderActionsProps
 }
 
 function DraftHeader({ projectName, ...props }: DraftHeaderProps) {
+  const isCompact = useIsCompactFormFactor();
   const left = (
     <>
       <SidebarMenuToggle />
-      <ScreenTitle>{projectName}</ScreenTitle>
+      {isCompact ? <ScreenTitle>{projectName}</ScreenTitle> : null}
       <DraftHeaderMenu serverId={props.serverId} projectId={props.projectId} cwd={props.cwd} />
     </>
   );

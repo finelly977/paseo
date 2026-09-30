@@ -139,6 +139,7 @@ const headerSettingsMapping = (disabled: boolean) => (theme: Theme) => ({
 });
 
 interface ModelBrowserInput {
+  providerLocked?: boolean;
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
   selectedModel: string;
@@ -240,6 +241,7 @@ function resolveDesktopFixedHeight(
 }
 
 export function useModelBrowser({
+  providerLocked = false,
   providers,
   selectedProvider,
   selectedModel,
@@ -260,8 +262,9 @@ export function useModelBrowser({
         selectedProvider,
         selectedModel,
         hasProfiles,
+        providerLocked,
       }),
-    [hasProfiles, providers, selectedModel, selectedProvider],
+    [hasProfiles, providerLocked, providers, selectedModel, selectedProvider],
   );
 
   const prepareToOpen = useCallback(() => {
@@ -290,9 +293,8 @@ export function useModelBrowser({
     setSearchQuery(value);
   }, []);
 
-  // A pinned profiles section makes the root worth returning to, so the back
-  // affordance stays even when the drill-down was the only provider.
-  const singleProviderView = providers.length === 1 && !hasProfiles;
+  // 固定智能体不返回根页；新会话即使只有一个智能体，也保留配置档案入口。
+  const singleProviderView = providerLocked || (providers.length === 1 && !hasProfiles);
   const header = useMemo<SheetHeader>(() => {
     if (view.kind === "all") {
       return {

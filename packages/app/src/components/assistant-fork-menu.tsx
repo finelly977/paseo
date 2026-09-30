@@ -85,7 +85,7 @@ export const AssistantForkMenu = memo(function AssistantForkMenu({
             >
               {({ hovered, open }) => (
                 <ThemedSplit
-                  size={16}
+                  size={12}
                   uniProps={hovered || open ? foregroundColorMapping : foregroundMutedColorMapping}
                 />
               )}

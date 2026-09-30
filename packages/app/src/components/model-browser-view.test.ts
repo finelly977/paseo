@@ -84,6 +84,17 @@ describe("model browser initial view", () => {
       }),
     ).toEqual({ kind: "all" });
   });
+  it("固定智能体的会话有配置档案时也直接进入该智能体模型", () => {
+    expect(
+      resolveInitialModelBrowserView({
+        providers: [codex],
+        selectedProvider: "codex",
+        selectedModel: "",
+        hasProfiles: true,
+        providerLocked: true,
+      }),
+    ).toEqual({ kind: "provider", providerId: "codex", providerLabel: "Codex" });
+  });
 
   it("falls back to the root when the selected provider is gone", () => {
     expect(

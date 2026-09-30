@@ -258,8 +258,8 @@ test.describe("Worktree restore", () => {
     });
     await expectWorkspaceBranch(page, switchedBranch);
     await expect(
-      page.getByTestId("workspace-header-title").filter({ visible: true }).first(),
-    ).toHaveText(switchedBranch, { timeout: 30_000 });
+      page.getByTestId(`sidebar-workspace-row-${getServerId()}:${worktree.workspaceId}`),
+    ).toContainText(switchedBranch, { timeout: 30_000 });
   });
 
   test("recovers the selected agent with its workspace and later rescues another archived agent", async ({

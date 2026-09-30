@@ -746,6 +746,7 @@ function ControlledAgentControls({
           />
         ) : (
           <SheetAgentControlsContent
+            providerLocked={!canSelectProvider}
             provider={provider}
             selectedModelId={selectedModelId}
             selectedThinkingOptionId={selectedThinkingOptionId}
@@ -948,6 +949,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <TooltipTrigger asChild triggerRefProp="ref">
             <View style={styles.modelControl}>
               <CombinedModelSelector
+                providerLocked={!canSelectProvider}
                 providers={modelSelectorProviders}
                 selectedProvider={provider}
                 selectedModel={selectedModelId ?? ""}
@@ -1081,6 +1083,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
 }
 
 interface SheetAgentControlsContentProps {
+  providerLocked: boolean;
   provider: string;
   selectedModelId?: string;
   selectedThinkingOptionId?: string;
@@ -1126,6 +1129,7 @@ interface SheetAgentControlsContentProps {
 function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
   const { t } = useTranslation();
   const {
+    providerLocked,
     provider,
     selectedModelId,
     selectedThinkingOptionId,
@@ -1243,6 +1247,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
 
   return canSelectModel ? (
     <CompactModelSheet
+      providerLocked={providerLocked}
       providers={modelSelectorProviders}
       selectedProvider={provider}
       selectedModel={selectedModelId ?? ""}

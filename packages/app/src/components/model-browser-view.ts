@@ -42,22 +42,25 @@ export function resolveModelBrowserAllView({
   return { kind: "searchResults", rows };
 }
 
-/**
- * Where the picker lands when it opens. Agent profiles live on the root view, so
- * a host that has any profile always opens there — including the single-provider
- * case, which would otherwise skip the root entirely and hide them.
- */
+/** 固定智能体的会话直接显示模型；仍可切换智能体的新会话保留根页配置档案。 */
 export function resolveInitialModelBrowserView({
   providers,
   selectedProvider,
   selectedModel,
   hasProfiles,
+  providerLocked = false,
 }: {
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
   selectedModel: string;
   hasProfiles: boolean;
+  providerLocked?: boolean;
 }): ModelBrowserView {
+  if (providerLocked) {
+    const provider = providers.find((entry) => entry.id === selectedProvider);
+    if (provider)
+      return { kind: "provider", providerId: provider.id, providerLabel: provider.label };
+  }
   if (hasProfiles) {
     return { kind: "all" };
   }

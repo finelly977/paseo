@@ -7,7 +7,6 @@ import * as Clipboard from "expo-clipboard";
 import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import type { DraggableListDragHandleProps } from "@/components/draggable-list.types";
 import type { ShortcutKey } from "@/utils/format-shortcut";
-import { DiffStat } from "@/components/diff-stat";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { useToast } from "@/contexts/toast-context";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
@@ -24,7 +23,6 @@ import { SidebarWorkspaceMenu } from "@/components/sidebar/sidebar-workspace-men
 import {
   SidebarWorkspaceRowFrame,
   SidebarWorkspaceRowContent,
-  SidebarWorkspaceTrailingActionBase,
   SidebarWorkspaceTrailingActionOverlay,
   SidebarWorkspaceTrailingActionSlot,
 } from "@/components/sidebar/sidebar-workspace-row-content";
@@ -313,9 +311,7 @@ function WorkspaceRowBody({
                 workspace={workspace}
                 subtitle={subtitle}
                 scriptIconKind={scriptIconKind}
-                isHovered={isHovered}
                 isLoading={isArchiving || isCreating}
-                isCreating={isCreating}
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
               >
@@ -385,7 +381,7 @@ function WorkspaceRowTrailingActions({
   const showShortcut = showShortcutBadge && shortcutNumber !== null;
   const showKebab = Boolean(onArchive && (isHovered || isTouchPlatform));
   const showKebabInSlot = showKebab && !showShortcut;
-  const shouldRenderActionSlot = Boolean(onArchive || workspace.diffStat);
+  const shouldRenderActionSlot = Boolean(onArchive);
 
   return (
     <>
@@ -394,16 +390,6 @@ function WorkspaceRowTrailingActions({
       ) : null}
       {shouldRenderActionSlot ? (
         <SidebarWorkspaceTrailingActionSlot>
-          <SidebarWorkspaceTrailingActionBase
-            visible={Boolean(workspace.diffStat && !showKebabInSlot && !showShortcut)}
-          >
-            {workspace.diffStat ? (
-              <DiffStat
-                additions={workspace.diffStat.additions}
-                deletions={workspace.diffStat.deletions}
-              />
-            ) : null}
-          </SidebarWorkspaceTrailingActionBase>
           <SidebarWorkspaceTrailingActionOverlay visible={showKebabInSlot}>
             {onArchive ? (
               <SidebarWorkspaceMenu
@@ -479,7 +465,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   workspaceCreatingText: {
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
   },
