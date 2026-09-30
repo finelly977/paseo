@@ -1,0 +1,2 @@
+export const MAX_EDITABLE_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_INLINE_FILE_WRITE_BYTES = 1024 * 1024;

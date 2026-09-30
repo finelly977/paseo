@@ -2732,6 +2732,13 @@ export const FileWriteRequestSchema = z.object({
   content: z.string(),
   expectedModifiedAt: z.string(),
   expectedRevision: z.string().optional(),
+  uploadedFileId: z.string().min(1).optional(),
+  requestId: z.string(),
+});
+
+export const FileUploadFlushRequestSchema = z.object({
+  type: z.literal("fs.file.upload.flush.request"),
+  uploadRequestId: z.string(),
   requestId: z.string(),
 });
 
@@ -2776,6 +2783,7 @@ export const FileDownloadTokenRequestSchema = z.object({
 
 export const FileUploadRequestSchema = z.object({
   type: z.literal("file.upload.request"),
+  purpose: z.literal("workspace-edit").optional(),
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
   size: z.number().int().nonnegative(),
@@ -3147,6 +3155,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DirectorySubscribeRequestSchema,
   DirectoryUnsubscribeRequestSchema,
   FileWriteRequestSchema,
+  FileUploadFlushRequestSchema,
   WorkspaceEntryMutationRequestSchema,
   ProjectIconRequestSchema,
   FileDownloadTokenRequestSchema,
@@ -3413,6 +3422,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRecovery: z.boolean().optional(),
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: z.boolean().optional(),
+        // COMPAT(workspaceFileWriteUploads)：v0.2.2 于 2026-09-30 新增，2027-03-30 后移除门控。
+        workspaceFileWriteUploads: z.boolean().optional(),
         // COMPAT(workspaceEntryMutation)：2026-09-30 新增，2027-03-30 后随最低主机版本移除门控。
         workspaceEntryMutation: z.boolean().optional(),
         // COMPAT(workspaceDirectoryObservation)：v0.2.2 新增，2027-02-23 后移除能力门控。
@@ -5559,6 +5570,14 @@ export const FileWriteResponseSchema = z.object({
   }),
 });
 
+export const FileUploadFlushResponseSchema = z.object({
+  type: z.literal("fs.file.upload.flush.response"),
+  payload: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("ready"), receivedBytes: z.number(), requestId: z.string() }),
+    z.object({ status: z.literal("error"), error: z.string(), requestId: z.string() }),
+  ]),
+});
+
 export const WorkspaceEntryMutationResponseSchema = z.object({
   type: z.literal("fs.entry.mutate.response"),
   payload: z.discriminatedUnion("status", [
@@ -6331,6 +6350,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileSubscribeResponseSchema,
   FileUnsubscribeResponseSchema,
   FileWriteResponseSchema,
+  FileUploadFlushResponseSchema,
   WorkspaceEntryMutationResponseSchema,
   FileUpdateSchema,
   DirectorySubscribeResponseSchema,

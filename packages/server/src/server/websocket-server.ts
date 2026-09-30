@@ -1680,6 +1680,7 @@ export class VoiceAssistantWebSocketServer {
         workspaceRecovery: true,
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: true,
+        workspaceFileWriteUploads: true,
         workspaceEntryMutation: true,
         // COMPAT(workspaceDirectoryObservation)：v0.2.2 新增，2027-02-23 后移除能力门控。
         workspaceDirectoryObservation: true,

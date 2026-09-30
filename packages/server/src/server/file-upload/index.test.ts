@@ -14,6 +14,77 @@ import { FileUploadStore } from "./index.js";
 const tempDirs: string[] = [];
 
 describe("file uploads", () => {
+  it("工作区编辑上传落盘确认后仅能消费一次，并删除临时内容", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+    uploads.beginUpload({
+      type: "file.upload.request",
+      purpose: "workspace-edit",
+      fileName: "notes.txt",
+      mimeType: "text/plain",
+      size: 11,
+      modifiedAt: "2026-09-30T00:00:00Z",
+      requestId: "edit",
+    });
+    await uploads.receiveFrame(uploadBegins("edit"));
+    const writing = uploads.receiveFrame(uploadChunk("edit", "hello world"));
+    await expect(uploads.flush("edit")).resolves.toBe(11);
+    await writing;
+    const completed = await uploads.receiveFrame(uploadEnds("edit"));
+    if (!completed || !completed.payload.file) throw new Error("Expected completed upload");
+    const id = completed.payload.file.id;
+    const taking = uploads.takeWorkspaceEdit(id);
+    await expect(uploads.takeWorkspaceEdit(id)).rejects.toThrow("does not exist in this session");
+    await expect(taking).resolves.toEqual(Buffer.from("hello world"));
+    expect(existsSync(join(paseoHome, "uploads", id))).toBe(false);
+    await expect(uploads.takeWorkspaceEdit(id)).rejects.toThrow("does not exist in this session");
+    await uploads.dispose();
+  });
+  it("工作区临时上传拒绝超过 100 MiB，附件不能作为编辑上传消费", async () => {
+    const uploads = new FileUploadStore({ paseoHome: makePaseoHome() });
+    expect(() =>
+      uploads.beginUpload({
+        type: "file.upload.request",
+        purpose: "workspace-edit",
+        fileName: "large.txt",
+        mimeType: "text/plain",
+        size: 100 * 1024 * 1024 + 1,
+        modifiedAt: "2026-09-30T00:00:00Z",
+        requestId: "over-limit",
+      }),
+    ).toThrow("100 MiB");
+    await expect(uploads.takeWorkspaceEdit("upload_attachment")).rejects.toThrow(
+      "does not exist in this session",
+    );
+    await expect(uploads.flush("missing")).rejects.toThrow("not active");
+  });
+  it("断开连接清理未消费的工作区上传，不删除普通附件", async () => {
+    const paseoHome = makePaseoHome();
+    const uploads = new FileUploadStore({ paseoHome });
+    let editDirectory = "";
+    for (const purpose of [undefined, "workspace-edit"] as const) {
+      const requestId = purpose ?? "attachment";
+      uploads.beginUpload({
+        type: "file.upload.request",
+        purpose,
+        fileName: "notes.txt",
+        mimeType: "text/plain",
+        size: 1,
+        modifiedAt: "2026-09-30T00:00:00Z",
+        requestId,
+      });
+      await uploads.receiveFrame(uploadBegins(requestId));
+      await uploads.receiveFrame(uploadChunk(requestId, "x"));
+      const completed = await uploads.receiveFrame(uploadEnds(requestId));
+      if (!completed || !completed.payload.file) throw new Error("Expected completed upload");
+      if (purpose === "workspace-edit") editDirectory = completed.payload.file.id;
+    }
+    await uploads.dispose();
+    expect(existsSync(join(paseoHome, "uploads", editDirectory))).toBe(false);
+    expect(readFileSync(join(paseoHome, "uploads", "upload_attachment", "notes.txt"), "utf8")).toBe(
+      "x",
+    );
+  });
   afterEach(() => {
     vi.useRealTimers();
     for (const dir of tempDirs.splice(0)) {

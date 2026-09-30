@@ -1,9 +1,11 @@
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 import { FileTransferOpcode, type FileTransferFrame } from "@getpaseo/protocol/binary-frames/index";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import type { FileUploadRequest, FileUploadResponse } from "../messages.js";
+import { MAX_EDITABLE_FILE_BYTES } from "@getpaseo/protocol/workspace-file-limits";
 
 interface FileUploadStoreOptions {
   paseoHome: string;
@@ -11,6 +13,7 @@ interface FileUploadStoreOptions {
 }
 
 interface PendingUpload {
+  workspaceEdit: boolean;
   requestId: string;
   id: string;
   attempt: number;
@@ -24,12 +27,18 @@ interface PendingUpload {
   queue: Promise<void>;
 }
 
+interface CompletedWorkspaceEdit {
+  path: string;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
 export class FileUploadStore {
   private static readonly defaultStaleUploadTimeoutMs = 10 * 60 * 1000;
 
   private readonly paseoHome: string;
   private readonly staleUploadTimeoutMs: number;
   private readonly pending = new Map<string, PendingUpload>();
+  private readonly completedWorkspaceEdits = new Map<string, CompletedWorkspaceEdit>();
 
   constructor(options: FileUploadStoreOptions) {
     this.paseoHome = options.paseoHome;
@@ -38,17 +47,24 @@ export class FileUploadStore {
   }
 
   beginUpload(request: FileUploadRequest): void {
+    const workspaceEdit = request.purpose === "workspace-edit";
+    if (workspaceEdit && request.size > MAX_EDITABLE_FILE_BYTES) {
+      throw new Error("文件大小超过 100 MiB，无法编辑");
+    }
     const existingUpload = this.pending.get(request.requestId);
     if (existingUpload) {
       this.clearPendingUpload(existingUpload);
-      void existingUpload.queue.then(() => this.removeUploadDirectory(existingUpload));
+      void existingUpload.queue
+        .then(() => this.removeUploadDirectory(existingUpload))
+        .catch((error: unknown) => console.error("Failed to clean up replaced file upload", error));
     }
 
     const fileName = sanitizeFileName(request.fileName);
     const attempt = existingUpload ? existingUpload.attempt + 1 : 1;
-    const id = buildUploadId(request.requestId, attempt);
+    const id = workspaceEdit ? `edit_${randomUUID()}` : buildUploadId(request.requestId, attempt);
     const uploadDir = join(this.paseoHome, "uploads", id);
     const upload: PendingUpload = {
+      workspaceEdit,
       requestId: request.requestId,
       id,
       attempt,
@@ -79,6 +95,46 @@ export class FileUploadStore {
     return operation;
   }
 
+  async flush(requestId: string): Promise<number> {
+    const upload = this.pending.get(requestId);
+    if (!upload) throw new Error("Upload is not active");
+    await upload.queue;
+    if (this.pending.get(requestId) !== upload) throw new Error("Upload failed or expired");
+    return upload.receivedBytes;
+  }
+
+  async takeWorkspaceEdit(id: string): Promise<Buffer> {
+    const upload = this.completedWorkspaceEdits.get(id);
+    if (!upload) throw new Error("Workspace edit upload does not exist in this session");
+    this.completedWorkspaceEdits.delete(id);
+    clearTimeout(upload.timeout);
+    try {
+      return await readFile(upload.path);
+    } finally {
+      await rm(join(this.paseoHome, "uploads", id), { recursive: true, force: true });
+    }
+  }
+
+  async dispose(): Promise<void> {
+    for (const upload of this.pending.values()) {
+      if (!upload.workspaceEdit) continue;
+      this.clearPendingUpload(upload);
+      await upload.queue;
+      await this.removeUploadDirectory(upload);
+    }
+    await Promise.all(
+      [...this.completedWorkspaceEdits.keys()].map((id) => this.discardWorkspaceEdit(id)),
+    );
+  }
+
+  private async discardWorkspaceEdit(id: string): Promise<void> {
+    const upload = this.completedWorkspaceEdits.get(id);
+    if (!upload) return;
+    this.completedWorkspaceEdits.delete(id);
+    clearTimeout(upload.timeout);
+    await rm(join(this.paseoHome, "uploads", id), { recursive: true, force: true });
+  }
+
   private async applyFrame(
     upload: PendingUpload,
     frame: FileTransferFrame,
@@ -98,6 +154,7 @@ export class FileUploadStore {
       }
       return await this.completeUpload(upload);
     } catch (error) {
+      console.error("File upload failed", error);
       await this.removeFailedUpload(upload);
       return buildUploadResponse(upload, getErrorMessage(error));
     }
@@ -132,6 +189,15 @@ export class FileUploadStore {
         `Upload size mismatch: expected ${upload.size}, received ${upload.receivedBytes}.`,
       );
     }
+    if (upload.workspaceEdit) {
+      const timeout = setTimeout(() => {
+        void this.discardWorkspaceEdit(upload.id).catch((error: unknown) => {
+          console.error("Failed to clean up expired workspace edit upload", error);
+        });
+      }, this.staleUploadTimeoutMs);
+      timeout.unref();
+      this.completedWorkspaceEdits.set(upload.id, { path: upload.path, timeout });
+    }
     return buildUploadResponse(upload, null);
   }
 
@@ -158,10 +224,9 @@ export class FileUploadStore {
       () => this.removeUploadDirectory(upload),
       () => this.removeUploadDirectory(upload),
     );
-    upload.queue = cleanup.then(
-      () => undefined,
-      () => undefined,
-    );
+    upload.queue = cleanup.catch((error: unknown) => {
+      console.error("Failed to clean up expired file upload", error);
+    });
   }
 
   private clearPendingUpload(upload: PendingUpload): void {
@@ -177,9 +242,7 @@ export class FileUploadStore {
   }
 
   private async removeUploadDirectory(upload: PendingUpload): Promise<void> {
-    await rm(join(this.paseoHome, "uploads", upload.id), { recursive: true, force: true }).catch(
-      () => undefined,
-    );
+    await rm(join(this.paseoHome, "uploads", upload.id), { recursive: true, force: true });
   }
 }
 

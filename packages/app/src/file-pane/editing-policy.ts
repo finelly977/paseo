@@ -1,5 +1,6 @@
 import type { ExplorerFile } from "@/stores/session-store";
 import type { FileVersion } from "@getpaseo/protocol/messages";
+import { MAX_EDITABLE_FILE_BYTES } from "@getpaseo/protocol/workspace-file-limits";
 
 export type FileReadonlyReason = "platform" | "host" | "type" | "size" | "permission";
 
@@ -30,7 +31,7 @@ export function fileReadonlyReason(input: {
   if (input.kind !== "text") return "type";
   if (!input.web) return "platform";
   if (!input.supportsEditing) return "host";
-  if (input.size > 1024 * 1024) return "size";
+  if (input.size > MAX_EDITABLE_FILE_BYTES) return "size";
   if (input.writeAccess === "denied") return "permission";
   return null;
 }

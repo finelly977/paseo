@@ -7,6 +7,7 @@ import {
   type Logger,
 } from "./daemon-client";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
+import { WSInboundMessageSchema } from "@getpaseo/protocol/messages";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import {
   decodeFileTransferFrame,
@@ -2172,6 +2173,101 @@ test("readFile drops an old daemon's over-budget binary chunks and reports the r
   );
 
   await expect(responsePromise).rejects.toThrow("文件过大，无法显示");
+});
+
+test("工作区大文件上传每 4 MiB 等待主机确认后才继续", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "upload-window",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { workspaceFileWriteUploads: true } });
+  await connected;
+  const bytes = new Uint8Array(5 * 1024 * 1024);
+  const result = client.uploadFile({
+    purpose: "workspace-edit",
+    requestId: "large-upload",
+    fileName: "large.txt",
+    mimeType: "text/plain",
+    bytes,
+  });
+  const frames = mock.sent
+    .filter((value) => typeof value !== "string")
+    .map(assertUint8Array)
+    .map(decodeFileTransferFrame);
+  expect(frames.filter((frame) => frame.opcode === FileTransferOpcode.FileChunk)).toHaveLength(4);
+  expect(frames.some((frame) => frame.opcode === FileTransferOpcode.FileEnd)).toBe(false);
+  const flush = WSInboundMessageSchema.parse(JSON.parse(assertStr(mock.sent[6])));
+  if (flush.type !== "session" || flush.message.type !== "fs.file.upload.flush.request")
+    throw new Error("Expected upload checkpoint");
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "fs.file.upload.flush.response",
+      payload: {
+        status: "ready",
+        requestId: flush.message.requestId,
+        receivedBytes: 4 * 1024 * 1024,
+      },
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(
+      mock.sent
+        .filter((value) => typeof value !== "string")
+        .map(assertUint8Array)
+        .map(decodeFileTransferFrame)
+        .at(-1)?.opcode,
+    ).toBe(FileTransferOpcode.FileEnd),
+  );
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "file.upload.response",
+      payload: {
+        requestId: "large-upload",
+        file: {
+          type: "uploaded_file",
+          id: "edit-upload",
+          fileName: "large.txt",
+          mimeType: "text/plain",
+          size: bytes.byteLength,
+          path: "/uploads/large.txt",
+        },
+        error: null,
+      },
+    }),
+  );
+  await expect(result).resolves.toEqual(
+    expect.objectContaining({ error: null, file: expect.objectContaining({ id: "edit-upload" }) }),
+  );
+});
+
+test("大文件编辑在旧主机上明确拒绝，不发送残缺文件", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "large-write-old-host",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen();
+  await connected;
+  await expect(
+    client.writeFile({
+      cwd: "/workspace",
+      path: "large.txt",
+      content: "x".repeat(1024 * 1024 + 1),
+      expectedModifiedAt: "now",
+    }),
+  ).rejects.toThrow("更新主机");
+  expect(mock.sent).toEqual([]);
 });
 
 test("uploadFile sends metadata request and file bytes as binary chunks", async () => {

@@ -1693,7 +1693,7 @@ export const zhCN: TranslationResources = {
         platform: "仅桌面和网页端支持编辑。",
         host: "请更新主机以启用文本编辑。",
         type: "图片、二进制及非 UTF-8 文件只支持预览。",
-        size: "超过 1 MiB 的文件只支持只读查看。",
+        size: "文件大小超过 100 MiB，无法编辑。",
         permission: "主机运行账户没有写入此文件或其所在目录的权限。",
       },
       editor: {

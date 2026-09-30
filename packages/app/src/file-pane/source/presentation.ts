@@ -1,5 +1,7 @@
+import { MAX_EDITABLE_FILE_BYTES } from "@getpaseo/protocol/workspace-file-limits";
+
 export const SOURCE_PRESENTATION_BUDGETS = {
-  web: { highlighted: 10 * 1024 * 1024, plain: 50 * 1024 * 1024 },
+  web: { highlighted: 10 * 1024 * 1024, plain: MAX_EDITABLE_FILE_BYTES },
   native: { highlighted: 1024 * 1024, plain: 10 * 1024 * 1024 },
 } as const;
 

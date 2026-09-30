@@ -103,6 +103,7 @@ import {
 import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
+import { AgentFailure } from "@/components/agent-failure";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
   buildCompletedTurnProcessModel,
@@ -936,6 +937,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderAssistantMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "assistant_message" }>) => {
+        if (item.text.trimStart().startsWith("[System Error]")) {
+          return <AgentFailure message={item.text} />;
+        }
         const messageProps = {
           message: item.text,
           timestamp: item.timestamp.getTime(),
@@ -1107,6 +1111,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             return renderToolCallItem(layoutItem, item);
 
           case "activity_log":
+            if (item.activityType === "error") return <AgentFailure message={item.message} />;
             return (
               <ActivityLog
                 type={item.activityType}

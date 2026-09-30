@@ -2,6 +2,8 @@ import { constants, promises as fs, type BigIntStats } from "fs";
 import type { FileHandle } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { isUtf8 } from "node:buffer";
+import { MAX_EDITABLE_FILE_BYTES } from "@getpaseo/protocol/workspace-file-limits";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
 import type { WorkspaceEntryMutation } from "@getpaseo/protocol/messages";
 
@@ -20,7 +22,7 @@ export interface ReadFileParams {
 }
 
 export interface WriteFileParams extends ReadFileParams {
-  content: string;
+  content: string | Uint8Array;
   expectedModifiedAt: string;
   expectedRevision?: string;
 }
@@ -96,7 +98,6 @@ const TEXT_MIME_TYPES: Record<string, string> = {
 const DEFAULT_TEXT_MIME_TYPE = "text/plain";
 const FILE_TYPE_SAMPLE_BYTES = 8192;
 export const FILE_EXPLORER_STREAM_CHUNK_BYTES = 256 * 1024;
-export const MAX_EDITABLE_FILE_BYTES = 1024 * 1024;
 const READ_FILE_OPEN_FLAGS =
   process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
 const ACCESS_OUTSIDE_WORKSPACE_MESSAGE = "Access outside of workspace is not allowed";
@@ -514,9 +515,15 @@ export async function writeExplorerFile({
   expectedModifiedAt,
   expectedRevision,
 }: WriteFileParams): Promise<ExplorerFileWriteResult> {
-  const encoded = Buffer.from(content, "utf8");
+  const encoded =
+    typeof content === "string"
+      ? Buffer.from(content, "utf8")
+      : Buffer.from(content.buffer, content.byteOffset, content.byteLength);
   if (encoded.byteLength > MAX_EDITABLE_FILE_BYTES) {
-    return { status: "error", error: "File is too large to edit" };
+    return { status: "error", error: "文件大小超过 100 MiB，无法编辑" };
+  }
+  if (!isUtf8(encoded) || isLikelyBinary(encoded)) {
+    return { status: "error", error: "只能保存 UTF-8 文本文件" };
   }
 
   let filePath: ScopedPath;
@@ -532,7 +539,7 @@ export async function writeExplorerFile({
         return { status: "error", error: "Requested path is not a file" };
       }
       if (stats.size > BigInt(MAX_EDITABLE_FILE_BYTES)) {
-        return { status: "error", error: "File is too large to edit" };
+        return { status: "error", error: "文件大小超过 100 MiB，无法编辑" };
       }
       const current = await handle.readFile();
       if (isLikelyBinary(current) || !isValidUtf8(current)) {
@@ -764,10 +771,5 @@ function isLikelyBinary(buffer: Buffer): boolean {
 }
 
 function isValidUtf8(buffer: Buffer): boolean {
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(buffer);
-    return true;
-  } catch {
-    return false;
-  }
+  return isUtf8(buffer);
 }

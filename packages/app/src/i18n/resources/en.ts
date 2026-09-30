@@ -1726,7 +1726,7 @@ export const en = {
         platform: "Editing is available on web and desktop.",
         host: "Update the host to enable text editing.",
         type: "Images and binary or non-UTF-8 files are read-only.",
-        size: "Files larger than 1 MiB are read-only.",
+        size: "文件大小超过 100 MiB，无法编辑。",
         permission: "The host account cannot write this file or its parent folder.",
       },
       editor: {

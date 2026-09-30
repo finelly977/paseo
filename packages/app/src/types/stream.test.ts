@@ -1396,6 +1396,32 @@ describe("stream reducer canonical tool calls", () => {
 });
 
 describe("turn lifecycle events", () => {
+  it("旧系统日志转为独立错误，用户引用的错误文本仍是用户消息", () => {
+    const timestamp = new Date("2026-09-30T10:00:00Z");
+    const text = "[System Error] provider failed";
+    const assistant = reduceStreamUpdate(
+      [],
+      { type: "timeline", provider: "codex", item: { type: "assistant_message", text } },
+      timestamp,
+    );
+    expect(assistant).toEqual([
+      expect.objectContaining({
+        kind: "activity_log",
+        activityType: "error",
+        message: "provider failed",
+      }),
+    ]);
+    const user = reduceStreamUpdate(
+      [],
+      {
+        type: "timeline",
+        provider: "codex",
+        item: { type: "user_message", text, messageId: "user-error-quote" },
+      },
+      timestamp,
+    );
+    expect(user).toEqual([expect.objectContaining({ kind: "user_message", text })]);
+  });
   it("finalizes active stream items without adding timeline rows", () => {
     const startedAt = new Date("2025-01-01T12:00:00Z");
     const completedAt = new Date("2025-01-01T12:00:05Z");

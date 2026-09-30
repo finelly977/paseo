@@ -1166,6 +1166,17 @@ function appendAssistantMessage(
   timelineCursor?: TimelinePosition,
   transformText?: (text: string) => string,
 ): StreamItem[] {
+  if (text.trimStart().startsWith("[System Error]")) {
+    const message = text.trimStart().slice("[System Error]".length).trimStart();
+    return appendActivityLog(state, {
+      kind: "activity_log",
+      id: createTimelineId("error", message, timestamp),
+      timestamp,
+      activityType: "error",
+      message,
+      ...(timelineCursor ? { timelineCursor } : {}),
+    });
+  }
   const { chunk, hasContent } = normalizeChunk(text);
   if (!chunk) {
     return state;
@@ -1739,10 +1750,11 @@ function reduceTimelineEvent(
     case "error": {
       const activity: ActivityLogItem = {
         kind: "activity_log",
-        id: createTimelineId("error", item.message ?? "", timestamp),
+        id: createTimelineId("error", item.message, timestamp),
         timestamp,
         activityType: "error",
-        message: item.message ?? "Unknown error",
+        message: item.message,
+        ...(timelineCursor ? { timelineCursor } : {}),
       };
       return finalizeActiveThoughts(appendActivityLog(state, activity));
     }

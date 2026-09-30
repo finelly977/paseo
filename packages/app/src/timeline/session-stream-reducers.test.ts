@@ -468,8 +468,9 @@ describe("processTimelineResponse", () => {
 
     expect(result.tail).toEqual([
       expect.objectContaining({
-        kind: "assistant_message",
-        text: "[System Error] failed",
+        kind: "activity_log",
+        activityType: "error",
+        message: "failed",
         timelineCursor: { epoch: "timeline-1", seq: 42 },
       }),
     ]);
@@ -2388,8 +2389,9 @@ describe("processAgentStreamEvent", () => {
 
     expect(result.head).toEqual([
       expect.objectContaining({
-        kind: "assistant_message",
-        text: "[System Error] failed",
+        kind: "activity_log",
+        activityType: "error",
+        message: "failed",
         timelineCursor: { epoch: "timeline-1", seq: 42 },
       }),
     ]);

@@ -8603,7 +8603,7 @@ test("archiveAgent cascade surfaces partial child archive failures", async () =>
   );
 });
 
-test("turn_failed emits a system error assistant timeline message and keeps error lifecycle", async () => {
+test("turn_failed 记录独立错误而非助手消息，并保留失败状态", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-turn-failed-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -8671,15 +8671,15 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
 
   const systemErrors = manager
     .getTimeline(agent.id)
-    .filter(
-      (item): item is Extract<AgentTimelineItem, { type: "assistant_message" }> =>
-        item.type === "assistant_message" && item.text.includes("[System Error]"),
-    );
+    .filter((item): item is Extract<AgentTimelineItem, { type: "error" }> => item.type === "error");
   expect(systemErrors).toHaveLength(1);
-  expect(systemErrors[0]?.text).toContain("invalid model id");
+  expect(systemErrors[0]?.message).toBe("invalid model id");
+  expect(manager.getTimeline(agent.id).filter((item) => item.type === "assistant_message")).toEqual(
+    [],
+  );
 });
 
-test("turn_failed surfaces provider code and diagnostic in system error message", async () => {
+test("turn_failed 独立错误记录保留提供方错误码与完整诊断", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-turn-failed-detail-"));
   const storagePath = join(workdir, "agents");
   const storage = new AgentStorage(storagePath, logger);
@@ -8747,13 +8747,10 @@ test("turn_failed surfaces provider code and diagnostic in system error message"
 
   const systemError = manager
     .getTimeline(agent.id)
-    .find(
-      (item): item is Extract<AgentTimelineItem, { type: "assistant_message" }> =>
-        item.type === "assistant_message" && item.text.includes("[System Error]"),
-    );
-  expect(systemError?.text).toContain("Provider execution failed");
-  expect(systemError?.text).toContain("code: 126");
-  expect(systemError?.text).toContain("No preset version installed for command claude");
+    .find((item): item is Extract<AgentTimelineItem, { type: "error" }> => item.type === "error");
+  expect(systemError?.message).toContain("Provider execution failed");
+  expect(systemError?.message).toContain("code: 126");
+  expect(systemError?.message).toContain("No preset version installed for command claude");
 });
 
 test("permission request notifies once without forcing unread attention state", async () => {

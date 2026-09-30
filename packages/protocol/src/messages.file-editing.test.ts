@@ -11,10 +11,40 @@ import {
   FileUpdateSchema,
   FileWriteRequestSchema,
   FileWriteResponseSchema,
+  FileUploadFlushRequestSchema,
+  FileUploadFlushResponseSchema,
   ServerInfoStatusPayloadSchema,
 } from "./messages.js";
 
 describe("workspace file editing messages", () => {
+  test("分块保存扩展保留旧请求形状，确认响应明确区分失败", () => {
+    const write = {
+      type: "fs.file.write.request",
+      cwd: "/work",
+      path: "a.txt",
+      content: "",
+      expectedModifiedAt: "now",
+      requestId: "write",
+    };
+    expect(FileWriteRequestSchema.parse(write).uploadedFileId).toBeUndefined();
+    expect(FileWriteRequestSchema.safeParse({ ...write, uploadedFileId: "" }).success).toBe(false);
+    expect(
+      FileWriteRequestSchema.parse({ ...write, uploadedFileId: "edit-upload" }).uploadedFileId,
+    ).toBe("edit-upload");
+    expect(
+      FileUploadFlushRequestSchema.parse({
+        type: "fs.file.upload.flush.request",
+        uploadRequestId: "upload",
+        requestId: "flush",
+      }).uploadRequestId,
+    ).toBe("upload");
+    expect(
+      FileUploadFlushResponseSchema.parse({
+        type: "fs.file.upload.flush.response",
+        payload: { status: "error", error: "expired", requestId: "flush" },
+      }).payload,
+    ).toEqual({ status: "error", error: "expired", requestId: "flush" });
+  });
   test("keeps the capability optional for older server info payloads", () => {
     const features = ServerInfoStatusPayloadSchema.parse({
       status: "server_info",
@@ -22,6 +52,7 @@ describe("workspace file editing messages", () => {
       features: {},
     }).features;
     expect(features?.workspaceFileEditing).toBeUndefined();
+    expect(features?.workspaceFileWriteUploads).toBeUndefined();
     expect(features?.workspaceDirectoryObservation).toBeUndefined();
   });
 

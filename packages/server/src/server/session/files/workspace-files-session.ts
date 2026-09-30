@@ -285,10 +285,16 @@ export class WorkspaceFilesSession {
   async handleFileWriteRequest(request: FileWriteRequest): Promise<void> {
     let result: FileWriteResult;
     try {
+      if (request.uploadedFileId && request.content.length > 0) {
+        throw new Error("文件内容与上传文件不能同时提供");
+      }
+      const content = request.uploadedFileId
+        ? await this.fileUploads.takeWorkspaceEdit(request.uploadedFileId)
+        : request.content;
       result = await writeExplorerFile({
         root: request.cwd,
         relativePath: request.path,
-        content: request.content,
+        content,
         expectedModifiedAt: request.expectedModifiedAt,
         expectedRevision: request.expectedRevision,
       });
@@ -300,6 +306,27 @@ export class WorkspaceFilesSession {
       type: "fs.file.write.response",
       payload: { result, requestId: request.requestId },
     });
+  }
+
+  async handleFileUploadFlushRequest(
+    request: Extract<SessionInboundMessage, { type: "fs.file.upload.flush.request" }>,
+  ): Promise<void> {
+    try {
+      const receivedBytes = await this.fileUploads.flush(request.uploadRequestId);
+      this.host.emit({
+        type: "fs.file.upload.flush.response",
+        payload: { status: "ready", receivedBytes, requestId: request.requestId },
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, uploadRequestId: request.uploadRequestId },
+        "确认文件上传失败",
+      );
+      this.host.emit({
+        type: "fs.file.upload.flush.response",
+        payload: { status: "error", error: getErrorMessage(error), requestId: request.requestId },
+      });
+    }
   }
 
   async handleEntryMutationRequest(request: WorkspaceEntryMutationRequest): Promise<void> {
@@ -326,6 +353,7 @@ export class WorkspaceFilesSession {
   }
 
   async dispose(): Promise<void> {
+    await this.fileUploads.dispose();
     for (const unsubscribe of this.fileSubscriptions.values()) unsubscribe();
     this.fileSubscriptions.clear();
     for (const subscription of this.directorySubscriptions.values()) {
@@ -475,7 +503,15 @@ export class WorkspaceFilesSession {
   }
 
   handleFileUploadRequest(request: FileUploadRequest): void {
-    this.fileUploads.beginUpload(request);
+    try {
+      this.fileUploads.beginUpload(request);
+    } catch (error) {
+      this.logger.error({ err: error, requestId: request.requestId }, "开始文件上传失败");
+      this.host.emit({
+        type: "file.upload.response",
+        payload: { requestId: request.requestId, file: null, error: getErrorMessage(error) },
+      });
+    }
   }
 
   async handleFileTransferFrame(frame: FileTransferFrame): Promise<void> {

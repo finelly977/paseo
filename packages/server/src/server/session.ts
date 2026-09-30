@@ -2463,6 +2463,8 @@ export class Session {
         return this.workspaceFilesSession.handleDirectoryUnsubscribeRequest(msg);
       case "fs.file.write.request":
         return this.workspaceFilesSession.handleFileWriteRequest(msg);
+      case "fs.file.upload.flush.request":
+        return this.workspaceFilesSession.handleFileUploadFlushRequest(msg);
       case "fs.entry.mutate.request":
         return this.workspaceFilesSession.handleEntryMutationRequest(msg);
       case "project_icon_request":

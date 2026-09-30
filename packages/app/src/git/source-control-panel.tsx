@@ -223,9 +223,11 @@ function commitButtonPressableStyle({
   hovered,
   pressed,
   canPress,
-}: PressableStateCallbackType & { hovered?: boolean; canPress: boolean }) {
+  hasCaret,
+}: PressableStateCallbackType & { hovered?: boolean; canPress: boolean; hasCaret: boolean }) {
   return [
     styles.commitButton,
+    hasCaret && styles.commitButtonWithCaret,
     canPress && (Boolean(hovered) || pressed) && styles.commitButtonHovered,
   ];
 }
@@ -545,8 +547,8 @@ export function SourceControlCommitComposer({
 
   const commitButtonStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) =>
-      commitButtonPressableStyle({ hovered, pressed, canPress }),
-    [canPress],
+      commitButtonPressableStyle({ hovered, pressed, canPress, hasCaret: buttonKind === "commit" }),
+    [buttonKind, canPress],
   );
   const commitCaretStyle = useCallback(
     ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
@@ -618,7 +620,9 @@ export function SourceControlCommitComposer({
             onPress={submit}
             style={commitButtonStyle}
           >
-            <CommitButtonIcon isPending={isPending} buttonKind={buttonKind} />
+            <View style={styles.commitIconSlot}>
+              <CommitButtonIcon isPending={isPending} buttonKind={buttonKind} />
+            </View>
             <Text style={styles.commitButtonText} numberOfLines={1}>
               {buttonLabel}
             </Text>
@@ -851,6 +855,15 @@ const styles = StyleSheet.create((theme) => ({
     borderLeftWidth: 1,
     borderLeftColor: theme.colors.scmButtonHoverBackground,
     backgroundColor: "transparent",
+  },
+  // 补齐下拉区域与前置图标的宽度差，让文字居中于整个分体按钮。
+  commitButtonWithCaret: {
+    paddingLeft: 14,
+  },
+  commitIconSlot: {
+    width: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   commitButtonHovered: {
     backgroundColor: theme.colors.scmButtonHoverBackground,

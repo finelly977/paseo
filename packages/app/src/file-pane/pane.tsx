@@ -1,3 +1,4 @@
+import { MAX_EDITABLE_FILE_BYTES } from "@getpaseo/protocol/workspace-file-limits";
 import React, {
   useCallback,
   useEffect,
@@ -398,7 +399,7 @@ function isEditableTextFile(input: {
     isWeb &&
     input.supportsEditing &&
     input.preview?.kind === "text" &&
-    input.preview.size <= 1024 * 1024,
+    input.preview.size <= MAX_EDITABLE_FILE_BYTES,
   );
 }
 

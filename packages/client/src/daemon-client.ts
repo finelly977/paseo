@@ -1,4 +1,8 @@
 import type { z } from "zod";
+import {
+  MAX_EDITABLE_FILE_BYTES,
+  MAX_INLINE_FILE_WRITE_BYTES,
+} from "@getpaseo/protocol/workspace-file-limits";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
@@ -495,12 +499,21 @@ export interface FileReadResult {
   revision?: string;
 }
 export interface FileUploadInput {
+  purpose?: "workspace-edit";
   fileName: string;
   mimeType: string;
   bytes: Uint8Array | ArrayBuffer;
   modifiedAt?: string;
   requestId?: string;
   chunkSize?: number;
+}
+interface FileUploadTransmission extends Omit<
+  FileUploadInput,
+  "bytes" | "requestId" | "modifiedAt"
+> {
+  bytes: Uint8Array;
+  requestId: string;
+  modifiedAt: string;
 }
 export type FileUploadResult = FileUploadResponse["payload"];
 type FileDownloadTokenPayload = FileDownloadTokenResponse["payload"];
@@ -4628,6 +4641,35 @@ export class DaemonClient {
     expectedModifiedAt: string;
     expectedRevision?: string;
   }): Promise<FileWriteResult> {
+    const bytes = new TextEncoder().encode(input.content);
+    if (bytes.byteLength > MAX_EDITABLE_FILE_BYTES) {
+      return { status: "error", error: "文件大小超过 100 MiB，无法编辑" };
+    }
+    if (bytes.byteLength > MAX_INLINE_FILE_WRITE_BYTES) {
+      // COMPAT(workspaceFileWriteUploads)：2026-09-30 新增，2027-03-30 后随主机最低版本移除。
+      if (this.lastServerInfoMessage?.features?.workspaceFileWriteUploads !== true) {
+        throw new Error("请更新主机后使用大文件编辑");
+      }
+      const upload = await this.uploadFile({
+        purpose: "workspace-edit",
+        fileName: "workspace-edit.txt",
+        mimeType: "text/plain",
+        bytes,
+      });
+      if (upload.error !== null || upload.file === null) {
+        throw new Error(upload.error ?? "主机没有返回上传文件");
+      }
+      const payload = await this.sendCorrelatedSessionRequest({
+        message: {
+          type: "fs.file.write.request",
+          ...input,
+          content: "",
+          uploadedFileId: upload.file.id,
+        },
+        responseType: "fs.file.write.response",
+      });
+      return payload.result;
+    }
     const payload = await this.sendCorrelatedSessionRequest({
       message: { type: "fs.file.write.request", ...input },
       responseType: "fs.file.write.response",
@@ -4659,6 +4701,7 @@ export class DaemonClient {
       requestId: resolvedRequestId,
       message: {
         type: "file.upload.request",
+        ...(input.purpose ? { purpose: input.purpose } : {}),
         fileName: input.fileName,
         mimeType: input.mimeType,
         size: bytes.byteLength,
@@ -4666,13 +4709,26 @@ export class DaemonClient {
         requestId: resolvedRequestId,
       },
       responseType: "file.upload.response",
+      timeout: input.purpose === "workspace-edit" ? 15 * 60_000 : undefined,
       options: { skipQueue: true },
     });
 
+    const transmission = this.sendUploadFrames({
+      ...input,
+      bytes,
+      requestId: resolvedRequestId,
+      modifiedAt,
+    });
+    const [response] = await Promise.all([responsePromise, transmission]);
+    return response;
+  }
+
+  private async sendUploadFrames(input: FileUploadTransmission): Promise<void> {
+    const { requestId, bytes, modifiedAt } = input;
     this.sendBinaryFrame(
       encodeFileTransferFrame({
         opcode: FileTransferOpcode.FileBegin,
-        requestId: resolvedRequestId,
+        requestId,
         metadata: {
           mime: input.mimeType,
           size: bytes.byteLength,
@@ -4683,25 +4739,38 @@ export class DaemonClient {
       }),
     );
 
-    const chunkSize = input.chunkSize ?? 1024 * 1024;
+    const chunkSize =
+      input.purpose === "workspace-edit" ? 1024 * 1024 : (input.chunkSize ?? 1024 * 1024);
     for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
       this.sendBinaryFrame(
         encodeFileTransferFrame({
           opcode: FileTransferOpcode.FileChunk,
-          requestId: resolvedRequestId,
+          requestId,
           payload: bytes.subarray(offset, Math.min(offset + chunkSize, bytes.byteLength)),
         }),
       );
+      // 每 4 MiB 等待主机落盘确认，避免中继与主机队列一次积压整个大文件。
+      const sentBytes = Math.min(offset + chunkSize, bytes.byteLength);
+      if (
+        input.purpose === "workspace-edit" &&
+        sentBytes < bytes.byteLength &&
+        sentBytes % (4 * 1024 * 1024) === 0
+      ) {
+        const checkpoint = await this.sendCorrelatedSessionRequest({
+          message: { type: "fs.file.upload.flush.request", uploadRequestId: requestId },
+          responseType: "fs.file.upload.flush.response",
+        });
+        if (checkpoint.status === "error") throw new Error(checkpoint.error);
+        if (checkpoint.receivedBytes !== sentBytes) throw new Error("主机文件上传进度不一致");
+      }
     }
 
     this.sendBinaryFrame(
       encodeFileTransferFrame({
         opcode: FileTransferOpcode.FileEnd,
-        requestId: resolvedRequestId,
+        requestId,
       }),
     );
-
-    return responsePromise;
   }
 
   async requestDownloadToken(

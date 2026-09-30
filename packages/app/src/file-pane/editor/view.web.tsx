@@ -7,6 +7,7 @@ import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { FileEditorModel } from "./model";
 import { editorBaseExtensions, editorTheme, type EditorVisualTheme } from "./extensions.web";
+import { SOURCE_PRESENTATION_BUDGETS } from "../source/presentation";
 
 interface FileEditorViewProps {
   model: FileEditorModel;
@@ -44,6 +45,11 @@ export function FileEditorView({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
+  const contentIsSmall = snapshot.content.length <= SOURCE_PRESENTATION_BUDGETS.web.highlighted;
+  const fileIsSmall =
+    snapshot.version.status !== "ready" ||
+    snapshot.version.size <= SOURCE_PRESENTATION_BUDGETS.web.highlighted;
+  const syntaxEnabled = contentIsSmall && fileIsSmall;
   const initial = useRef({
     filename,
     model,
@@ -51,6 +57,7 @@ export function FileEditorView({
     vimEnabled,
     readOnly,
     content: snapshot.content,
+    syntaxEnabled,
   });
   const onCursorChangeRef = useRef(onCursorChange);
   onCursorChangeRef.current = onCursorChange;
@@ -66,8 +73,10 @@ export function FileEditorView({
           vimCompartment.of(values.vimEnabled ? vim() : []),
           readonlyCompartment.of(EditorState.readOnly.of(values.readOnly)),
           ...editorBaseExtensions(() => void values.model.save()),
-          languageCompartment.of(getLanguageForFile(values.filename)?.extension ?? []),
-          wrappingCompartment.of(wrappingForFile(values.filename)),
+          languageCompartment.of(
+            values.syntaxEnabled ? (getLanguageForFile(values.filename)?.extension ?? []) : [],
+          ),
+          wrappingCompartment.of(values.syntaxEnabled ? wrappingForFile(values.filename) : []),
           themeCompartment.of(editorTheme(values.theme)),
           EditorView.updateListener.of((update) => {
             if (
@@ -123,11 +132,13 @@ export function FileEditorView({
   useEffect(() => {
     viewRef.current?.dispatch({
       effects: [
-        languageCompartment.reconfigure(getLanguageForFile(filename)?.extension ?? []),
-        wrappingCompartment.reconfigure(wrappingForFile(filename)),
+        languageCompartment.reconfigure(
+          syntaxEnabled ? (getLanguageForFile(filename)?.extension ?? []) : [],
+        ),
+        wrappingCompartment.reconfigure(syntaxEnabled ? wrappingForFile(filename) : []),
       ],
     });
-  }, [filename]);
+  }, [filename, syntaxEnabled]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: themeCompartment.reconfigure(editorTheme(theme)) });

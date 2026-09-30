@@ -28,6 +28,35 @@ async function createTempDir(prefix: string): Promise<string> {
 }
 
 describe("file explorer service", () => {
+  it("原子保存 100 MiB UTF-8 文本，并拒绝多一字节的内容", async () => {
+    const root = await createTempDir("paseo-edit-limit-");
+    try {
+      const filePath = path.join(root, "large.txt");
+      await writeFile(filePath, "before");
+      const version = await getExplorerFileVersion({ root, relativePath: "large.txt" });
+      if (version.status !== "ready") throw new Error("Expected ready file");
+      const content = Buffer.alloc(100 * 1024 * 1024, 65);
+      const result = await writeExplorerFile({
+        root,
+        relativePath: "large.txt",
+        content,
+        expectedModifiedAt: version.modifiedAt,
+        expectedRevision: version.revision,
+      });
+      expect(result.status).toBe("written");
+      expect((await stat(filePath)).size).toBe(100 * 1024 * 1024);
+      const overflow = await writeExplorerFile({
+        root,
+        relativePath: "large.txt",
+        content: Buffer.alloc(100 * 1024 * 1024 + 1, 65),
+        expectedModifiedAt: version.modifiedAt,
+      });
+      expect(overflow).toEqual({ status: "error", error: "文件大小超过 100 MiB，无法编辑" });
+      expect((await stat(filePath)).size).toBe(100 * 1024 * 1024);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("atomically writes an existing text file at the expected revision", async () => {
     const root = await createTempDir("paseo-file-write-");
     try {
