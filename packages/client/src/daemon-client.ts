@@ -4375,6 +4375,7 @@ export class DaemonClient {
   async createWorkspace(
     input: {
       source: WorkspaceCreateRequest["source"];
+      workspaceId?: string;
       title?: string;
       firstAgentContext?: WorkspaceCreateRequest["firstAgentContext"];
     },
@@ -4385,6 +4386,7 @@ export class DaemonClient {
       message: {
         type: "workspace.create.request",
         source: input.source,
+        ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.firstAgentContext !== undefined
           ? { firstAgentContext: input.firstAgentContext }

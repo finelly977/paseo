@@ -61,6 +61,21 @@ it("returns empty list for new cwd", async () => {
   expect(terminals).toHaveLength(0);
 });
 
+it("按工作区归属查找草稿终端，不因正式工作区目录变化而遗漏", async () => {
+  manager = createTerminalManager();
+  const source = mkdtempSync(join(tmpdir(), "draft-terminal-source-"));
+  const worktree = mkdtempSync(join(tmpdir(), "draft-terminal-worktree-"));
+  temporaryDirs.push(source, worktree);
+  const terminal = await manager.createTerminal({ cwd: source, workspaceId: "draft-workspace-a" });
+  await manager.createTerminal({ cwd: source, workspaceId: "workspace-other" });
+  expect(
+    (await manager.getTerminals(worktree, { workspaceId: "draft-workspace-a" })).map(
+      (item) => item.id,
+    ),
+  ).toEqual([terminal.id]);
+  expect(await manager.getTerminals(worktree)).toEqual([]);
+});
+
 it("returns existing terminals on subsequent calls", async () => {
   manager = createTerminalManager();
   const cwd = realpathSync(tmpdir());

@@ -5,10 +5,32 @@ import {
   type WorkspaceFileLocation,
 } from "@/workspace/file-open";
 import { buildDeterministicWorkspaceTabId } from "@/workspace-tabs/identity";
+import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
+
+export type NewWorkspaceDraftResourceTarget = Extract<
+  WorkspaceTabTarget,
+  { kind: "terminal" | "browser" }
+>;
+
+/** 仅预留资源归属，不创建服务端工作区；正式发送时沿用此标识。 */
+export function buildNewWorkspaceDraftWorkspaceId(draftId: string): string {
+  return `draft-workspace-${draftId}`;
+}
+
+export function openNewWorkspaceDraftShellResource(
+  state: NewWorkspaceDraftShellState,
+  target: NewWorkspaceDraftResourceTarget,
+): NewWorkspaceDraftShellState {
+  const tabId = buildDeterministicWorkspaceTabId(target);
+  if (state.tabs.some((tab) => tab.tabId === tabId)) {
+    return focusNewWorkspaceDraftShellTab(state, tabId);
+  }
+  const tab: WorkspaceTabDescriptor = { key: tabId, tabId, kind: target.kind, target };
+  return { ...state, tabs: [...state.tabs, tab], activeTabId: tabId };
+}
 
 /**
- * 新建会话草稿外壳的标签状态只存在于客户端：草稿标签始终存在，右侧文件面板打开的文件
- * 作为附加标签留在外壳内，不创建服务端工作区。
+ * 草稿及其附加标签仅存在于客户端，预览文件和运行终端不提前创建正式工作区。
  */
 export interface NewWorkspaceDraftShellState {
   draftTabId: string;
@@ -104,13 +126,13 @@ function resolveActiveTabAfterClose(input: {
   return successor?.tabId ?? state.draftTabId;
 }
 
-function removeFileTabs(input: {
+function removeResourceTabs(input: {
   state: NewWorkspaceDraftShellState;
   shouldRemove: (tab: WorkspaceTabDescriptor, index: number) => boolean;
   anchorTabId?: string;
 }): NewWorkspaceDraftShellState {
   const { state, shouldRemove, anchorTabId } = input;
-  // 草稿标签代表新建会话本身，批量关闭只作用于文件标签，关闭草稿标签由外壳单独处理。
+  // 草稿标签代表新建会话本身，关闭草稿标签由外壳单独处理。
   const remainingTabs = state.tabs.filter(
     (tab, index) => tab.tabId === state.draftTabId || !shouldRemove(tab, index),
   );
@@ -131,25 +153,25 @@ function removeFileTabs(input: {
   };
 }
 
-export function closeNewWorkspaceDraftShellFileTab(
+export function closeNewWorkspaceDraftShellTab(
   state: NewWorkspaceDraftShellState,
   tabId: string,
 ): NewWorkspaceDraftShellState {
-  return removeFileTabs({ state, shouldRemove: (tab) => tab.tabId === tabId });
+  return removeResourceTabs({ state, shouldRemove: (tab) => tab.tabId === tabId });
 }
 
-export function closeNewWorkspaceDraftShellOtherFileTabs(
+export function closeNewWorkspaceDraftShellOtherTabs(
   state: NewWorkspaceDraftShellState,
   tabId: string,
 ): NewWorkspaceDraftShellState {
-  return removeFileTabs({
+  return removeResourceTabs({
     state,
     shouldRemove: (tab) => tab.tabId !== tabId,
     anchorTabId: tabId,
   });
 }
 
-export function closeNewWorkspaceDraftShellFileTabsBefore(
+export function closeNewWorkspaceDraftShellTabsBefore(
   state: NewWorkspaceDraftShellState,
   tabId: string,
 ): NewWorkspaceDraftShellState {
@@ -157,14 +179,14 @@ export function closeNewWorkspaceDraftShellFileTabsBefore(
   if (anchorIndex === -1) {
     return state;
   }
-  return removeFileTabs({
+  return removeResourceTabs({
     state,
     shouldRemove: (_tab, index) => index < anchorIndex,
     anchorTabId: tabId,
   });
 }
 
-export function closeNewWorkspaceDraftShellFileTabsAfter(
+export function closeNewWorkspaceDraftShellTabsAfter(
   state: NewWorkspaceDraftShellState,
   tabId: string,
 ): NewWorkspaceDraftShellState {
@@ -172,7 +194,7 @@ export function closeNewWorkspaceDraftShellFileTabsAfter(
   if (anchorIndex === -1) {
     return state;
   }
-  return removeFileTabs({
+  return removeResourceTabs({
     state,
     shouldRemove: (_tab, index) => index > anchorIndex,
     anchorTabId: tabId,

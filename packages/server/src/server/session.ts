@@ -5728,6 +5728,9 @@ export class Session {
     request: Extract<SessionInboundMessage, { type: "workspace.create.request" }>,
   ): Promise<void> {
     try {
+      if (request.workspaceId && (await this.workspaceRegistry.get(request.workspaceId))) {
+        throw new WorkspaceProvisioningError("workspace_exists", request.workspaceId);
+      }
       if (request.source.kind === "directory") {
         await this.handleWorkspaceCreateLocal(request);
         return;
@@ -5782,7 +5785,10 @@ export class Session {
       cwd,
       explicitTitle ?? promptTitle,
       request.source.projectId,
-      { expectsInitialAgent: Boolean(request.firstAgentContext) },
+      {
+        expectsInitialAgent: Boolean(request.firstAgentContext),
+        workspaceId: request.workspaceId,
+      },
     );
     await this.syncWorkspaceGitObserverForWorkspace(workspace);
     const descriptor = await this.describeWorkspaceRecord(workspace);
@@ -5847,6 +5853,7 @@ export class Session {
 
     const result = await this.createPaseoWorktreeWorkflow(
       {
+        workspaceId: request.workspaceId,
         cwd: sourceCwd,
         projectId: source.projectId,
         worktreeSlug: source.worktreeSlug,

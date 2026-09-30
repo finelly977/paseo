@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
@@ -27,6 +27,10 @@ import { getIsElectron } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { FilePane } from "@/file-pane/pane";
+import { TerminalPane } from "@/components/terminal-pane";
+import { BrowserPane } from "@/components/browser-pane";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useBrowserStore } from "@/stores/browser-store";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { PaneProvider, type PaneContextValue } from "@/panels/pane-context";
 import { getPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
@@ -45,10 +49,11 @@ import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import { WorkspaceOpenInEditorButton } from "@/workspace/open-in-editor/button";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import {
-  closeNewWorkspaceDraftShellFileTab,
-  closeNewWorkspaceDraftShellFileTabsAfter,
-  closeNewWorkspaceDraftShellFileTabsBefore,
-  closeNewWorkspaceDraftShellOtherFileTabs,
+  closeNewWorkspaceDraftShellTab,
+  buildNewWorkspaceDraftWorkspaceId,
+  closeNewWorkspaceDraftShellTabsAfter,
+  closeNewWorkspaceDraftShellTabsBefore,
+  closeNewWorkspaceDraftShellOtherTabs,
   focusNewWorkspaceDraftShellTab,
   listNewWorkspaceDraftShellFileTabIds,
   openNewWorkspaceDraftShellFile,
@@ -58,6 +63,7 @@ import {
 import {
   getNewSessionDraftShellState,
   updateNewSessionDraftShell,
+  useNewSessionDraftStore,
   useNewSessionDraftShellState,
 } from "./new-workspace/draft-shell-store";
 
@@ -73,7 +79,7 @@ const settingsLeadingIcon = <ThemedSettings size={14} uniProps={mutedColorMappin
 
 function noop() {}
 
-/** 需要持久工作区才能承载的目标；文件标签由草稿外壳在客户端直接打开。 */
+/** 附加资源留在草稿内，正式发送前不创建工作区。 */
 export type NewWorkspaceDraftShellTarget =
   | { kind: "terminal"; profile?: TerminalProfileInput }
   | { kind: "browser" };
@@ -91,6 +97,7 @@ interface NewWorkspaceDraftShellProps {
 }
 
 interface DraftShellActions {
+  closingTabIds: readonly string[];
   focusTab: (tabId: string) => void;
   focusDraftTab: () => void;
   openFile: (location: WorkspaceFileLocation) => void;
@@ -100,10 +107,6 @@ interface DraftShellActions {
   closeTabsAfter: (tabId: string) => Promise<void>;
   reorderTabs: (nextTabs: WorkspaceTabDescriptor[]) => void;
   copyFilePath: (path: string) => Promise<void>;
-}
-
-function buildDraftShellVirtualWorkspaceId(draftId: string): string {
-  return `draft-${draftId}`;
 }
 
 interface DraftHeaderMenuProps {
@@ -262,9 +265,9 @@ function DraftTabs({
         tab,
         isActive: tab.tabId === shellState.activeTabId,
         isCloseHovered: hoveredCloseTabKey === tab.key,
-        isClosingTab: false,
+        isClosingTab: actions.closingTabIds.includes(tab.tabId),
       })),
-    [hoveredCloseTabKey, shellState.activeTabId, shellState.tabs],
+    [actions.closingTabIds, hoveredCloseTabKey, shellState.activeTabId, shellState.tabs],
   );
   const createTerminal = useCallback(
     (input: { profile?: TerminalProfileInput }) => {
@@ -370,6 +373,61 @@ interface DraftContentProps {
   children: ReactNode;
 }
 
+function DraftResourcePane({
+  serverId,
+  cwd,
+  virtualWorkspaceId,
+  shellState,
+  actions,
+  tab,
+}: Omit<DraftContentProps, "children"> & { tab: WorkspaceTabDescriptor }) {
+  const active = shellState.activeTabId === tab.tabId;
+  const openFile = useCallback(
+    (request: { location: WorkspaceFileLocation }) => actions.openFile(request.location),
+    [actions],
+  );
+  const openExplorer = usePanelStore((state) => state.openFileExplorerForCheckout);
+  const showExplorer = useCallback(
+    () => openExplorer({ isCompact: false, checkout: { serverId, cwd, isGit: false } }),
+    [cwd, openExplorer, serverId],
+  );
+  if (tab.target.kind === "file") {
+    return (
+      <DraftFileTabPane
+        serverId={serverId}
+        cwd={cwd}
+        virtualWorkspaceId={virtualWorkspaceId}
+        tab={tab}
+        navigationRevision={shellState.fileNavigationRevisionByTabId[tab.tabId] ?? 0}
+        actions={actions}
+      />
+    );
+  }
+  if (tab.target.kind === "terminal") {
+    return (
+      <TerminalPane
+        serverId={serverId}
+        cwd={cwd}
+        terminalId={tab.target.terminalId}
+        isWorkspaceFocused
+        isPaneFocused={active}
+        onOpenFileExplorer={showExplorer}
+        onOpenWorkspaceFile={openFile}
+      />
+    );
+  }
+  invariant(tab.target.kind === "browser", "草稿附加标签需要文件、终端或浏览器目标");
+  return (
+    <BrowserPane
+      serverId={serverId}
+      workspaceId={virtualWorkspaceId}
+      cwd={cwd}
+      browserId={tab.target.browserId}
+      isInteractive={active}
+    />
+  );
+}
+
 function DraftContent({
   serverId,
   cwd,
@@ -385,14 +443,14 @@ function DraftContent({
         {children}
       </RetainedPanel>
       {shellState.tabs.map((tab) =>
-        tab.target.kind === "file" ? (
+        tab.target.kind !== "draft" ? (
           <RetainedPanel key={tab.tabId} active={shellState.activeTabId === tab.tabId}>
-            <DraftFileTabPane
+            <DraftResourcePane
               serverId={serverId}
               cwd={cwd}
               virtualWorkspaceId={virtualWorkspaceId}
               tab={tab}
-              navigationRevision={shellState.fileNavigationRevisionByTabId[tab.tabId] ?? 0}
+              shellState={shellState}
               actions={actions}
             />
           </RetainedPanel>
@@ -450,6 +508,10 @@ function useDraftShellActions(input: {
   const { t } = useTranslation();
   const toast = useToast();
 
+  const client = useHostRuntimeClient(serverId);
+  const [closingTabIds, setClosingTabIds] = useState<string[]>([]);
+  const closing = useRef(false);
+
   const confirmDiscardModifiedTabs = useCallback(
     async (tabIds: readonly string[]): Promise<boolean> => {
       const modifiedAttributes = tabIds
@@ -476,22 +538,45 @@ function useDraftShellActions(input: {
     [serverId, t, virtualWorkspaceId],
   );
 
-  const closeFileTabs = useCallback(
+  const closeResourceTabs = useCallback(
     async (reducer: (state: NewWorkspaceDraftShellState) => NewWorkspaceDraftShellState) => {
+      if (closing.current) return;
       const current = getNewSessionDraftShellState(draftId);
       const remainingTabIds = new Set(reducer(current).tabs.map((tab) => tab.tabId));
-      const closingTabIds = current.tabs
+      const resourceTabIds = current.tabs
         .filter((tab) => !remainingTabIds.has(tab.tabId))
         .map((tab) => tab.tabId);
-      if (closingTabIds.length === 0) return;
-      if (!(await confirmDiscardModifiedTabs(closingTabIds))) return;
-      updateNewSessionDraftShell(draftId, reducer);
+      if (resourceTabIds.length === 0) return;
+      closing.current = true;
+      setClosingTabIds(resourceTabIds);
+      try {
+        if (!(await confirmDiscardModifiedTabs(resourceTabIds))) return;
+        for (const tab of current.tabs) {
+          if (!resourceTabIds.includes(tab.tabId)) continue;
+          if (tab.target.kind === "terminal") {
+            if (!client || !client.isConnected) throw new Error("主机未连接，无法关闭终端");
+            const result = await client.killTerminal(tab.target.terminalId);
+            if (!result.success) throw new Error("关闭终端失败，请重试");
+          }
+          if (tab.target.kind === "browser") {
+            useBrowserStore.getState().removeBrowser(tab.target.browserId);
+          }
+        }
+        updateNewSessionDraftShell(draftId, reducer);
+      } catch (error) {
+        console.error("关闭新会话草稿附加标签失败", error);
+        toast.error(error instanceof Error ? error.message : String(error));
+      } finally {
+        closing.current = false;
+        setClosingTabIds([]);
+      }
     },
-    [confirmDiscardModifiedTabs, draftId],
+    [client, confirmDiscardModifiedTabs, draftId, toast],
   );
 
   return useMemo<DraftShellActions>(
     () => ({
+      closingTabIds,
       focusTab: (tabId) =>
         updateNewSessionDraftShell(draftId, (state) =>
           focusNewWorkspaceDraftShellTab(state, tabId),
@@ -507,7 +592,7 @@ function useDraftShellActions(input: {
       closeTab: async (tabId) => {
         const current = getNewSessionDraftShellState(draftId);
         if (tabId !== current.draftTabId) {
-          await closeFileTabs((state) => closeNewWorkspaceDraftShellFileTab(state, tabId));
+          await closeResourceTabs((state) => closeNewWorkspaceDraftShellTab(state, tabId));
           return;
         }
         // 关闭草稿标签只离开新建页，草稿本身继续在后台保留；离开会卸载文件面板，需要先确认未保存的修改。
@@ -517,11 +602,11 @@ function useDraftShellActions(input: {
         onLeave();
       },
       closeOtherTabs: (tabId) =>
-        closeFileTabs((state) => closeNewWorkspaceDraftShellOtherFileTabs(state, tabId)),
+        closeResourceTabs((state) => closeNewWorkspaceDraftShellOtherTabs(state, tabId)),
       closeTabsBefore: (tabId) =>
-        closeFileTabs((state) => closeNewWorkspaceDraftShellFileTabsBefore(state, tabId)),
+        closeResourceTabs((state) => closeNewWorkspaceDraftShellTabsBefore(state, tabId)),
       closeTabsAfter: (tabId) =>
-        closeFileTabs((state) => closeNewWorkspaceDraftShellFileTabsAfter(state, tabId)),
+        closeResourceTabs((state) => closeNewWorkspaceDraftShellTabsAfter(state, tabId)),
       reorderTabs: (nextTabs) =>
         updateNewSessionDraftShell(draftId, (state) =>
           reorderNewWorkspaceDraftShellTabs(state, nextTabs),
@@ -537,7 +622,7 @@ function useDraftShellActions(input: {
         }
       },
     }),
-    [closeFileTabs, confirmDiscardModifiedTabs, draftId, onLeave, t, toast],
+    [closeResourceTabs, closingTabIds, confirmDiscardModifiedTabs, draftId, onLeave, t, toast],
   );
 }
 
@@ -552,7 +637,7 @@ export function NewWorkspaceDraftShell(props: NewWorkspaceDraftShellProps) {
   const shellState = useNewSessionDraftShellState(props.draftId);
   invariant(shellState, "新建会话草稿外壳需要有效的草稿状态");
   const virtualWorkspaceId = useMemo(
-    () => buildDraftShellVirtualWorkspaceId(props.draftId),
+    () => buildNewWorkspaceDraftWorkspaceId(props.draftId),
     [props.draftId],
   );
   const portalHostName = useMemo(
@@ -582,10 +667,13 @@ export function NewWorkspaceDraftShell(props: NewWorkspaceDraftShellProps) {
   // 草稿在后台保留时总是回到输入标签，重新进入新建页时先看到会话输入区而不是上次查看的文件。
   const { draftId } = props;
   useEffect(
-    () => () =>
+    () => () => {
+      // 正式发送已释放草稿时，不在卸载清理中重新创建孤立的空草稿。
+      if (!useNewSessionDraftStore.getState().shellByDraftId[draftId]) return;
       updateNewSessionDraftShell(draftId, (state) =>
         focusNewWorkspaceDraftShellTab(state, state.draftTabId),
-      ),
+      );
+    },
     [draftId],
   );
 

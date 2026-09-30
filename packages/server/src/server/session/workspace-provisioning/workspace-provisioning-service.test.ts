@@ -90,6 +90,39 @@ afterEach(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });
 
+test("正式创建沿用草稿预留标识，重复创建不覆盖已有工作区", async () => {
+  const cwd = path.join(tmpDir, "draft-directory");
+  const workspaceId = "draft-workspace-new-session";
+  expect(await workspaceRegistry.list()).toEqual([]);
+  const created = await provisioning.createWorkspaceForDirectory(cwd, "首条消息", undefined, {
+    workspaceId,
+  });
+  expect(created.workspaceId).toBe(workspaceId);
+  await expect(
+    provisioning.createWorkspaceForDirectory(cwd, "不应覆盖", undefined, { workspaceId }),
+  ).rejects.toThrow("Workspace already exists");
+  expect(await workspaceRegistry.list()).toEqual([created]);
+});
+
+test("创建新的 worktree 时同样沿用草稿预留标识", async () => {
+  const repo = path.join(tmpDir, "repo");
+  const cwd = path.join(tmpDir, "worktree");
+  gitRoots.add(repo);
+  const workspace = await provisioning.createWorkspaceForWorktree({
+    workspaceId: "draft-workspace-worktree",
+    sourceCwd: repo,
+    repoRoot: repo,
+    cwd,
+    worktreeRoot: cwd,
+    branch: "feature-draft",
+    baseBranch: "main",
+    title: "新 worktree 会话",
+  });
+  expect(workspace.workspaceId).toBe("draft-workspace-worktree");
+  expect(workspace.cwd).toBe(cwd);
+  expect(await workspaceRegistry.list()).toEqual([workspace]);
+});
+
 test("fresh git repo creates a workspace at the canonical worktree root", async () => {
   const repo = path.join(tmpDir, "repo");
   gitRoots.add(repo);

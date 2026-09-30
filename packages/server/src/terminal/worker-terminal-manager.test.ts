@@ -116,6 +116,20 @@ class FakeTerminalWorker extends EventEmitter {
 }
 
 let manager: TerminalManager | null = null;
+
+it("按归属保留源目录启动的草稿终端", async () => {
+  manager = createWorkerTerminalManager();
+  const source = tmpdir();
+  const worktree = join(source, "prospective-draft-worktree");
+  const terminal = await manager.createTerminal({ cwd: source, workspaceId: "draft-workspace-a" });
+  await manager.createTerminal({ cwd: source, workspaceId: "workspace-other" });
+  expect(
+    (await manager.getTerminals(worktree, { workspaceId: "draft-workspace-a" })).map(
+      (item) => item.id,
+    ),
+  ).toEqual([terminal.id]);
+  expect(await manager.getTerminals(worktree)).toEqual([]);
+});
 const temporaryDirs: string[] = [];
 const terminalSessions: TerminalSession[] = [];
 

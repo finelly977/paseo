@@ -653,6 +653,12 @@ export function createWorkerTerminalManager(
     ): Promise<TerminalSession[]> {
       assertAbsolutePath(cwd);
 
+      if (options?.workspaceId !== undefined) {
+        return Array.from(recordsById.values())
+          .map((record) => record.session)
+          .filter((session) => session.workspaceId === options.workspaceId);
+      }
+
       // Served from the local mirror, exactly like every other parent read.
       // Terminals are bucketed by exact cwd, but an agent can open a terminal in
       // a subdirectory of the workspace. A query for the workspace root must
@@ -670,12 +676,6 @@ export function createWorkerTerminalManager(
         }
       }
 
-      // When the query carries a workspaceId, two workspaces sharing a cwd must
-      // not see each other's terminals. A missing owner is not workspace
-      // membership; unscoped callers can still list those legacy terminals.
-      if (options?.workspaceId !== undefined) {
-        return sessions.filter((session) => session.workspaceId === options.workspaceId);
-      }
       return sessions;
     },
 

@@ -84,6 +84,22 @@ function TerminalPanel() {
     isGitCheckout: w.projectKind === "git",
   }));
   const workspaceDirectory = workspaceFields?.workspaceDirectory || null;
+  const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
+  const terminalsQuery = useQuery(
+    {
+      queryKey: buildTerminalsQueryKey(serverId, workspaceDirectory, workspaceId),
+      enabled: Boolean(client && workspaceDirectory),
+      queryFn: async () => {
+        if (!client || !workspaceDirectory) throw new Error("Workspace directory not found");
+        return client.listTerminals(workspaceDirectory, undefined, { workspaceId });
+      },
+      staleTime: 5_000,
+    },
+    queryClient,
+  );
+  const terminalId = target.kind === "terminal" ? target.terminalId : null;
+  const terminal = terminalsQuery.data?.terminals.find((entry) => entry.id === terminalId);
+  const terminalDirectory = terminal?.cwd ?? workspaceDirectory;
   const isGitCheckout = workspaceFields?.isGitCheckout ?? false;
   const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
   const handleOpenFileExplorer = useCallback(() => {
@@ -112,7 +128,7 @@ function TerminalPanel() {
   return (
     <TerminalPane
       serverId={serverId}
-      cwd={workspaceDirectory}
+      cwd={terminalDirectory ?? workspaceDirectory}
       terminalId={target.terminalId}
       isWorkspaceFocused={isWorkspaceFocused}
       isPaneFocused={isPaneFocused}

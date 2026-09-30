@@ -36,6 +36,7 @@ export interface ImportWorkspaceResult<T> {
 }
 
 export interface CreateWorktreeWorkspaceInput {
+  workspaceId?: string;
   sourceCwd: string;
   projectId?: string;
   repoRoot: string;
@@ -58,7 +59,7 @@ export interface WorkspaceProvisioningService {
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { expectsInitialAgent?: boolean },
+    context?: { expectsInitialAgent?: boolean; workspaceId?: string },
   ): Promise<PersistedWorkspaceRecord>;
   createWorkspaceForWorktree(
     input: CreateWorktreeWorkspaceInput,
@@ -69,18 +70,22 @@ export interface WorkspaceProvisioningService {
   ): Promise<PersistedWorkspaceRecord>;
 }
 
-export type WorkspaceProvisioningErrorCode = "unknown_project" | "archived_project";
+export type WorkspaceProvisioningErrorCode =
+  | "unknown_project"
+  | "archived_project"
+  | "workspace_exists";
 
 export class WorkspaceProvisioningError extends Error {
   constructor(
     readonly code: WorkspaceProvisioningErrorCode,
-    projectId: string,
+    entityId: string,
   ) {
-    super(
-      code === "unknown_project"
-        ? `Unknown project: ${projectId}`
-        : `Archived project: ${projectId}`,
-    );
+    const messages = {
+      unknown_project: "Unknown project",
+      archived_project: "Archived project",
+      workspace_exists: "Workspace already exists",
+    };
+    super(`${messages[code]}: ${entityId}`);
     this.name = "WorkspaceProvisioningError";
   }
 }
@@ -187,8 +192,12 @@ export function createWorkspaceProvisioningService(deps: {
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { expectsInitialAgent?: boolean },
+    context?: { expectsInitialAgent?: boolean; workspaceId?: string },
   ): Promise<PersistedWorkspaceRecord> {
+    const workspaceId = context?.workspaceId ?? generateWorkspaceId();
+    if (await workspaceRegistry.get(workspaceId)) {
+      throw new WorkspaceProvisioningError("workspace_exists", workspaceId);
+    }
     const normalizedCwd = resolve(cwd);
     const checkout = await workspaceGitService.getCheckout(normalizedCwd);
     const project = projectId
@@ -197,7 +206,7 @@ export function createWorkspaceProvisioningService(deps: {
         await findOrCreateProjectForDirectory(normalizedCwd);
     const timestamp = new Date().toISOString();
     const workspace = createPersistedWorkspaceRecord({
-      workspaceId: generateWorkspaceId(),
+      workspaceId,
       projectId: project.projectId,
       ...initialWorkspacePlacement({ source: "checkout", cwd: normalizedCwd, checkout }),
       title: title?.trim() || null,
@@ -211,6 +220,10 @@ export function createWorkspaceProvisioningService(deps: {
   async function createWorkspaceForWorktree(
     input: CreateWorktreeWorkspaceInput,
   ): Promise<PersistedWorkspaceRecord> {
+    const workspaceId = input.workspaceId ?? generateWorkspaceId();
+    if (await workspaceRegistry.get(workspaceId)) {
+      throw new WorkspaceProvisioningError("workspace_exists", workspaceId);
+    }
     const sourceCwd = resolve(input.sourceCwd);
     const repoRoot = resolve(input.repoRoot);
     const cwd = resolve(input.cwd);
@@ -222,7 +235,7 @@ export function createWorkspaceProvisioningService(deps: {
     });
     const timestamp = new Date().toISOString();
     const workspace = createPersistedWorkspaceRecord({
-      workspaceId: generateWorkspaceId(),
+      workspaceId,
       projectId: project.projectId,
       ...initialWorkspacePlacement({
         source: "created_worktree",

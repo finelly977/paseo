@@ -1354,6 +1354,7 @@ export function DiffFileBody({
 }
 
 interface GitDiffPaneProps {
+  onOpenFile?: (path: string) => void;
   serverId: string;
   workspaceId?: string | null;
   cwd: string;
@@ -2595,7 +2596,7 @@ function ScmPanelHeader({
   );
 }
 
-export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
+export function GitDiffPane({ serverId, workspaceId, cwd, onOpenFile }: GitDiffPaneProps) {
   const { t } = useTranslation();
   const toast = useToast();
   const isCompact = useIsCompactFormFactor();
@@ -2742,8 +2743,11 @@ export function GitDiffPane({ serverId, workspaceId, cwd }: GitDiffPaneProps) {
     cwd,
   });
   const handleOpenScmFile = useCallback(
-    (path: string) => handleOpenChanges(path),
-    [handleOpenChanges],
+    (path: string) => {
+      if (onOpenFile) onOpenFile(path);
+      else handleOpenChanges(path);
+    },
+    [handleOpenChanges, onOpenFile],
   );
   const handleReviewCommit = useCallback(
     (sha: string) => {

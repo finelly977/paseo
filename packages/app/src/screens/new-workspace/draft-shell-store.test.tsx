@@ -23,7 +23,7 @@ import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { openNewWorkspaceDraftShellFile } from "../new-workspace-draft-shell-model";
 import {
   getNewSessionDraftShellState,
-  openNewSessionDraftFilesInWorkspace,
+  openNewSessionDraftTabsInWorkspace,
   releaseNewSessionDraft,
   updateNewSessionDraftShell,
   useNewSessionDraftStore,
@@ -110,7 +110,7 @@ describe("retained new-session drafts", () => {
   });
 });
 
-describe("openNewSessionDraftFilesInWorkspace", () => {
+describe("openNewSessionDraftTabsInWorkspace", () => {
   it("opens the draft's files in the created workspace in their original order", () => {
     updateNewSessionDraftShell("draft-1", (state) =>
       openNewWorkspaceDraftShellFile(openNewWorkspaceDraftShellFile(state, { path: "src/a.ts" }), {
@@ -119,7 +119,7 @@ describe("openNewSessionDraftFilesInWorkspace", () => {
       }),
     );
 
-    openNewSessionDraftFilesInWorkspace({
+    openNewSessionDraftTabsInWorkspace({
       draftId: "draft-1",
       serverId: "server-1",
       workspaceId: "workspace-1",
@@ -133,7 +133,7 @@ describe("openNewSessionDraftFilesInWorkspace", () => {
   });
 
   it("leaves the workspace untouched when the draft had no files open", () => {
-    openNewSessionDraftFilesInWorkspace({
+    openNewSessionDraftTabsInWorkspace({
       draftId: "draft-empty",
       serverId: "server-1",
       workspaceId: "workspace-2",

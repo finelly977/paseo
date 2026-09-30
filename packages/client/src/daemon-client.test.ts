@@ -3005,6 +3005,7 @@ test("sends first-agent prompt context with workspace.create.request", async () 
 
   const createPromise = client.createWorkspace(
     {
+      workspaceId: "draft-workspace-unit",
       source: {
         kind: "directory",
         path: "/tmp/project",
@@ -3022,6 +3023,7 @@ test("sends first-agent prompt context with workspace.create.request", async () 
   expect(parseSentFrame(mock.sent[0])).toEqual({
     type: "workspace.create.request",
     requestId: "req-local-title",
+    workspaceId: "draft-workspace-unit",
     source: {
       kind: "directory",
       path: "/tmp/project",

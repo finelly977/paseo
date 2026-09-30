@@ -92,12 +92,18 @@ import {
   type NewWorkspaceDraftShellTarget,
 } from "./new-workspace-draft-shell";
 import {
-  openNewSessionDraftFilesInWorkspace,
+  openNewSessionDraftTabsInWorkspace,
   releaseNewSessionDraft,
+  updateNewSessionDraftShell,
   useNewSessionDraftShellState,
   useRetainedNewSessionDraftId,
   type NewSessionDraftScope,
 } from "./new-workspace/draft-shell-store";
+import {
+  buildNewWorkspaceDraftWorkspaceId,
+  openNewWorkspaceDraftShellResource,
+  type NewWorkspaceDraftResourceTarget,
+} from "./new-workspace-draft-shell-model";
 import {
   getWorkspaceNamingAttachments,
   remapDraftCwdToWorkspace,
@@ -834,6 +840,7 @@ async function createAndMergeWorkspace(input: {
 }
 
 async function createMultiplicityWorkspace(input: {
+  workspaceId: string | null;
   client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
   isolation: "local" | "worktree";
   project: HostProjectListItem;
@@ -861,6 +868,7 @@ async function createMultiplicityWorkspace(input: {
     attachments: input.attachments,
   });
   const payload = await input.client.createWorkspace({
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     source: isWorktree
       ? {
           kind: "worktree",
@@ -1713,6 +1721,7 @@ export function NewWorkspaceScreen({
   });
   // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
   const supportsWorkspaceMultiplicity = useHostFeature(selectedServerId, "workspaceMultiplicity");
+  const supportsDraftIdentity = useHostFeature(selectedServerId, "workspaceDraftIdentity");
   const supportsForgeSearch = useHostFeature(selectedServerId, "forgeSearch");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [createdWorkspace, setCreatedWorkspace] = useState<ReturnType<
@@ -2119,6 +2128,10 @@ export function NewWorkspaceScreen({
       }
       const normalizedWorkspace = supportsWorkspaceMultiplicity
         ? await createMultiplicityWorkspace({
+            workspaceId:
+              shellDraftId && supportsDraftIdentity
+                ? buildNewWorkspaceDraftWorkspaceId(shellDraftId)
+                : null,
             client: withConnectedClient(),
             isolation: effectiveIsolation,
             project: selectedProject,
@@ -2152,6 +2165,8 @@ export function NewWorkspaceScreen({
       selectedProject,
       selectedServerId,
       selectedSourceDirectory,
+      shellDraftId,
+      supportsDraftIdentity,
       supportsWorkspaceMultiplicity,
       t,
       withConnectedClient,
@@ -2192,7 +2207,7 @@ export function NewWorkspaceScreen({
         }
         // 会话已经正式创建：草稿中打开的文件随会话进入新工作区，并释放后台常驻草稿，下次新建时得到新草稿。
         if (shellDraftId) {
-          openNewSessionDraftFilesInWorkspace({
+          openNewSessionDraftTabsInWorkspace({
             draftId: shellDraftId,
             serverId: selectedServerId,
             workspaceId: createdWorkspaceForDraft.id,
@@ -2222,39 +2237,34 @@ export function NewWorkspaceScreen({
 
   const handleOpenDraftShellTarget = useCallback(
     (target: NewWorkspaceDraftShellTarget) => {
-      if (isPending || !selectedSourceDirectory) {
+      if (isPending || !selectedSourceDirectory || !shellDraftId) {
         return;
       }
       setErrorMessage(null);
       setPendingAction("empty");
       void (async () => {
         try {
-          await composerState?.persistFormPreferences();
-          const ensuredWorkspace = await ensureWorkspace({
-            cwd: selectedSourceDirectory,
-            prompt: "",
-            attachments: [],
-            withInitialAgent: false,
-          });
-          let workspaceTarget: WorkspaceTabTarget;
+          let workspaceTarget: NewWorkspaceDraftResourceTarget;
           if (target.kind === "terminal") {
+            const terminalClient = withConnectedClient();
+            if (!supportsDraftIdentity) {
+              throw new Error("请先更新该主机的 Paseo 服务，再在新会话草稿中打开终端");
+            }
+            const workspaceId = buildNewWorkspaceDraftWorkspaceId(shellDraftId);
             const terminalPayload = target.profile
-              ? await withConnectedClient().createTerminal(
-                  ensuredWorkspace.workspaceDirectory,
+              ? await terminalClient.createTerminal(
+                  selectedSourceDirectory,
                   target.profile.name,
                   undefined,
                   {
                     command: target.profile.command,
                     args: target.profile.args,
-                    workspaceId: ensuredWorkspace.id,
+                    workspaceId,
                   },
                 )
-              : await withConnectedClient().createTerminal(
-                  ensuredWorkspace.workspaceDirectory,
-                  undefined,
-                  undefined,
-                  { workspaceId: ensuredWorkspace.id },
-                );
+              : await terminalClient.createTerminal(selectedSourceDirectory, undefined, undefined, {
+                  workspaceId,
+                });
             if (!terminalPayload.terminal) {
               throw new Error(terminalPayload.error ?? t("workspace.terminal.unableToSubscribe"));
             }
@@ -2263,25 +2273,24 @@ export function NewWorkspaceScreen({
             const { browserId } = createWorkspaceBrowser();
             workspaceTarget = { kind: "browser", browserId };
           }
-          navigateToWorkspace({
-            serverId: selectedServerId,
-            workspaceId: ensuredWorkspace.id,
-            target: workspaceTarget,
-          });
+          updateNewSessionDraftShell(shellDraftId, (state) =>
+            openNewWorkspaceDraftShellResource(state, workspaceTarget),
+          );
         } catch (error) {
-          setPendingAction(null);
+          console.error("打开新会话草稿附加标签失败", error);
           const message = toErrorMessage(error);
           setErrorMessage(message);
           toast.error(message);
+        } finally {
+          setPendingAction(null);
         }
       })();
     },
     [
-      composerState,
-      ensureWorkspace,
       isPending,
-      selectedServerId,
       selectedSourceDirectory,
+      shellDraftId,
+      supportsDraftIdentity,
       t,
       toast,
       withConnectedClient,

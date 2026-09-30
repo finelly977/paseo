@@ -2573,6 +2573,8 @@ export const ArchiveWorkspaceRequestSchema = z.object({
 export const WorkspaceCreateRequestSchema = z.object({
   type: z.literal("workspace.create.request"),
   requestId: z.string(),
+  // 草稿资源预先使用此标识，正式创建前不写工作区记录。
+  workspaceId: z.string().trim().min(1).optional(),
   // Optional user-set title applied to the created workspace.
   title: z.string().optional(),
   // Optional prompt context for workspace-level name/branch generation.
@@ -3412,6 +3414,8 @@ export const ServerInfoStatusPayloadSchema = z
         gitAi: z.boolean().optional(),
         // COMPAT(workspaceMultiplicity): added in v0.1.97, drop the gate when floor >= v0.1.97
         workspaceMultiplicity: z.boolean().optional(),
+        // COMPAT(workspaceDraftIdentity)：2026-09-30 新增，2027-03-30 后移除能力门控。
+        workspaceDraftIdentity: z.boolean().optional(),
         // COMPAT(projectRemove): added in v0.1.97, drop the gate when floor >= v0.1.97.
         projectRemove: z.boolean().optional(),
         // COMPAT(projectAdd): added in v0.1.97, drop the gate when floor >= v0.1.97.
@@ -5900,7 +5904,7 @@ export const ListTerminalsResponseSchema = z.object({
   type: z.literal("list_terminals_response"),
   payload: z.object({
     cwd: z.string().optional(),
-    terminals: z.array(TerminalInfoSchema.omit({ cwd: true })),
+    terminals: z.array(TerminalInfoSchema.extend({ cwd: z.string().optional() })),
     requestId: z.string(),
   }),
 });
@@ -5909,7 +5913,7 @@ export const TerminalsChangedSchema = z.object({
   type: z.literal("terminals_changed"),
   payload: z.object({
     cwd: z.string(),
-    terminals: z.array(TerminalInfoSchema.omit({ cwd: true })),
+    terminals: z.array(TerminalInfoSchema.extend({ cwd: z.string().optional() })),
   }),
 });
 

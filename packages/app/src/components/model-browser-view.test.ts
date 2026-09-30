@@ -52,15 +52,16 @@ describe("model browser initial view", () => {
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("opens the selected provider when there is one", () => {
+  it("新草稿已有默认模型时仍打开所有可选智能体", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [codex, pi],
         selectedProvider: "pi",
         selectedModel: "pi-pro",
         hasProfiles: false,
+        providerLocked: false,
       }),
-    ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
+    ).toEqual({ kind: "all" });
   });
 
   it("opens the root so pinned profiles are reachable", () => {

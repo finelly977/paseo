@@ -147,17 +147,17 @@ export function releaseNewSessionDraft(draftId: string): void {
   useNewSessionDraftStore.getState().releaseDraft(draftId);
 }
 
-/** 草稿正式创建为工作区后，把草稿外壳中打开的文件按原顺序在后台打开到新工作区。 */
-export function openNewSessionDraftFilesInWorkspace(input: {
+/** 正式创建后带入所有附加标签；终端沿用预留归属标识，不重建进程。 */
+export function openNewSessionDraftTabsInWorkspace(input: {
   draftId: string;
   serverId: string;
   workspaceId: string;
 }): void {
   const shell = useNewSessionDraftStore.getState().shellByDraftId[input.draftId];
-  const fileTargets = shell?.tabs.flatMap((tab) =>
-    tab.target.kind === "file" ? [tab.target] : [],
+  const resourceTargets = shell?.tabs.flatMap((tab) =>
+    tab.target.kind !== "draft" ? [tab.target] : [],
   );
-  if (!fileTargets?.length) {
+  if (!resourceTargets?.length) {
     return;
   }
   const workspaceKey = buildWorkspaceTabPersistenceKey({
@@ -168,7 +168,7 @@ export function openNewSessionDraftFilesInWorkspace(input: {
     throw new Error("无法把草稿中打开的文件带入新工作区：工作区标识无效");
   }
   const { openTabInBackground } = useWorkspaceLayoutStore.getState();
-  for (const target of fileTargets) {
+  for (const target of resourceTargets) {
     openTabInBackground(workspaceKey, target);
   }
 }

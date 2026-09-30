@@ -289,6 +289,13 @@ export function createTerminalManager(
     ): Promise<TerminalSession[]> {
       assertAbsolutePath(cwd);
 
+      // 草稿终端可能先在项目源目录启动，正式创建为 worktree 后仍属于同一工作区。
+      if (options?.workspaceId !== undefined) {
+        return Array.from(terminalsById.values()).filter(
+          (session) => session.workspaceId === options.workspaceId,
+        );
+      }
+
       // Terminals are bucketed by exact cwd, but an agent can open a terminal in
       // a subdirectory of the workspace. A query for the workspace root must
       // surface those too, so aggregate every bucket at or below `cwd`.
@@ -299,12 +306,6 @@ export function createTerminalManager(
         }
       }
 
-      // When the query carries a workspaceId, two workspaces sharing a cwd must
-      // not see each other's terminals. A missing owner is not workspace
-      // membership; unscoped callers can still list those legacy terminals.
-      if (options?.workspaceId !== undefined) {
-        return sessions.filter((session) => session.workspaceId === options.workspaceId);
-      }
       return sessions;
     },
 

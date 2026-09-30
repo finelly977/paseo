@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  closeNewWorkspaceDraftShellFileTab,
-  closeNewWorkspaceDraftShellFileTabsAfter,
-  closeNewWorkspaceDraftShellFileTabsBefore,
-  closeNewWorkspaceDraftShellOtherFileTabs,
+  closeNewWorkspaceDraftShellTab,
+  closeNewWorkspaceDraftShellTabsAfter,
+  closeNewWorkspaceDraftShellTabsBefore,
+  closeNewWorkspaceDraftShellOtherTabs,
   createNewWorkspaceDraftShellState,
   createNewWorkspaceDraftTabDescriptor,
   focusNewWorkspaceDraftShellTab,
   openNewWorkspaceDraftShellFile,
+  openNewWorkspaceDraftShellResource,
   reorderNewWorkspaceDraftShellTabs,
   type NewWorkspaceDraftShellState,
 } from "./new-workspace-draft-shell-model";
@@ -41,6 +42,19 @@ describe("createNewWorkspaceDraftTabDescriptor", () => {
 });
 
 describe("draft shell file tabs", () => {
+  it("打开终端或浏览器后保留草稿和文件，关闭资源返回草稿", () => {
+    let state = shellWithFiles(["src/a.ts"]);
+    state = openNewWorkspaceDraftShellResource(state, { kind: "terminal", terminalId: "t1" });
+    state = openNewWorkspaceDraftShellResource(state, { kind: "browser", browserId: "b1" });
+    expect(tabIds(state)).toEqual(["draft-1", "file_src/a.ts", "terminal_t1", "browser_b1"]);
+    expect(state.activeTabId).toBe("browser_b1");
+    state = openNewWorkspaceDraftShellResource(state, { kind: "terminal", terminalId: "t1" });
+    expect(state.tabs).toHaveLength(4);
+    expect(state.activeTabId).toBe("terminal_t1");
+    state = closeNewWorkspaceDraftShellOtherTabs(state, "draft-1");
+    expect(tabIds(state)).toEqual(["draft-1"]);
+    expect(state.activeTabId).toBe("draft-1");
+  });
   it("opens files as extra tabs next to the draft instead of replacing it", () => {
     const state = shellWithFiles(["src/a.ts", "src/b.ts"]);
 
@@ -74,7 +88,7 @@ describe("draft shell file tabs", () => {
   });
 
   it("activates the left neighbour when the active file tab closes", () => {
-    const state = closeNewWorkspaceDraftShellFileTab(
+    const state = closeNewWorkspaceDraftShellTab(
       shellWithFiles(["src/a.ts", "src/b.ts"]),
       "file_src/b.ts",
     );
@@ -84,7 +98,7 @@ describe("draft shell file tabs", () => {
   });
 
   it("returns to the draft tab after closing the only file", () => {
-    const state = closeNewWorkspaceDraftShellFileTab(shellWithFiles(["src/a.ts"]), "file_src/a.ts");
+    const state = closeNewWorkspaceDraftShellTab(shellWithFiles(["src/a.ts"]), "file_src/a.ts");
 
     expect(tabIds(state)).toEqual(["draft-1"]);
     expect(state.activeTabId).toBe("draft-1");
@@ -93,16 +107,16 @@ describe("draft shell file tabs", () => {
   it("never closes the draft tab through file tab operations", () => {
     const opened = shellWithFiles(["src/a.ts", "src/b.ts", "src/c.ts"]);
 
-    expect(tabIds(closeNewWorkspaceDraftShellFileTab(opened, "draft-1"))).toEqual(tabIds(opened));
-    expect(tabIds(closeNewWorkspaceDraftShellOtherFileTabs(opened, "file_src/b.ts"))).toEqual([
+    expect(tabIds(closeNewWorkspaceDraftShellTab(opened, "draft-1"))).toEqual(tabIds(opened));
+    expect(tabIds(closeNewWorkspaceDraftShellOtherTabs(opened, "file_src/b.ts"))).toEqual([
       "draft-1",
       "file_src/b.ts",
     ]);
-    expect(tabIds(closeNewWorkspaceDraftShellFileTabsBefore(opened, "file_src/c.ts"))).toEqual([
+    expect(tabIds(closeNewWorkspaceDraftShellTabsBefore(opened, "file_src/c.ts"))).toEqual([
       "draft-1",
       "file_src/c.ts",
     ]);
-    expect(tabIds(closeNewWorkspaceDraftShellFileTabsAfter(opened, "file_src/a.ts"))).toEqual([
+    expect(tabIds(closeNewWorkspaceDraftShellTabsAfter(opened, "file_src/a.ts"))).toEqual([
       "draft-1",
       "file_src/a.ts",
     ]);
@@ -111,7 +125,7 @@ describe("draft shell file tabs", () => {
   it("focuses the anchor tab when a bulk close removes the active tab", () => {
     const opened = shellWithFiles(["src/a.ts", "src/b.ts", "src/c.ts"]);
 
-    const state = closeNewWorkspaceDraftShellOtherFileTabs(opened, "file_src/a.ts");
+    const state = closeNewWorkspaceDraftShellOtherTabs(opened, "file_src/a.ts");
 
     expect(state.activeTabId).toBe("file_src/a.ts");
   });

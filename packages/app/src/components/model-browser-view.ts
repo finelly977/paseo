@@ -46,7 +46,6 @@ export function resolveModelBrowserAllView({
 export function resolveInitialModelBrowserView({
   providers,
   selectedProvider,
-  selectedModel,
   hasProfiles,
   providerLocked = false,
 }: {
@@ -72,13 +71,6 @@ export function resolveInitialModelBrowserView({
       providerId: singleProvider.id,
       providerLabel: singleProvider.label,
     };
-  }
-
-  if (selectedProvider.length > 0 && selectedModel.length > 0) {
-    const provider = providers.find((entry) => entry.id === selectedProvider);
-    if (provider) {
-      return { kind: "provider", providerId: provider.id, providerLabel: provider.label };
-    }
   }
 
   return { kind: "all" };

@@ -321,6 +321,7 @@ export class TerminalSessionController {
     terminals: Array<{
       id: string;
       name: string;
+      cwd: string;
       workspaceId: string;
       title?: string;
       activity: TerminalActivity | null;
@@ -336,10 +337,14 @@ export class TerminalSessionController {
   }
 
   private toTerminalInfo(
-    terminal: Pick<TerminalSession, "id" | "name" | "workspaceId" | "getTitle" | "getActivity">,
+    terminal: Pick<
+      TerminalSession,
+      "id" | "name" | "cwd" | "workspaceId" | "getTitle" | "getActivity"
+    >,
   ): {
     id: string;
     name: string;
+    cwd: string;
     workspaceId: string;
     title?: string;
     activity: TerminalActivity | null;
@@ -349,6 +354,7 @@ export class TerminalSessionController {
     return {
       id: terminal.id,
       name: terminal.name,
+      cwd: terminal.cwd,
       workspaceId: terminal.workspaceId,
       ...(title ? { title } : {}),
       activity,
@@ -356,13 +362,12 @@ export class TerminalSessionController {
   }
 
   private async handleTerminalsChanged(event: TerminalsChangedEvent): Promise<void> {
-    // A terminal can live in a subdirectory of a subscribed workspace root (an
-    // agent can open one there). Deliver the change to every subscribed root at
-    // or above the terminal's cwd, keyed by that root, carrying the full
-    // aggregated list — so the client's cache replacement doesn't drop the
-    // terminals that live directly at the root.
+    // 归属订阅按工作区标识更新，草稿终端的源目录可能与正式 worktree 不同。
+    // 无归属的目录订阅仍限制为该根目录及其子目录。
     const matchingSubscriptions = Array.from(this.subscribedDirectories.values()).filter(
-      (subscription) => this.isPathWithinRoot(subscription.cwd, event.cwd),
+      (subscription) =>
+        subscription.workspaceId !== undefined ||
+        this.isPathWithinRoot(subscription.cwd, event.cwd),
     );
     for (const subscription of matchingSubscriptions) {
       await this.emitTerminalsSnapshotForSubscription(subscription);
@@ -473,6 +478,7 @@ export class TerminalSessionController {
     }
 
     const terminals = await this.terminalManager.getTerminals(cwd, { workspaceId });
+    if (workspaceId !== undefined) return terminals;
     const workspaceRoots = await this.listTerminalWorkspaceRoots();
     if (workspaceRoots.length === 0) {
       return terminals;

@@ -97,6 +97,7 @@ interface AgentControlOption {
 type AgentControlSelector = "provider" | "mode" | "model" | "thinking" | `feature-${string}`;
 
 interface ControlledAgentControlsProps {
+  providerLocked: boolean;
   provider: string;
   providerOptions?: AgentControlOption[];
   selectedProviderId?: string;
@@ -419,6 +420,7 @@ function supportsCodexProviderInjectionControl(input: {
 }
 
 function ControlledAgentControls({
+  providerLocked,
   provider,
   providerOptions,
   selectedProviderId,
@@ -691,6 +693,7 @@ function ControlledAgentControls({
       <View style={styles.container} onLayout={handleLayout}>
         {!isCompact ? (
           <DesktopAgentControlsContent
+            providerLocked={providerLocked}
             provider={provider}
             providerOptions={providerOptions}
             selectedProviderId={selectedProviderId}
@@ -746,7 +749,7 @@ function ControlledAgentControls({
           />
         ) : (
           <SheetAgentControlsContent
-            providerLocked={!canSelectProvider}
+            providerLocked={providerLocked}
             provider={provider}
             selectedModelId={selectedModelId}
             selectedThinkingOptionId={selectedThinkingOptionId}
@@ -790,6 +793,7 @@ function ControlledAgentControls({
 }
 
 interface DesktopAgentControlsContentProps {
+  providerLocked: boolean;
   provider: string;
   providerOptions?: AgentControlOption[];
   selectedProviderId?: string;
@@ -949,7 +953,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <TooltipTrigger asChild triggerRefProp="ref">
             <View style={styles.modelControl}>
               <CombinedModelSelector
-                providerLocked={!canSelectProvider}
+                providerLocked={props.providerLocked}
                 providers={modelSelectorProviders}
                 selectedProvider={provider}
                 selectedModel={selectedModelId ?? ""}
@@ -1729,6 +1733,7 @@ export const AgentControls = memo(function AgentControls({
 
   return (
     <ControlledAgentControls
+      providerLocked
       provider={agent.provider}
       modelSelectorProviders={agentModelSelectorProviders}
       modelOptions={modelOptions}
@@ -1853,6 +1858,7 @@ export function DraftAgentControls({
 
   return (
     <ControlledAgentControls
+      providerLocked={false}
       provider={selectedProvider ?? ""}
       modelSelectorProviders={modelSelectorProviders}
       modelOptions={modelOptions}
