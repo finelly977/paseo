@@ -15,6 +15,8 @@ import type {
   FileSubscribeRequest,
   FileUnsubscribeRequest,
   FileWriteRequest,
+  FileWriteResult,
+  WorkspaceEntryMutationRequest,
   SessionInboundMessage,
   SessionOutboundMessage,
 } from "../../messages.js";
@@ -26,6 +28,7 @@ import {
   readExplorerFile,
   streamExplorerFile,
   writeExplorerFile,
+  mutateExplorerEntry,
 } from "../../file-explorer/service.js";
 import {
   workspaceFileObserver,
@@ -280,17 +283,46 @@ export class WorkspaceFilesSession {
   }
 
   async handleFileWriteRequest(request: FileWriteRequest): Promise<void> {
-    const result = await writeExplorerFile({
-      root: request.cwd,
-      relativePath: request.path,
-      content: request.content,
-      expectedModifiedAt: request.expectedModifiedAt,
-      expectedRevision: request.expectedRevision,
-    });
+    let result: FileWriteResult;
+    try {
+      result = await writeExplorerFile({
+        root: request.cwd,
+        relativePath: request.path,
+        content: request.content,
+        expectedModifiedAt: request.expectedModifiedAt,
+        expectedRevision: request.expectedRevision,
+      });
+    } catch (error) {
+      this.logger.error({ err: error, cwd: request.cwd, path: request.path }, "写入工作区文件失败");
+      result = { status: "error", error: getErrorMessage(error) };
+    }
     this.host.emit({
       type: "fs.file.write.response",
       payload: { result, requestId: request.requestId },
     });
+  }
+
+  async handleEntryMutationRequest(request: WorkspaceEntryMutationRequest): Promise<void> {
+    try {
+      const path = await mutateExplorerEntry({ root: request.cwd, mutation: request.mutation });
+      this.host.emit({
+        type: "fs.entry.mutate.response",
+        payload: { status: "done", path, requestId: request.requestId },
+      });
+    } catch (error) {
+      this.logger.error(
+        { err: error, cwd: request.cwd, mutation: request.mutation },
+        "工作区文件操作失败",
+      );
+      this.host.emit({
+        type: "fs.entry.mutate.response",
+        payload: {
+          status: "error",
+          error: entryMutationErrorMessage(error),
+          requestId: request.requestId,
+        },
+      });
+    }
   }
 
   async dispose(): Promise<void> {
@@ -554,4 +586,15 @@ export class WorkspaceFilesSession {
       });
     }
   }
+}
+
+function entryMutationErrorMessage(error: unknown): string {
+  if (error instanceof Error && "code" in error) {
+    if (error.code === "EEXIST") return "同名文件或目录已存在，请使用其他名称";
+    if (error.code === "EACCES" || error.code === "EPERM")
+      return "主机运行账户没有修改该文件或目录的权限";
+    if (error.code === "ENOENT" || error.code === "ENOTDIR")
+      return "文件或所在目录已不存在，请刷新后重试";
+  }
+  return getErrorMessage(error);
 }

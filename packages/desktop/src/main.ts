@@ -48,6 +48,7 @@ import {
   ensureNotificationCenterRegistration,
 } from "./features/notifications.js";
 import { registerOpenerHandlers } from "./features/opener.js";
+import { registerWorkspacePreviewHandlers } from "./features/workspace-preview/ipc.js";
 import { registerEditorTargetHandlers } from "./features/editor-targets/ipc.js";
 import { setupApplicationMenu } from "./features/menu.js";
 import {
@@ -1003,6 +1004,7 @@ async function bootstrap(): Promise<void> {
   registerDialogHandlers();
   registerNotificationHandlers();
   registerOpenerHandlers();
+  registerWorkspacePreviewHandlers();
   registerEditorTargetHandlers();
   registerBrowserAutomationIpc();
 

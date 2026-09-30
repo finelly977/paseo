@@ -3,6 +3,7 @@ import type { FileHandle } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { expandUserPath, resolvePathFromBase } from "../path-utils.js";
+import type { WorkspaceEntryMutation } from "@getpaseo/protocol/messages";
 
 export type ExplorerEntryKind = "file" | "directory";
 export type ExplorerFileKind = "text" | "image" | "binary";
@@ -32,6 +33,7 @@ export type ExplorerFileVersion =
       size: number;
       modifiedAt: string;
       revision: string;
+      writeAccess?: "allowed" | "denied";
     }
   | { status: "missing"; cwd: string; path: string }
   | { status: "error"; cwd: string; path: string; error: string };
@@ -120,6 +122,9 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".webp": "image/webp",
   ".svg": "image/svg+xml",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".ico": "image/x-icon",
 };
 
 interface ScopedPathParams {
@@ -136,7 +141,6 @@ interface EntryPayloadParams {
   root: string;
   targetPath: string;
   name: string;
-  kind: ExplorerEntryKind;
 }
 
 export async function listDirectoryEntries({
@@ -155,13 +159,11 @@ export async function listDirectoryEntries({
   const entriesWithNulls = await Promise.all(
     dirents.map(async (dirent) => {
       const targetPath = path.join(directoryPath.requestedPath, dirent.name);
-      const kind: ExplorerEntryKind = dirent.isDirectory() ? "directory" : "file";
       try {
         return await buildEntryPayload({
           root,
           targetPath,
           name: dirent.name,
-          kind,
         });
       } catch (error) {
         // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
@@ -412,6 +414,7 @@ export async function getExplorerFileVersion({
       size: Number(stats.size),
       modifiedAt: stats.mtime.toISOString(),
       revision: fileRevision(stats),
+      writeAccess: await explorerWriteAccess(filePath.resolvedPath),
     };
   } catch (error) {
     if (isMissingEntryError(error)) {
@@ -433,6 +436,77 @@ export async function resolveExplorerFilePath({
   return (await resolveScopedPath({ root, relativePath })).resolvedPath;
 }
 
+async function explorerWriteAccess(filePath: string): Promise<"allowed" | "denied"> {
+  try {
+    await fs.access(filePath, constants.W_OK);
+    await fs.access(path.dirname(filePath), constants.W_OK);
+    return "allowed";
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "EACCES" || error.code === "EPERM")
+    )
+      return "denied";
+    throw error;
+  }
+}
+
+export async function mutateExplorerEntry(input: {
+  root: string;
+  mutation: WorkspaceEntryMutation;
+}): Promise<string> {
+  const { root, mutation } = input;
+  const normalizedRoot = expandUserPath(root);
+  const requestedPath = resolvePathFromBase(normalizedRoot, mutation.path);
+  const relativePath = path.relative(normalizedRoot, requestedPath);
+  const outsideRoot =
+    relativePath === ".." ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath);
+  if (!relativePath || outsideRoot) {
+    throw new Error("不能修改工作区根目录或工作区以外的路径");
+  }
+  // 解析父目录而不是条目本身，重命名和删除链接只操作链接，不操作其目标。
+  const parent = await resolveScopedPath({ root, relativePath: path.dirname(relativePath) });
+  await fs.stat(parent.resolvedPath);
+  const target = path.join(parent.resolvedPath, path.basename(requestedPath));
+  if (mutation.operation === "create") {
+    if (mutation.kind === "directory") await fs.mkdir(target);
+    else {
+      const handle = await fs.open(target, "wx");
+      await handle.close();
+    }
+    return normalizeRelativePath({ root, targetPath: requestedPath });
+  }
+  const stats = await fs.lstat(target);
+  if (stats.mtime.toISOString() !== mutation.expectedModifiedAt)
+    throw new Error("文件或目录已发生变化，请刷新后重试");
+  if (mutation.operation === "delete") {
+    await fs.rm(target, { recursive: stats.isDirectory(), force: false });
+    return normalizeRelativePath({ root, targetPath: requestedPath });
+  }
+  if (
+    mutation.name === "." ||
+    mutation.name === ".." ||
+    /[\\/]/.test(mutation.name) ||
+    mutation.name.includes("\0")
+  )
+    throw new Error("请输入不含路径分隔符的名称");
+  const destination = path.join(parent.resolvedPath, mutation.name);
+  try {
+    await fs.lstat(destination);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    await fs.rename(target, destination);
+    return normalizeRelativePath({
+      root,
+      targetPath: path.join(path.dirname(requestedPath), mutation.name),
+    });
+  }
+  throw new Error("同名文件或目录已存在");
+}
+
 export async function writeExplorerFile({
   root,
   relativePath,
@@ -449,6 +523,8 @@ export async function writeExplorerFile({
   let currentMode = 0o600;
   try {
     filePath = await resolveScopedPath({ root, relativePath });
+    if ((await explorerWriteAccess(filePath.resolvedPath)) === "denied")
+      return { status: "error", error: "主机运行账户没有写入该文件或其所在目录的权限" };
     const handle = await openFileForRead(filePath.resolvedPath);
     try {
       const stats = await handle.stat({ bigint: true });
@@ -495,8 +571,10 @@ export async function writeExplorerFile({
     `.${path.basename(filePath.resolvedPath)}.paseo-${randomUUID()}.tmp`,
   );
   let temporaryHandle: FileHandle | null = null;
+  let temporaryCreated = false;
   try {
     temporaryHandle = await fs.open(temporaryPath, "wx", currentMode);
+    temporaryCreated = true;
     if (process.platform !== "win32") {
       await temporaryHandle.chmod(currentMode & 0o7777);
     }
@@ -519,6 +597,7 @@ export async function writeExplorerFile({
       };
     }
     await fs.rename(temporaryPath, filePath.resolvedPath);
+    temporaryCreated = false;
     const stats = await fs.stat(filePath.resolvedPath, { bigint: true });
     return {
       status: "written",
@@ -529,8 +608,8 @@ export async function writeExplorerFile({
   } catch (error) {
     return { status: "error", error: error instanceof Error ? error.message : String(error) };
   } finally {
-    await temporaryHandle?.close().catch(() => undefined);
-    await fs.unlink(temporaryPath).catch(() => undefined);
+    if (temporaryHandle) await temporaryHandle.close();
+    if (temporaryCreated) await fs.unlink(temporaryPath);
   }
 }
 
@@ -613,19 +692,19 @@ async function buildEntryPayload({
   root,
   targetPath,
   name,
-  kind,
 }: EntryPayloadParams): Promise<FileExplorerEntry> {
   const entryPath = await resolveScopedPath({
     root,
     relativePath: normalizeRelativePath({ root, targetPath }),
   });
   const stats = await fs.stat(entryPath.resolvedPath);
+  const entryStats = await fs.lstat(entryPath.requestedPath);
   return {
     name,
     path: normalizeRelativePath({ root, targetPath }),
-    kind,
+    kind: stats.isDirectory() ? "directory" : "file",
     size: stats.size,
-    modifiedAt: stats.mtime.toISOString(),
+    modifiedAt: entryStats.mtime.toISOString(),
   };
 }
 

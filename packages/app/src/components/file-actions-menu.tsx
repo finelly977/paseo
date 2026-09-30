@@ -9,6 +9,11 @@ import {
   FolderOpen,
   MessageSquarePlus,
   MoreVertical,
+  FilePlus,
+  FolderPlus,
+  Pencil,
+  Trash2,
+  Globe,
   type LucideIcon,
 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -35,6 +40,13 @@ interface FileAction {
   testID?: string;
 }
 
+interface FileActionCandidate {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  callback: (() => void) | undefined;
+}
+
 interface FileActionsMenuProps {
   fileKind: "file" | "directory";
   fileExists?: boolean;
@@ -45,6 +57,12 @@ interface FileActionsMenuProps {
   onCopyPath?: () => void;
   onDownload?: () => void;
   onAddToChat?: () => void;
+  onNewFile?: () => void;
+  onNewDirectory?: () => void;
+  onRename?: () => void;
+  onDelete?: () => void;
+  onOpenInBrowser?: () => void;
+  onOpenInExternalBrowser?: () => void;
   /** Optional metadata block rendered above the actions (e.g. size/modified). */
   header?: ReactNode;
   open?: boolean;
@@ -82,6 +100,12 @@ export function FileActionsMenu({
   onCopyPath,
   onDownload,
   onAddToChat,
+  onNewFile,
+  onNewDirectory,
+  onRename,
+  onDelete,
+  onOpenInBrowser,
+  onOpenInExternalBrowser,
   header,
   open,
   onOpenChange,
@@ -92,58 +116,80 @@ export function FileActionsMenu({
   const { t } = useTranslation();
   const actions = useMemo<FileAction[]>(() => {
     const availableFile = fileKind === "file" && fileExists;
-    const next: FileAction[] = [];
-    if (availableFile && onOpenFile) {
-      next.push({
+    const candidates: FileActionCandidate[] = [
+      {
+        key: "newFile",
+        label: t("workspace.fileActions.newFile"),
+        icon: FilePlus,
+        callback: onNewFile,
+      },
+      {
+        key: "newDirectory",
+        label: t("workspace.fileActions.newDirectory"),
+        icon: FolderPlus,
+        callback: onNewDirectory,
+      },
+      {
+        key: "openInBrowser",
+        label: t("workspace.fileActions.openInBrowser"),
+        icon: Globe,
+        callback: onOpenInBrowser,
+      },
+      {
+        key: "openInExternalBrowser",
+        label: t("workspace.fileActions.openInExternalBrowser"),
+        icon: ExternalLink,
+        callback: onOpenInExternalBrowser,
+      },
+      {
         key: "open-file",
         label: t("workspace.fileActions.openFile"),
         icon: FileText,
-        onSelect: onOpenFile,
-        testID: testIDPrefix ? `${testIDPrefix}-open-file` : undefined,
-      });
-    }
-    if (fileExists && onOpenInFileManager) {
-      next.push({
+        callback: availableFile ? onOpenFile : undefined,
+      },
+      {
         key: "open-in-file-manager",
         label: t("workspace.fileActions.openInFileManager"),
         icon: FolderOpen,
-        onSelect: onOpenInFileManager,
-        testID: testIDPrefix ? `${testIDPrefix}-open-in-file-manager` : undefined,
-      });
-    }
-    if (fileKind === "directory" && onOpenInEditor && editorTargetName) {
-      next.push({
+        callback: fileExists ? onOpenInFileManager : undefined,
+      },
+      {
         key: "open-in-editor",
         label: t("workspace.fileActions.openIn", { target: editorTargetName }),
         icon: ExternalLink,
-        onSelect: onOpenInEditor,
-        testID: testIDPrefix ? `${testIDPrefix}-open-in-editor` : undefined,
-      });
-    }
-    if (onCopyPath) {
-      next.push({
+        callback: fileKind === "directory" && editorTargetName ? onOpenInEditor : undefined,
+      },
+      {
         key: "copy-path",
         label: t("workspace.fileActions.copyPath"),
         icon: Copy,
-        onSelect: onCopyPath,
-      });
-    }
-    if (availableFile && onDownload) {
-      next.push({
+        callback: onCopyPath,
+      },
+      {
         key: "download",
         label: t("workspace.fileActions.download"),
         icon: Download,
-        onSelect: onDownload,
-      });
-    }
-    if (availableFile && onAddToChat) {
-      next.push({
+        callback: availableFile ? onDownload : undefined,
+      },
+      {
         key: "add-to-chat",
         label: t("workspace.fileActions.addToChat"),
         icon: MessageSquarePlus,
-        onSelect: onAddToChat,
-        testID: testIDPrefix ? `${testIDPrefix}-add-to-chat` : undefined,
-      });
+        callback: availableFile ? onAddToChat : undefined,
+      },
+      { key: "rename", label: t("workspace.fileActions.rename"), icon: Pencil, callback: onRename },
+      { key: "delete", label: t("workspace.fileActions.delete"), icon: Trash2, callback: onDelete },
+    ];
+    const next: FileAction[] = [];
+    for (const candidate of candidates) {
+      if (candidate.callback)
+        next.push({
+          key: candidate.key,
+          label: candidate.label,
+          icon: candidate.icon,
+          onSelect: candidate.callback,
+          testID: testIDPrefix ? `${testIDPrefix}-${candidate.key}` : undefined,
+        });
     }
     return next;
   }, [
@@ -156,6 +202,12 @@ export function FileActionsMenu({
     onOpenFile,
     onOpenInEditor,
     onOpenInFileManager,
+    onNewFile,
+    onNewDirectory,
+    onRename,
+    onDelete,
+    onOpenInBrowser,
+    onOpenInExternalBrowser,
     t,
     testIDPrefix,
   ]);

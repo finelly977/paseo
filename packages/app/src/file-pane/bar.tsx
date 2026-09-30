@@ -6,6 +6,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { Theme } from "@/styles/theme";
 import { FileConflictAlert } from "./conflict-alert";
 import type { FileEditorStatus } from "./editor/model";
+import { Button } from "@/components/ui/button";
 
 const ThemedSpinner = withUnistyles(LoadingSpinner);
 const spinnerMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -21,6 +22,8 @@ export function FilePanelBar({
   conflictUnavailable,
   onOverwrite,
   onReload,
+  readonlyReason,
+  onSave,
 }: {
   size: number;
   lineCount?: number;
@@ -32,6 +35,8 @@ export function FilePanelBar({
   conflictUnavailable?: boolean;
   onOverwrite?(): void;
   onReload?(): void;
+  readonlyReason?: string | null;
+  onSave?(): void;
 }) {
   const { t } = useTranslation();
   const markdownModes = [
@@ -113,7 +118,29 @@ export function FilePanelBar({
             options={markdownModes}
           />
         ) : null}
+        {onSave ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={
+              Boolean(readonlyReason) ||
+              editorStatus === "clean" ||
+              editorStatus === "saving" ||
+              editorStatus === "conflict"
+            }
+            loading={editorStatus === "saving"}
+            onPress={onSave}
+            testID="file-save"
+          >
+            {t("panels.file.editor.save")}
+          </Button>
+        ) : null}
       </View>
+      {readonlyReason ? (
+        <Text style={styles.secondary} testID="file-readonly-reason">
+          {readonlyReason}
+        </Text>
+      ) : null}
       {editorStatus === "conflict" && onOverwrite && onReload ? (
         <View style={styles.notice}>
           <FileConflictAlert

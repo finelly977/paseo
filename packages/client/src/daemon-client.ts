@@ -16,6 +16,7 @@ import {
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
   type ServerInfoStatusPayload,
+  type WorkspaceEntryMutation,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
 import type {
@@ -4632,6 +4633,19 @@ export class DaemonClient {
       responseType: "fs.file.write.response",
     });
     return payload.result;
+  }
+
+  async mutateWorkspaceEntry(input: {
+    cwd: string;
+    mutation: WorkspaceEntryMutation;
+  }): Promise<string> {
+    if (!this.isConnected) throw new Error("主机未连接，请重新连接后重试文件操作");
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "fs.entry.mutate.request", ...input },
+      responseType: "fs.entry.mutate.response",
+    });
+    if (payload.status === "error") throw new Error(payload.error);
+    return payload.path;
   }
 
   async uploadFile(input: FileUploadInput): Promise<FileUploadResult> {

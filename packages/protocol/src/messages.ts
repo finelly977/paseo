@@ -2683,6 +2683,7 @@ export const FileVersionSchema = z.discriminatedUnion("status", [
     size: z.number().int().nonnegative(),
     modifiedAt: z.string(),
     revision: z.string().optional(),
+    writeAccess: z.enum(["allowed", "denied"]).optional(),
   }),
   z.object({
     status: z.literal("missing"),
@@ -2731,6 +2732,32 @@ export const FileWriteRequestSchema = z.object({
   content: z.string(),
   expectedModifiedAt: z.string(),
   expectedRevision: z.string().optional(),
+  requestId: z.string(),
+});
+
+export const WorkspaceEntryMutationSchema = z.discriminatedUnion("operation", [
+  z.object({
+    operation: z.literal("create"),
+    path: z.string().min(1),
+    kind: z.enum(["file", "directory"]),
+  }),
+  z.object({
+    operation: z.literal("rename"),
+    path: z.string().min(1),
+    name: z.string().min(1),
+    expectedModifiedAt: z.string(),
+  }),
+  z.object({
+    operation: z.literal("delete"),
+    path: z.string().min(1),
+    expectedModifiedAt: z.string(),
+  }),
+]);
+
+export const WorkspaceEntryMutationRequestSchema = z.object({
+  type: z.literal("fs.entry.mutate.request"),
+  cwd: z.string().min(1),
+  mutation: WorkspaceEntryMutationSchema,
   requestId: z.string(),
 });
 
@@ -3120,6 +3147,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DirectorySubscribeRequestSchema,
   DirectoryUnsubscribeRequestSchema,
   FileWriteRequestSchema,
+  WorkspaceEntryMutationRequestSchema,
   ProjectIconRequestSchema,
   FileDownloadTokenRequestSchema,
   FileUploadRequestSchema,
@@ -3385,6 +3413,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRecovery: z.boolean().optional(),
         // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
         workspaceFileEditing: z.boolean().optional(),
+        // COMPAT(workspaceEntryMutation)：2026-09-30 新增，2027-03-30 后随最低主机版本移除门控。
+        workspaceEntryMutation: z.boolean().optional(),
         // COMPAT(workspaceDirectoryObservation)：v0.2.2 新增，2027-02-23 后移除能力门控。
         workspaceDirectoryObservation: z.boolean().optional(),
         // COMPAT(providerUsageList): added in v0.1.98, drop the gate when daemon floor >= v0.1.98.
@@ -5529,6 +5559,14 @@ export const FileWriteResponseSchema = z.object({
   }),
 });
 
+export const WorkspaceEntryMutationResponseSchema = z.object({
+  type: z.literal("fs.entry.mutate.response"),
+  payload: z.discriminatedUnion("status", [
+    z.object({ status: z.literal("done"), path: z.string(), requestId: z.string() }),
+    z.object({ status: z.literal("error"), error: z.string(), requestId: z.string() }),
+  ]),
+});
+
 export const FileUpdateSchema = z.object({
   type: z.literal("fs.file.update"),
   payload: z.object({
@@ -6293,6 +6331,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   FileSubscribeResponseSchema,
   FileUnsubscribeResponseSchema,
   FileWriteResponseSchema,
+  WorkspaceEntryMutationResponseSchema,
   FileUpdateSchema,
   DirectorySubscribeResponseSchema,
   DirectoryUnsubscribeResponseSchema,
@@ -6750,6 +6789,9 @@ export type FileUnsubscribeResponse = z.infer<typeof FileUnsubscribeResponseSche
 export type FileWriteRequest = z.infer<typeof FileWriteRequestSchema>;
 export type FileWriteResponse = z.infer<typeof FileWriteResponseSchema>;
 export type FileWriteResult = z.infer<typeof FileWriteResultSchema>;
+export type WorkspaceEntryMutation = z.infer<typeof WorkspaceEntryMutationSchema>;
+export type WorkspaceEntryMutationRequest = z.infer<typeof WorkspaceEntryMutationRequestSchema>;
+export type WorkspaceEntryMutationResponse = z.infer<typeof WorkspaceEntryMutationResponseSchema>;
 export type FileUpdate = z.infer<typeof FileUpdateSchema>;
 export type DirectorySubscribeRequest = z.infer<typeof DirectorySubscribeRequestSchema>;
 export type DirectorySubscribeResponse = z.infer<typeof DirectorySubscribeResponseSchema>;

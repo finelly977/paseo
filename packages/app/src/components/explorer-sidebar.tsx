@@ -498,6 +498,7 @@ function FilesPane({
   const { addFile, canAddToChat } = useAddFileToChat({ serverId, workspaceId });
   return (
     <FileExplorerPane
+      key={`${serverId}:${workspaceRoot}`}
       serverId={serverId}
       workspaceId={workspaceId}
       workspaceRoot={workspaceRoot}

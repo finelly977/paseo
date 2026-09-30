@@ -35,6 +35,10 @@ import { FileSourceView } from "./source/view";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { usePublishPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
+import { filePreviewReadonlyReason } from "./editing-policy";
+import { Alert } from "@/components/ui/alert";
+import { WorkspaceHtmlBrowserActions } from "@/file-explorer/browser-actions";
+import { usePaneContext } from "@/panels/pane-context";
 
 interface FilePreviewBodyProps {
   preview: ExplorerFile | null;
@@ -162,6 +166,9 @@ function FilePreviewBody({
     preview?.kind === "text" && isRenderedMarkdownFile(filePath) && !location.lineStart;
 
   const previewScrollRef = useRef<RNScrollView>(null);
+  const [imageDecodeFailed, setImageDecodeFailed] = useState(false);
+  useEffect(() => setImageDecodeFailed(false), [imagePreviewUri]);
+  const handleImageError = useCallback(() => setImageDecodeFailed(true), []);
 
   if (isLoading && !preview) {
     return (
@@ -206,6 +213,12 @@ function FilePreviewBody({
   }
 
   if (preview.kind === "image") {
+    if (imageDecodeFailed)
+      return (
+        <View style={styles.centerState}>
+          <Text style={styles.errorText}>{t("panels.file.failedToLoadPreview")}</Text>
+        </View>
+      );
     if (!imagePreviewUri) {
       return (
         <View style={styles.centerState}>
@@ -215,7 +228,14 @@ function FilePreviewBody({
       );
     }
 
-    return <ZoomableImage uri={imagePreviewUri} testID="image-file-preview" />;
+    return (
+      <ZoomableImage
+        uri={imagePreviewUri}
+        accessibilityLabel={location.path}
+        onError={handleImageError}
+        testID="image-file-preview"
+      />
+    );
   }
 
   return (
@@ -239,7 +259,9 @@ export function FilePane({
 }) {
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
+  const { workspaceId } = usePaneContext();
   const [markdownMode, setMarkdownMode] = useState<"preview" | "source">("preview");
+  const [previewError, setPreviewError] = useState<unknown>(null);
   const [resolvedPreview, setResolvedPreview] = useState<{
     key: string | null;
     file: ExplorerFile | null;
@@ -285,11 +307,15 @@ export function FilePane({
 
   useEffect(() => {
     let active = true;
+    setPreviewError(null);
     const key = readTarget ? `${readTarget.cwd}:${readTarget.path}` : null;
     void (async () => {
       const nextPreview = await createFilePanePreview(query.data ?? null);
       if (active) setResolvedPreview({ key, ...nextPreview });
-    })();
+    })().catch((error: unknown) => {
+      console.error("生成文件预览失败", error);
+      if (active) setPreviewError(error);
+    });
     return () => {
       active = false;
     };
@@ -301,6 +327,7 @@ export function FilePane({
   const preview = resolvedPreview.key === previewKey ? resolvedPreview.file : null;
   const imagePreviewUri = useAttachmentPreviewUrl(
     resolvedPreview.key === previewKey ? resolvedPreview.imageAttachment : null,
+    setPreviewError,
   );
   const isMarkdown = isMarkdownPreview(preview, location.path);
   const editable = isEditableTextFile({
@@ -310,28 +337,47 @@ export function FilePane({
   const canToggleMarkdownMode = isMarkdown && editable;
   const lineCount =
     preview?.kind === "text" ? (preview.content ?? "").split("\n").length : undefined;
-  const errorMessage = getFileErrorMessage(query.error, t("panels.file.failedToLoad"));
+  const errorMessage = getFileErrorMessage(
+    query.error ?? previewError,
+    t("panels.file.failedToLoad"),
+  );
+  const readonlyReasonKey = filePreviewReadonlyReason({
+    preview,
+    version,
+    supportsEditing,
+    web: isWeb,
+  });
+  const readonlyReason = readonlyReasonKey ? t(`panels.file.readonly.${readonlyReasonKey}`) : null;
 
   return (
-    <FilePanePresentation
-      serverId={serverId}
-      client={client}
-      readTarget={readTarget}
-      preview={preview}
-      version={version}
-      filename={getFileNameFromPath(location.path) ?? location.path}
-      markdownMode={canToggleMarkdownMode ? markdownMode : undefined}
-      onMarkdownModeChange={canToggleMarkdownMode ? setMarkdownMode : undefined}
-      lineCount={lineCount}
-      editable={editable}
-      disconnectedMessage={t("workspace.terminal.hostDisconnected")}
-      errorMessage={errorMessage}
-      isLoading={query.isFetching}
-      isMobile={isMobile}
-      location={location}
-      navigationRevision={navigationRevision}
-      imagePreviewUri={imagePreviewUri}
-    />
+    <View style={styles.container}>
+      <WorkspaceHtmlBrowserActions
+        serverId={serverId}
+        workspaceId={workspaceId}
+        workspaceRoot={workspaceRoot}
+        path={location.path}
+      />
+      <FilePanePresentation
+        readonlyReason={readonlyReason}
+        serverId={serverId}
+        client={client}
+        readTarget={readTarget}
+        preview={preview}
+        version={version}
+        filename={getFileNameFromPath(location.path) ?? location.path}
+        markdownMode={canToggleMarkdownMode ? markdownMode : undefined}
+        onMarkdownModeChange={canToggleMarkdownMode ? setMarkdownMode : undefined}
+        lineCount={lineCount}
+        editable={editable}
+        disconnectedMessage={t("workspace.terminal.hostDisconnected")}
+        errorMessage={errorMessage}
+        isLoading={query.isFetching}
+        isMobile={isMobile}
+        location={location}
+        navigationRevision={navigationRevision}
+        imagePreviewUri={imagePreviewUri}
+      />
+    </View>
   );
 }
 
@@ -357,6 +403,7 @@ function isEditableTextFile(input: {
 }
 
 function FilePanePresentation({
+  readonlyReason,
   serverId,
   client,
   readTarget,
@@ -375,6 +422,7 @@ function FilePanePresentation({
   navigationRevision,
   imagePreviewUri,
 }: {
+  readonlyReason: string | null;
   serverId: string;
   client: DaemonClient | null;
   readTarget: { cwd: string; path: string } | null;
@@ -406,6 +454,7 @@ function FilePanePresentation({
   if (editable && client && readTarget && preview?.kind === "text") {
     return (
       <EditableFilePane
+        readonlyReason={readonlyReason}
         key={`${serverId}:${readTarget.cwd}:${readTarget.path}`}
         client={client}
         cwd={readTarget.cwd}
@@ -435,6 +484,7 @@ function FilePanePresentation({
     <View style={styles.container} testID="workspace-file-pane">
       {preview ? (
         <FilePanelBar
+          readonlyReason={readonlyReason}
           size={preview.size}
           lineCount={lineCount}
           mode={markdownMode}
@@ -460,6 +510,7 @@ function FilePanePresentation({
 }
 
 function EditableFilePane({
+  readonlyReason,
   client,
   cwd,
   path,
@@ -473,6 +524,7 @@ function EditableFilePane({
   location,
   navigationRevision,
 }: {
+  readonlyReason: string | null;
   client: DaemonClient;
   cwd: string;
   path: string;
@@ -582,6 +634,7 @@ function EditableFilePane({
     })();
   }, [model, t]);
   const handleOverwrite = useCallback(() => void model.overwrite(), [model]);
+  const handleSave = useCallback(() => void model.save(), [model]);
   const handleVimModeChange = useCallback((nextMode: string | null) => setVimMode(nextMode), []);
   const renderedPreview = useMemo<ExplorerFile>(
     () => ({
@@ -598,6 +651,8 @@ function EditableFilePane({
   return (
     <View style={styles.container} testID="workspace-file-pane">
       <FilePanelBar
+        readonlyReason={readonlyReason}
+        onSave={handleSave}
         size={
           snapshot.observedVersion.status === "ready" ? snapshot.observedVersion.size : preview.size
         }
@@ -611,6 +666,9 @@ function EditableFilePane({
         mode={mode}
         onModeChange={onModeChange}
       />
+      {snapshot.error ? (
+        <Alert variant="error" description={snapshot.error} testID="file-save-error" />
+      ) : null}
       {showSource ? (
         <FileEditorView
           model={model}
@@ -618,6 +676,7 @@ function EditableFilePane({
           location={location}
           navigationRevision={navigationRevision}
           vimEnabled={settings.vimKeybindings}
+          readOnly={Boolean(readonlyReason)}
           theme={visualTheme}
           onCursorChange={setCursor}
           onVimModeChange={handleVimModeChange}

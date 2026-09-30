@@ -10,6 +10,7 @@ export function FileEditorView(_props: {
   location: WorkspaceFileLocation;
   navigationRevision: number;
   vimEnabled: boolean;
+  readOnly: boolean;
   theme: {
     background: string;
     foreground: string;

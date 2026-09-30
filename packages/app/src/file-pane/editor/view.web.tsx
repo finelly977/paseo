@@ -14,6 +14,7 @@ interface FileEditorViewProps {
   location: WorkspaceFileLocation;
   navigationRevision: number;
   vimEnabled: boolean;
+  readOnly: boolean;
   theme: EditorVisualTheme;
   onCursorChange(position: { line: number; column: number }): void;
   onVimModeChange(mode: string | null): void;
@@ -23,6 +24,7 @@ const languageCompartment = new Compartment();
 const wrappingCompartment = new Compartment();
 const themeCompartment = new Compartment();
 const vimCompartment = new Compartment();
+const readonlyCompartment = new Compartment();
 
 function wrappingForFile(filename: string) {
   return isRenderedMarkdownFile(filename) ? EditorView.lineWrapping : [];
@@ -34,6 +36,7 @@ export function FileEditorView({
   location,
   navigationRevision,
   vimEnabled,
+  readOnly,
   theme,
   onCursorChange,
   onVimModeChange,
@@ -41,7 +44,14 @@ export function FileEditorView({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
-  const initial = useRef({ filename, model, theme, vimEnabled, content: snapshot.content });
+  const initial = useRef({
+    filename,
+    model,
+    theme,
+    vimEnabled,
+    readOnly,
+    content: snapshot.content,
+  });
   const onCursorChangeRef = useRef(onCursorChange);
   onCursorChangeRef.current = onCursorChange;
 
@@ -54,6 +64,7 @@ export function FileEditorView({
         doc: values.content,
         extensions: [
           vimCompartment.of(values.vimEnabled ? vim() : []),
+          readonlyCompartment.of(EditorState.readOnly.of(values.readOnly)),
           ...editorBaseExtensions(() => void values.model.save()),
           languageCompartment.of(getLanguageForFile(values.filename)?.extension ?? []),
           wrappingCompartment.of(wrappingForFile(values.filename)),
@@ -121,6 +132,12 @@ export function FileEditorView({
   useEffect(() => {
     viewRef.current?.dispatch({ effects: themeCompartment.reconfigure(editorTheme(theme)) });
   }, [theme]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: readonlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
+    });
+  }, [readOnly]);
 
   useEffect(() => {
     const view = viewRef.current;

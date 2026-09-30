@@ -167,7 +167,7 @@ export class FileObserver {
 
 function fingerprint(version: FileVersion): string {
   if (version.status !== "ready") return version.status;
-  return `${version.status}:${version.revision ?? `${version.size}:${version.modifiedAt}`}`;
+  return `${version.status}:${version.writeAccess}:${version.revision ?? `${version.size}:${version.modifiedAt}`}`;
 }
 
 export const workspaceFileObserver = new FileObserver();

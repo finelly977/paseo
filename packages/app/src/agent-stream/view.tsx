@@ -950,6 +950,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
         return (
           <AssistantFileLinkResolverProvider
+            workspaceId={context.workspaceId}
             client={client}
             serverId={resolvedServerId}
             workspaceRoot={workspaceRoot}
@@ -971,6 +972,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         canOpenInFileManager,
         client,
         context.provider,
+        context.workspaceId,
         handleInlinePathOpenInFileManager,
         handleInlinePathPress,
         resolvedServerId,

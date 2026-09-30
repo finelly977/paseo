@@ -21,6 +21,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { Theme } from "@/styles/theme";
+import { useAssistantBrowserMenu } from "./browser-menu";
 
 interface AssistantMarkdownLinkProps {
   source: AssistantFileLinkSource;
@@ -41,6 +42,15 @@ export function AssistantMarkdownLink({
     useFileLink(source);
   const { configRef } = useAssistantFileLinkResolverContext();
   const workspaceRoot = configRef.current.workspaceRoot;
+  const browserMenu = useAssistantBrowserMenu(source, {
+    target,
+    canResolveFile,
+    resolveFileTarget,
+  });
+  const hasContextMenu =
+    (canResolveFile && configRef.current.onOpenInFileManager !== undefined) ||
+    browserMenu.canOpenInternal ||
+    browserMenu.canOpenExternal;
   const canOpenInFileManager =
     canResolveFile && configRef.current.onOpenInFileManager !== undefined;
   const tooltipPath = useMemo(
@@ -120,7 +130,7 @@ export function AssistantMarkdownLink({
     </Text>
   );
   const unwrapForMarkdownCopy = source.sourceType === "inline-code" || source.markup === "linkify";
-  const linkTrigger = canOpenInFileManager ? (
+  const linkTrigger = hasContextMenu ? (
     <ContextMenuTrigger
       accessibilityRole="link"
       onPress={onPress}
@@ -151,17 +161,35 @@ export function AssistantMarkdownLink({
     </a>
   );
 
-  const contextualAnchor = canOpenInFileManager ? (
+  const contextualAnchor = hasContextMenu ? (
     <ContextMenu>
       {anchor}
       <ContextMenuContent side="bottom" align="start" minWidth={220}>
-        <ContextMenuItem
-          leading={fileManagerLeadingIcon}
-          onSelect={handleOpenInFileManager}
-          testID="assistant-file-link-open-in-file-manager"
-        >
-          {t("workspace.fileActions.openInFileManager")}
-        </ContextMenuItem>
+        {browserMenu.canOpenInternal ? (
+          <ContextMenuItem
+            onSelect={browserMenu.onOpenInternal}
+            testID="assistant-link-open-in-browser"
+          >
+            {t("workspace.fileActions.openInBrowser")}
+          </ContextMenuItem>
+        ) : null}
+        {browserMenu.canOpenExternal ? (
+          <ContextMenuItem
+            onSelect={browserMenu.onOpenExternal}
+            testID="assistant-link-open-in-external-browser"
+          >
+            {t("workspace.fileActions.openInExternalBrowser")}
+          </ContextMenuItem>
+        ) : null}
+        {canOpenInFileManager ? (
+          <ContextMenuItem
+            leading={fileManagerLeadingIcon}
+            onSelect={handleOpenInFileManager}
+            testID="assistant-file-link-open-in-file-manager"
+          >
+            {t("workspace.fileActions.openInFileManager")}
+          </ContextMenuItem>
+        ) : null}
       </ContextMenuContent>
     </ContextMenu>
   ) : (

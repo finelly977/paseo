@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, type ReactElement, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,7 +24,7 @@ import {
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import * as Clipboard from "expo-clipboard";
-import { ChevronDown, Eye, EyeOff, RotateCw } from "lucide-react-native";
+import { ChevronDown, Eye, EyeOff, RotateCw, FilePlus, FolderPlus } from "lucide-react-native";
 import { MaterialFileIcon } from "@/components/material-file-icon";
 import {
   TreeChevron,
@@ -53,6 +62,12 @@ import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useLocalHostStartup } from "@/hooks/use-local-host-startup";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
+import { Button } from "@/components/ui/button";
+import { ExplorerEntryActionForm, useExplorerEntryActions } from "@/file-explorer/entry-actions";
+import { ExplorerFileSearch } from "@/file-explorer/search";
+import { isHtmlFile, useOpenWorkspaceFileInBrowser } from "@/file-explorer/open-in-browser";
+import { Alert } from "@/components/ui/alert";
+import { useStableEvent } from "@/hooks/use-stable-event";
 
 const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "name" },
@@ -71,6 +86,8 @@ function formatFileSize({ size }: { size: number }): string {
 }
 
 interface TreeRowItemProps {
+  browser: ReturnType<typeof useOpenWorkspaceFileInBrowser>;
+  entryActions: ReturnType<typeof useExplorerEntryActions> | null;
   serverId: string;
   workspaceId?: string | null;
   entry: ExplorerEntry;
@@ -104,6 +121,8 @@ function treeRowKeyExtractor(row: ExplorerTreeRow) {
 }
 
 function TreeRowItem({
+  browser,
+  entryActions,
   serverId,
   workspaceId,
   entry,
@@ -161,6 +180,13 @@ function TreeRowItem({
   const handleAddToChat = useCallback(() => {
     onAddToChat?.(entry.path);
   }, [onAddToChat, entry.path]);
+  const openInternal = useStableEvent(() => void browser.open(entry.path, "internal"));
+  const openExternal = useStableEvent(() => void browser.open(entry.path, "external"));
+  const newFile = useStableEvent(() => entryActions?.beginCreate(entry.path, "file"));
+  const newDirectory = useStableEvent(() => entryActions?.beginCreate(entry.path, "directory"));
+  const renameEntry = useStableEvent(() => entryActions?.beginRename(entry));
+  const deleteEntry = useStableEvent(() => entryActions?.beginDelete(entry));
+  const canPreviewHtml = isHtmlFile(entry.path) && browser.available && !browser.pending;
 
   const metaHeader = useMemo(
     () => (
@@ -204,6 +230,12 @@ function TreeRowItem({
         </Text>
       </View>
       <FileActionsMenu
+        onOpenInBrowser={canPreviewHtml ? openInternal : undefined}
+        onOpenInExternalBrowser={canPreviewHtml ? openExternal : undefined}
+        onNewFile={isDirectory && entryActions ? newFile : undefined}
+        onNewDirectory={isDirectory && entryActions ? newDirectory : undefined}
+        onRename={entryActions ? renameEntry : undefined}
+        onDelete={entryActions ? deleteEntry : undefined}
         fileKind={entry.kind}
         onOpenInFileManager={onOpenInFileManager ? handleOpenInFileManager : undefined}
         onOpenInEditor={isDirectory && onOpenInEditor ? handleOpenInEditor : undefined}
@@ -570,6 +602,27 @@ export function FileExplorerPane({
     void refetchExplorer();
   }, [refetchExplorer]);
 
+  // COMPAT(workspaceEntryMutation)：2026-09-30 新增，2027-03-30 后随最低主机版本移除门控。
+  const supportsEntryMutation = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.workspaceEntryMutation === true,
+  );
+  const entryActions = useExplorerEntryActions({
+    client,
+    serverId,
+    workspaceId,
+    workspaceRoot: normalizedWorkspaceRoot,
+    refresh: () => refetchExplorer({ throwOnError: true }),
+    openFile: onOpenFile,
+  });
+  const browser = useOpenWorkspaceFileInBrowser({
+    serverId,
+    workspaceId,
+    workspaceRoot: normalizedWorkspaceRoot,
+  });
+  const [searchActive, setSearchActive] = useState(false);
+  const newRootFile = useStableEvent(() => entryActions.beginCreate(".", "file"));
+  const newRootDirectory = useStableEvent(() => entryActions.beginCreate(".", "directory"));
+
   const sortLabels = useMemo(
     () => ({
       name: t("workspace.fileExplorer.sort.name"),
@@ -596,6 +649,8 @@ export function FileExplorerPane({
   const renderTreeRow = useCallback(
     (info: ListRenderItemInfo<ExplorerTreeRow>) => (
       <TreeRowDispatcher
+        browser={browser}
+        entryActions={supportsEntryMutation ? entryActions : null}
         serverId={serverId}
         workspaceId={workspaceId}
         info={info}
@@ -612,6 +667,9 @@ export function FileExplorerPane({
       />
     ),
     [
+      supportsEntryMutation,
+      entryActions,
+      browser,
       expandedPaths,
       handleEntryPress,
       handleCopyPath,
@@ -677,28 +735,75 @@ export function FileExplorerPane({
 
   return (
     <View style={styles.container}>
-      <FileExplorerPaneContent
-        error={error}
-        showInitialLoading={showInitialLoading}
-        showBackFromError={showBackFromError}
-        treeRows={treeRows}
-        currentSortLabel={currentSortLabel}
-        isRefreshFetching={isRefreshFetching}
-        treeListRef={treeListRef}
-        renderTreeRow={renderTreeRow}
-        handleSortCycle={handleSortCycle}
-        handleToggleHiddenFiles={handleToggleHiddenFiles}
-        handleRefresh={handleRefresh}
-        handleBackFromError={handleBackFromError}
-        handleRetry={handleRetry}
-        sortTriggerStyle={sortTriggerStyle}
-        iconButtonStyle={iconButtonStyle}
+      {browser.pending ? (
+        <Text style={styles.loadingText}>{t("workspace.fileActions.preparingPreview")}</Text>
+      ) : null}
+      {browser.error ? (
+        <Alert variant="error" description={browser.error} testID="file-browser-error">
+          <Button size="xs" variant="ghost" onPress={browser.dismissError}>
+            {t("common.actions.dismiss")}
+          </Button>
+        </Alert>
+      ) : null}
+      <ExplorerEntryActionForm controller={entryActions} />
+      <ExplorerFileSearch
+        key={`${serverId}:${normalizedWorkspaceRoot}`}
+        client={client}
+        serverId={serverId}
+        root={normalizedWorkspaceRoot}
+        onOpenFile={onOpenFile}
+        onActiveChange={setSearchActive}
       />
+      {!searchActive ? (
+        <FileExplorerPaneContent
+          actionsToolbar={
+            <>
+              <Button
+                size="xs"
+                variant="ghost"
+                leftIcon={FilePlus}
+                accessibilityLabel={t("workspace.fileActions.newFile")}
+                disabled={!supportsEntryMutation || entryActions.pending}
+                onPress={newRootFile}
+                testID="files-new-file"
+              />
+              <Button
+                size="xs"
+                variant="ghost"
+                leftIcon={FolderPlus}
+                accessibilityLabel={t("workspace.fileActions.newDirectory")}
+                disabled={!supportsEntryMutation || entryActions.pending}
+                onPress={newRootDirectory}
+                testID="files-new-directory"
+              />
+            </>
+          }
+          error={error}
+          showInitialLoading={showInitialLoading}
+          showBackFromError={showBackFromError}
+          treeRows={treeRows}
+          currentSortLabel={currentSortLabel}
+          isRefreshFetching={isRefreshFetching}
+          treeListRef={treeListRef}
+          renderTreeRow={renderTreeRow}
+          handleSortCycle={handleSortCycle}
+          handleToggleHiddenFiles={handleToggleHiddenFiles}
+          handleRefresh={handleRefresh}
+          handleBackFromError={handleBackFromError}
+          handleRetry={handleRetry}
+          sortTriggerStyle={sortTriggerStyle}
+          iconButtonStyle={iconButtonStyle}
+        />
+      ) : null}
+      {!supportsEntryMutation && client ? (
+        <Text style={styles.loadingText}>{t("workspace.fileActions.updateHost")}</Text>
+      ) : null}
     </View>
   );
 }
 
 interface FileExplorerPaneContentProps {
+  actionsToolbar: ReactNode;
   error: string | null;
   showInitialLoading: boolean;
   showBackFromError: boolean;
@@ -798,6 +903,7 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
           <ChevronDown size={12} color={theme.colors.foregroundMuted} />
         </Pressable>
         <View style={styles.headerActions}>
+          {props.actionsToolbar}
           <Pressable
             onPress={handleToggleHiddenFiles}
             hitSlop={8}
@@ -946,6 +1052,8 @@ function toggleDirectory({
 }
 
 function TreeRowDispatcher({
+  browser,
+  entryActions,
   serverId,
   workspaceId,
   info,
@@ -960,6 +1068,8 @@ function TreeRowDispatcher({
   onDownloadEntry,
   onAddToChat,
 }: {
+  browser: ReturnType<typeof useOpenWorkspaceFileInBrowser>;
+  entryActions: ReturnType<typeof useExplorerEntryActions> | null;
   serverId: string;
   workspaceId?: string | null;
   info: ListRenderItemInfo<ExplorerTreeRow>;
@@ -983,6 +1093,8 @@ function TreeRowDispatcher({
 
   return (
     <TreeRowItem
+      browser={browser}
+      entryActions={entryActions}
       serverId={serverId}
       workspaceId={workspaceId}
       entry={entry}

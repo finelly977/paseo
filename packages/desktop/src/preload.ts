@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { BrowserKeyboardPolicy } from "./features/browser-keyboard/index.js";
+import type {
+  WorkspacePreviewOpen,
+  WorkspacePreviewComplete,
+} from "@getpaseo/protocol/workspace-preview";
 
 // This preload runs in Electron's sandbox and is tsc-compiled (not bundled), so it MUST
 // NOT emit any runtime module load other than "electron" — a require() of a local or
@@ -91,6 +95,12 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   },
   opener: {
     openUrl: (url: string) => ipcRenderer.invoke("paseo:opener:openUrl", url),
+  },
+  workspacePreview: {
+    open: (input: WorkspacePreviewOpen): Promise<string> =>
+      ipcRenderer.invoke("paseo:workspace-preview:open", input),
+    complete: (input: WorkspacePreviewComplete): Promise<void> =>
+      ipcRenderer.invoke("paseo:workspace-preview:complete", input),
   },
   editor: {
     listTargets: () => ipcRenderer.invoke("paseo:editor:listTargets"),

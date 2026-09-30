@@ -2,6 +2,10 @@ import { Platform } from "react-native";
 import { getElectronHost } from "@/desktop/electron/host";
 import type { BrowserKeyboardPolicy } from "@/keyboard/browser-shortcuts";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
+import type {
+  WorkspacePreviewOpen,
+  WorkspacePreviewComplete,
+} from "@getpaseo/protocol/workspace-preview";
 
 type BrowserAutomationExecuteRequest = Extract<
   SessionOutboundMessage,
@@ -172,6 +176,10 @@ export interface DesktopInvokeBridge {
 }
 
 export interface DesktopHostBridge {
+  workspacePreview?: {
+    open(input: WorkspacePreviewOpen): Promise<string>;
+    complete(input: WorkspacePreviewComplete): Promise<void>;
+  };
   platform?: string;
   windowChromeMode?: string;
   invoke?: DesktopInvokeBridge["invoke"];

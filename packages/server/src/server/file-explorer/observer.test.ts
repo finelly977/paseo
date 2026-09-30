@@ -103,7 +103,8 @@ describe("FileObserver", () => {
     const aliasParent = await mkdtemp(path.join(os.tmpdir(), "paseo-file-observer-alias-"));
     roots.push(aliasParent);
     const aliasRoot = path.join(aliasParent, "workspace-link");
-    await symlink(root, aliasRoot, "dir");
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    await symlink(root, aliasRoot, linkType);
     const controls = new ObservationControls();
     const observer = new FileObserver(controls);
     const updates: Array<{ cwd: string; path: string }> = [];

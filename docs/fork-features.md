@@ -496,7 +496,12 @@
 - `packages/server/src/server/schedule/service.ts`
 - `packages/server/src/server/agent/agent-prompt.ts`
 
-### 21. 右侧文件面板实时跟随工作区变化
+### 21. 工作区文件管理、编辑与预览
+
+- 右侧文件面板提供新建文件、新建目录、重命名、删除和文件名搜索；根目录工具栏可以新建条目，目录三点菜单可以在该目录内新建，文件与目录菜单均可重命名和删除。搜索沿用主机文件建议服务的忽略规则，最多显示 100 个匹配结果，不同步下载整个目录。删除在面板内明确确认永久删除及递归内容，提交期间阻止重复操作，失败保留输入与可重试错误；禁止修改工作区根目录、越界路径、陈旧条目或覆盖同名目标。重命名与删除会同步当前工作区已有文件标签，有未保存修改的标签必须先保存或关闭。新能力只对已更新并声明支持的主机开放，旧主机明确提示更新，不用旧接口拼接降级操作。
+- 本地和远端主机遵循相同文本编辑规则：桌面与网页端可编辑不超过 1 MiB 的 UTF-8 文本；更大的文本继续按原展示预算只读查看，图片、二进制和非 UTF-8 文件保留预览。文件栏明确说明只读来自平台、主机版本、文件类型、大小或主机运行账户权限；主机同时检查文件和父目录写权限，权限变化由单文件订阅同步。Markdown 默认预览，可切换源码编辑；保留自动保存、快捷键保存、版本冲突保护，补充显式保存按钮及完整保存错误，不自动更改远端账户或权限。
+- 图片文件使用既有可缩放、平移的图片预览，支持 PNG、JPEG、GIF、WebP、SVG、AVIF、BMP 和 ICO；图片读取、存储或解码失败显示明确错误，不停留在无限加载状态。
+- 桌面端 HTML/HTM 文件的文件菜单、正文工具栏及助手回复中的文件超链接右键菜单提供“在内置浏览器打开”和“在默认浏览器打开”；普通网页超链接右键也提供这两种入口。HTML 使用按工作区隔离的本机临时 HTTP 地址，CSS、脚本、图片与字体等相对或根路径资源经已有主机连接读取，本地与远端统一，不将 Ubuntu 路径当作本机文件。服务仅监听回环地址，通过随机入口和 HttpOnly 授权限制访问，只接受读取请求，阻止隐藏文件及越界路径，单资源上限 20 MiB；预览内容不获得主窗口 IPC 权限。关闭所属 Paseo 窗口会释放服务，断线或资源读取失败在预览页面显示错误，可重新连接后刷新。网页和移动端明确提示使用桌面应用，不偷偷打开本机文件协议。
 
 - 打开右侧文件面板时只为当前工作区根目录建立一次递归观察；该面板直接跟随文件系统而不依赖 Git 状态，已跟踪文件、未跟踪文件以及被 `.gitignore` 忽略的文件发生新增、修改、删除和重命名时都会触发刷新。事件会在写入停止 150 毫秒后合并，持续写入时最长每 1 秒发送一次，并携带本批次发生变化的工作区相对路径；客户端据此重新读取变化文件所在目录及完整祖先链，即使子目录当前收起或尚未显示也不会停留在旧快照。不为每个子目录分别建立观察器，也不使用轮询；隐藏文件是否出现在列表中只由文件面板的显示设置决定，不影响变化事件触发刷新。
 - 自动刷新会先读取父目录再读取受影响的深层目录；手动刷新则重新读取根目录、当前展开目录和已经缓存的收起目录，不再要求先展开子文件夹。已经删除或重命名的旧路径不会继续请求，其展开记忆及下级路径会一并移除。关闭隐藏文件时不会为隐藏目录执行无用读取，文件大小和修改时间也会随外部编辑更新。文件和目录行的三点菜单会阻止点击继续传给父行，打开菜单不会同时切换目录展开状态或因行重绘立即关闭。
@@ -507,11 +512,18 @@
 
 - `packages/app/src/components/file-explorer-pane.tsx`
 - `packages/app/src/file-explorer/refresh.ts`
+- `packages/app/src/file-explorer/entry-actions.tsx`
+- `packages/app/src/file-explorer/open-in-browser.ts`
+- `packages/app/src/file-pane/editing-policy.ts`
+- `packages/app/src/assistant-file-links/browser-menu.ts`
 - `packages/app/src/file-pane/live-file.ts`
 - `packages/client/src/daemon-client.ts`
 - `packages/protocol/src/messages.ts`
 - `packages/server/src/server/session/files/workspace-files-session.ts`
 - `packages/server/src/server/file-observer/`
+- `packages/server/src/server/file-explorer/service.ts`
+- `packages/desktop/src/features/workspace-preview/`
+- `packages/protocol/src/workspace-preview.ts`
 
 ### 22. 更换守护进程客户端后时间线订阅不会丢失
 

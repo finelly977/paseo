@@ -4,10 +4,13 @@ import { releaseAttachmentPreviewUrl, resolveAttachmentPreviewUrl } from "@/atta
 
 export function useAttachmentPreviewUrl(
   attachment: AttachmentMetadata | null | undefined,
+  onError?: (error: unknown) => void,
 ): string | null {
   const [url, setUrl] = useState<string | null>(null);
   const activeAttachmentRef = useRef<AttachmentMetadata | null>(null);
   const attachmentRef = useRef(attachment);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   attachmentRef.current = attachment;
 
   const id = attachment?.id;
@@ -43,6 +46,7 @@ export function useAttachmentPreviewUrl(
         });
         if (!disposed) {
           setUrl(null);
+          onErrorRef.current?.(error);
         }
       }
     })();
