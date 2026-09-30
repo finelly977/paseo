@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement, type ReactNode } from "react";
-import { type PressableStateCallbackType } from "react-native";
+import { Text, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Copy,
@@ -25,6 +25,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from "@/components/ui/context-menu";
 
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const ThemedMoreVertical = withUnistyles(MoreVertical);
@@ -48,6 +54,7 @@ interface FileActionCandidate {
 }
 
 interface FileActionsMenuProps {
+  contextTarget?: ReactElement;
   fileKind: "file" | "directory";
   fileExists?: boolean;
   onOpenFile?: () => void;
@@ -91,6 +98,7 @@ function triggerStyle({
  * git diff pane so both surfaces share action availability, ordering, and chrome.
  */
 export function FileActionsMenu({
+  contextTarget,
   fileKind,
   fileExists = true,
   onOpenFile,
@@ -213,8 +221,21 @@ export function FileActionsMenu({
   ]);
 
   if (actions.length === 0) {
-    return null;
+    return contextTarget ?? null;
   }
+  if (contextTarget)
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger enabledOnMobile accessibilityLabel={accessibilityLabel}>
+          {contextTarget}
+        </ContextMenuTrigger>
+        <ContextMenuContent width={220}>
+          {actions.map((action) => (
+            <FileActionMenuItem key={action.key} action={action} context />
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
+    );
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
@@ -241,21 +262,33 @@ export function FileActionsMenu({
   );
 }
 
-function FileActionMenuItem({ action }: { action: FileAction }): ReactElement {
+function FileActionMenuItem({
+  action,
+  context = false,
+}: {
+  action: FileAction;
+  context?: boolean;
+}): ReactElement {
   const Icon = action.icon;
   const ThemedIcon = useMemo(() => withUnistyles(Icon), [Icon]);
   const leading = useMemo(
     () => <ThemedIcon size={ICON_SIZE.sm} uniProps={foregroundMutedColorMapping} />,
     [ThemedIcon],
   );
+  const Item = context ? ContextMenuItem : DropdownMenuItem;
+  const shortcut = { rename: "F2", delete: "Delete" };
+  let trailing: ReactElement | undefined;
+  if (context && (action.key === "rename" || action.key === "delete"))
+    trailing = <Text style={styles.shortcut}>{shortcut[action.key]}</Text>;
   return (
-    <DropdownMenuItem leading={leading} onSelect={action.onSelect} testID={action.testID}>
+    <Item leading={leading} trailing={trailing} onSelect={action.onSelect} testID={action.testID}>
       {action.label}
-    </DropdownMenuItem>
+    </Item>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
+  shortcut: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
   trigger: {
     // The hover box comes from padding, but an equal negative vertical margin
     // cancels its height contribution so the trigger overlaps the row's natural

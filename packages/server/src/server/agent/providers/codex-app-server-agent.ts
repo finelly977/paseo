@@ -77,6 +77,7 @@ import {
   resolveCodexFastServiceTier,
   resolveCodexServiceTier,
 } from "./codex-feature-definitions.js";
+import { settleCodexCommand } from "./codex/command-lifecycle.js";
 import {
   CodexAppServerClient,
   CodexAppServerRpcError,
@@ -150,6 +151,11 @@ function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolea
 const TURN_START_TIMEOUT_MS = 90 * 1000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
+const CODEX_TERMINAL_TURN_STATUSES = {
+  turn_completed: "completed",
+  turn_failed: "failed",
+  turn_canceled: "interrupted",
+} as const;
 // Codex treats most app-server client names as the model-request originator.
 // This reserved Codex name is non-originating, so requests keep Codex's default
 // CLI identity instead of showing up as Paseo in provider usage logs.
@@ -2217,10 +2223,14 @@ async function loadCodexThreadHistoryTimeline(params: {
       for (const timelineItem of threadItemToTimelineEntries(item, { cwd: params.cwd })) {
         const timestamp =
           readCodexHistoryTimestamp(item) ?? readCodexTurnHistoryTimestamp(turn, timelineItem);
-        const settledTimelineItem =
+        const settledActivity =
           historicalSubAgentActivity && timelineItem.type === "tool_call"
             ? settleHistoricalSubAgentActivity(timelineItem, historicalSubAgentActivity.kind)
             : timelineItem;
+        const settledTimelineItem =
+          settledActivity.type === "tool_call"
+            ? settleCodexCommand(settledActivity, turn.status)
+            : settledActivity;
         const restored = restoreCodexHistoryTurnRole(settledTimelineItem, {
           hasVisibleUserMessage,
           previousTurnNeedsCapacityContinuation,
@@ -3474,6 +3484,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private pendingAgentMessages = new Map<string, string>();
   private pendingReasoning = new Map<string, string[]>();
   private pendingCommandOutputDeltas = new Map<string, string[]>();
+  private pendingRootCommands = new Map<string, ToolCallTimelineItem>();
   private pendingFileChangeOutputDeltas = new Map<string, string[]>();
   private pendingAssistantMessageBoundary = false;
   private terminalCommandByProcessId = new Map<string, string>();
@@ -4968,6 +4979,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async close(): Promise<void> {
+    this.pendingRootCommands.clear();
     if (this.pendingForegroundStart) {
       this.pendingForegroundStart.cancelRequested = true;
     }
@@ -5329,6 +5341,31 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private emitEvent(event: AgentStreamEvent): void {
+    if (
+      event.type === "turn_completed" ||
+      event.type === "turn_failed" ||
+      event.type === "turn_canceled"
+    ) {
+      const pendingCommands = [...this.pendingRootCommands.values()];
+      this.pendingRootCommands.clear();
+      for (const item of pendingCommands) {
+        this.emitEvent({
+          type: "timeline",
+          provider: CODEX_PROVIDER,
+          item: settleCodexCommand(item, CODEX_TERMINAL_TURN_STATUSES[event.type]),
+        });
+      }
+    }
+    if (
+      event.type === "timeline" &&
+      event.item.type === "tool_call" &&
+      event.item.detail.type === "shell" &&
+      !this.loadingPersistedHistory
+    ) {
+      if (event.item.status === "running")
+        this.pendingRootCommands.set(event.item.callId, event.item);
+      else this.pendingRootCommands.delete(event.item.callId);
+    }
     if (this.loadingPersistedHistory && event.type === "provider_subagent") {
       this.persistedProviderSubagentEvents.push(event);
       return;

@@ -15,25 +15,34 @@ describe("默认 Dark 主题", () => {
       surfaceSidebarHover: "#1F1F1F",
       surfaceWorkspace: "#111111",
       background: "#111111",
-      foreground: "#E6E6E6",
-      popoverForeground: "#E6E6E6",
+      foreground: "#D3D3D3",
+      popoverForeground: "#D3D3D3",
       accent: "#0169CC",
       success: "#16A34A",
     });
     expect(darkTheme.colors.terminal).toMatchObject({
       background: "#111111",
-      foreground: "#E6E6E6",
-      cursor: "#E6E6E6",
+      foreground: "#D3D3D3",
+      cursor: "#D3D3D3",
     });
     expect(THEME_SWATCHES.dark).toBe("#0169CC");
   });
 
-  test("不改变独立的 Zinc 主题", () => {
+  test("只降低暗色主题的亮字，不改变已有暗字和强调色", () => {
     expect(darkZincTheme.colors).toMatchObject({
       background: "#18181b",
-      foreground: "#fafafa",
+      foreground: "#e0e0e4",
+      foregroundMuted: "#a1a1aa",
       accent: "#e4e4e7",
     });
+  });
+
+  test("用户消息使用轻微灰色层，浅色滚动条不再采用深灰色", () => {
+    expect(darkTheme.colors.userMessageBackground).toBe("#ffffff09");
+    expect(lightTheme.colors.userMessageBackground).toBe("#00000007");
+    expect(lightTheme.colors.scrollbarHandle).toBe("#a8a8b0");
+    expect(lightTheme.colors.foreground).toBe("#1a1a1e");
+    expect(darkTheme.colors.foregroundMuted).toBe("#A3A3A3");
   });
 
   test("为插件主题预留浅色和深色槽位", () => {

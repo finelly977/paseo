@@ -439,6 +439,16 @@ npm run build:app-deps     # highlight -> protocol -> client -> expo-two-way-aud
 
 Use `npm run build:server` whenever you have changed any daemon/server-facing package and need clean cross-package types or runtime behavior.
 
+### 二开远端 Ubuntu 主机更新
+
+本机桌面安装包更新不会同时更新已连接的 Ubuntu 守护进程。先在该主机执行 `paseo daemon status --json`，或查看设置中的该 Host 完整状态，确认安装方式、运行用户、实际 Home 和版本；不要用本机 CLI 状态替代远端状态。
+
+本二开不从原作者 npm 最新版获取私有改动。源码、链接安装或自行打包的部署应继续沿用原安装方式更新，不能用 `npm install -g @getpaseo/cli@latest` 或官方 npm 自更新按钮替换二开。尚未推送的本地提交也无法通过远端 `git pull` 获取。
+
+源码部署在已发布改动后，从二开 `origin` 拉取目标分支，检查工作区无未保存改动，再在 Ubuntu 上运行 `npm ci`、`npm run build:server`；主机同时提供网页界面时再运行 `npm run build:daemon-web-ui`。必须在 Ubuntu 上安装依赖和构建，不能直接拷贝 Windows 的 `node_modules`。
+
+构建完成后，按原来的 supervisor、systemd 或容器方式重启对应实例，保留实际 `PASEO_HOME`。只有原本从该源码目录启动的 CLI 管理实例，才用 `node packages/cli/dist/index.js --home "$HOME/.paseo" daemon restart`，并按实际 Home 替换路径；systemd 用原服务，Docker 用二开的新镜像，不临时起第二个进程抢占端口。重启会中断该主机正在运行的智能体，应先结束任务；更新后在客户端核对远端版本与功能能力。
+
 The app Metro config disables Watchman and uses Metro's node crawler for exports. Keep that invariant unless you have verified production app exports on machines with and without Watchman installed; distro Watchman builds can differ in capabilities and change Metro's crawl behavior.
 
 For tighter loops, you can rebuild a single workspace:

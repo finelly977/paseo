@@ -156,6 +156,7 @@ const lightSemanticColors = {
   surfaceSidebarHover: "#e9e9ec", // Sidebar hover (darker in light mode)
   surfaceSidebarSelected: "#e4e4e7", // 选中工作区，与 surface3 保持一致
   surfaceWorkspace: "#ffffff", // Workspace main background
+  userMessageBackground: "#00000007",
 
   // Text
   foreground: "#1a1a1e",
@@ -163,7 +164,7 @@ const lightSemanticColors = {
   foregroundExtraMuted: "#a1a1aa",
 
   // Controls
-  scrollbarHandle: "#3f3f46", // zinc-700
+  scrollbarHandle: "#a8a8b0",
 
   // Borders - shifted one step lighter
   border: "#e4e4e7", // (was zinc-200, now zinc-200 - keep for contrast)
@@ -288,7 +289,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
-    scrollbarHandle: tint.terminalBrightBlack,
+    scrollbarHandle: lightSemanticColors.scrollbarHandle,
     border: tint.border,
     borderAccent: tint.borderAccent,
     accent: tint.accent,
@@ -380,6 +381,7 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surfaceSidebarHover,
     surfaceWorkspace: tint.surface1,
+    userMessageBackground: "#ffffff09",
 
     foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,
@@ -464,7 +466,7 @@ const paseoDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#181818",
   surfaceSidebar: "#0D0D0D",
   surfaceSidebarHover: "#1F1F1F",
-  foreground: "#E6E6E6",
+  foreground: "#D3D3D3",
   foregroundMuted: "#A3A3A3",
   foregroundExtraMuted: "#6F6F6F",
   scrollbarHandle: "#3A3A3A",
@@ -486,7 +488,7 @@ const zincDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#242427",
   surfaceSidebar: "#131316",
   surfaceSidebarHover: "#1b1b1e",
-  foreground: "#fafafa",
+  foreground: "#e0e0e4",
   foregroundMuted: "#a1a1aa",
   foregroundExtraMuted: "#71717a",
   scrollbarHandle: "#71717a",
@@ -508,7 +510,7 @@ const midnightDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#222430",
   surfaceSidebar: "#121420",
   surfaceSidebarHover: "#1a1c28",
-  foreground: "#fafafa",
+  foreground: "#e0e0e4",
   foregroundMuted: "#9a9db0",
   foregroundExtraMuted: "#6b6e82",
   scrollbarHandle: "#6b6e82",
@@ -529,7 +531,7 @@ const claudeDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#2a2826",
   surfaceSidebar: "#1a1918",
   surfaceSidebarHover: "#222120",
-  foreground: "#fafafa",
+  foreground: "#e0e0e4",
   foregroundMuted: "#ada9a5",
   foregroundExtraMuted: "#78746f",
   scrollbarHandle: "#78746f",
@@ -550,7 +552,7 @@ const ghosttyDarkColors = buildDarkSemanticColors({
   surfaceDiffEmpty: "#323643",
   surfaceSidebar: "#21252d",
   surfaceSidebarHover: "#292d36",
-  foreground: "#fafafa",
+  foreground: "#e0e0e4",
   foregroundMuted: "#c8ccd8",
   foregroundExtraMuted: "#a0a4b2",
   scrollbarHandle: "#a0a4b2",

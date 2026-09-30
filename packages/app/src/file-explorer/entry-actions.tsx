@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Text, TextInput, View } from "react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { Text, TextInput, View, type TextInputProps } from "react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import type { WorkspaceEntryMutation } from "@getpaseo/protocol/messages";
 import type { ExplorerEntry } from "@/stores/session-store";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
@@ -11,17 +10,18 @@ import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { getPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
+import { confirmDialog } from "@/utils/confirm-dialog";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { treeRowPaddingLeft } from "@/components/tree-primitives";
+import { buildEntryMutation, renameNameSelection, type EntryActionState } from "./entry-edit";
+import type { Theme } from "@/styles/theme";
+import { Folder } from "lucide-react-native";
+import { MaterialFileIcon } from "@/components/material-file-icon";
+import { isWeb } from "@/constants/platform";
 
-type EntryAction =
-  | { operation: "create"; parent: string; kind: "file" | "directory" }
-  | { operation: "rename"; entry: ExplorerEntry }
-  | { operation: "delete"; entry: ExplorerEntry };
-
-interface EntryActionState {
-  action: EntryAction;
-  name: string;
-  error: string | null;
-}
+const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
+const ThemedFolder = withUnistyles(Folder);
+const spinnerColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 export function useExplorerEntryActions(input: {
   client: DaemonClient | null;
@@ -30,6 +30,8 @@ export function useExplorerEntryActions(input: {
   workspaceRoot: string;
   refresh: () => Promise<unknown>;
   openFile?: (path: string) => void;
+  expandDirectory?: (path: string) => void;
+  selectEntry?: (path: string | null) => void;
 }) {
   const [state, setState] = useState<EntryActionState | null>(null);
   const [pending, setPending] = useState(false);
@@ -43,17 +45,19 @@ export function useExplorerEntryActions(input: {
     };
   }, []);
   const { t } = useTranslation();
-  const beginCreate = useCallback((parent: string, kind: "file" | "directory") => {
-    if (!pendingRef.current)
-      setState({ action: { operation: "create", parent, kind }, name: "", error: null });
-  }, []);
+  const expandDirectory = input.expandDirectory;
+  const beginCreate = useCallback(
+    (parent: string, kind: "file" | "directory") => {
+      if (!pendingRef.current) {
+        expandDirectory?.(parent);
+        setState({ action: { operation: "create", parent, kind }, name: "", error: null });
+      }
+    },
+    [expandDirectory],
+  );
   const beginRename = useCallback((entry: ExplorerEntry) => {
     if (!pendingRef.current)
       setState({ action: { operation: "rename", entry }, name: entry.name, error: null });
-  }, []);
-  const beginDelete = useCallback((entry: ExplorerEntry) => {
-    if (!pendingRef.current)
-      setState({ action: { operation: "delete", entry }, name: entry.name, error: null });
   }, []);
   const close = useCallback(() => {
     if (!pendingRef.current) {
@@ -66,61 +70,108 @@ export function useExplorerEntryActions(input: {
     (name: string) => setState((current) => current && { ...current, name, error: null }),
     [],
   );
-  const submit = useCallback(async () => {
-    if (!state || pendingRef.current) return;
-    pendingRef.current = true;
-    setPending(true);
-    try {
-      if (!input.client) throw new Error(t("workspace.terminal.hostDisconnected"));
-      const mutation = buildEntryMutation(state);
-      const affectedTabs = matchingOpenFileTabs(input, mutation.path);
-      if (mutation.operation !== "create") {
-        for (const tab of affectedTabs) {
-          if (
-            getPanelInstanceAttributes({
-              serverId: input.serverId,
-              workspaceId: tab.workspaceId,
-              tabId: tab.id,
-            }).modified
-          ) {
-            throw new Error(t("workspace.fileActions.saveBeforeMutation"));
+  const execute = useCallback(
+    async (submitted: EntryActionState) => {
+      if (pendingRef.current) return;
+      pendingRef.current = true;
+      setState(submitted);
+      setPending(true);
+      try {
+        if (!input.client) throw new Error(t("workspace.terminal.hostDisconnected"));
+        const mutation = buildEntryMutation(submitted);
+        const affectedTabs = matchingOpenFileTabs(input, mutation.path);
+        if (mutation.operation !== "create") {
+          for (const tab of affectedTabs) {
+            if (
+              getPanelInstanceAttributes({
+                serverId: input.serverId,
+                workspaceId: tab.workspaceId,
+                tabId: tab.id,
+              }).modified
+            ) {
+              throw new Error(t("workspace.fileActions.saveBeforeMutation"));
+            }
           }
         }
-      }
-      const path = await input.client.mutateWorkspaceEntry({ cwd: input.workspaceRoot, mutation });
-      const layout = useWorkspaceLayoutStore.getState();
-      for (const tab of affectedTabs) {
-        if (mutation.operation === "delete") layout.closeTab(tab.workspaceKey, tab.id);
-        if (mutation.operation === "rename") {
-          const absolutePath = buildAbsoluteExplorerPath({
-            workspaceRoot: input.workspaceRoot,
-            entryPath: path,
-          });
-          layout.retargetTab(tab.workspaceKey, tab.id, {
-            ...tab.target,
-            path: absolutePath + tab.suffix,
-          });
+        const path = await input.client.mutateWorkspaceEntry({
+          cwd: input.workspaceRoot,
+          mutation,
+        });
+        input.selectEntry?.(mutation.operation === "delete" ? null : path);
+        const layout = useWorkspaceLayoutStore.getState();
+        for (const tab of affectedTabs) {
+          if (mutation.operation === "delete") layout.closeTab(tab.workspaceKey, tab.id);
+          if (mutation.operation === "rename") {
+            const absolutePath = buildAbsoluteExplorerPath({
+              workspaceRoot: input.workspaceRoot,
+              entryPath: path,
+            });
+            layout.retargetTab(tab.workspaceKey, tab.id, {
+              ...tab.target,
+              path: absolutePath + tab.suffix,
+            });
+          }
         }
-      }
-      if (!active.current) return;
-      setState(null);
-      if (state.action.operation === "create" && state.action.kind === "file")
-        input.openFile?.(path);
-      try {
-        await input.refresh();
+        if (!active.current) return;
+        setState(null);
+        if (submitted.action.operation === "create" && submitted.action.kind === "file")
+          input.openFile?.(path);
+        try {
+          await input.refresh();
+        } catch (error) {
+          console.error("文件操作成功，但刷新列表失败", error);
+          setRefreshError(t("workspace.fileActions.refreshFailed"));
+        }
       } catch (error) {
-        console.error("文件操作成功，但刷新列表失败", error);
-        setRefreshError(t("workspace.fileActions.refreshFailed"));
+        console.error("工作区文件操作失败", error);
+        if (active.current)
+          setState({ ...submitted, error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        pendingRef.current = false;
+        if (active.current) setPending(false);
       }
-    } catch (error) {
-      console.error("工作区文件操作失败", error);
-      if (active.current)
-        setState({ ...state, error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      pendingRef.current = false;
-      if (active.current) setPending(false);
+    },
+    [input, t],
+  );
+  const submit = useCallback(async () => {
+    if (!state) return;
+    if (state.action.operation === "rename" && state.name === state.action.entry.name) {
+      close();
+      return;
     }
-  }, [input, state, t]);
+    await execute(state);
+  }, [state, execute, close]);
+  const beginDelete = useCallback(
+    async (entry: ExplorerEntry) => {
+      if (pendingRef.current) return;
+      const deletion: EntryActionState = {
+        action: { operation: "delete", entry },
+        name: entry.name,
+        error: null,
+      };
+      pendingRef.current = true;
+      setPending(true);
+      try {
+        const confirmed = await confirmDialog({
+          title: t("workspace.fileActions.delete"),
+          message: `${entry.path}\n\n${t("workspace.fileActions.deleteDescription")}`,
+          confirmLabel: t("workspace.fileActions.delete"),
+          cancelLabel: t("common.actions.cancel"),
+          destructive: true,
+        });
+        pendingRef.current = false;
+        if (confirmed && active.current) await execute(deletion);
+      } catch (error) {
+        console.error("确认删除工作区文件失败", error);
+        if (active.current)
+          setState({ ...deletion, error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        pendingRef.current = false;
+        if (active.current) setPending(false);
+      }
+    },
+    [execute, t],
+  );
   return {
     state,
     pending,
@@ -132,28 +183,6 @@ export function useExplorerEntryActions(input: {
     changeName,
     submit,
   };
-}
-
-function buildEntryMutation(state: EntryActionState): WorkspaceEntryMutation {
-  const { action } = state;
-  if (action.operation === "delete")
-    return {
-      operation: "delete",
-      path: action.entry.path,
-      expectedModifiedAt: action.entry.modifiedAt,
-    };
-  const name = state.name.trim();
-  if (!name || name === "." || name === ".." || /[\\/]/.test(name) || name.includes("\0"))
-    throw new Error("请输入不含路径分隔符的名称");
-  if (action.operation === "rename")
-    return {
-      operation: "rename",
-      path: action.entry.path,
-      name,
-      expectedModifiedAt: action.entry.modifiedAt,
-    };
-  const path = action.parent === "." ? name : `${action.parent}/${name}`;
-  return { operation: "create", path, kind: action.kind };
 }
 
 function matchingOpenFileTabs(
@@ -188,91 +217,140 @@ function matchingOpenFileTabs(
   });
 }
 
-export function ExplorerEntryActionForm({
+export function ExplorerEntryActionFeedback({
   controller,
 }: {
   controller: ReturnType<typeof useExplorerEntryActions>;
 }) {
   const { t } = useTranslation();
-  const { state, pending } = controller;
-  const handleSubmit = useCallback(() => void controller.submit(), [controller]);
-  if (!state)
-    return controller.refreshError ? (
-      <Alert variant="error" description={controller.refreshError}>
-        <Button size="xs" variant="ghost" onPress={controller.close}>
-          {t("common.actions.close")}
-        </Button>
-      </Alert>
-    ) : null;
-  const action = state.action;
-  let title = t("workspace.fileActions.rename");
-  if (action.operation === "create")
-    title = t(
-      action.kind === "file"
-        ? "workspace.fileActions.newFile"
-        : "workspace.fileActions.newDirectory",
+  const handleRetry = useCallback(() => void controller.submit(), [controller]);
+  if (controller.pending && controller.state?.action.operation === "delete") {
+    return (
+      <View style={styles.editorRow}>
+        <ThemedLoadingSpinner size={12} uniProps={spinnerColor} />
+        <Text style={styles.progress}>正在删除 {controller.state.name}</Text>
+      </View>
     );
-  if (action.operation === "delete") title = t("workspace.fileActions.delete");
-  const target = action.operation === "create" ? action.parent : action.entry.path;
+  }
+  const error =
+    controller.state?.action.operation === "delete"
+      ? controller.state.error
+      : controller.refreshError;
+  if (!error) return null;
   return (
-    <View style={styles.form} testID="file-entry-action-form">
-      <Text style={styles.label}>{title}</Text>
-      <Text style={styles.path} numberOfLines={2}>
-        {target}
-      </Text>
-      {action.operation === "delete" ? (
-        <Text style={styles.label}>{t("workspace.fileActions.deleteDescription")}</Text>
-      ) : (
+    <Alert variant="error" description={error} testID="file-entry-action-error">
+      <Button size="xs" variant="ghost" disabled={controller.pending} onPress={controller.close}>
+        {t("common.actions.close")}
+      </Button>
+      {controller.state?.action.operation === "delete" ? (
+        <Button size="xs" variant="outline" loading={controller.pending} onPress={handleRetry}>
+          {t("common.actions.retry")}
+        </Button>
+      ) : null}
+    </Alert>
+  );
+}
+
+export function ExplorerEntryInlineEditor({
+  controller,
+  depth,
+}: {
+  controller: ReturnType<typeof useExplorerEntryActions>;
+  depth: number;
+}) {
+  const { t } = useTranslation();
+  const { state, pending } = controller;
+  const [selection, setSelection] = useState(() => renameNameSelection(state?.name ?? ""));
+  const inputRef = useRef<TextInput>(null);
+  const canceled = useRef(false);
+  const inputError = state?.error;
+  useEffect(() => {
+    if (inputError && !pending) inputRef.current?.focus();
+  }, [inputError, pending]);
+  const handleSubmit = useCallback(() => void controller.submit(), [controller]);
+  const handleBlur = useCallback(() => {
+    if (canceled.current || pending || state?.error) return;
+    if (!state?.name.trim()) controller.close();
+    else void controller.submit();
+  }, [controller, pending, state]);
+  const handleSelectionChange = useCallback<NonNullable<TextInputProps["onSelectionChange"]>>(
+    (event) => setSelection(event.nativeEvent.selection),
+    [],
+  );
+  const handleKeyPress = useCallback<NonNullable<TextInputProps["onKeyPress"]>>(
+    (event) => {
+      if (event.nativeEvent.key === "Escape") {
+        event.stopPropagation();
+        canceled.current = true;
+        controller.close();
+      }
+    },
+    [controller],
+  );
+  if (!state || state.action.operation === "delete") return null;
+  const isDirectory =
+    state.action.operation === "create"
+      ? state.action.kind === "directory"
+      : state.action.entry.kind === "directory";
+  return (
+    <View
+      style={[styles.editor, { paddingLeft: treeRowPaddingLeft(depth) }]}
+      testID="file-entry-inline-editor"
+    >
+      <View style={styles.editorRow}>
+        {isDirectory ? (
+          <ThemedFolder size={16} uniProps={spinnerColor} />
+        ) : (
+          <MaterialFileIcon fileName={state.name} size={16} />
+        )}
         <TextInput
+          ref={inputRef}
           autoFocus
+          blurOnSubmit={false}
           value={state.name}
           onChangeText={controller.changeName}
           editable={!pending}
-          style={styles.input}
+          style={[styles.input, state.error && styles.inputError]}
           accessibilityLabel={t("workspace.fileActions.name")}
           testID="file-entry-name"
           onSubmitEditing={handleSubmit}
+          selection={selection}
+          onSelectionChange={handleSelectionChange}
+          onBlur={handleBlur}
+          onKeyPress={handleKeyPress}
         />
-      )}
-      {state.error ? (
-        <Alert variant="error" description={state.error} testID="file-entry-action-error" />
-      ) : null}
-      <View style={styles.buttons}>
-        <Button size="xs" variant="ghost" disabled={pending} onPress={controller.close}>
-          {t("common.actions.cancel")}
-        </Button>
-        <Button
-          size="xs"
-          variant={action.operation === "delete" ? "destructive" : "default"}
-          loading={pending}
-          disabled={pending}
-          onPress={handleSubmit}
-          testID="file-entry-submit"
-        >
-          {title}
-        </Button>
+        {pending ? <ThemedLoadingSpinner size={12} uniProps={spinnerColor} /> : null}
       </View>
+      {state.error ? (
+        <Text style={styles.error} testID="file-entry-action-error">
+          {state.error}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
-  form: {
-    padding: theme.spacing[3],
-    gap: theme.spacing[2],
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+  editor: { paddingRight: theme.spacing[2] },
+  editorRow: { minHeight: 32, flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
+  error: {
+    color: theme.colors.destructive,
+    fontSize: theme.fontSize.xs,
+    paddingTop: theme.spacing[1],
   },
-  label: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
-  path: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
+  progress: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
   input: {
+    ...(isWeb ? { outlineWidth: 0 } : {}),
+    flex: 1,
+    height: 28,
     color: theme.colors.foreground,
     backgroundColor: theme.colors.surface1,
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.accent,
     borderWidth: 1,
     borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing[2],
+    paddingHorizontal: theme.spacing[1],
+    paddingVertical: 0,
     fontSize: theme.fontSize.sm,
   },
-  buttons: { flexDirection: "row", justifyContent: "flex-end", gap: theme.spacing[2] },
+  inputError: { borderColor: theme.colors.destructive },
 }));

@@ -8,7 +8,9 @@ export const CodexThreadReadResponseSchema = z
   .object({
     thread: z
       .object({
-        turns: z.array(z.object({ items: z.array(z.unknown()) }).passthrough()),
+        turns: z.array(
+          z.object({ items: z.array(z.unknown()), status: z.string().optional() }).passthrough(),
+        ),
       })
       .passthrough(),
   })

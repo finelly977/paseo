@@ -22,9 +22,18 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
+import { WORKSPACE_SECONDARY_HEADER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
+import { isWeb } from "@/constants/platform";
 import * as Clipboard from "expo-clipboard";
-import { ChevronDown, Eye, EyeOff, RotateCw, FilePlus, FolderPlus } from "lucide-react-native";
+import {
+  ChevronDown,
+  Eye,
+  EyeOff,
+  RotateCw,
+  FilePlus,
+  FolderPlus,
+  Search,
+} from "lucide-react-native";
 import { MaterialFileIcon } from "@/components/material-file-icon";
 import {
   TreeChevron,
@@ -55,7 +64,6 @@ import {
   restoreExpandedDirectories,
   setExpandedDirectoryPath,
   showHiddenFilesAndRestoreExpandedDirectories,
-  type ExplorerTreeRow,
 } from "@/file-explorer/tree";
 import { useWorkspaceFileDragSource } from "@/attachments/use-workspace-file-drag-source";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
@@ -63,7 +71,16 @@ import { useLocalHostStartup } from "@/hooks/use-local-host-startup";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { useOpenDirectoryInEditor } from "@/workspace/open-in-editor/directory";
 import { Button } from "@/components/ui/button";
-import { ExplorerEntryActionForm, useExplorerEntryActions } from "@/file-explorer/entry-actions";
+import {
+  ExplorerEntryActionFeedback,
+  ExplorerEntryInlineEditor,
+  useExplorerEntryActions,
+} from "@/file-explorer/entry-actions";
+import {
+  explorerRowsWithDraft,
+  explorerCreateParent,
+  type ExplorerDisplayRow,
+} from "@/file-explorer/entry-edit";
 import { ExplorerFileSearch } from "@/file-explorer/search";
 import { isHtmlFile, useOpenWorkspaceFileInBrowser } from "@/file-explorer/open-in-browser";
 import { Alert } from "@/components/ui/alert";
@@ -116,8 +133,8 @@ function iconButtonStyle({ hovered, pressed }: PressableStateCallbackType & { ho
   return [styles.iconButton, (Boolean(hovered) || pressed) && styles.iconButtonHovered];
 }
 
-function treeRowKeyExtractor(row: ExplorerTreeRow) {
-  return row.entry.path;
+function treeRowKeyExtractor(row: ExplorerDisplayRow) {
+  return "draftParent" in row ? `draft:${row.draftParent}` : `entry:${row.entry.path}`;
 }
 
 function TreeRowItem({
@@ -140,7 +157,12 @@ function TreeRowItem({
   testID,
 }: TreeRowItemProps) {
   const { t } = useTranslation();
+  const [isHovered, setHovered] = useState(false);
+  const isCompact = useIsCompactFormFactor();
   const isDirectory = entry.kind === "directory";
+  const enterRow = useStableEvent(() => setHovered(true));
+  const leaveRow = useStableEvent(() => setHovered(false));
+  const rowData = useMemo(() => ({ explorerEntryPath: entry.path }), [entry.path]);
   const dragSourceRef = useWorkspaceFileDragSource({
     enabled: !isDirectory,
     serverId,
@@ -153,12 +175,12 @@ function TreeRowItem({
   }, [onEntryPress, entry]);
 
   const pressableStyle = useCallback(
-    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+    ({ pressed }: PressableStateCallbackType) => [
       styles.entryRow,
       { paddingLeft: treeRowPaddingLeft(depth) },
-      (Boolean(hovered) || pressed || isSelected) && styles.entryRowActive,
+      (isHovered || pressed || isSelected) && styles.entryRowActive,
     ],
-    [depth, isSelected],
+    [depth, isSelected, isHovered],
   );
 
   const handleCopy = useCallback(() => {
@@ -212,42 +234,108 @@ function TreeRowItem({
     [entry.modifiedAt, entry.size, t],
   );
 
-  return (
-    <Pressable onPress={handlePress} style={pressableStyle} testID={testID}>
-      <TreeIndentGuides depth={depth} />
-      <View ref={dragSourceRef} style={styles.entryInfo}>
-        <View style={styles.entryIcon}>
-          {(() => {
-            if (!isDirectory) {
-              return <MaterialFileIcon fileName={entry.name} size={16} />;
-            }
-            if (loading) return <ActivityIndicator size="small" />;
-            return <TreeChevron expanded={isExpanded} />;
-          })()}
+  const actionProps = useMemo(
+    () => ({
+      onOpenInBrowser: canPreviewHtml ? openInternal : undefined,
+      onOpenInExternalBrowser: canPreviewHtml ? openExternal : undefined,
+      onNewFile: isDirectory && entryActions ? newFile : undefined,
+      onNewDirectory: isDirectory && entryActions ? newDirectory : undefined,
+      onRename: entryActions ? renameEntry : undefined,
+      onDelete: entryActions ? deleteEntry : undefined,
+      fileKind: entry.kind,
+      onOpenInFileManager: onOpenInFileManager ? handleOpenInFileManager : undefined,
+      onOpenInEditor: isDirectory && onOpenInEditor ? handleOpenInEditor : undefined,
+      editorTargetName,
+      onCopyPath: handleCopy,
+      onDownload: handleDownload,
+      onAddToChat: onAddToChat ? handleAddToChat : undefined,
+      accessibilityLabel: t("workspace.fileActions.moreActions"),
+      testIDPrefix: testID,
+    }),
+    [
+      canPreviewHtml,
+      openInternal,
+      openExternal,
+      isDirectory,
+      entryActions,
+      newFile,
+      newDirectory,
+      renameEntry,
+      deleteEntry,
+      entry.kind,
+      onOpenInFileManager,
+      handleOpenInFileManager,
+      onOpenInEditor,
+      handleOpenInEditor,
+      editorTargetName,
+      handleCopy,
+      handleDownload,
+      onAddToChat,
+      handleAddToChat,
+      t,
+      testID,
+    ],
+  );
+  const row = useMemo(
+    () => (
+      <Pressable
+        onPress={handlePress}
+        style={pressableStyle}
+        testID={testID}
+        focusable
+        role="treeitem"
+        accessibilityLabel={entry.name}
+        dataSet={rowData}
+      >
+        <TreeIndentGuides depth={depth} />
+        <View ref={dragSourceRef} style={styles.entryInfo}>
+          <View style={styles.entryIcon}>
+            {(() => {
+              if (!isDirectory) {
+                return <MaterialFileIcon fileName={entry.name} size={16} />;
+              }
+              if (loading) return <ActivityIndicator size="small" />;
+              return <TreeChevron expanded={isExpanded} />;
+            })()}
+          </View>
+          <Text style={styles.entryName} numberOfLines={1}>
+            {entry.name}
+          </Text>
         </View>
-        <Text style={styles.entryName} numberOfLines={1}>
-          {entry.name}
-        </Text>
-      </View>
-      <FileActionsMenu
-        onOpenInBrowser={canPreviewHtml ? openInternal : undefined}
-        onOpenInExternalBrowser={canPreviewHtml ? openExternal : undefined}
-        onNewFile={isDirectory && entryActions ? newFile : undefined}
-        onNewDirectory={isDirectory && entryActions ? newDirectory : undefined}
-        onRename={entryActions ? renameEntry : undefined}
-        onDelete={entryActions ? deleteEntry : undefined}
-        fileKind={entry.kind}
-        onOpenInFileManager={onOpenInFileManager ? handleOpenInFileManager : undefined}
-        onOpenInEditor={isDirectory && onOpenInEditor ? handleOpenInEditor : undefined}
-        editorTargetName={editorTargetName}
-        onCopyPath={handleCopy}
-        onDownload={handleDownload}
-        onAddToChat={onAddToChat ? handleAddToChat : undefined}
-        header={metaHeader}
-        accessibilityLabel={t("workspace.fileActions.moreActions")}
-        testIDPrefix={testID}
-      />
-    </Pressable>
+        <View
+          style={[styles.entryMenu, !isHovered && isWeb && !isCompact && styles.entryMenuHidden]}
+        >
+          <FileActionsMenu {...actionProps} header={metaHeader} />
+        </View>
+      </Pressable>
+    ),
+    [
+      handlePress,
+      pressableStyle,
+      testID,
+      rowData,
+      entry.name,
+      depth,
+      dragSourceRef,
+      isDirectory,
+      isExpanded,
+      loading,
+      isHovered,
+      isCompact,
+      actionProps,
+      metaHeader,
+    ],
+  );
+  if (
+    entryActions?.state?.action.operation === "rename" &&
+    entryActions.state.action.entry.path === entry.path
+  ) {
+    return <ExplorerEntryInlineEditor controller={entryActions} depth={depth} />;
+  }
+  return (
+    <View style={styles.entryWrapper} onPointerEnter={enterRow} onPointerLeave={leaveRow}>
+      <FileActionsMenu {...actionProps} contextTarget={row} />
+    </View>
   );
 }
 
@@ -333,7 +421,8 @@ export function FileExplorerPane({
     [isExplorerLoading, pendingRequest],
   );
 
-  const treeListRef = useRef<FlatList<ExplorerTreeRow>>(null);
+  const treeListRef = useRef<FlatList<ExplorerDisplayRow>>(null);
+  const containerRef = useRef<View>(null);
 
   const hasInitializedRef = useRef(false);
 
@@ -393,12 +482,13 @@ export function FileExplorerPane({
   const handleEntryPress = useCallback(
     (entry: ExplorerEntry) => {
       if (entry.kind === "directory") {
+        selectExplorerEntry(entry.path);
         handleToggleDirectory(entry);
         return;
       }
       handleOpenFile(entry);
     },
-    [handleOpenFile, handleToggleDirectory],
+    [handleOpenFile, handleToggleDirectory, selectExplorerEntry],
   );
 
   const handleCopyPath = useCallback(
@@ -613,6 +703,20 @@ export function FileExplorerPane({
     workspaceRoot: normalizedWorkspaceRoot,
     refresh: () => refetchExplorer({ throwOnError: true }),
     openFile: onOpenFile,
+    selectEntry: selectExplorerEntry,
+    expandDirectory: (path) => {
+      if (path === "." || !workspaceStateKey) return;
+      setExpandedPathsForWorkspace(workspaceStateKey, (current) =>
+        setExpandedDirectoryPath({
+          currentExpandedPaths: current,
+          directoryPath: path,
+          expanded: true,
+        }),
+      );
+      void requestDirectoryListing(path, { recordHistory: false, setCurrentPath: false }).catch(
+        (listingError: unknown) => console.error("打开新建文件所在目录失败", listingError),
+      );
+    },
   });
   const browser = useOpenWorkspaceFileInBrowser({
     serverId,
@@ -620,8 +724,12 @@ export function FileExplorerPane({
     workspaceRoot: normalizedWorkspaceRoot,
   });
   const [searchActive, setSearchActive] = useState(false);
-  const newRootFile = useStableEvent(() => entryActions.beginCreate(".", "file"));
-  const newRootDirectory = useStableEvent(() => entryActions.beginCreate(".", "directory"));
+  const [searchOpen, setSearchOpen] = useState(false);
+  const closeSearch = useStableEvent(() => {
+    setSearchOpen(false);
+    setSearchActive(false);
+  });
+  const openSearch = useStableEvent(() => setSearchOpen(true));
 
   const sortLabels = useMemo(
     () => ({
@@ -633,10 +741,59 @@ export function FileExplorerPane({
   );
   const currentSortLabel = resolveCurrentSortLabel(sortOption, sortLabels);
 
-  const treeRows = useMemo(
+  const baseTreeRows = useMemo(
     () => flattenExplorerTree({ directories, expandedPaths, sortOption, showHiddenFiles }),
     [directories, expandedPaths, showHiddenFiles, sortOption],
   );
+  const treeRows = useMemo(
+    () => explorerRowsWithDraft(baseTreeRows, entryActions.state),
+    [baseTreeRows, entryActions.state],
+  );
+  const selectedEntry = baseTreeRows.find((row) => row.entry.path === selectedEntryPath)?.entry;
+  const newRootFile = useStableEvent(() =>
+    entryActions.beginCreate(explorerCreateParent(selectedEntry), "file"),
+  );
+  const newRootDirectory = useStableEvent(() =>
+    entryActions.beginCreate(explorerCreateParent(selectedEntry), "directory"),
+  );
+
+  useEffect(() => {
+    if (!isWeb) return;
+    const root = containerRef.current;
+    if (!(root instanceof HTMLElement)) return;
+    const handleKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        !(target instanceof HTMLElement) ||
+        !root.contains(target) ||
+        target.closest("input,textarea,[contenteditable=true]")
+      )
+        return;
+      if (event.key.toLowerCase() === "f" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSearchOpen(true);
+        return;
+      }
+      const path = target
+        .closest("[data-explorer-entry-path]")
+        ?.getAttribute("data-explorer-entry-path");
+      const entry = baseTreeRows.find((row) => row.entry.path === path)?.entry;
+      if (!entry || !supportsEntryMutation) return;
+      if (event.key === "F2") {
+        event.preventDefault();
+        event.stopPropagation();
+        entryActions.beginRename(entry);
+      }
+      if (event.key === "Delete") {
+        event.preventDefault();
+        event.stopPropagation();
+        void entryActions.beginDelete(entry);
+      }
+    };
+    root.addEventListener("keydown", handleKey);
+    return () => root.removeEventListener("keydown", handleKey);
+  }, [baseTreeRows, entryActions, supportsEntryMutation]);
 
   const showInitialLoading = resolveShowInitialLoading({
     directories,
@@ -647,7 +804,7 @@ export function FileExplorerPane({
   const errorRecoveryPath = useMemo(() => getErrorRecoveryPath(explorerState), [explorerState]);
 
   const renderTreeRow = useCallback(
-    (info: ListRenderItemInfo<ExplorerTreeRow>) => (
+    (info: ListRenderItemInfo<ExplorerDisplayRow>) => (
       <TreeRowDispatcher
         browser={browser}
         entryActions={supportsEntryMutation ? entryActions : null}
@@ -734,7 +891,7 @@ export function FileExplorerPane({
   }
 
   return (
-    <View style={styles.container}>
+    <View ref={containerRef} style={styles.container}>
       {browser.pending ? (
         <Text style={styles.loadingText}>{t("workspace.fileActions.preparingPreview")}</Text>
       ) : null}
@@ -745,19 +902,30 @@ export function FileExplorerPane({
           </Button>
         </Alert>
       ) : null}
-      <ExplorerEntryActionForm controller={entryActions} />
-      <ExplorerFileSearch
-        key={`${serverId}:${normalizedWorkspaceRoot}`}
-        client={client}
-        serverId={serverId}
-        root={normalizedWorkspaceRoot}
-        onOpenFile={onOpenFile}
-        onActiveChange={setSearchActive}
-      />
+      <ExplorerEntryActionFeedback controller={entryActions} />
+      {searchOpen ? (
+        <ExplorerFileSearch
+          key={`${serverId}:${normalizedWorkspaceRoot}`}
+          client={client}
+          serverId={serverId}
+          root={normalizedWorkspaceRoot}
+          onOpenFile={onOpenFile}
+          onActiveChange={setSearchActive}
+          onClose={closeSearch}
+        />
+      ) : null}
       {!searchActive ? (
         <FileExplorerPaneContent
           actionsToolbar={
             <>
+              <Button
+                size="xs"
+                variant="ghost"
+                leftIcon={Search}
+                accessibilityLabel={t("workspace.fileActions.searchFiles")}
+                onPress={openSearch}
+                testID="files-search"
+              />
               <Button
                 size="xs"
                 variant="ghost"
@@ -807,11 +975,11 @@ interface FileExplorerPaneContentProps {
   error: string | null;
   showInitialLoading: boolean;
   showBackFromError: boolean;
-  treeRows: ExplorerTreeRow[];
+  treeRows: ExplorerDisplayRow[];
   currentSortLabel: string;
   isRefreshFetching: boolean;
-  treeListRef: RefObject<FlatList<ExplorerTreeRow> | null>;
-  renderTreeRow: (info: ListRenderItemInfo<ExplorerTreeRow>) => ReactElement;
+  treeListRef: RefObject<FlatList<ExplorerDisplayRow> | null>;
+  renderTreeRow: (info: ListRenderItemInfo<ExplorerDisplayRow>) => ReactElement;
   handleSortCycle: () => void;
   handleToggleHiddenFiles: () => void;
   handleRefresh: () => void;
@@ -949,6 +1117,7 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
       ) : (
         <FlatList
           ref={treeListRef}
+          role="tree"
           style={styles.treeList}
           data={treeRows}
           renderItem={renderTreeRow}
@@ -1072,7 +1241,7 @@ function TreeRowDispatcher({
   entryActions: ReturnType<typeof useExplorerEntryActions> | null;
   serverId: string;
   workspaceId?: string | null;
-  info: ListRenderItemInfo<ExplorerTreeRow>;
+  info: ListRenderItemInfo<ExplorerDisplayRow>;
   expandedPaths: Set<string>;
   selectedEntryPath: string | null;
   isDirectoryLoading: (path: string) => boolean;
@@ -1084,6 +1253,16 @@ function TreeRowDispatcher({
   onDownloadEntry: (entry: ExplorerEntry) => void;
   onAddToChat?: (path: string) => void;
 }) {
+  if ("draftParent" in info.item) {
+    if (!entryActions) throw new Error("新建文件行缺少操作控制器");
+    return (
+      <ExplorerEntryInlineEditor
+        key={`create:${info.item.draftParent}`}
+        controller={entryActions}
+        depth={info.item.depth}
+      />
+    );
+  }
   const entry = info.item.entry;
   const depth = info.item.depth;
   const isDirectory = entry.kind === "directory";
@@ -1196,6 +1375,9 @@ function isMissingExplorerPath(path: string, missingPaths: readonly string[]): b
 }
 
 const styles = StyleSheet.create((theme) => ({
+  entryWrapper: { position: "relative" },
+  entryMenu: { flexShrink: 0 },
+  entryMenuHidden: { opacity: 0, pointerEvents: "none" },
   container: {
     flex: 1,
     backgroundColor: theme.colors.surfaceSidebar,

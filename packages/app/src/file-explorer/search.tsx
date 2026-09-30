@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Text, TextInput, View, FlatList } from "react-native";
+import { Text, TextInput, View, FlatList, type TextInputProps } from "react-native";
 import { useFetchQuery } from "@/data/query";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MaterialFileIcon } from "@/components/material-file-icon";
 import { Alert } from "@/components/ui/alert";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { X } from "lucide-react-native";
 import type { DirectorySuggestionsResponse } from "@getpaseo/protocol/messages";
 
 type SearchEntry = DirectorySuggestionsResponse["payload"]["entries"][number];
@@ -38,12 +39,14 @@ export function ExplorerFileSearch({
   root,
   onOpenFile,
   onActiveChange,
+  onClose,
 }: {
   client: DaemonClient | null;
   serverId: string;
   root: string;
   onOpenFile?: (path: string) => void;
   onActiveChange: (active: boolean) => void;
+  onClose: () => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
@@ -80,16 +83,33 @@ export function ExplorerFileSearch({
     [onOpenFile],
   );
   const active = value.trim().length > 0;
+  const handleKeyPress = useCallback<NonNullable<TextInputProps["onKeyPress"]>>(
+    (event) => {
+      if (event.nativeEvent.key === "Escape") onClose();
+    },
+    [onClose],
+  );
   return (
     <View style={[styles.container, active && styles.active]}>
-      <TextInput
-        value={value}
-        onChangeText={setValue}
-        style={styles.input}
-        placeholder={t("workspace.fileActions.searchFiles")}
-        accessibilityLabel={t("workspace.fileActions.searchFiles")}
-        testID="file-explorer-search"
-      />
+      <View style={styles.searchRow}>
+        <TextInput
+          autoFocus
+          value={value}
+          onChangeText={setValue}
+          style={styles.input}
+          placeholder={t("workspace.fileActions.searchFiles")}
+          accessibilityLabel={t("workspace.fileActions.searchFiles")}
+          testID="file-explorer-search"
+          onKeyPress={handleKeyPress}
+        />
+        <Button
+          size="xs"
+          variant="ghost"
+          leftIcon={X}
+          accessibilityLabel={t("common.actions.close")}
+          onPress={onClose}
+        />
+      </View>
       {active ? (
         <>
           <Button size="xs" variant="ghost" onPress={clear}>
@@ -118,9 +138,12 @@ export function ExplorerFileSearch({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  searchRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
   container: { padding: theme.spacing[2], gap: theme.spacing[1] },
   active: { flex: 1, minHeight: 0 },
   input: {
+    flex: 1,
+    minWidth: 0,
     color: theme.colors.foreground,
     backgroundColor: theme.colors.surface1,
     borderWidth: 1,
