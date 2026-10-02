@@ -2113,6 +2113,90 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
+  test.each(["client-target", "codex-target"])(
+    "恢复历史后按消息 %s 直接定位原生回合，回退后更新定位缓存",
+    async (messageId) => {
+      let retained = false;
+      const appServer = createFakeCodexAppServer({
+        "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+        "thread/turns/list": (params) => {
+          const { cursor, itemsView } = z
+            .object({ cursor: z.string().nullable(), itemsView: z.literal("notLoaded") })
+            .parse(params);
+          expect(itemsView).toBe("notLoaded");
+          expect(cursor).toBe(retained ? "retained-turns" : null);
+          const turnIds = retained ? ["turn-first"] : ["turn-first", "turn-target"];
+          return {
+            data: turnIds.map((id) => ({ id, items: [], status: "completed" })),
+            nextCursor: null,
+          };
+        },
+        "thread/items/list": (params) => {
+          const { cursor, sortDirection } = z
+            .object({ cursor: z.string().nullable(), sortDirection: z.enum(["asc", "desc"]) })
+            .parse(params);
+          expect(cursor).toBe(retained ? "retained-items" : null);
+          expect(sortDirection).toBe(retained ? "desc" : "asc");
+          const data = [
+            {
+              turnId: "turn-first",
+              item: {
+                id: "codex-first",
+                type: "userMessage",
+                clientId: "client-first",
+                content: [{ type: "text", text: "保留" }],
+              },
+            },
+          ];
+          if (!retained)
+            data.push({
+              turnId: "turn-target",
+              item: {
+                id: "codex-target",
+                type: "userMessage",
+                clientId: "client-target",
+                content: [{ type: "text", text: "回退目标" }],
+              },
+            });
+          return { data, nextCursor: null };
+        },
+        "thread/revert": (params) => {
+          expect(params).toEqual({
+            threadId: "thread-1",
+            beforeTurnId: retained ? "turn-first" : "turn-target",
+          });
+          const clearHistory = retained;
+          retained = true;
+          return {
+            thread: { id: "thread-1", historyMode: "paginated", turns: [] },
+            turnsBackwardsCursor: clearHistory ? null : "retained-turns",
+            itemsBackwardsCursor: clearHistory ? null : "retained-items",
+          };
+        },
+      });
+      const session = new CodexAppServerAgentSession(
+        createConfig(),
+        { sessionId: "thread-1" },
+        createTestLogger(),
+        () => appServer.spawnChild(),
+      );
+      try {
+        await session.connect();
+        await session.revertConversation({ messageId });
+        await session.revertConversation({ messageId: "client-first" });
+        expect(
+          appServer.requests().filter((request) => request.method === "thread/items/list"),
+        ).toHaveLength(2);
+        const history: AgentStreamEvent[] = [];
+        for await (const event of session.streamHistory()) history.push(event);
+        expect(history).toEqual([]);
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
   test("分页会话立即中断后可按客户端消息回退，保留旧历史并继续同一会话", async () => {
     const retainedTurn = {
       id: "turn-first",
@@ -2134,21 +2218,33 @@ describe("Codex app-server provider", () => {
         return { thread: { id: "thread-1", historyMode: "paginated" } };
       },
       "thread/turns/list": async (params) => {
-        if (typeof params !== "object" || params === null || !("cursor" in params)) {
-          throw new Error("Missing history cursor");
-        }
-        if (params.cursor === "retained-tail") {
-          return { data: [retainedTurn], nextCursor: null };
-        }
-        expect(params.cursor).toBeNull();
+        expect(params).toMatchObject({
+          cursor: "retained-tail",
+          itemsView: "notLoaded",
+          limit: 100,
+          sortDirection: "desc",
+        });
+        return { data: [{ ...retainedTurn, itemsView: "notLoaded", items: [] }], nextCursor: null };
+      },
+      "thread/items/list": async (params) => {
+        const { cursor } = z.object({ cursor: z.string().nullable() }).parse(params);
+        if (cursor === "retained-items")
+          return {
+            data: retainedTurn.items
+              .toReversed()
+              .map((item) => ({ turnId: retainedTurn.id, item })),
+            nextCursor: null,
+          };
+        expect(cursor).toBeNull();
         return {
           data: [
             {
-              id: "turn-interrupted",
-              itemsView: "full",
-              items: [
-                { type: "userMessage", id: "codex-interrupted", clientId: "client-interrupted" },
-              ],
+              turnId: "turn-interrupted",
+              item: {
+                type: "userMessage",
+                id: "codex-interrupted",
+                clientId: "client-interrupted",
+              },
             },
           ],
           nextCursor: null,
@@ -2159,7 +2255,7 @@ describe("Codex app-server provider", () => {
         return {
           thread: { id: "thread-1", historyMode: "paginated", turns: [] },
           turnsBackwardsCursor: "retained-tail",
-          itemsBackwardsCursor: null,
+          itemsBackwardsCursor: "retained-items",
         };
       },
     });

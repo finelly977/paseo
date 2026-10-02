@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import pino from "pino";
+import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
+import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 
 import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
@@ -99,7 +101,7 @@ describe("daemon E2E - refresh rehydrates timeline from on-disk session", () => 
     }
   }, 60_000);
 
-  test("refresh picks up entries appended externally and advances the epoch", async () => {
+  test("重新加载完整读取外部新增历史，现代客户端只收到替换通知和尾页", async () => {
     const logger = pino({ level: "silent" });
     daemon = await createTestPaseoDaemon({
       agentClients: {
@@ -110,7 +112,14 @@ describe("daemon E2E - refresh rehydrates timeline from on-disk session", () => 
       },
       logger,
     });
-    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    client = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      clientId: "refresh-initiating",
+      capabilities: {
+        [CLIENT_CAPS.selectiveAgentTimeline]: true,
+        [CLIENT_CAPS.timelineReplacementInvalidation]: true,
+      },
+    });
     await client.connect();
     await client.fetchAgents({
       subscribe: { subscriptionId: "refresh-rehydrate-test" },
@@ -130,27 +139,94 @@ describe("daemon E2E - refresh rehydrates timeline from on-disk session", () => 
     const epochBefore = before.epoch;
     const countBefore = before.entries.length;
 
-    const additions: ClaudeJsonlEntry[] = [
-      userEntry(sessionId, cwd, "second hello", "user-uuid-2"),
-      assistantEntry(sessionId, cwd, "second reply"),
-    ];
-    appendFileSync(
-      sessionFile,
-      `${additions.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
-      "utf8",
-    );
-
-    await client.refreshAgent(imported.id);
-
-    const after = await client.fetchAgentTimeline(imported.id, {
-      direction: "tail",
-      limit: 0,
-      projection: "canonical",
+    const passive = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      clientId: "refresh-passive",
+      capabilities: {
+        [CLIENT_CAPS.selectiveAgentTimeline]: true,
+        [CLIENT_CAPS.timelineReplacementInvalidation]: true,
+      },
     });
-    const afterText = timelineText(after.entries);
-    expect(afterText).toContain("second hello");
-    expect(afterText).toContain("second reply");
-    expect(after.entries.length).toBeGreaterThan(countBefore);
-    expect(after.epoch).not.toBe(epochBefore);
+    const unrelated = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      clientId: "refresh-unrelated",
+      capabilities: {
+        [CLIENT_CAPS.selectiveAgentTimeline]: true,
+        [CLIENT_CAPS.timelineReplacementInvalidation]: true,
+      },
+    });
+    const legacy = new DaemonClient({
+      url: `ws://127.0.0.1:${daemon.port}/ws`,
+      clientId: "refresh-legacy",
+      capabilities: { [CLIENT_CAPS.timelineReplacementInvalidation]: false },
+    });
+    const connectedClients = [client, passive, unrelated, legacy];
+    const received = connectedClients.map(() => new Array<SessionOutboundMessage>());
+    const unsubscribe: Array<() => void> = [];
+    for (const [index, connected] of connectedClients.entries()) {
+      unsubscribe.push(connected.subscribeRawMessages((message) => received[index].push(message)));
+    }
+    try {
+      await Promise.all([passive.connect(), unrelated.connect(), legacy.connect()]);
+      await Promise.all([
+        client.setAgentTimelineSubscription([imported.id]),
+        passive.setAgentTimelineSubscription([imported.id]),
+        unrelated.setAgentTimelineSubscription([]),
+      ]);
+      for (const messages of received) messages.length = 0;
+
+      const additions = Array.from({ length: 50 }, (_, index) => [
+        userEntry(sessionId, cwd, `外部用户消息 ${index}`, `external-user-${index}`),
+        assistantEntry(sessionId, cwd, `外部助手回复 ${index}`),
+      ]).flat();
+      appendFileSync(
+        sessionFile,
+        `${additions.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+        "utf8",
+      );
+
+      await client.refreshAgent(imported.id);
+      await Promise.all([client.ping(), passive.ping(), unrelated.ping(), legacy.ping()]);
+      const replacementCounts: number[] = [];
+      const replayCounts: number[] = [];
+      for (const messages of received) {
+        replacementCounts.push(
+          messages.filter((message) => message.type === "agent.timeline.replacement").length,
+        );
+        replayCounts.push(
+          messages.filter(
+            (message) =>
+              message.type === "agent_stream" && message.payload.event.type === "timeline",
+          ).length,
+        );
+      }
+      expect(replacementCounts).toEqual([0, 1, 0, 0]);
+      expect(replayCounts).toEqual([0, 0, 0, 102]);
+
+      if (!before.endCursor) throw new Error("Expected the initial history cursor");
+      const tail = await client.fetchAgentTimeline(imported.id, {
+        direction: "tail",
+        limit: 40,
+        cursor: before.endCursor,
+        projection: "canonical",
+      });
+      expect(tail.entries).toHaveLength(40);
+      expect(tail.epoch).not.toBe(epochBefore);
+      expect(timelineText(tail.entries)).toContain("外部助手回复 49");
+
+      const after = await client.fetchAgentTimeline(imported.id, {
+        direction: "tail",
+        limit: 0,
+        projection: "canonical",
+      });
+      const afterText = timelineText(after.entries);
+      expect(afterText).toContain("外部用户消息 0");
+      expect(afterText).toContain("外部助手回复 49");
+      expect(after.entries.length).toBeGreaterThan(countBefore);
+      expect(after.epoch).not.toBe(epochBefore);
+    } finally {
+      for (const stop of unsubscribe) stop();
+      await Promise.all([passive.close(), unrelated.close(), legacy.close()]);
+    }
   }, 30_000);
 });

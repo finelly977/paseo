@@ -8,6 +8,7 @@ import {
   ensureAgentIsInitialized,
   refreshAgentInitializationTimeout,
   refreshAgent,
+  type RefreshAgentInput,
 } from "./use-agent-initialization";
 
 const serverId = "server-1";
@@ -16,9 +17,17 @@ const agentId = "agent-1";
 class FakeDaemonClient {
   readonly refreshedAgentIds: string[] = [];
 
-  async refreshAgent(requestedAgentId: string): Promise<void> {
+  refreshAgent: NonNullable<RefreshAgentInput["client"]>["refreshAgent"] = async (
+    requestedAgentId,
+  ) => {
     this.refreshedAgentIds.push(requestedAgentId);
-  }
+    return {
+      status: "agent_refreshed",
+      agentId: requestedAgentId,
+      requestId: "refresh-test",
+      timelineSize: 0,
+    };
+  };
 }
 
 class FakeTimelineRuntime {
@@ -34,7 +43,24 @@ class FakeTimelineRuntime {
     request,
   ) => {
     this.requests.push({ serverId: requestedServerId, agentId: requestedAgentId, request });
-    return undefined as never;
+    return {
+      requestId: "timeline-test",
+      agentId: requestedAgentId,
+      agent: null,
+      direction: "tail",
+      projection: "projected",
+      epoch: "test-epoch",
+      reset: false,
+      staleCursor: false,
+      gap: false,
+      window: { minSeq: 0, maxSeq: 0, nextSeq: 1 },
+      startCursor: null,
+      endCursor: null,
+      hasOlder: false,
+      hasNewer: false,
+      entries: [],
+      error: null,
+    };
   };
 }
 
@@ -177,6 +203,89 @@ describe("ensureAgentIsInitialized", () => {
 });
 
 describe("refreshAgent", () => {
+  it("重复重载合并恢复和尾页请求，完成后读取最新本地游标", async () => {
+    const release = Promise.withResolvers<void>();
+    const refreshed: string[] = [];
+    const client: NonNullable<RefreshAgentInput["client"]> = {
+      refreshAgent: async (id) => {
+        refreshed.push(id);
+        await release.promise;
+        return {
+          status: "agent_refreshed",
+          agentId: id,
+          requestId: "shared-refresh",
+          timelineSize: 0,
+        };
+      },
+    };
+    const runtime = new FakeTimelineRuntime();
+    const initializing: boolean[] = [];
+    let cursorSeq = 400;
+    const input = {
+      serverId,
+      agentId,
+      client,
+      runtime,
+      setAgentInitializing: (_id: string, value: boolean) => {
+        initializing.push(value);
+      },
+      readCursor: () => ({ epoch: "old", startSeq: 1, endSeq: cursorSeq }),
+    };
+    const first = refreshAgent(input);
+    const second = refreshAgent(input);
+    cursorSeq = 410;
+    release.resolve();
+    await Promise.all([first, second]);
+    expect(refreshed).toEqual([agentId]);
+    expect(initializing).toEqual([true]);
+    expect(runtime.requests).toEqual([
+      {
+        serverId,
+        agentId,
+        request: {
+          direction: "tail",
+          limit: 40,
+          projection: "projected",
+          cursor: { epoch: "old", seq: 410 },
+        },
+      },
+    ]);
+  });
+  it("重载失败清除等待状态，同一连接下一次点击可以重试", async () => {
+    let attempts = 0;
+    const failure = new Error("提供方恢复失败");
+    const client: NonNullable<RefreshAgentInput["client"]> = {
+      refreshAgent: async (id) => {
+        attempts += 1;
+        if (attempts === 1) throw failure;
+        return {
+          status: "agent_refreshed",
+          agentId: id,
+          requestId: "retry-refresh",
+          timelineSize: 0,
+        };
+      },
+    };
+    const runtime = new FakeTimelineRuntime();
+    const initializing: boolean[] = [];
+    const input: RefreshAgentInput = {
+      serverId,
+      agentId,
+      client,
+      runtime,
+      setAgentInitializing: (_id, value) => {
+        initializing.push(value);
+      },
+      readCursor: () => undefined,
+    };
+    await expect(refreshAgent(input)).rejects.toBe(failure);
+    expect(initializing).toEqual([true, false]);
+    expect(runtime.requests).toEqual([]);
+    await refreshAgent(input);
+    expect(attempts).toBe(2);
+    expect(initializing).toEqual([true, false, true]);
+    expect(runtime.requests).toHaveLength(1);
+  });
   it("fetches a bounded projected tail after refreshing the agent", async () => {
     const client = new FakeDaemonClient();
     const runtime = new FakeTimelineRuntime();
@@ -189,6 +298,7 @@ describe("refreshAgent", () => {
       runtime,
       setAgentInitializing: bindSetAgentInitializing(),
       conversationLimit: 50,
+      readCursor: () => undefined,
     });
 
     expect(client.refreshedAgentIds).toEqual([agentId]);

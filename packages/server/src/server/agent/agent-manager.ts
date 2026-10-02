@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { stat } from "node:fs/promises";
+import { isDeepStrictEqual } from "node:util";
+import { waitForAgentInitialization } from "./agent-loading.js";
 import {
   AGENT_LIFECYCLE_STATUSES,
   type AgentLifecycleStatus,
@@ -84,6 +86,11 @@ import {
 } from "./provider-subagents/store.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
+interface PendingAgentReload {
+  overrides: Partial<AgentSessionConfig> | undefined;
+  rehydrateFromDisk: boolean;
+  promise: Promise<ManagedAgent>;
+}
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
@@ -237,6 +244,7 @@ interface HydrateTimelineOptions {
   force?: boolean;
   broadcast?: boolean | (() => boolean);
   broadcastTimeline?: boolean | (() => boolean);
+  emitReplacement?: boolean;
 }
 
 export type ImportablePersistedAgentQueryOptions = ListImportableSessionsOptions & {
@@ -727,6 +735,7 @@ export class AgentManager {
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
+  private readonly pendingAgentReloads = new Map<string, PendingAgentReload>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -1405,9 +1414,43 @@ export class AgentManager {
     overrides?: Partial<AgentSessionConfig>,
     options?: { rehydrateFromDisk?: boolean },
   ): Promise<ManagedAgent> {
-    return this.trackAgentRegistrationOperation(
-      this.reloadAgentSessionInternal(agentId, overrides, options),
-    );
+    const previous = this.pendingAgentReloads.get(agentId);
+    const rehydrateFromDisk = options?.rehydrateFromDisk === true;
+    if (
+      previous &&
+      previous.rehydrateFromDisk === rehydrateFromDisk &&
+      isDeepStrictEqual(previous.overrides, overrides)
+    ) {
+      return previous.promise;
+    }
+    const start = () =>
+      this.runForegroundMutation(agentId, async () => {
+        await waitForAgentInitialization(this, agentId);
+        return this.reloadAgentSessionInternal(agentId, overrides, options);
+      });
+    // 不同配置变更按顺序执行；前一次失败不能禁止用户修正配置后重试。
+    const operation = previous
+      ? previous.promise.then(start, start)
+      : Promise.resolve().then(start);
+    const promise = this.trackAgentRegistrationOperation(operation);
+    const pending: PendingAgentReload = { overrides, rehydrateFromDisk, promise };
+    this.pendingAgentReloads.set(agentId, pending);
+    const clear = () => {
+      if (this.pendingAgentReloads.get(agentId) === pending)
+        this.pendingAgentReloads.delete(agentId);
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }
+
+  async waitForAgentReload(agentId: string): Promise<void> {
+    let pending = this.pendingAgentReloads.get(agentId);
+    while (pending) {
+      await pending.promise;
+      const next = this.pendingAgentReloads.get(agentId);
+      if (next === pending) return;
+      pending = next;
+    }
   }
 
   private async reloadAgentSessionInternal(
@@ -1483,7 +1526,7 @@ export class AgentManager {
 
       // Preserve existing labels and timeline during reload.
       handedToRegistration = true;
-      return this.registerSession(session, storedConfig, agentId, {
+      const snapshot = await this.registerSession(session, storedConfig, agentId, {
         labels: existing.labels,
         workspaceId: existing.workspaceId,
         owner: existing.owner,
@@ -1495,6 +1538,15 @@ export class AgentManager {
         lastError: preservedLastError,
         attention: preservedAttention,
       });
+      if (rehydrateFromDisk) {
+        await this.hydrateTimelineFromProvider(agentId, {
+          broadcast: true,
+          broadcastTimeline: false,
+          emitReplacement: true,
+        });
+        return { ...this.requireSessionAgent(agentId) };
+      }
+      return snapshot;
     } finally {
       if (!handedToRegistration) {
         await this.closeUnregisteredSession(session);
@@ -2290,7 +2342,8 @@ export class AgentManager {
       },
       "agent.manager.stream.request",
     );
-    if (existingAgent.activeForegroundTurnId || this.runs.hasRun(agentId)) {
+    const hasPendingReload = this.pendingAgentReloads.has(agentId);
+    if (existingAgent.activeForegroundTurnId || this.runs.hasRun(agentId) || hasPendingReload) {
       this.logger.trace(
         {
           agentId,
@@ -2299,6 +2352,7 @@ export class AgentManager {
           turnId: existingAgent.activeForegroundTurnId ?? undefined,
           lifecycle: existingAgent.lifecycle,
           hasTrackedRun: this.runs.hasRun(agentId),
+          hasPendingReload,
         },
         "agent.manager.stream.reject",
       );
@@ -2470,7 +2524,17 @@ export class AgentManager {
     return "closed_current";
   }
 
-  async replaceAgentRun(
+  replaceAgentRun(
+    agentId: string,
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<AsyncGenerator<AgentStreamEvent>> {
+    return this.runForegroundMutation(agentId, () =>
+      this.replaceAgentRunInternal(agentId, prompt, options),
+    );
+  }
+
+  private async replaceAgentRunInternal(
     agentId: string,
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
@@ -2608,8 +2672,8 @@ export class AgentManager {
   }
 
   private async runForegroundMutation<T>(agentId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.foregroundMutationTails.get(agentId) ?? Promise.resolve();
-    const run = previous.catch(() => undefined).then(operation);
+    const previous = this.foregroundMutationTails.get(agentId);
+    const run = previous ? previous.then(operation) : operation();
     const tail = run.then(
       () => undefined,
       () => undefined,
@@ -2899,7 +2963,7 @@ export class AgentManager {
     agentId: string,
     action: "reload" | "replace" | "rewind",
   ): Promise<void> {
-    const result = await this.cancelAgentRun(agentId);
+    const result = await this.cancelAgentRunNow(agentId);
     if (result.status === "refused") {
       throw new AgentRunCancellationError(agentId, action);
     }
@@ -2952,10 +3016,46 @@ export class AgentManager {
     options?: HydrateTimelineOptions,
   ): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
-    await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
+    try {
+      await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
+    } catch (error) {
+      if (options?.emitReplacement) {
+        this.logger.error({ err: error, agentId }, "Reloaded agent history could not be committed");
+        try {
+          await this.closeAgent(agentId);
+        } catch (closeError) {
+          this.logger.error(
+            { err: closeError, agentId },
+            "Failed to release runtime after history reload failed",
+          );
+          const reloadFailure = new AggregateError(
+            [error, closeError],
+            "重新加载历史失败，运行时释放也未完成，请重试释放运行时。",
+            { cause: error },
+          );
+          throw reloadFailure;
+        }
+      }
+      throw error;
+    }
+    if (options?.emitReplacement) {
+      this.dispatch({
+        type: "timeline_replacement",
+        agentId,
+        epoch: this.timelineStore.getEpoch(agentId),
+      });
+    }
   }
 
-  async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
+  rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
+    return this.runForegroundMutation(agentId, () => this.rewindInternal(agentId, messageId, mode));
+  }
+
+  private async rewindInternal(
+    agentId: string,
+    messageId: string,
+    mode: RewindMode,
+  ): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
     if (this.hasInFlightRun(agentId)) {
       await this.cancelAgentRunBefore(agentId, "rewind");
@@ -3796,7 +3896,7 @@ export class AgentManager {
       return;
     }
 
-    await this.primeTimelineFromLegacyProviderHistory(agent, broadcast);
+    await this.primeTimelineFromLegacyProviderHistory(agent, broadcast, broadcastTimeline);
   }
 
   private async forceHydrateTimelineFromLegacyProviderHistory(
@@ -3853,6 +3953,7 @@ export class AgentManager {
   private async primeTimelineFromLegacyProviderHistory(
     agent: ActiveManagedAgent,
     broadcast: boolean | (() => boolean),
+    broadcastTimeline: boolean | (() => boolean),
   ): Promise<void> {
     const deferredBroadcast = typeof broadcast === "function";
     let timelineRows: AgentTimelineRow[] = [];
@@ -3903,7 +4004,7 @@ export class AgentManager {
       this.timelineStore.initialize(agent.id, { rows: reconciledRows });
       if (deferredBroadcast) {
         timelineRows = reconciledRows;
-      } else if (broadcast) {
+      } else if (broadcastTimeline) {
         this.dispatchReconciledTimelineRows(agent, reconciledRows);
       }
       await this.commitCompleteHistorySnapshot(agent.id);
@@ -3922,7 +4023,9 @@ export class AgentManager {
     for (const event of providerSubagentEvents) {
       this.dispatch(event);
     }
-    this.dispatchReconciledTimelineRows(agent, timelineRows);
+    if (typeof broadcastTimeline === "function" ? broadcastTimeline() : broadcastTimeline) {
+      this.dispatchReconciledTimelineRows(agent, timelineRows);
+    }
   }
 
   private dispatchReconciledTimelineRows(

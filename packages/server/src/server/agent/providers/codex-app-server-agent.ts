@@ -577,6 +577,7 @@ interface PersistedSubAgentRoute {
 interface CodexThreadHistoryProjection {
   timeline: PersistedTimelineEntry[];
   subAgentRoutes: PersistedSubAgentRoute[];
+  nativeTurnIdsByMessageId: Map<string, string>;
 }
 
 function codexMicrosoftStorePackageRoot(): string | null {
@@ -2188,6 +2189,18 @@ function isCodexCapacityTimelineItem(item: AgentTimelineItem): boolean {
   return item.type === "assistant_message" && isCodexModelCapacityMessage(item.text);
 }
 
+interface NativeUserMessageTurnInput {
+  turnId: string | undefined;
+  item: AgentTimelineItem;
+  mappings: Map<string, string>;
+}
+
+function indexCodexUserMessageTurn({ turnId, item, mappings }: NativeUserMessageTurnInput): void {
+  if (!turnId || item.type !== "user_message") return;
+  if (item.messageId) mappings.set(item.messageId, turnId);
+  if (item.clientMessageId) mappings.set(item.clientMessageId, turnId);
+}
+
 async function loadCodexThreadHistoryTimeline(params: {
   threadId: string;
   cwd: string | null;
@@ -2195,6 +2208,7 @@ async function loadCodexThreadHistoryTimeline(params: {
 }): Promise<CodexThreadHistoryProjection> {
   const response = await requestCodexThreadHistory(params.requestThread, params.threadId);
   const timeline: PersistedTimelineEntry[] = [];
+  const nativeTurnIdsByMessageId = new Map<string, string>();
   const subAgentTimelineIndexByThreadId = new Map<string, number>();
   let previousTurnNeedsCapacityContinuation = false;
   for (const turn of response.thread.turns) {
@@ -2221,6 +2235,11 @@ async function loadCodexThreadHistoryTimeline(params: {
         }
       }
       for (const timelineItem of threadItemToTimelineEntries(item, { cwd: params.cwd })) {
+        indexCodexUserMessageTurn({
+          turnId: turn.id,
+          item: timelineItem,
+          mappings: nativeTurnIdsByMessageId,
+        });
         const timestamp =
           readCodexHistoryTimestamp(item) ?? readCodexTurnHistoryTimestamp(turn, timelineItem);
         const settledActivity =
@@ -2256,7 +2275,7 @@ async function loadCodexThreadHistoryTimeline(params: {
         : [];
     },
   );
-  return { timeline, subAgentRoutes };
+  return { timeline, subAgentRoutes, nativeTurnIdsByMessageId };
 }
 
 export async function forkCodexThread(
@@ -3509,6 +3528,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private latestPlanResult: { callId: string; text: string; turnId: string | null } | null = null;
   private readonly userMessageTurnIndexes = new Map<string, number>();
   private readonly userMessageTurnIds: string[] = [];
+  private readonly nativeTurnIdsByMessageId = new Map<string, string>();
   private pendingManualCompactionStarts = 0;
   private compactionTriggerByItemId = new Map<string, "auto" | "manual">();
   private pendingRootCompactionItemIds = new Set<string>();
@@ -3919,6 +3939,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.loadingPersistedHistory = false;
     }
     this.resetCodexUserMessageTurns();
+    for (const [messageId, nativeTurnId] of history.nativeTurnIdsByMessageId) {
+      this.nativeTurnIdsByMessageId.set(messageId, nativeTurnId);
+    }
     for (const entry of timeline) {
       if (entry.item.type === "user_message") {
         this.rememberCodexUserMessageTurn(entry.item.messageId, null);
@@ -4513,12 +4536,14 @@ export class CodexAppServerAgentSession implements AgentSession {
   private resetCodexUserMessageTurns(): void {
     this.userMessageTurnIndexes.clear();
     this.userMessageTurnIds.length = 0;
+    this.nativeTurnIdsByMessageId.clear();
   }
 
   private truncateCodexUserMessageTurns(numTurns: number): void {
     if (numTurns <= 0) {
       return;
     }
+    this.nativeTurnIdsByMessageId.clear();
     const nextLength = Math.max(0, this.userMessageTurnIds.length - numTurns);
     this.userMessageTurnIds.length = nextLength;
     for (const [messageId, index] of this.userMessageTurnIndexes) {
@@ -4529,6 +4554,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private codexUserMessageTurns(): CodexUserMessageTurnIndex {
     return {
       resolve: (messageId) => this.userMessageTurnIndexes.get(messageId) ?? null,
+      resolveNativeTurnId: (messageId) => this.nativeTurnIdsByMessageId.get(messageId) ?? null,
       count: () => this.userMessageTurnIds.length,
     };
   }

@@ -57,11 +57,13 @@ interface FakeAgentSessionOptions {
   sessionId?: string;
   memoryMarker?: string | null;
   closeSession?: () => Promise<void>;
+  onStreamHistory?: () => Promise<void>;
   onStartTurn?: (prompt: AgentPromptInput) => void;
 }
 
 export interface TestAgentClientOptions {
   closeSession?: () => Promise<void>;
+  onStreamHistory?: () => Promise<void>;
   onStartTurn?: (prompt: AgentPromptInput) => void;
 }
 
@@ -331,6 +333,7 @@ class FakeAgentSession implements AgentSession {
   private activeForegroundTurnId: string | null = null;
 
   private readonly closeSession: (() => Promise<void>) | undefined;
+  private readonly onStreamHistory: (() => Promise<void>) | undefined;
   private readonly onStartTurn: ((prompt: AgentPromptInput) => void) | undefined;
 
   constructor(options: FakeAgentSessionOptions) {
@@ -339,6 +342,7 @@ class FakeAgentSession implements AgentSession {
     this.id = options.sessionId ?? randomUUID();
     this.memoryMarker = options.memoryMarker ?? null;
     this.closeSession = options.closeSession;
+    this.onStreamHistory = options.onStreamHistory;
     this.onStartTurn = options.onStartTurn;
     this.historyPath = path.join(
       tmpdir(),
@@ -792,6 +796,7 @@ class FakeAgentSession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    await this.onStreamHistory?.();
     let contents: string;
     try {
       contents = await readFile(this.historyPath, "utf8");
@@ -1185,6 +1190,7 @@ class FakeAgentClient implements AgentClient {
       providerName: this.provider,
       config: { ...config },
       closeSession: this.options.closeSession,
+      onStreamHistory: this.options.onStreamHistory,
       onStartTurn: this.options.onStartTurn,
     });
   }
@@ -1209,6 +1215,7 @@ class FakeAgentClient implements AgentClient {
       sessionId: handle.sessionId,
       memoryMarker: typeof marker === "string" ? marker : null,
       closeSession: this.options.closeSession,
+      onStreamHistory: this.options.onStreamHistory,
       onStartTurn: this.options.onStartTurn,
     });
   }

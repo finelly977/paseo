@@ -94,6 +94,7 @@ import {
   workspaceTabTargetsEqual,
 } from "@/workspace-tabs/identity";
 import { useVisibleAgentIds } from "./visible-agent-ids";
+import { useAgentInitialization } from "@/hooks/use-agent-initialization";
 import {
   getHostRuntimeStore,
   useHostRuntimeClient,
@@ -1785,6 +1786,7 @@ function WorkspaceScreenContent({
   });
 
   const client = useHostRuntimeClient(normalizedServerId);
+  const { refreshAgent } = useAgentInitialization({ serverId: normalizedServerId, client });
   const isConnected = useHostRuntimeIsConnected(normalizedServerId);
   // workspace 描述符尚未同步（打开会话早期）时，从该工作区的智能体记录取
   // cwd 作为右侧栏（文件/变更面板）的目录来源，无需等待智能体目录同步完成。
@@ -2831,20 +2833,7 @@ function WorkspaceScreenContent({
 
       toast.show(t("workspace.tabs.toasts.reloadingAgent"), { durationMs: null });
       try {
-        await client.refreshAgent(agentId);
-        // Send the existing cursor so the server detects the new epoch and
-        // returns reset:true. Without a cursor, the server returns reset:false
-        // and the client takes the incremental path, where new-epoch rows are
-        // dropped against the stale cursor.
-        const sessionState = useSessionStore.getState().sessions[normalizedServerId];
-        const currentCursor = sessionState?.agentTimelineCursor.get(agentId);
-        await getHostRuntimeStore().fetchAgentTimeline(normalizedServerId, agentId, {
-          direction: "tail",
-          projection: "projected",
-          ...(currentCursor
-            ? { cursor: { epoch: currentCursor.epoch, seq: currentCursor.endSeq } }
-            : {}),
-        });
+        await refreshAgent(agentId);
         toast.show(t("workspace.tabs.toasts.reloadedAgent"), { variant: "success" });
       } catch (error) {
         toast.error(
@@ -2852,7 +2841,7 @@ function WorkspaceScreenContent({
         );
       }
     },
-    [client, isConnected, normalizedServerId, toast, t],
+    [client, isConnected, refreshAgent, toast, t],
   );
 
   const handleCopyWorkspacePath = useCallback(async () => {

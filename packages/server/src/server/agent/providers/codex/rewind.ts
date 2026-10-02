@@ -8,6 +8,7 @@ import {
   CodexAppServerRpcError,
   parseCodexThreadRollbackResponse,
 } from "./app-server-transport.js";
+import { readCodexHistoryPages, readCodexPaginatedThread } from "./thread-history.js";
 
 class CodexHistoryProjectionError extends Error {
   constructor(
@@ -29,6 +30,7 @@ export interface CodexRewindClient {
 
 export interface CodexUserMessageTurnIndex {
   resolve(messageId: string): number | null;
+  resolveNativeTurnId(messageId: string): string | null;
   count(): number;
 }
 
@@ -41,71 +43,35 @@ const ThreadMetadataResponseSchema = z.object({
     .passthrough(),
 });
 
-const TurnPageSchema = z.object({
-  data: z.array(
-    z
-      .object({
-        id: z.string().min(1),
-        itemsView: z.literal("full"),
-        items: z.array(
-          z
-            .object({
-              id: z.string().min(1),
-              type: z.string(),
-              clientId: z.string().nullable().optional(),
-            })
-            .passthrough(),
-        ),
-      })
-      .passthrough(),
-  ),
-  nextCursor: z.string().min(1).nullable(),
+const ThreadItemSchema = z.object({
+  turnId: z.string().min(1),
+  item: z.object({
+    id: z.string().min(1),
+    type: z.string(),
+    clientId: z.string().nullable().optional(),
+  }),
 });
 
 const ThreadRevertResponseSchema = ThreadMetadataResponseSchema.extend({
   turnsBackwardsCursor: z.string().min(1).nullable(),
+  itemsBackwardsCursor: z.string().min(1).nullable(),
 });
 
 interface PaginatedTurnsInput {
   client: CodexRewindClient;
   threadId: string;
-  cursor: string | null;
-}
-
-async function* readTurnPages(input: PaginatedTurnsInput) {
-  let cursor = input.cursor;
-  const visitedCursors = new Set<string>();
-  do {
-    if (cursor !== null) {
-      if (visitedCursors.has(cursor)) {
-        throw new Error("Codex returned a repeated turn history cursor");
-      }
-      visitedCursors.add(cursor);
-    }
-    const page = TurnPageSchema.parse(
-      await input.client.request("thread/turns/list", {
-        threadId: input.threadId,
-        cursor,
-        limit: 100,
-        sortDirection: "desc",
-        itemsView: "full",
-      }),
-    );
-    yield page.data;
-    cursor = page.nextCursor;
-  } while (cursor !== null);
 }
 
 async function findBeforeTurnId(input: PaginatedTurnsInput, messageId: string): Promise<string> {
-  for await (const turns of readTurnPages(input)) {
-    const target = turns.find((turn) =>
-      turn.items.some(
-        (item) =>
-          item.type === "userMessage" && (item.id === messageId || item.clientId === messageId),
-      ),
-    );
-    if (target) {
-      return target.id;
+  for await (const page of readCodexHistoryPages({
+    ...input,
+    method: "thread/items/list",
+    sortDirection: "desc",
+  })) {
+    for (const entry of page.data) {
+      const { turnId, item } = ThreadItemSchema.parse(entry);
+      if (item.type === "userMessage" && (item.id === messageId || item.clientId === messageId))
+        return turnId;
     }
   }
   throw new Error(`Codex could not find user message ${messageId} in the current thread`);
@@ -119,9 +85,8 @@ function assertSameThread(expectedThreadId: string, actualThreadId: string): voi
 
 async function revertPaginatedThread(
   input: PaginatedTurnsInput,
-  messageId: string,
+  beforeTurnId: string,
 ): Promise<CodexThreadRollbackResponse> {
-  const beforeTurnId = await findBeforeTurnId(input, messageId);
   let response: unknown;
   try {
     response = await input.client.request("thread/revert", {
@@ -143,14 +108,14 @@ async function revertPaginatedThread(
   assertSameThread(input.threadId, reverted.thread.id);
 
   // 新接口只返回元数据，空 turns 不代表历史已清空，必须沿回退响应的游标读取保留内容。
-  const turns: z.infer<typeof TurnPageSchema>["data"] = [];
-  if (reverted.turnsBackwardsCursor !== null) {
-    for await (const page of readTurnPages({ ...input, cursor: reverted.turnsBackwardsCursor })) {
-      turns.push(...page);
-    }
-  }
-  turns.reverse();
-  return { thread: { ...reverted.thread, turns } };
+  const history = await readCodexPaginatedThread({
+    ...input,
+    thread: reverted.thread,
+    turnsCursor: reverted.turnsBackwardsCursor,
+    itemsCursor: reverted.itemsBackwardsCursor,
+    sortDirection: "desc",
+  });
+  return { thread: { ...reverted.thread, turns: history.thread.turns } };
 }
 
 async function rollbackCodexThread(
@@ -182,13 +147,15 @@ export async function revertCodexConversation(input: {
   );
   assertSameThread(input.threadId, metadata.thread.id);
   if (metadata.thread.historyMode === "paginated") {
+    const targetTurnId =
+      input.userMessageTurns.resolveNativeTurnId(input.messageId) ??
+      (await findBeforeTurnId({ client: input.client, threadId: input.threadId }, input.messageId));
     const reverted = await revertPaginatedThread(
       {
         client: input.client,
         threadId: input.threadId,
-        cursor: null,
       },
-      input.messageId,
+      targetTurnId,
     );
     await input.setThreadId(input.threadId, reverted);
     return;

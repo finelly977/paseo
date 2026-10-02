@@ -13,10 +13,21 @@ import {
 
 interface PendingAgentInitialization {
   promise: Promise<ManagedAgent>;
-  options: { broadcastTimeline: boolean };
+  options: { broadcastTimeline: boolean; replaceTimeline: boolean; phase: "loading" | "hydrating" };
 }
 
-const pendingAgentInitializations = new Map<string, PendingAgentInitialization>();
+const pendingInitializationsByManager = new WeakMap<
+  AgentLoaderManager,
+  Map<string, PendingAgentInitialization>
+>();
+
+export async function waitForAgentInitialization(
+  manager: AgentLoaderManager,
+  agentId: string,
+): Promise<void> {
+  const pending = pendingInitializationsByManager.get(manager)?.get(agentId);
+  if (pending) await pending.promise;
+}
 
 export type AgentLoaderManager = Pick<
   AgentManager,
@@ -25,15 +36,33 @@ export type AgentLoaderManager = Pick<
   | "getRegisteredProviderIds"
   | "hydrateTimelineFromProvider"
   | "resumeAgentFromPersistence"
+  | "reloadAgentSession"
 > &
-  Partial<Pick<AgentManager, "touchAgentActivity" | "waitForAgentClose">>;
+  Partial<Pick<AgentManager, "touchAgentActivity" | "waitForAgentClose" | "waitForAgentReload">>;
 
 export interface EnsureAgentLoadedDeps {
   agentManager: AgentLoaderManager;
   agentStorage: AgentStorage;
   validProviders?: Iterable<AgentProvider>;
   broadcastTimeline?: boolean;
+  replaceTimeline?: boolean;
   logger: Logger;
+}
+
+async function joinInitialization(
+  agentId: string,
+  pending: PendingAgentInitialization,
+  deps: EnsureAgentLoadedDeps,
+): Promise<ManagedAgent> {
+  if (deps.replaceTimeline && !pending.options.replaceTimeline) {
+    if (pending.options.phase === "hydrating") {
+      await pending.promise;
+      return deps.agentManager.reloadAgentSession(agentId, undefined, { rehydrateFromDisk: true });
+    }
+    pending.options.replaceTimeline = true;
+  }
+  pending.options.broadcastTimeline ||= deps.broadcastTimeline === true;
+  return pending.promise;
 }
 
 export async function ensureUnarchivedAgentLoaded(
@@ -63,17 +92,25 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
+  await deps.agentManager.waitForAgentReload?.(agentId);
   await deps.agentManager.waitForAgentClose?.(agentId);
+  await deps.agentManager.waitForAgentReload?.(agentId);
+  let pendingAgentInitializations = pendingInitializationsByManager.get(deps.agentManager);
+  if (!pendingAgentInitializations) {
+    pendingAgentInitializations = new Map();
+    pendingInitializationsByManager.set(deps.agentManager, pendingAgentInitializations);
+  }
 
   const inflight = pendingAgentInitializations.get(agentId);
   if (inflight) {
-    inflight.options.broadcastTimeline ||= deps.broadcastTimeline === true;
-    return inflight.promise;
+    return joinInitialization(agentId, inflight, deps);
   }
 
   const existing =
     deps.agentManager.touchAgentActivity?.(agentId) ?? deps.agentManager.getAgent(agentId);
   if (existing) {
+    if (deps.replaceTimeline)
+      return deps.agentManager.reloadAgentSession(agentId, undefined, { rehydrateFromDisk: true });
     return existing;
   }
 
@@ -81,15 +118,17 @@ export async function ensureAgentLoaded(
   // work. Once the live lookup is empty, this second barrier closes that gap
   // before storage-backed resume begins.
   await deps.agentManager.waitForAgentClose?.(agentId);
+  await deps.agentManager.waitForAgentReload?.(agentId);
 
   const laterInflight = pendingAgentInitializations.get(agentId);
   if (laterInflight) {
-    laterInflight.options.broadcastTimeline ||= deps.broadcastTimeline === true;
-    return laterInflight.promise;
+    return joinInitialization(agentId, laterInflight, deps);
   }
 
-  const pendingOptions = {
+  const pendingOptions: PendingAgentInitialization["options"] = {
     broadcastTimeline: deps.broadcastTimeline === true,
+    replaceTimeline: deps.replaceTimeline === true,
+    phase: "loading",
   };
   const initPromise = (async () => {
     const record = await deps.agentStorage.get(agentId);
@@ -129,8 +168,12 @@ export async function ensureAgentLoaded(
       deps.logger.info({ agentId, provider: record.provider }, "Agent created from stored config");
     }
 
+    pendingOptions.phase = "hydrating";
     await deps.agentManager.hydrateTimelineFromProvider(agentId, {
-      broadcast: () => pendingOptions.broadcastTimeline,
+      force: pendingOptions.replaceTimeline,
+      broadcast: () => pendingOptions.broadcastTimeline || pendingOptions.replaceTimeline,
+      broadcastTimeline: () => pendingOptions.broadcastTimeline && !pendingOptions.replaceTimeline,
+      emitReplacement: pendingOptions.replaceTimeline,
     });
     return deps.agentManager.getAgent(agentId) ?? snapshot;
   })();

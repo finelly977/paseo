@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { readCodexThread } from "./thread-history.js";
+import { readCodexThread, readCodexPaginatedThread } from "./thread-history.js";
 
 interface HistoryRequest {
   method: string;
@@ -28,6 +28,67 @@ const firstTurnPage = {
 };
 
 describe("Codex 原生历史分页", () => {
+  test("回退的两个反向游标分别读完后恢复时间顺序，重叠条目不重复", async () => {
+    const client = createHistoryClient([
+      { data: [{ id: "turn-2", items: [] }], nextCursor: "older-turns" },
+      {
+        data: [
+          { id: "turn-2", items: [] },
+          { id: "turn-1", items: [] },
+        ],
+        nextCursor: null,
+      },
+      {
+        data: [{ turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "答复" } }],
+        nextCursor: "older-items",
+      },
+      {
+        data: [
+          { turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "完整答复" } },
+          { turnId: "turn-2", item: { id: "a", type: "userMessage" } },
+          { turnId: "turn-1", item: { id: "a", type: "userMessage" } },
+        ],
+        nextCursor: null,
+      },
+    ]);
+    const history = await readCodexPaginatedThread({
+      client,
+      threadId: "thread-1",
+      thread: { id: "thread-1", historyMode: "paginated" },
+      sortDirection: "desc",
+      turnsCursor: "retained-turns",
+      itemsCursor: "retained-items",
+    });
+    expect(history.thread.turns).toEqual([
+      { id: "turn-1", items: [{ id: "a", type: "userMessage" }] },
+      {
+        id: "turn-2",
+        items: [
+          { id: "a", type: "userMessage" },
+          { id: "b", type: "agentMessage", text: "完整答复" },
+        ],
+      },
+    ]);
+    expect(client.requests.map((request) => request.params)).toEqual([
+      {
+        threadId: "thread-1",
+        cursor: "retained-turns",
+        limit: 100,
+        sortDirection: "desc",
+        itemsView: "notLoaded",
+      },
+      {
+        threadId: "thread-1",
+        cursor: "older-turns",
+        limit: 100,
+        sortDirection: "desc",
+        itemsView: "notLoaded",
+      },
+      { threadId: "thread-1", cursor: "retained-items", limit: 100, sortDirection: "desc" },
+      { threadId: "thread-1", cursor: "older-items", limit: 100, sortDirection: "desc" },
+    ]);
+  });
+
   test("按原始顺序合并跨页回合与正文，保留回合元信息和未知条目字段", async () => {
     const requests: string[] = [];
     const responses = [

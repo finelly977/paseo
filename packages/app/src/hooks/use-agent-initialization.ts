@@ -12,6 +12,7 @@ import {
 } from "@/utils/agent-initialization";
 import { getHostRuntimeStore, type HostRuntimeStore } from "@/runtime/host-runtime";
 import { planInitialAgentTimelineSync, planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
+import type { AgentTimelineCursorRange } from "@/timeline/timeline-sync-plan";
 import { i18n } from "@/i18n/i18next";
 
 export type SetAgentInitializing = (agentId: string, initializing: boolean) => void;
@@ -93,26 +94,48 @@ export interface RefreshAgentInput {
   setAgentInitializing: SetAgentInitializing;
   conversationLimit?: number;
   hostDisconnectedMessage?: string;
+  readCursor: () => AgentTimelineCursorRange | undefined;
 }
 
-export async function refreshAgent(input: RefreshAgentInput): Promise<void> {
+const pendingRefreshes = new WeakMap<
+  NonNullable<RefreshAgentInput["client"]>,
+  Map<string, Promise<void>>
+>();
+
+export function refreshAgent(input: RefreshAgentInput): Promise<void> {
   const { serverId, agentId, client, runtime, setAgentInitializing } = input;
   if (!client) {
-    throw new Error(input.hostDisconnectedMessage ?? i18n.t("workspace.terminal.hostDisconnected"));
-  }
-  setAgentInitializing(agentId, true);
-
-  try {
-    await client.refreshAgent(agentId);
-    await runtime.fetchAgentTimeline(
-      serverId,
-      agentId,
-      planTimelineTailFetch(input.conversationLimit),
+    return Promise.reject(
+      new Error(input.hostDisconnectedMessage ?? i18n.t("workspace.terminal.hostDisconnected")),
     );
-  } catch (error) {
-    setAgentInitializing(agentId, false);
-    throw error;
   }
+  let pending = pendingRefreshes.get(client);
+  if (!pending) {
+    pending = new Map();
+    pendingRefreshes.set(client, pending);
+  }
+  const key = getInitKey(serverId, agentId);
+  const existing = pending.get(key);
+  if (existing) return existing;
+  setAgentInitializing(agentId, true);
+  const refreshes = pending;
+  const operation = (async () => {
+    try {
+      await client.refreshAgent(agentId);
+      const cursor = input.readCursor();
+      await runtime.fetchAgentTimeline(serverId, agentId, {
+        ...planTimelineTailFetch(input.conversationLimit),
+        ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
+      });
+    } catch (error) {
+      setAgentInitializing(agentId, false);
+      throw error;
+    } finally {
+      refreshes.delete(key);
+    }
+  })();
+  refreshes.set(key, operation);
+  return operation;
 }
 
 export function createSetAgentInitializing(
@@ -176,6 +199,8 @@ export function useAgentInitialization({
         client,
         runtime: getHostRuntimeStore(),
         setAgentInitializing,
+        readCursor: () =>
+          useSessionStore.getState().sessions[serverId]?.agentTimelineCursor.get(agentId),
         ...(conversationLimit !== undefined ? { conversationLimit } : {}),
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
       }),

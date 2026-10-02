@@ -34,7 +34,14 @@ class FakeCodex implements CodexRewindClient {
 }
 
 class CodexMessageTurns implements CodexUserMessageTurnIndex {
-  constructor(private readonly indexesByMessageId: Map<string, number>) {}
+  constructor(
+    private readonly indexesByMessageId: Map<string, number>,
+    private readonly nativeTurnIdsByMessageId = new Map<string, string>(),
+  ) {}
+
+  resolveNativeTurnId(messageId: string): string | null {
+    return this.nativeTurnIdsByMessageId.get(messageId) ?? null;
+  }
 
   resolve(messageId: string): number | null {
     return this.indexesByMessageId.get(messageId) ?? null;
@@ -64,6 +71,85 @@ class ScriptedCodex implements CodexRewindClient {
 }
 
 describe("Codex Rewind", () => {
+  test("已读取的原生回合直接定位目标，保留历史只读回合头和有界正文页", async () => {
+    const codex = new ScriptedCodex([
+      { thread: { id: "source-thread", historyMode: "paginated" } },
+      {
+        thread: { id: "source-thread", historyMode: "paginated", turns: [] },
+        turnsBackwardsCursor: "retained-turns",
+        itemsBackwardsCursor: "retained-items",
+      },
+      { data: [{ id: "turn-first", items: [], status: "completed" }], nextCursor: null },
+      {
+        data: [
+          {
+            turnId: "turn-first",
+            item: { id: "answer-first", type: "agentMessage", text: "答复" },
+          },
+          { turnId: "turn-first", item: { id: "user-first", type: "userMessage", content: [] } },
+        ],
+        nextCursor: null,
+      },
+    ]);
+    const restored: CodexThreadRollbackResponse[] = [];
+    await revertCodexConversation({
+      client: codex,
+      threadId: "source-thread",
+      messageId: "client-target",
+      userMessageTurns: new CodexMessageTurns(
+        new Map(),
+        new Map([["client-target", "turn-target"]]),
+      ),
+      setThreadId: (_threadId, history) => {
+        restored.push(history);
+      },
+    });
+    expect(codex.requests).toEqual([
+      { method: "thread/read", params: { threadId: "source-thread", includeTurns: false } },
+      {
+        method: "thread/revert",
+        params: { threadId: "source-thread", beforeTurnId: "turn-target" },
+      },
+      {
+        method: "thread/turns/list",
+        params: {
+          threadId: "source-thread",
+          cursor: "retained-turns",
+          limit: 100,
+          sortDirection: "desc",
+          itemsView: "notLoaded",
+        },
+      },
+      {
+        method: "thread/items/list",
+        params: {
+          threadId: "source-thread",
+          cursor: "retained-items",
+          limit: 100,
+          sortDirection: "desc",
+        },
+      },
+    ]);
+    expect(restored).toEqual([
+      {
+        thread: {
+          id: "source-thread",
+          historyMode: "paginated",
+          turns: [
+            {
+              id: "turn-first",
+              status: "completed",
+              items: [
+                { id: "user-first", type: "userMessage", content: [] },
+                { id: "answer-first", type: "agentMessage", text: "答复" },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   test("原生索引损坏时明确提示恢复索引，保留原错误且不再次执行回退", async () => {
     const original = new CodexAppServerRpcError(
       "failed to revert session: thread-store internal error: durable rollout shrank before projection",
@@ -75,9 +161,8 @@ describe("Codex Rewind", () => {
       {
         data: [
           {
-            id: "turn-target",
-            itemsView: "full",
-            items: [{ type: "userMessage", id: "user-target" }],
+            turnId: "turn-target",
+            item: { type: "userMessage", id: "user-target" },
           },
         ],
         nextCursor: null,
@@ -103,7 +188,7 @@ describe("Codex Rewind", () => {
     });
     expect(codex.requests.map((r) => r.method)).toEqual([
       "thread/read",
-      "thread/turns/list",
+      "thread/items/list",
       "thread/revert",
     ]);
     expect(restored).toEqual([]);
@@ -112,10 +197,10 @@ describe("Codex Rewind", () => {
   test.each(["client-target", "codex-target"])(
     "分页会话按消息 %s 定位原生回合，并完整恢复保留历史",
     async (messageId) => {
-      const oldestTurn = { id: "turn-oldest", itemsView: "full", items: [] };
+      const oldestTurn = { id: "turn-oldest", itemsView: "notLoaded", items: [] };
       const retainedTurn = {
         id: "turn-retained",
-        itemsView: "full",
+        itemsView: "notLoaded",
         items: [
           { type: "userMessage", id: "user-retained", content: [{ type: "text", text: "保留" }] },
           { type: "agentMessage", id: "answer-retained", text: "已记录" },
@@ -124,15 +209,14 @@ describe("Codex Rewind", () => {
       const codex = new ScriptedCodex([
         { thread: { id: "source-thread", historyMode: "paginated" } },
         {
-          data: [{ id: "turn-latest", itemsView: "full", items: [] }],
-          nextCursor: "older-turns",
+          data: [{ turnId: "turn-latest", item: { id: "latest-answer", type: "agentMessage" } }],
+          nextCursor: "older-items",
         },
         {
           data: [
             {
-              id: "turn-target",
-              itemsView: "full",
-              items: [{ type: "userMessage", id: "codex-target", clientId: "client-target" }],
+              turnId: "turn-target",
+              item: { type: "userMessage", id: "codex-target", clientId: "client-target" },
             },
           ],
           nextCursor: null,
@@ -140,10 +224,14 @@ describe("Codex Rewind", () => {
         {
           thread: { id: "source-thread", historyMode: "paginated", turns: [] },
           turnsBackwardsCursor: "retained-tail",
-          itemsBackwardsCursor: null,
+          itemsBackwardsCursor: "retained-items",
         },
-        { data: [retainedTurn], nextCursor: "retained-older" },
+        { data: [{ ...retainedTurn, items: [] }], nextCursor: "retained-older" },
         { data: [oldestTurn], nextCursor: null },
+        {
+          data: retainedTurn.items.toReversed().map((item) => ({ turnId: retainedTurn.id, item })),
+          nextCursor: null,
+        },
       ]);
       const restored: Array<{ threadId: string; history: unknown }> = [];
 
@@ -160,23 +248,21 @@ describe("Codex Rewind", () => {
       expect(codex.requests).toEqual([
         { method: "thread/read", params: { threadId: "source-thread", includeTurns: false } },
         {
-          method: "thread/turns/list",
+          method: "thread/items/list",
           params: {
             threadId: "source-thread",
             cursor: null,
             limit: 100,
             sortDirection: "desc",
-            itemsView: "full",
           },
         },
         {
-          method: "thread/turns/list",
+          method: "thread/items/list",
           params: {
             threadId: "source-thread",
-            cursor: "older-turns",
+            cursor: "older-items",
             limit: 100,
             sortDirection: "desc",
-            itemsView: "full",
           },
         },
         {
@@ -190,7 +276,7 @@ describe("Codex Rewind", () => {
             cursor: "retained-tail",
             limit: 100,
             sortDirection: "desc",
-            itemsView: "full",
+            itemsView: "notLoaded",
           },
         },
         {
@@ -200,7 +286,16 @@ describe("Codex Rewind", () => {
             cursor: "retained-older",
             limit: 100,
             sortDirection: "desc",
-            itemsView: "full",
+            itemsView: "notLoaded",
+          },
+        },
+        {
+          method: "thread/items/list",
+          params: {
+            threadId: "source-thread",
+            cursor: "retained-items",
+            limit: 100,
+            sortDirection: "desc",
           },
         },
       ]);
@@ -225,9 +320,8 @@ describe("Codex Rewind", () => {
       {
         data: [
           {
-            id: "turn-first",
-            itemsView: "full",
-            items: [{ type: "userMessage", id: "codex-first" }],
+            turnId: "turn-first",
+            item: { type: "userMessage", id: "codex-first" },
           },
         ],
         nextCursor: null,
@@ -252,7 +346,7 @@ describe("Codex Rewind", () => {
 
     expect(codex.requests.map((request) => request.method)).toEqual([
       "thread/read",
-      "thread/turns/list",
+      "thread/items/list",
       "thread/revert",
     ]);
     expect(restored).toEqual([
@@ -271,11 +365,9 @@ describe("Codex Rewind", () => {
     },
     { label: "读取失败", pages: [new Error("history unavailable")], error: "history unavailable" },
     {
-      label: "历史不完整",
-      pages: [
-        { data: [{ id: "turn-partial", itemsView: "summary", items: [] }], nextCursor: null },
-      ],
-      error: "full",
+      label: "条目缺少原生回合",
+      pages: [{ data: [{ item: { id: "codex-target", type: "userMessage" } }], nextCursor: null }],
+      error: "turnId",
     },
     {
       label: "游标重复",
@@ -283,7 +375,7 @@ describe("Codex Rewind", () => {
         { data: [], nextCursor: "again" },
         { data: [], nextCursor: "again" },
       ],
-      error: "repeated turn history cursor",
+      error: "thread/items/list returned a repeated cursor",
     },
   ])("$label 时不执行回退，也不按缓存中的消息序号猜测目标", async ({ pages, error }) => {
     const codex = new ScriptedCodex([
@@ -306,7 +398,7 @@ describe("Codex Rewind", () => {
 
     expect(
       codex.requests.filter(
-        (request) => !["thread/read", "thread/turns/list"].includes(request.method),
+        (request) => !["thread/read", "thread/items/list"].includes(request.method),
       ),
     ).toEqual([]);
     expect(restored).toEqual([]);
@@ -319,6 +411,7 @@ describe("Codex Rewind", () => {
       response: {
         thread: { id: "other-thread", historyMode: "paginated" },
         turnsBackwardsCursor: null,
+        itemsBackwardsCursor: null,
       },
       after: [],
       error: "instead of source-thread",
@@ -328,6 +421,7 @@ describe("Codex Rewind", () => {
       response: {
         thread: { id: "source-thread", historyMode: "paginated" },
         turnsBackwardsCursor: "retained-tail",
+        itemsBackwardsCursor: "retained-items",
       },
       after: [new Error("retained history unavailable")],
       error: "retained history unavailable",
@@ -338,9 +432,8 @@ describe("Codex Rewind", () => {
       {
         data: [
           {
-            id: "turn-target",
-            itemsView: "full",
-            items: [{ type: "userMessage", id: "codex-target" }],
+            turnId: "turn-target",
+            item: { type: "userMessage", id: "codex-target" },
           },
         ],
         nextCursor: null,

@@ -642,7 +642,10 @@ export class Session {
   private readonly viewedTimelineAgentIdsBySource = new Map<object, Set<string>>();
   private readonly clientCapabilitiesBySource = new Map<object, ReadonlySet<ClientCapability>>();
   private readonly defaultTimelineSubscriptionSource = {};
-  private readonly rewindInitiators = new Map<string, { source: object | undefined }>();
+  private readonly timelineReplacementInitiators = new Map<
+    string,
+    Map<object | undefined, number>
+  >();
   private readonly rewindRequestTails = new Map<string, Promise<void>>();
   private unsubscribeTerminalWorkspaceContributionEvents: (() => void) | null = null;
   private readonly agentUpdates: AgentUpdatesService;
@@ -1619,7 +1622,7 @@ export class Session {
           this.deliverTimelineReplacement(
             event.agentId,
             event.epoch,
-            this.rewindInitiators.get(event.agentId),
+            this.timelineReplacementInitiators.get(event.agentId),
           );
           return;
         }
@@ -2253,7 +2256,7 @@ export class Session {
       case "import_agent_request":
         return this.handleImportAgentRequest(msg);
       case "refresh_agent_request":
-        return this.handleRefreshAgentRequest(msg);
+        return this.handleRefreshAgentRequest(msg, source);
       case "cancel_agent_request":
         return this.handleCancelAgentRequest(msg.agentId, msg.requestId);
       case "agent_permission_response":
@@ -3774,9 +3777,11 @@ export class Session {
 
   private async handleRefreshAgentRequest(
     msg: Extract<SessionInboundMessage, { type: "refresh_agent_request" }>,
+    source?: object,
   ): Promise<void> {
     const { agentId, requestId } = msg;
     this.sessionLogger.info({ agentId }, `Refreshing agent ${agentId} from persistence`);
+    const releaseInitiator = this.beginTimelineReplacementInitiator(agentId, source);
 
     try {
       await this.restoreOwningWorkspaceForLegacyAgentRefresh(agentId);
@@ -3806,11 +3811,10 @@ export class Session {
         snapshot = await ensureAgentLoaded(agentId, {
           agentManager: this.agentManager,
           agentStorage: this.agentStorage,
-          broadcastTimeline: true,
+          replaceTimeline: true,
           logger: this.sessionLogger,
         });
       }
-      await this.agentManager.hydrateTimelineFromProvider(agentId, { broadcast: true });
       await this.agentUpdates.forwardLiveAgent(snapshot);
       const timelineSize = this.agentManager.getTimeline(agentId).length;
       if (requestId) {
@@ -3847,6 +3851,8 @@ export class Session {
           content: `Failed to refresh agent: ${message}`,
         },
       });
+    } finally {
+      releaseInitiator();
     }
   }
 
@@ -3990,7 +3996,7 @@ export class Session {
     const tail = previous.then(() => current);
     this.rewindRequestTails.set(msg.agentId, tail);
     await previous;
-    this.rewindInitiators.set(msg.agentId, { source });
+    const releaseInitiator = this.beginTimelineReplacementInitiator(msg.agentId, source);
 
     try {
       await this.agentManager.rewind(msg.agentId, msg.messageId, msg.mode);
@@ -4020,7 +4026,7 @@ export class Session {
         source,
       );
     } finally {
-      this.rewindInitiators.delete(msg.agentId);
+      releaseInitiator();
       releaseCurrent();
       if (this.rewindRequestTails.get(msg.agentId) === tail) {
         this.rewindRequestTails.delete(msg.agentId);
@@ -4028,10 +4034,32 @@ export class Session {
     }
   }
 
+  private beginTimelineReplacementInitiator(
+    agentId: string,
+    source: object | undefined,
+  ): () => void {
+    let sources = this.timelineReplacementInitiators.get(agentId);
+    if (!sources) {
+      sources = new Map();
+      this.timelineReplacementInitiators.set(agentId, sources);
+    }
+    const initiators = sources;
+    initiators.set(source, (initiators.get(source) ?? 0) + 1);
+    return () => {
+      const count = initiators.get(source);
+      if (count === undefined)
+        throw new Error("Timeline replacement initiator was already released");
+      const remaining = count - 1;
+      if (remaining === 0) initiators.delete(source);
+      else initiators.set(source, remaining);
+      if (initiators.size === 0) this.timelineReplacementInitiators.delete(agentId);
+    };
+  }
+
   private deliverTimelineReplacement(
     agentId: string,
     epoch: string,
-    initiator?: { source: object | undefined },
+    initiators?: ReadonlyMap<object | undefined, number>,
   ): void {
     const agent = this.agentManager.getAgent(agentId);
     if (!agent) {
@@ -4050,7 +4078,7 @@ export class Session {
 
     if (this.clientCapabilitiesBySource.size === 0 || !this.onMessageToSource) {
       if (this.supports(CLIENT_CAPS.timelineReplacementInvalidation)) {
-        if (!initiator) this.emit(replacementMessage);
+        if (!initiators?.has(undefined)) this.emit(replacementMessage);
       } else {
         this.emitReconstructedTimelineRows(agentId, agent.provider, timeline.rows, timeline.epoch);
       }
@@ -4064,7 +4092,7 @@ export class Session {
         !usesSelectiveDelivery ||
         this.viewedTimelineAgentIdsBySource.get(targetSource)?.has(agentId) === true;
       if (supportsReplacement) {
-        const isInitiator = initiator !== undefined && targetSource === initiator.source;
+        const isInitiator = initiators?.has(targetSource) === true;
         if (isSubscribed && !isInitiator) {
           this.onMessageToSource(targetSource, replacementMessage);
         }
