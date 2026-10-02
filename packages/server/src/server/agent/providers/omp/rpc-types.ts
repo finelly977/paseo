@@ -498,6 +498,7 @@ export const OmpRuntimeEventSchema = z.discriminatedUnion("type", [
 
 const OmpCommandBase = { id: z.string().optional() };
 export const OmpRpcCommandSchema = z.discriminatedUnion("type", [
+  z.object({ ...OmpCommandBase, type: z.literal("set_session_name"), name: z.string() }),
   z.object({
     ...OmpCommandBase,
     type: z.literal("prompt"),

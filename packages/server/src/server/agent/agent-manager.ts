@@ -1,3 +1,5 @@
+import { SessionTitles } from "./session-titles.js";
+import { ensureAgentLoaded } from "./agent-loading.js";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { stat } from "node:fs/promises";
@@ -221,6 +223,7 @@ export type {
 } from "./agent-timeline-store-types.js";
 
 export type AgentManagerEvent =
+  | { type: "agent_metadata"; agentId: string; record: StoredAgentRecord }
   | { type: "agent_state"; agent: ManagedAgent }
   | { type: "provider_subagent"; event: ProviderSubagentStoreEvent }
   | { type: "timeline_replacement"; agentId: string; epoch: string }
@@ -716,6 +719,119 @@ function getFirstUserMessageTextFromRows(rows: readonly AgentTimelineRow[]): str
 }
 
 export class AgentManager {
+  private sessionTitles: SessionTitles | null = null;
+  private titleRefresh: Promise<void> | null = null;
+
+  private getSessionTitles(): SessionTitles {
+    if (this.sessionTitles) return this.sessionTitles;
+    this.sessionTitles = new SessionTitles({
+      storage: this.requireRegistry(),
+      canRename: (provider) =>
+        this.requireClient(provider).capabilities.supportsSessionRename === true,
+      readNative: async (record) => (await this.readNativeSessionTitle(record.id)).title,
+      renameNative: async (record, title) => {
+        this.requireEnabledProvider(record.provider);
+        const agent = await ensureAgentLoaded(record.id, {
+          agentManager: this,
+          agentStorage: this.requireRegistry(),
+          logger: this.logger,
+        });
+        if (!agent.session?.renameSessionTitle) throw new Error("该智能体运行时不支持原生改名。");
+        if (agent.persistence?.sessionId !== record.persistence?.sessionId)
+          throw new Error("原生会话身份已变化，请重新操作。");
+        await agent.session.renameSessionTitle(title);
+      },
+      changed: async (record) => {
+        const live = this.agents.get(record.id);
+        if (live) {
+          live.updatedAt = new Date(record.updatedAt);
+          this.emitState(live, { persist: false });
+          return;
+        }
+        this.dispatch({ type: "agent_metadata", agentId: record.id, record });
+      },
+    });
+    return this.sessionTitles;
+  }
+
+  async refreshAgentSessionTitle(agentId: string): Promise<void> {
+    if (!this.registry) return;
+    const agent = this.agents.get(agentId);
+    if (!agent?.session.getSessionTitle) return;
+    const snapshot = await this.registry.get(agentId);
+    if (!snapshot) return;
+    const title = await agent.session.getSessionTitle();
+    await this.getSessionTitles().synchronize(snapshot, title);
+  }
+
+  async readNativeSessionTitle(
+    agentId: string,
+  ): Promise<{ title: string | null; supported: boolean; sessionId: string | null }> {
+    const record = await this.requireRegistry().get(agentId);
+    if (!record) throw new Error("会话不存在。");
+    const supported =
+      this.requireClient(record.provider).capabilities.supportsSessionRename === true;
+    if (!record.persistence || !supported)
+      return { title: null, supported, sessionId: record.persistence?.sessionId ?? null };
+    this.requireEnabledProvider(record.provider);
+    const client = this.requireClient(record.provider);
+    if (client.getNativeSessionTitle) {
+      return {
+        title: await client.getNativeSessionTitle(record.persistence),
+        supported,
+        sessionId: record.persistence.sessionId,
+      };
+    }
+    const agent = await ensureAgentLoaded(agentId, {
+      agentManager: this,
+      agentStorage: this.requireRegistry(),
+      logger: this.logger,
+    });
+    if (!agent.session?.getSessionTitle) throw new Error("该运行时无法读取原生会话名称。");
+    return {
+      title: await agent.session.getSessionTitle(),
+      supported,
+      sessionId: record.persistence.sessionId,
+    };
+  }
+
+  refreshNativeSessionTitles(): Promise<void> {
+    if (!this.registry) return Promise.resolve();
+    if (this.titleRefresh) return this.titleRefresh;
+    const refresh = this.refreshNativeSessionTitlesInternal();
+    this.titleRefresh = refresh;
+    return refresh.finally(() => {
+      if (this.titleRefresh === refresh) this.titleRefresh = null;
+    });
+  }
+
+  private async refreshNativeSessionTitlesInternal(): Promise<void> {
+    const records = await this.requireRegistry().list();
+    const providers = new Set(
+      records
+        .filter((record) => !record.internal && record.persistence)
+        .map((record) => record.provider),
+    );
+    // 目录探测可能启动 CLI；顺序扫描避免打开应用时同时启动所有提供方。
+    for (const provider of providers) {
+      const client = this.clients.get(provider);
+      if (!client?.listImportableSessions || this.providerEnabled.get(provider) === false) continue;
+      try {
+        const sessions = await client.listImportableSessions();
+        const byId = new Map(sessions.map((session) => [session.providerHandleId, session]));
+        for (const record of records) {
+          if (record.provider !== provider || !record.persistence || record.internal) continue;
+          const handle = record.persistence;
+          const nativeId =
+            typeof handle.nativeHandle === "string" ? handle.nativeHandle : handle.sessionId;
+          const session = byId.get(nativeId) ?? byId.get(handle.sessionId);
+          if (session) await this.getSessionTitles().synchronize(record, session.title);
+        }
+      } catch (error) {
+        this.logger.error({ err: error, provider }, "Failed to synchronize native session titles");
+      }
+    }
+  }
   private readonly clients = new Map<AgentProvider, AgentClient>();
   private readonly providerEnabled = new Map<AgentProvider, boolean>();
   private readonly agents = new Map<string, LiveManagedAgent>();
@@ -2157,20 +2273,20 @@ export class AgentManager {
     updates: {
       title?: string;
       labels?: Record<string, string>;
+      nativeTitleOnly?: boolean;
+      expectedNativeTitle?: string | null;
+      expectedNativeSessionId?: string;
     },
   ): Promise<void> {
-    const liveAgent = this.getAgent(agentId);
-    if (liveAgent) {
-      if (updates.title) {
-        await this.setTitle(agentId, updates.title);
-      }
-      if (updates.labels) {
-        await this.writeLabels(agentId, updates.labels);
-      }
-      return;
-    }
-
-    await this.writeStoredMetadata(agentId, updates);
+    if (updates.title)
+      await this.getSessionTitles().rename({
+        agentId,
+        title: updates.title,
+        nativeOnly: updates.nativeTitleOnly,
+        expectedNativeTitle: updates.expectedNativeTitle,
+        expectedSessionId: updates.expectedNativeSessionId,
+      });
+    if (updates.labels) await this.writeLabels(agentId, updates.labels);
   }
 
   async runAgent(
@@ -3430,6 +3546,13 @@ export class AgentManager {
       this.assertAgentRegistrationActive(managed);
       this.emitState(managed, { persist: false });
       this.subscribeToSession(managed);
+      const refreshTitle = this.refreshAgentSessionTitle(managed.id).catch((error) => {
+        this.logger.error(
+          { err: error, agentId: managed.id },
+          "Failed to read native session title",
+        );
+      });
+      this.trackBackgroundTask(refreshTitle);
       return { ...managed };
     } catch (error) {
       if (!registered) {
@@ -4925,6 +5048,12 @@ export class AgentManager {
 
   private dispatch(event: AgentManagerEvent): void {
     for (const subscriber of this.subscribers) {
+      if (
+        subscriber.agentId &&
+        event.type === "agent_metadata" &&
+        subscriber.agentId !== event.agentId
+      )
+        continue;
       if (
         subscriber.agentId &&
         event.type === "agent_stream" &&

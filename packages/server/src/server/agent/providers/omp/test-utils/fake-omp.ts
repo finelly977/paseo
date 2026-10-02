@@ -257,6 +257,10 @@ export class FakeOmpSession implements OmpRuntimeSession {
     return this.state;
   }
 
+  async setSessionName(name: string): Promise<void> {
+    this.state.sessionName = name;
+  }
+
   queueStateReports(states: OmpSessionState[]): void {
     this.stateReports.push(...states);
   }

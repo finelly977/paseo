@@ -1,3 +1,4 @@
+import { readJsonlSessionTitle } from "../jsonl-session-title.js";
 import { LRUCache } from "lru-cache";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -161,6 +162,7 @@ function mapPiSlashCommands(
 const PI_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionRename: true,
   supportsSessionListing: true,
   supportsDynamicModes: true,
   supportsMcpServers: false,
@@ -1451,6 +1453,17 @@ export class PiRpcAgentSession implements AgentSession {
     yield* streamPiHistory(this.provider, messages, this.capturedUserEntries);
   }
 
+  async getSessionTitle(): Promise<string | null> {
+    await this.refreshState();
+    return this.state.sessionName ?? null;
+  }
+
+  async renameSessionTitle(title: string): Promise<void> {
+    await this.runtimeSession.request({ type: "set_session_name", name: title });
+    await this.refreshState();
+    if (this.state.sessionName !== title) throw new Error("原生会话名称写入后校验失败。");
+  }
+
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
     await this.refreshState();
     return {
@@ -2511,6 +2524,11 @@ export class PiRpcAgentClient implements AgentClient {
     this.runtime =
       options.runtime ??
       createRuntime(options.logger, options.runtimeSettings, this.providerParams.rpcTimeoutMs);
+  }
+
+  async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {
+    if (typeof handle.nativeHandle !== "string") throw new Error("原生会话文件标识无效。");
+    return readJsonlSessionTitle(handle.nativeHandle);
   }
 
   async createSession(

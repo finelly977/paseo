@@ -356,6 +356,8 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   return {
     provider,
     id: inner.id,
+    getSessionTitle: inner.getSessionTitle?.bind(inner),
+    renameSessionTitle: inner.renameSessionTitle?.bind(inner),
     capabilities: inner.capabilities,
     get features() {
       return inner.features;
@@ -398,6 +400,7 @@ function wrapClientProvider(
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
   const listFeatures = inner.listFeatures?.bind(inner);
+  const getNativeSessionTitle = inner.getNativeSessionTitle?.bind(inner);
 
   return {
     provider,
@@ -414,6 +417,9 @@ function wrapClientProvider(
           options,
         ),
       ),
+    getNativeSessionTitle: getNativeSessionTitle
+      ? (handle) => getNativeSessionTitle({ ...handle, provider: inner.provider })
+      : undefined,
     resumeSession: async (handle, overrides, launchContext, options) =>
       wrapSessionProvider(
         provider,

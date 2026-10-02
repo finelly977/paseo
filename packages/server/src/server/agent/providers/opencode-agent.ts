@@ -116,6 +116,7 @@ function formatOpenCodeEventStreamDiagnostics(diagnostics: OpenCodeEventStreamDi
 const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionRename: true,
   supportsSessionListing: true,
   supportsDynamicModes: true,
   supportsMcpServers: true,
@@ -1627,6 +1628,20 @@ export class OpenCodeAgentClient implements AgentClient {
           ...(model ? { model } : {}),
         },
       });
+    } finally {
+      await acquisition.release();
+    }
+  }
+
+  async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {
+    const cwd = z.object({ cwd: z.string() }).parse(handle.metadata).cwd;
+    const acquisition = await this.serverManager.acquireCurrent();
+    try {
+      const client = this.createOpenCodeClient({ baseUrl: acquisition.server.url, directory: cwd });
+      const response = await client.session.get({ sessionID: handle.sessionId, directory: cwd });
+      if (response.error || !response.data)
+        throw new Error(`读取 OpenCode 会话名称失败：${toDiagnosticErrorMessage(response.error)}`);
+      return normalizeOpenCodeSessionTitle(response.data.title);
     } finally {
       await acquisition.release();
     }
@@ -3196,6 +3211,27 @@ class OpenCodeAgentSession implements AgentSession {
 
   get features(): AgentFeature[] {
     return [buildOpenCodeAutoAcceptFeature(this.config)];
+  }
+
+  async getSessionTitle(): Promise<string | null> {
+    const response = await this.client.session.get({
+      sessionID: this.sessionId,
+      directory: this.config.cwd,
+    });
+    if (response.error || !response.data)
+      throw new Error(`读取 OpenCode 会话名称失败：${toDiagnosticErrorMessage(response.error)}`);
+    return normalizeOpenCodeSessionTitle(response.data.title);
+  }
+
+  async renameSessionTitle(title: string): Promise<void> {
+    const response = await this.client.session.update({
+      sessionID: this.sessionId,
+      directory: this.config.cwd,
+      title,
+    });
+    if (response.error || !response.data)
+      throw new Error(`修改 OpenCode 会话名称失败：${toDiagnosticErrorMessage(response.error)}`);
+    if (response.data.title !== title) throw new Error("OpenCode 原生会话名称写入后校验失败。");
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {

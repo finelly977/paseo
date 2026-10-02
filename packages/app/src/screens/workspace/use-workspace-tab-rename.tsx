@@ -120,6 +120,9 @@ export function WorkspaceTabRenameModal({
     <AdaptiveRenameModal
       visible={renamingTab !== null}
       title={title}
+      description={
+        renamingTab?.kind === "agent" ? t("workspace.tabs.menu.renameAgentDescription") : undefined
+      }
       initialValue={initialValue}
       submitLabel={t("workspace.tabs.menu.rename")}
       maxLength={200}

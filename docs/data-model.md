@@ -36,6 +36,8 @@ All server-side stores live under `$PASEO_HOME` (defaults to `~/.paseo`).
 
 ## Store Surface Rules
 
+会话名称同步在 Agent Record 中增加可选的 `titleSync`：`source` 区分原生名称与本地别名，`legacyTitle` 保存首次原生同步之前的 Paseo 会话名，`migrated` 标记已经原生改名或完成迁移。普通运行时快照必须保留该对象和已经确认的名称，不能用陈旧快照恢复旧标题。工作区 `title` 不参与会话名同步。迁移与冲突语义见 [session-titles.md](session-titles.md)。
+
 Store APIs own persistence atomicity and should not make services coordinate raw reads and writes. A good store method maps cleanly to one SQL statement or one SQL transaction, even when the current implementation is JSON files. If a caller needs a queue, lock, read-merge-write loop, or uniqueness race workaround, that behavior belongs behind the store surface.
 
 ---

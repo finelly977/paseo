@@ -1728,6 +1728,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
+  async getSessionTitle(): Promise<string | null> {
+    return this.currentTitle;
+  }
+
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
     return this.runtimeInfo();
   }

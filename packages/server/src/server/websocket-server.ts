@@ -1737,6 +1737,7 @@ export class VoiceAssistantWebSocketServer {
         agentRemoval: true,
         // COMPAT(agentRuntimeRelease): v0.2.3 新增，2027-02-09 后移除能力门控。
         agentRuntimeRelease: true,
+        nativeSessionTitles: true,
         // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
         conversationHistoryLimit: true,
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。

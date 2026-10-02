@@ -1,3 +1,4 @@
+import { readJsonlSessionTitle } from "../jsonl-session-title.js";
 import type { Dirent } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -241,7 +242,7 @@ async function readPiSessionDescriptor(filePath: string): Promise<PiSessionDescr
   const tail = await readTail(filePath).catch(() => "");
   const tailInfo = parseSessionTail(tail);
   const headInfo = parseSessionHeadFromChunk(headChunk);
-  const title = tailInfo.title ?? headInfo.title ?? headInfo.firstUserMessage;
+  const title = (await readJsonlSessionTitle(filePath)) ?? headInfo.firstUserMessage;
   const model = tailInfo.model ?? headInfo.model;
   const thinkingOptionId = tailInfo.thinkingOptionId ?? headInfo.thinkingOptionId;
   const lastActivityAt =

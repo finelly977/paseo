@@ -2658,15 +2658,48 @@ export class DaemonClient {
     }
   }
 
+  async getNativeSessionTitle(
+    agentId: string,
+  ): Promise<{ title: string | null; supported: boolean; sessionId: string | null }> {
+    // COMPAT(nativeSessionTitles): 二开于 2026-10-02 新增，2027-04-02 后移除门控。
+    if (this.getLastServerInfoMessage()?.features?.nativeSessionTitles !== true) {
+      throw new Error("请更新主机后使用原生会话名称同步。");
+    }
+    return this.sendCorrelatedSessionRequest({
+      message: { type: "agent.title.get.request", agentId },
+      responseType: "agent.title.get.response",
+    });
+  }
+
   async updateAgent(
     agentId: string,
-    updates: { name?: string; labels?: Record<string, string> },
+    updates: {
+      name?: string;
+      labels?: Record<string, string>;
+      nativeTitleOnly?: boolean;
+      expectedNativeTitle?: string | null;
+      expectedNativeSessionId?: string;
+    },
   ): Promise<void> {
+    // COMPAT(nativeSessionTitles): 二开于 2026-10-02 新增，2027-04-02 后移除门控。
+    if (
+      updates.name !== undefined &&
+      this.getLastServerInfoMessage()?.features?.nativeSessionTitles !== true
+    ) {
+      throw new Error("请更新主机后使用会话名称同步。");
+    }
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "update_agent_request",
       agentId,
       ...(updates.name !== undefined ? { name: updates.name } : {}),
+      ...(updates.nativeTitleOnly ? { nativeTitleOnly: true } : {}),
+      ...(updates.expectedNativeTitle !== undefined
+        ? { expectedNativeTitle: updates.expectedNativeTitle }
+        : {}),
+      ...(updates.expectedNativeSessionId !== undefined
+        ? { expectedNativeSessionId: updates.expectedNativeSessionId }
+        : {}),
       ...(updates.labels && Object.keys(updates.labels).length > 0
         ? { labels: updates.labels }
         : {}),

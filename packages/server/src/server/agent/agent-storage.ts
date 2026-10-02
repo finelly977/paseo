@@ -44,6 +44,13 @@ const STORED_AGENT_SCHEMA = z.object({
   lastActivityAt: z.string().optional(),
   lastUserMessageAt: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
+  titleSync: z
+    .object({
+      source: z.enum(["native", "local"]),
+      legacyTitle: z.string().nullable(),
+      migrated: z.boolean(),
+    })
+    .optional(),
   labels: z.record(z.string(), z.string()).default({}),
   lastStatus: AgentStatusSchema.default("closed"),
   lastModeId: z.string().nullable().optional(),
@@ -129,7 +136,7 @@ export class AgentStorage {
     await this.queueRecordWrite(record);
   }
 
-  private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
+  private queueRecordWrite(record: StoredAgentRecord, preserveSessionTitle = false): Promise<void> {
     const agentId = record.id;
     const prev = this.pendingWrites.get(agentId) ?? Promise.resolve();
     const next = prev.then(async () => {
@@ -137,7 +144,19 @@ export class AgentStorage {
         return undefined;
       }
 
-      await this.writeRecord(record);
+      const current = this.cache.get(agentId);
+      const nextRecord =
+        preserveSessionTitle && current?.titleSync
+          ? {
+              ...record,
+              title: current.title,
+              titleSync: current.titleSync,
+              updatedAt: new Date(
+                Math.max(Date.parse(record.updatedAt), Date.parse(current.updatedAt)),
+              ).toISOString(),
+            }
+          : record;
+      await this.writeRecord(nextRecord);
       return undefined;
     });
 
@@ -227,7 +246,32 @@ export class AgentStorage {
     if (existing && existing.archivedAt !== undefined) {
       record.archivedAt = existing.archivedAt;
     }
-    await this.upsert(record);
+    if (existing?.titleSync) record.titleSync = existing.titleSync;
+    await this.queueRecordWrite(record, true);
+  }
+
+  async saveSessionTitle(input: {
+    agentId: string;
+    title: string;
+    source: "native" | "local";
+    migrated: boolean;
+  }): Promise<StoredAgentRecord> {
+    await this.load();
+    await this.waitForPendingWrite(input.agentId);
+    const record = this.cache.get(input.agentId);
+    if (!record || this.deleting.has(input.agentId)) throw new Error("会话不存在。");
+    const updated: StoredAgentRecord = {
+      ...record,
+      title: input.title,
+      updatedAt: new Date(Math.max(Date.now(), Date.parse(record.updatedAt) + 1)).toISOString(),
+      titleSync: {
+        source: input.source,
+        legacyTitle: record.titleSync ? record.titleSync.legacyTitle : (record.title ?? null),
+        migrated: input.migrated,
+      },
+    };
+    await this.queueRecordWrite(updated);
+    return updated;
   }
 
   async setTitle(agentId: string, title: string): Promise<void> {

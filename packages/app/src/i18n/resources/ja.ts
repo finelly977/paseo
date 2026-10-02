@@ -581,6 +581,8 @@ export const ja: TranslationResources = {
         close: "閉じる",
         renameTerminal: "ターミナルの名前を変更",
         renameAgent: "エージェントの名前を変更",
+        renameAgentDescription:
+          "支持的智能体会同步修改原生会话名；其他智能体仅保存 Paseo 别名。工作区名称不变。",
       },
       actions: {
         newAgent: "新しいエージェント",

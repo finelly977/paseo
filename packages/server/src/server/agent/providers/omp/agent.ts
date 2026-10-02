@@ -1,3 +1,4 @@
+import { readJsonlSessionTitle } from "../jsonl-session-title.js";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -119,6 +120,7 @@ const COMBINED_ASK_USER_METADATA = "ask_user_select_optional_comment";
 const OMP_CORE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionRename: true,
   supportsSessionListing: true,
   supportsDynamicModes: true,
   supportsMcpServers: false,
@@ -1050,6 +1052,17 @@ export class OmpAgentSession implements AgentSession {
         item,
       };
     }
+  }
+
+  async getSessionTitle(): Promise<string | null> {
+    await this.refreshState();
+    return this.state.sessionName ?? null;
+  }
+
+  async renameSessionTitle(title: string): Promise<void> {
+    await this.runtimeSession.setSessionName(title);
+    await this.refreshState();
+    if (this.state.sessionName !== title) throw new Error("原生会话名称写入后校验失败。");
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -2252,6 +2265,11 @@ export class OmpAgentClient implements AgentClient {
       return;
     }
     await setOmpHostTools(runtimeSession, catalog);
+  }
+
+  async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {
+    if (typeof handle.nativeHandle !== "string") throw new Error("原生会话文件标识无效。");
+    return readJsonlSessionTitle(handle.nativeHandle);
   }
 
   async createSession(

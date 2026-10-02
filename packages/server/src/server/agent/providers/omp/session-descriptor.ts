@@ -1,3 +1,4 @@
+import { readJsonlSessionTitle } from "../jsonl-session-title.js";
 import type { Dirent } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -248,8 +249,7 @@ async function readOmpSessionDescriptor(filePath: string): Promise<OmpSessionDes
   const tailInfo = parseSessionTail(tail);
   const headInfo = parseSessionHeadFromChunk(headChunk);
   const title =
-    tailInfo.title ??
-    headInfo.title ??
+    (await readJsonlSessionTitle(filePath)) ??
     readReadableSessionTitleFromPath(filePath) ??
     headInfo.firstUserMessage;
   const model = tailInfo.model ?? headInfo.model;

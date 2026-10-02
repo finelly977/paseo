@@ -1069,10 +1069,29 @@ export const CloseItemsRequestMessageSchema = z.object({
   requestId: z.string(),
 });
 
+export const AgentTitleGetRequestSchema = z.object({
+  type: z.literal("agent.title.get.request"),
+  agentId: z.string(),
+  requestId: z.string(),
+});
+export const AgentTitleGetResponseSchema = z.object({
+  type: z.literal("agent.title.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    title: z.string().nullable(),
+    supported: z.boolean(),
+    sessionId: z.string().nullable(),
+  }),
+});
+
 export const UpdateAgentRequestMessageSchema = z.object({
   type: z.literal("update_agent_request"),
   agentId: z.string(),
   name: z.string().optional(),
+  nativeTitleOnly: z.boolean().optional(),
+  expectedNativeTitle: z.string().nullable().optional(),
+  expectedNativeSessionId: z.string().optional(),
   labels: z.record(z.string(), z.string()).optional(),
   requestId: z.string(),
 });
@@ -3033,6 +3052,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentRuntimeReleaseRequestSchema,
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
+  AgentTitleGetRequestSchema,
   ProjectRenameRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
@@ -3490,6 +3510,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentRemoval: z.boolean().optional(),
         // COMPAT(agentRuntimeRelease): v0.2.3 新增，2027-02-09 后移除能力门控。
         agentRuntimeRelease: z.boolean().optional(),
+        // COMPAT(nativeSessionTitles): 二开于 2026-10-02 新增，2027-04-02 后移除门控。
+        nativeSessionTitles: z.boolean().optional(),
         // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
         conversationHistoryLimit: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。
@@ -6301,6 +6323,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentRuntimeReleaseResponseSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
+  AgentTitleGetResponseSchema,
   ProjectRenameResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,

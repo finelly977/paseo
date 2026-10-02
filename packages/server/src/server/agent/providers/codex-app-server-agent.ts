@@ -230,6 +230,7 @@ function formatOutOfBandStatusMessage(text: string): string {
 const CODEX_APP_SERVER_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionRename: true,
   supportsSessionListing: true,
   supportsDynamicModes: false,
   supportsMcpServers: true,
@@ -4591,6 +4592,29 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
   }
 
+  async getSessionTitle(): Promise<string | null> {
+    if (!this.client || !this.currentThreadId) return null;
+    const response = z
+      .object({
+        thread: z.object({
+          name: z.string().nullable().optional(),
+          preview: z.string().optional(),
+        }),
+      })
+      .parse(
+        await this.client.request("thread/read", {
+          threadId: this.currentThreadId,
+          includeTurns: false,
+        }),
+      );
+    return response.thread.name ?? response.thread.preview ?? null;
+  }
+
+  async renameSessionTitle(title: string): Promise<void> {
+    if (!this.client || !this.currentThreadId) throw new Error("Codex 原生会话尚未建立。");
+    await this.client.request("thread/name/set", { threadId: this.currentThreadId, name: title });
+  }
+
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
     if (this.cachedRuntimeInfo) return { ...this.cachedRuntimeInfo };
     if (!this.connected) {
@@ -7574,6 +7598,33 @@ export class CodexAppServerAgentClient implements AgentClient {
         fastModeEnabled: fastServiceTierId !== null && serviceTier === fastServiceTierId,
         planModeEnabled: config.featureValues?.plan_mode === true,
       });
+    } finally {
+      await client.dispose();
+    }
+  }
+
+  async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {
+    const child = await this.spawnAppServer();
+    const client =
+      this.deps._createCodexClient?.(child, this.logger, () => ({})) ??
+      new CodexAppServerClient(child, this.logger);
+    try {
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+      const response = z
+        .object({
+          thread: z.object({
+            name: z.string().nullable().optional(),
+            preview: z.string().optional(),
+          }),
+        })
+        .parse(
+          await client.request("thread/read", {
+            threadId: handle.nativeHandle ?? handle.sessionId,
+            includeTurns: false,
+          }),
+        );
+      return response.thread.name ?? response.thread.preview ?? null;
     } finally {
       await client.dispose();
     }

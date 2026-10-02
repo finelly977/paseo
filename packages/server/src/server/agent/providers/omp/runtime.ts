@@ -49,6 +49,7 @@ export interface OmpRuntimeSession {
   ): Promise<OmpPromptAck>;
   compact(customInstructions?: string): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
+  setSessionName(name: string): Promise<void>;
   abort(): Promise<void>;
   getState(): Promise<OmpSessionState>;
   getMessages(): Promise<OmpAgentMessage[]>;

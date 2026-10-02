@@ -330,6 +330,7 @@ export class FakePiSession implements PiRuntimeSession {
         if (this.setSessionNameError) {
           throw this.setSessionNameError;
         }
+        this.state.sessionName = String(command.name);
         return {};
       default:
         throw new Error(`FakePi request does not implement ${command.type}`);

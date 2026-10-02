@@ -218,6 +218,10 @@ class OmpCliRuntimeSession implements OmpRuntimeSession {
     await this.request({ type: "abort" });
   }
 
+  async setSessionName(name: string): Promise<void> {
+    await this.request({ type: "set_session_name", name });
+  }
+
   async getState(): Promise<OmpSessionState> {
     return OmpSessionStateSchema.parse(await this.request({ type: "get_state" }));
   }

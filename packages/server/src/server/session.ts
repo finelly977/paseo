@@ -1070,6 +1070,7 @@ export class Session {
   }
 
   updateClientCapabilities(capabilities: Record<string, unknown> | null, source?: object): void {
+    this.hasRefreshedNativeTitles = false;
     this.clientCapabilities = parseClientCapabilities(capabilities);
     if (source) {
       this.clientCapabilitiesBySource.set(source, this.clientCapabilities);
@@ -1618,6 +1619,15 @@ export class Session {
 
     this.unsubscribeAgentEvents = this.agentManager.subscribe(
       (event) => {
+        if (event.type === "agent_metadata") {
+          void this.agentUpdates.emitStoredRecord(event.record).catch((error) => {
+            this.sessionLogger.error(
+              { err: error, agentId: event.agentId },
+              "Failed to emit session title update",
+            );
+          });
+          return;
+        }
         if (event.type === "timeline_replacement") {
           this.deliverTimelineReplacement(
             event.agentId,
@@ -1932,6 +1942,7 @@ export class Session {
       this.dispatchAgentRelationshipMessage(msg) ??
       this.dispatchAgentTimelineMessage(msg, source) ??
       this.dispatchHubExecutionMessage(msg) ??
+      this.dispatchMetadataMessage(msg) ??
       this.dispatchAgentLifecycleMessage(msg, source) ??
       this.dispatchAgentConfigMessage(msg) ??
       this.dispatchCheckoutMessage(msg) ??
@@ -2220,6 +2231,27 @@ export class Session {
       : undefined;
   }
 
+  private dispatchMetadataMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
+      case "agent.title.get.request": {
+        return this.agentManager.readNativeSessionTitle(msg.agentId).then((title) => {
+          return this.emit({
+            type: "agent.title.get.response",
+            payload: { requestId: msg.requestId, agentId: msg.agentId, ...title },
+          });
+        });
+      }
+
+      case "update_agent_request":
+        return this.handleUpdateAgentRequest(msg);
+      case "project.rename.request":
+        return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
+
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchAgentLifecycleMessage(
     msg: SessionInboundMessage,
     source?: object,
@@ -2241,10 +2273,6 @@ export class Session {
         return this.handleRemoveAgentFromPaseoRequest(msg.agentId, msg.requestId);
       case "close_items_request":
         return this.handleCloseItemsRequest(msg);
-      case "update_agent_request":
-        return this.handleUpdateAgentRequest(msg.agentId, msg.name, msg.labels, msg.requestId);
-      case "project.rename.request":
-        return this.handleProjectRenameRequest(msg.projectId, msg.customName, msg.requestId);
       case "send_agent_message_request":
         return this.handleSendAgentMessageRequest(msg, source);
       case "wait_for_finish_request":
@@ -2967,11 +2995,17 @@ export class Session {
   }
 
   private async handleUpdateAgentRequest(
-    agentId: string,
-    name: string | undefined,
-    labels: Record<string, string> | undefined,
-    requestId: string,
+    msg: Extract<SessionInboundMessage, { type: "update_agent_request" }>,
   ): Promise<void> {
+    const {
+      agentId,
+      name,
+      labels,
+      requestId,
+      nativeTitleOnly,
+      expectedNativeTitle,
+      expectedNativeSessionId,
+    } = msg;
     this.sessionLogger.info(
       {
         agentId,
@@ -2985,7 +3019,7 @@ export class Session {
     try {
       const result = await updateAgentCommand(
         { agentManager: this.agentManager },
-        { agentId, name, labels },
+        { agentId, name, labels, nativeTitleOnly, expectedNativeTitle, expectedNativeSessionId },
       );
 
       if (!result.accepted) {
@@ -5419,6 +5453,8 @@ export class Session {
     await this.emitWorkspaceUpdatesForWorkspaceIds(workspaceIds, options);
   }
 
+  private hasRefreshedNativeTitles = false;
+
   private async handleFetchAgents(
     request: Extract<SessionInboundMessage, { type: "fetch_agents_request" }>,
   ): Promise<void> {
@@ -5433,6 +5469,12 @@ export class Session {
         });
       }
 
+      if (!this.hasRefreshedNativeTitles) {
+        this.hasRefreshedNativeTitles = true;
+        void this.agentManager.refreshNativeSessionTitles().catch((error) => {
+          this.sessionLogger.error({ err: error }, "Failed to refresh native session titles");
+        });
+      }
       const payload = await this.listFetchAgentsEntries(request);
       const snapshotUpdatedAtByAgentId = new Map<string, number>();
       for (const entry of payload.entries) {

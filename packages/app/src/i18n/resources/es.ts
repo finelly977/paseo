@@ -582,6 +582,8 @@ export const es: TranslationResources = {
         close: "Cerrar",
         renameTerminal: "Cambiar nombre de terminal",
         renameAgent: "Cambiar nombre del agente",
+        renameAgentDescription:
+          "支持的智能体会同步修改原生会话名；其他智能体仅保存 Paseo 别名。工作区名称不变。",
       },
       actions: {
         newAgent: "Nuevo agente",

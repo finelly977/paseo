@@ -1,4 +1,5 @@
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import { accessClaudeSessionTitle } from "./session-title.js";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -291,6 +292,7 @@ type ClaudeConversationRewindTarget =
 const CLAUDE_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionRename: true,
   supportsSessionListing: true,
   supportsDynamicModes: true,
   supportsMcpServers: true,
@@ -1473,6 +1475,18 @@ export class ClaudeAgentClient implements AgentClient {
     this.configDir = options.configDir;
   }
 
+  async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {
+    const metadata = coerceSessionMetadata(handle.metadata);
+    if (!metadata.cwd) throw new Error("Claude 会话缺少原始工作目录。");
+    const env = createProviderEnv({
+      baseEnv: process.env,
+      runtimeSettings: this.runtimeSettings,
+      overlays: [metadata.extra?.claude?.env],
+    });
+    if (this.configDir) env.CLAUDE_CONFIG_DIR = this.configDir;
+    return accessClaudeSessionTitle({ sessionId: handle.sessionId, cwd: metadata.cwd, env });
+  }
+
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
@@ -2103,6 +2117,26 @@ class ClaudeAgentSession implements AgentSession {
       modelId: this.config.model,
       fastModeEnabled: this.config.featureValues?.fast_mode === true,
     });
+  }
+
+  async getSessionTitle(): Promise<string | null> {
+    if (!this.claudeSessionId) return null;
+    return accessClaudeSessionTitle({
+      sessionId: this.claudeSessionId,
+      cwd: this.config.cwd,
+      env: this.buildSdkEnv(this.config.extra?.claude),
+    });
+  }
+
+  async renameSessionTitle(title: string): Promise<void> {
+    if (!this.claudeSessionId) throw new Error("Claude 原生会话尚未建立。");
+    const actual = await accessClaudeSessionTitle({
+      sessionId: this.claudeSessionId,
+      cwd: this.config.cwd,
+      env: this.buildSdkEnv(this.config.extra?.claude),
+      title,
+    });
+    if (actual !== title) throw new Error("Claude 原生会话名称写入后校验失败。");
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {

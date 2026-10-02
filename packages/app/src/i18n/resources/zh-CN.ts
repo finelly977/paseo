@@ -576,6 +576,8 @@ export const zhCN: TranslationResources = {
         close: "关闭",
         renameTerminal: "重命名 Terminal",
         renameAgent: "重命名 Agent",
+        renameAgentDescription:
+          "支持的智能体会同步修改原生会话名；其他智能体仅保存 Paseo 别名。工作区名称不变。",
       },
       actions: {
         newAgent: "新建 Agent",

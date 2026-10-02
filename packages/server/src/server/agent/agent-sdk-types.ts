@@ -173,6 +173,7 @@ export interface AgentFeatureSelect {
 export type AgentFeature = AgentFeatureToggle | AgentFeatureSelect;
 
 export interface AgentCapabilityFlags {
+  supportsSessionRename?: boolean;
   [capability: string]: boolean | undefined;
   supportsStreaming: boolean;
   supportsSessionPersistence: boolean;
@@ -654,6 +655,8 @@ export interface AgentPermissionResult {
 }
 
 export interface AgentSession {
+  getSessionTitle?(): Promise<string | null>;
+  renameSessionTitle?(title: string): Promise<void>;
   readonly provider: AgentProvider;
   readonly id: string | null;
   readonly capabilities: AgentCapabilityFlags;
@@ -732,6 +735,7 @@ export interface ResolveAgentDefaultModeInput {
 }
 
 export interface AgentClient {
+  getNativeSessionTitle?(handle: AgentPersistenceHandle): Promise<string | null>;
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
   createSession(

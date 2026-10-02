@@ -38,17 +38,23 @@
 - `packages/server/src/server/agent/import-sessions.ts`
 - 各智能体提供方的会话描述与导入实现
 
-### 3. 导入后保留智能体 CLI 的原生会话名称
+### 3. 会话名称与原生会话同步，工作区名称保持独立
 
 - 导入时优先使用智能体 CLI 返回的原生会话名称；CLI 没有名称时使用首条用户消息，不再默认退回 Git 分支名。
 - 原生名称会同时写入新建工作区和智能体记录；导入到已有工作区时不擅自覆盖已有工作区名称。
 - Claude 从会话文件中读取最新一次自定义名称，而不是只读取首条消息。
-- 刷新导入列表时会安全修复旧导入记录：仅纠正空标题或旧自动标题，保留用户手动修改的名称。
+- Claude、Codex、OpenCode、Pi 和 OMP 的会话标签重命名直接调用原生 SDK、API 或 RPC；原生写入成功后才保存 Paseo 名称并通知连接同一主机的客户端，失败保留旧显示和可重试错误，不通过发送提示词或私自改写原生存储来模拟改名。原生会话尚未建立时明确提示先开始对话。
+- 每个客户端连接后首次读取会话目录时，在后台按提供方读取原生名称；恢复运行时时也重新读取当前名称。原生端的改名会更新 Paseo 会话标题，不修改工作区标题、Git 分支或目录。并发的旧名称读取不能覆盖 Paseo 中刚完成的改名；读取失败保留当前显示并记录完整错误，下次连接或恢复可重试。Pi/OMP 读取完整 JSONL 中的名称元数据，名称位于长对话中间也不会错用头尾旧值。
+- Copilot、Grok 及其他通用 ACP 提供方没有统一可靠的原生改名接口，仍允许保存 Paseo 本地别名，已有别名不被原生名称覆盖；会话改名弹窗明确说明该边界。不把本地成功当作原生迁移成功。
+- `scripts/migrate-session-titles.mts` 只迁移旧会话标签名称，不使用侧栏工作区名。默认预览，显式 `--apply` 才逐项写回原生名称；先保存旧本地名和旧原生名，校验主机及原生会话身份，在写入前再次核验原生名称。同一原生会话对应冲突的旧名称时不自动选择，已迁移项跳过，不支持项保留别名；归档会话默认排除，可显式包含。首次原生同步会持久保留旧名称，因此启动新版本后再运行迁移也不会丢失旧名称。详见 `docs/session-titles.md`。
+- 刷新导入列表时仍只纠正空标题或旧自动标题；已进入原生同步的会话不再被普通运行时快照改回本地旧名。
 - 只有工作区唯一的根智能体可以修复工作区名称，子智能体和多根智能体工作区不会互相覆盖名称。
 
 主要涉及：
 
 - `packages/app/src/components/import-session-sheet.tsx`
+- `packages/server/src/server/agent/session-titles.ts`
+- `scripts/migrate-session-titles.mts`
 - `packages/client/src/daemon-client.ts`
 - `packages/protocol/src/messages.ts`
 - `packages/server/src/server/agent/import-sessions.ts`

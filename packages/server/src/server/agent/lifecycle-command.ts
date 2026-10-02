@@ -161,6 +161,9 @@ export async function updateAgentCommand(
   input: {
     agentId: string;
     name?: string;
+    nativeTitleOnly?: boolean;
+    expectedNativeTitle?: string | null;
+    expectedNativeSessionId?: string;
     labels?: Record<string, string>;
   },
 ): Promise<UpdateAgentResult> {
@@ -175,7 +178,14 @@ export async function updateAgentCommand(
   }
 
   await dependencies.agentManager.updateAgentMetadata(input.agentId, {
-    ...(title ? { title } : {}),
+    ...(title
+      ? {
+          title,
+          nativeTitleOnly: input.nativeTitleOnly,
+          expectedNativeTitle: input.expectedNativeTitle,
+          expectedNativeSessionId: input.expectedNativeSessionId,
+        }
+      : {}),
     ...(labels ? { labels } : {}),
   });
 
