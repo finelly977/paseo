@@ -191,6 +191,7 @@ const MARKDOWN_ALLOWED_IMAGE_HANDLERS = [
 const MARKDOWN_TOP_LEVEL_MAX_EXCEEDED_ITEM = <Text key="dotdotdot">...</Text>;
 
 const ThemedMicVocal = withUnistyles(MicVocal);
+const ThemedImageLoadingIndicator = withUnistyles(ActivityIndicator);
 const ThemedTodoCheckIcon = withUnistyles(Check);
 const ThemedFileSymlinkIcon = withUnistyles(FileSymlink);
 const ThemedTriangleAlertIcon = withUnistyles(TriangleAlertIcon);
@@ -971,6 +972,21 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     width: "100%",
     overflow: "hidden",
   },
+  imageThumbnailFrame: {
+    width: 120,
+    height: 120,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.xl,
+    overflow: "hidden",
+  },
+  imageThumbnailSurface: {
+    width: "100%",
+    height: "100%",
+  },
+  imageThumbnailState: {
+    padding: theme.spacing[2],
+  },
   image: {
     width: "100%",
     height: "100%",
@@ -990,6 +1006,7 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
 }));
 
 const ASSISTANT_IMAGE_MIN_HEIGHT = 160;
+type AssistantImageDisplay = "inline" | "thumbnail";
 
 const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedImage({
   uri,
@@ -998,6 +1015,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   source,
   workspaceRoot,
   serverId,
+  display,
 }: {
   uri: string;
   alt?: string;
@@ -1005,6 +1023,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   source: string;
   workspaceRoot?: string;
   serverId?: string;
+  display: AssistantImageDisplay;
 }) {
   const cachedMetadata = useMemo(
     () => getAssistantImageMetadata({ source, workspaceRoot, serverId }),
@@ -1060,22 +1079,30 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   const [viewerOpen, setViewerOpen] = useState(false);
   const openViewer = useCallback(() => setViewerOpen(true), []);
   const closeViewer = useCallback(() => setViewerOpen(false), []);
-  const surfaceStyle = useMemo<StyleProp<ViewStyle>>(
-    () => [
-      assistantMessageStylesheet.imageSurface,
+  const surfaceStyle = useMemo<StyleProp<ViewStyle>>(() => {
+    if (display === "thumbnail") return assistantMessageStylesheet.imageThumbnailSurface;
+    const dimensions =
       loadState.status === "ready"
         ? { aspectRatio: loadState.aspectRatio }
-        : { height: ASSISTANT_IMAGE_MIN_HEIGHT },
-    ],
-    [loadState],
-  );
+        : { height: ASSISTANT_IMAGE_MIN_HEIGHT };
+    return [assistantMessageStylesheet.imageSurface, dimensions];
+  }, [display, loadState]);
   const frameStyle = useMemo<StyleProp<ViewStyle>>(
-    () => [assistantMessageStylesheet.imageFrame, containerStyle],
-    [containerStyle],
+    () => [
+      display === "thumbnail"
+        ? assistantMessageStylesheet.imageThumbnailFrame
+        : assistantMessageStylesheet.imageFrame,
+      containerStyle,
+    ],
+    [containerStyle, display],
   );
   const stateSurfaceStyle = useMemo<StyleProp<ViewStyle>>(
-    () => [surfaceStyle, assistantMessageStylesheet.imageState],
-    [surfaceStyle],
+    () => [
+      surfaceStyle,
+      assistantMessageStylesheet.imageState,
+      display === "thumbnail" && assistantMessageStylesheet.imageThumbnailState,
+    ],
+    [display, surfaceStyle],
   );
   const imageSource = useMemo(() => ({ uri }), [uri]);
   const lightboxSource = useMemo<ImageLightboxSource | null>(() => {
@@ -1093,7 +1120,9 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
     return (
       <View style={frameStyle}>
         <View style={stateSurfaceStyle}>
-          {loadState.status === "loading" ? <ActivityIndicator size="small" /> : null}
+          {loadState.status === "loading" ? (
+            <ThemedImageLoadingIndicator size="small" uniProps={foregroundMutedColorMapping} />
+          ) : null}
           {loadState.status === "error" ? (
             <Text style={assistantMessageStylesheet.imageErrorText}>
               {t("message.attachments.imageUnavailable")}
@@ -1125,13 +1154,14 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   );
 });
 
-function AssistantMarkdownImage({
+export function AssistantMarkdownImage({
   source,
   alt,
   hasLeadingContent,
   client,
   workspaceRoot,
   serverId,
+  display,
 }: {
   source: string;
   alt?: string;
@@ -1139,6 +1169,7 @@ function AssistantMarkdownImage({
   client?: DaemonClient | null;
   workspaceRoot?: string;
   serverId?: string;
+  display: AssistantImageDisplay;
 }) {
   const { t } = useTranslation();
   const resolution = useMemo(
@@ -1214,12 +1245,15 @@ function AssistantMarkdownImage({
 
   const stateFrameStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
-      assistantMessageStylesheet.imageFrame,
+      display === "thumbnail"
+        ? assistantMessageStylesheet.imageThumbnailFrame
+        : assistantMessageStylesheet.imageFrame,
       containerStyle,
-      { height: ASSISTANT_IMAGE_MIN_HEIGHT },
+      display === "inline" && { height: ASSISTANT_IMAGE_MIN_HEIGHT },
       assistantMessageStylesheet.imageState,
+      display === "thumbnail" && assistantMessageStylesheet.imageThumbnailState,
     ],
-    [containerStyle],
+    [containerStyle, display],
   );
 
   if (resolvedUri) {
@@ -1231,6 +1265,7 @@ function AssistantMarkdownImage({
         source={source}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
+        display={display}
       />
     );
   }
@@ -1238,7 +1273,7 @@ function AssistantMarkdownImage({
   if (query.isLoading || dataImageQuery.isLoading) {
     return (
       <View style={stateFrameStyle}>
-        <ActivityIndicator size="small" />
+        <ThemedImageLoadingIndicator size="small" uniProps={foregroundMutedColorMapping} />
       </View>
     );
   }
@@ -1251,7 +1286,9 @@ function AssistantMarkdownImage({
 
   return (
     <View style={stateFrameStyle}>
-      <Text style={assistantMessageStylesheet.imageErrorText}>{errorText}</Text>
+      <Text style={assistantMessageStylesheet.imageErrorText}>
+        {display === "thumbnail" ? t("message.attachments.imageLoadFailed") : errorText}
+      </Text>
     </View>
   );
 }
@@ -2132,6 +2169,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         return (
           <AssistantMarkdownImage
             key={node.key}
+            display="inline"
             source={String(node.attributes?.src ?? "")}
             alt={typeof node.attributes?.alt === "string" ? node.attributes.alt : undefined}
             hasLeadingContent={hasLeadingContent}

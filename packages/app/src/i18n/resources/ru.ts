@@ -293,6 +293,7 @@ export const ru: TranslationResources = {
       copied: "Скопировано",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "Закрыть изображение",
       closeImage: "Закрыть изображение",
       imageLoadFailed: "Не удалось загрузить изображение",

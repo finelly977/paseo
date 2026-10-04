@@ -121,7 +121,7 @@ import {
 } from "./history-index-model";
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
-import { isStandaloneMarkdownImage } from "./provider-image-message-model";
+import { getStandaloneMarkdownImage } from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { PluginTimelineItemView } from "@/plugins/timeline";
@@ -949,8 +949,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           spacing: layoutItem.assistantSpacing,
           phase: layoutItem.phase,
         } as const;
-        const shouldCollapseImage =
-          context.provider === "codex" && isStandaloneMarkdownImage(item.text);
+        const providerImage =
+          context.provider === "codex" ? getStandaloneMarkdownImage(item.text) : null;
 
         return (
           <AssistantFileLinkResolverProvider
@@ -964,8 +964,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             }
             toast={toast}
           >
-            {shouldCollapseImage ? (
-              <ProviderImageMessage itemId={item.id} {...messageProps} />
+            {providerImage ? (
+              <ProviderImageMessage
+                key={item.id}
+                source={providerImage.source}
+                alt={providerImage.alt}
+                client={client}
+                workspaceRoot={workspaceRoot}
+                serverId={resolvedServerId}
+              />
             ) : (
               <AssistantMessage {...messageProps} />
             )}

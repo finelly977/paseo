@@ -294,6 +294,7 @@ export const ptBR: TranslationResources = {
       copied: "Copiado",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "Dispensar imagem",
       closeImage: "Fechar imagem",
       imageLoadFailed: "Não foi possível carregar a imagem",

@@ -294,6 +294,7 @@ export const ja: TranslationResources = {
       copied: "コピーしました",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "画像を閉じる",
       closeImage: "画像を閉じる",
       imageLoadFailed: "画像を読み込めませんでした",

@@ -1,13 +1,13 @@
-import { memo, useCallback, useEffect, useState, type ComponentProps } from "react";
+import { memo, useCallback, useState, type ComponentProps } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
-import { ChevronDown, Image as ImageIcon } from "lucide-react-native";
+import { ChevronDown, Images } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
-import { AssistantMessage } from "@/components/message";
+import { AssistantMarkdownImage } from "@/components/message";
 import type { Theme } from "@/styles/theme";
 
-const ThemedImageIcon = withUnistyles(ImageIcon);
+const ThemedImageIcon = withUnistyles(Images);
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -15,20 +15,16 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 const COLLAPSED_ACCESSIBILITY_STATE = { expanded: false } as const;
 const EXPANDED_ACCESSIBILITY_STATE = { expanded: true } as const;
 
-type ProviderImageMessageProps = ComponentProps<typeof AssistantMessage> & {
-  itemId: string;
-};
+type ProviderImageMessageProps = Pick<
+  ComponentProps<typeof AssistantMarkdownImage>,
+  "source" | "alt" | "client" | "workspaceRoot" | "serverId"
+>;
 
-export const ProviderImageMessage = memo(function ProviderImageMessage({
-  itemId,
-  ...messageProps
-}: ProviderImageMessageProps) {
+export const ProviderImageMessage = memo(function ProviderImageMessage(
+  imageProps: ProviderImageMessageProps,
+) {
   const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  useEffect(() => {
-    setIsExpanded(false);
-  }, [itemId]);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const handleToggle = useCallback(() => {
     setIsExpanded((current) => !current);
@@ -41,13 +37,14 @@ export const ProviderImageMessage = memo(function ProviderImageMessage({
     ],
     [],
   );
-  const label = t(isExpanded ? "message.attachments.closeImage" : "composer.attachments.openImage");
+  const label = t("message.attachments.viewedImage");
 
   return (
     <View style={styles.container}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
+        aria-expanded={isExpanded}
         accessibilityState={
           isExpanded ? EXPANDED_ACCESSIBILITY_STATE : COLLAPSED_ACCESSIBILITY_STATE
         }
@@ -60,10 +57,12 @@ export const ProviderImageMessage = memo(function ProviderImageMessage({
         <ThemedChevronDown
           size={14}
           uniProps={foregroundMutedColorMapping}
-          style={isExpanded ? styles.expandedIcon : undefined}
+          style={isExpanded ? undefined : styles.collapsedIcon}
         />
       </Pressable>
-      {isExpanded ? <AssistantMessage {...messageProps} /> : null}
+      {isExpanded ? (
+        <AssistantMarkdownImage {...imageProps} hasLeadingContent={false} display="thumbnail" />
+      ) : null}
     </View>
   );
 });
@@ -71,13 +70,15 @@ export const ProviderImageMessage = memo(function ProviderImageMessage({
 const styles = StyleSheet.create((theme) => ({
   container: {
     width: "100%",
+    gap: theme.spacing[1],
   },
   toggle: {
     minHeight: 36,
+    alignSelf: "flex-start",
+    maxWidth: "100%",
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[1],
     paddingVertical: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
   },
@@ -88,11 +89,11 @@ const styles = StyleSheet.create((theme) => ({
     opacity: theme.opacity[50],
   },
   label: {
-    flex: 1,
+    flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
   },
-  expandedIcon: {
-    transform: [{ rotate: "180deg" }],
+  collapsedIcon: {
+    transform: [{ rotate: "-90deg" }],
   },
 }));

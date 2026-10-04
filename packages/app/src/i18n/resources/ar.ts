@@ -291,6 +291,7 @@ export const ar: TranslationResources = {
       copied: "منقول",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "تجاهل الصورة",
       closeImage: "إغلاق الصورة",
       imageLoadFailed: "تعذر تحميل الصورة",

@@ -290,6 +290,7 @@ export const en = {
       copied: "Copied",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "Dismiss image",
       closeImage: "Close image",
       imageLoadFailed: "Couldn't load image",

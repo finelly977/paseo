@@ -295,6 +295,7 @@ export const fr: TranslationResources = {
       copied: "Copié",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "Ignorer l'image",
       closeImage: "Fermer l'image",
       imageLoadFailed: "Impossible de charger l'image",

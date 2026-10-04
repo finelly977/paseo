@@ -291,6 +291,7 @@ export const zhCN: TranslationResources = {
       copied: "已复制",
     },
     attachments: {
+      viewedImage: "已查看 1 张图像",
       dismissImage: "关闭图片",
       closeImage: "关闭图片",
       imageLoadFailed: "无法加载图片",
