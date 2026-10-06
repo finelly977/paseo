@@ -758,6 +758,10 @@ The built-in `claude` provider appends concrete model IDs from `~/.claude/settin
 
 This lets users who already configured Claude Code for Bedrock, OpenRouter, ollama, Z.AI, or another Anthropic-compatible gateway select the exact model ID in Paseo. When `agents.providers.claude.models` is set it **replaces** both the hardcoded first-party Claude list and any settings.json-discovered entries; use `agents.providers.claude.additionalModels` to keep the first-party list and append curated entries on top.
 
+从 Claude 设置发现的第三方 Claude 模型保留完整模型标识，并根据可识别的 Claude 型号提供思考强度选项。带服务商前缀、日期或中转后缀的模型不会因此丢失强度选择器；仅限官方型号的“关闭思考”能力仍不向第三方前缀开放。无法识别的非 Claude 模型不自动推断思考能力，仍可通过模型定义中的 `thinkingOptions` 明确声明。
+
+发现的模型优先沿用设置中的 `CLAUDE_CODE_EFFORT_LEVEL`，未设置时读取 `effortLevel`，仅在该值属于模型支持的选项时用作界面默认值。用户在 Paseo 会话中明确选择强度后，该选择通过 SDK 参数、进程环境及会话级内联设置传递，覆盖原有固定强度；运行中的切换在下一回合生效，清除会话选择后恢复原配置。不会改写 `settings.json`，未知型号或服务端未实现的能力不会因为有选择器而自动获得支持。
+
 ### Gotcha: `extends: "claude"` with third-party endpoints
 
 When a custom provider extends `"claude"` but points `ANTHROPIC_BASE_URL` at a non-Anthropic API (Z.AI, Alibaba/Qwen, proxies), the Claude Agent SDK may try to use Anthropic-only server-side tools like `WebSearch`. Third-party APIs don't support these tools, causing errors.

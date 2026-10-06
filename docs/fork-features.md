@@ -641,3 +641,15 @@
 - `packages/app/src/terminal/runtime/terminal-emulator-runtime.ts`
 - `packages/app/src/terminal/runtime/terminal-emulator-runtime.browser.test.ts`
 - `packages/app/src/terminal/webview/terminal-emulator-webview-html.ts`
+
+### 28. 第三方 Claude 模型思考强度可视化切换
+
+- 从本机 Claude 设置发现的模型保留完整模型标识；可识别的 Claude 型号即使带中转服务商前缀、日期或后缀，也在新会话、现有会话和 Agent 配置中提供对应的思考强度选项，不因模型来自第三方而隐藏选择器。
+- 界面默认强度沿用该模型支持的本机固定强度设置；用户明确选择后，通过 SDK、原生进程环境和会话级设置覆盖原固定值。运行中修改从下一回合生效，清除会话选择后恢复原配置，不改写用户全局 Claude 设置。
+- 仅限官方型号的“关闭思考”能力不向第三方前缀开放；无法识别的非 Claude 模型不自动推断能力，自定义模型仍可明确配置思考选项。实际模型、服务商支持范围和 Claude 原生限制保持不变。
+
+主要涉及：
+
+- `packages/server/src/server/agent/providers/claude/models.ts`
+- `packages/server/src/server/agent/providers/claude/agent.ts`
+- `packages/server/src/server/agent/providers/claude/query.ts`

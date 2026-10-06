@@ -851,7 +851,7 @@ describe("ClaudeAgentSession features", () => {
     });
 
     expect(launches[0]?.options.thinking).toEqual({ type: "disabled" });
-    expect(launches[0]?.options).not.toHaveProperty("effort");
+    expect(launches[0]?.options.effort).toBeUndefined();
 
     await session.close();
   });

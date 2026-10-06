@@ -21,6 +21,7 @@ import {
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import { z } from "zod";
 import {
   mapClaudeCanceledToolCall,
   mapClaudeCompletedToolCall,
@@ -554,15 +555,11 @@ function readClaudeFastModeSetting(settings: ClaudeOptions["settings"]): boolean
   return typeof settings.fastMode === "boolean" ? settings.fastMode : null;
 }
 
-function mergeClaudeSettings(
-  settings: ClaudeOptions["settings"],
-  updates: NonNullable<Exclude<ClaudeOptions["settings"], string>>,
-): ClaudeOptions["settings"] {
-  if (!settings || typeof settings === "string") {
-    return settings ?? updates;
-  }
-  return { ...settings, ...updates };
-}
+const ClaudeFlagSettingsSchema = z
+  .object({
+    env: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
 function isToolResultTextBlock(value: unknown): value is { type: "text"; text: string } {
   return (
@@ -3086,6 +3083,9 @@ class ClaudeAgentSession implements AgentSession {
       return this.query;
     }
 
+    // 已结束的查询无需再次重启，否则新建输入流会在消息入队前被清空。
+    if (!this.query) this.queryRestartNeeded = false;
+
     if (this.queryRestartNeeded && this.query) {
       const oldQuery = this.query;
       const oldInput = this.input;
@@ -3204,6 +3204,7 @@ class ClaudeAgentSession implements AgentSession {
     thinking: ClaudeOptions["thinking"];
     effort: ClaudeOptions["effort"];
     ultracode: boolean;
+    effortOverride: string | undefined;
   } {
     const thinkingOptionId =
       this.config.thinkingOptionId && this.config.thinkingOptionId !== "default"
@@ -3211,15 +3212,30 @@ class ClaudeAgentSession implements AgentSession {
         : undefined;
     assertClaudeThinkingOptionSupported(this.config.model, thinkingOptionId);
     if (thinkingOptionId === CLAUDE_DISABLED_THINKING_OPTION_ID) {
-      return { thinking: { type: "disabled" }, effort: undefined, ultracode: false };
+      return {
+        thinking: { type: "disabled" },
+        effort: undefined,
+        ultracode: false,
+        effortOverride: "unset",
+      };
     }
     if (thinkingOptionId === CLAUDE_ULTRACODE_THINKING_OPTION_ID) {
-      return { thinking: { type: "adaptive" }, effort: "xhigh", ultracode: true };
+      return {
+        thinking: { type: "adaptive" },
+        effort: "xhigh",
+        ultracode: true,
+        effortOverride: "xhigh",
+      };
     }
     if (thinkingOptionId && isClaudeThinkingEffort(thinkingOptionId)) {
-      return { thinking: { type: "adaptive" }, effort: thinkingOptionId, ultracode: false };
+      return {
+        thinking: { type: "adaptive" },
+        effort: thinkingOptionId,
+        ultracode: false,
+        effortOverride: thinkingOptionId,
+      };
     }
-    return { thinking: undefined, effort: undefined, ultracode: false };
+    return { thinking: undefined, effort: undefined, ultracode: false, effortOverride: undefined };
   }
 
   private buildAppendedSystemPrompt(): string {
@@ -3228,22 +3244,29 @@ class ClaudeAgentSession implements AgentSession {
     );
   }
 
-  private buildSdkEnv(extraClaudeOptions: Partial<ClaudeOptions> | undefined): NodeJS.ProcessEnv {
+  private buildSdkEnv(
+    extraClaudeOptions: Partial<ClaudeOptions> | undefined,
+    effortOverride?: string,
+  ): NodeJS.ProcessEnv {
     const env = createProviderEnv({
       baseEnv: process.env,
       runtimeSettings: this.runtimeSettings,
       overlays: [extraClaudeOptions?.env, this.launchEnv],
     });
     env.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
+    if (effortOverride !== undefined) env.CLAUDE_CODE_EFFORT_LEVEL = effortOverride;
     return env;
   }
 
   private async buildOptions(): Promise<ClaudeOptions> {
-    const { thinking, effort, ultracode } = this.resolveThinkingConfig();
+    const { thinking, effort, ultracode, effortOverride } = this.resolveThinkingConfig();
     const appendedSystemPrompt = this.buildAppendedSystemPrompt();
     const extraClaudeOptions = this.config.extra?.claude;
-    const settingsOptions = this.buildSettingsOptions(extraClaudeOptions, { ultracode });
-    const sdkEnv = this.buildSdkEnv(extraClaudeOptions);
+    const settingsOptions = await this.buildSettingsOptions(extraClaudeOptions, {
+      ultracode,
+      effortOverride,
+    });
+    const sdkEnv = this.buildSdkEnv(extraClaudeOptions, effortOverride);
     assertClaudeAutoModeEligible(this.currentMode, sdkEnv);
 
     const claudeBinary = await this.resolveBinary();
@@ -3292,9 +3315,8 @@ class ClaudeAgentSession implements AgentSession {
       // If we have a session ID from a previous query (e.g., after interrupt),
       // resume that session to continue the conversation history.
       ...sessionBinding,
-      ...(thinking ? { thinking } : {}),
-      ...(effort ? { effort } : {}),
       ...extraClaudeOptions,
+      ...(thinking ? { thinking, effort } : {}),
       ...settingsOptions,
       ...(this.persistSession === undefined ? {} : { persistSession: this.persistSession }),
       env: sdkEnv,
@@ -3320,19 +3342,32 @@ class ClaudeAgentSession implements AgentSession {
     return base;
   }
 
-  private buildSettingsOptions(
+  private async buildSettingsOptions(
     extraClaudeOptions: Partial<ClaudeOptions> | undefined,
-    input: { ultracode: boolean },
-  ): Pick<ClaudeOptions, "settings"> | Record<string, never> {
+    input: { ultracode: boolean; effortOverride: string | undefined },
+  ): Promise<Pick<ClaudeOptions, "settings"> | Record<string, never>> {
     const fastMode = this.resolveFastModeSetting();
-    if (fastMode === null && !input.ultracode) {
+    if (fastMode === null && !input.ultracode && input.effortOverride === undefined) {
       return {};
     }
+    let settings = extraClaudeOptions?.settings;
+    if (typeof settings === "string") {
+      const raw: unknown = JSON.parse(
+        await promises.readFile(path.resolve(this.config.cwd, settings), "utf8"),
+      );
+      settings = ClaudeFlagSettingsSchema.parse(raw);
+    }
     return {
-      settings: mergeClaudeSettings(extraClaudeOptions?.settings, {
+      settings: {
+        ...settings,
         ...(fastMode === null ? {} : { fastMode }),
         ...(input.ultracode ? { ultracode: true } : {}),
-      }),
+        ...(input.effortOverride === undefined
+          ? {}
+          : {
+              env: { ...settings?.env, CLAUDE_CODE_EFFORT_LEVEL: input.effortOverride },
+            }),
+      },
     };
   }
 

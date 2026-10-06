@@ -195,6 +195,47 @@ describe("getClaudeModels", () => {
 });
 
 describe("ClaudeAgentClient.fetchCatalog", () => {
+  it("保留第三方 Claude 模型的完整标识并提供思考强度及已配置的默认值", async () => {
+    const modelId = "anyrouter/claude-fable-5-1-reversed[1m]";
+    const configDir = await createClaudeConfigDir({
+      model: modelId,
+      env: { CLAUDE_CODE_EFFORT_LEVEL: "max" },
+      effortLevel: "medium",
+    });
+    const { models } = await createCatalogClient("2.1.219", configDir).fetchCatalog({
+      scope: "workspace",
+      cwd: os.tmpdir(),
+      force: true,
+    });
+
+    const model = models.find((entry) => entry.id === modelId);
+    expect(model).toMatchObject({ id: modelId, label: modelId, defaultThinkingOptionId: "max" });
+    expect(model?.thinkingOptions?.map((option) => option.id)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultracode",
+    ]);
+    expect(model?.isDefault).toBeUndefined();
+  });
+
+  it("第三方 Opus 不继承仅限官方模型的关闭思考选项", async () => {
+    const modelId = "openrouter/anthropic/claude-opus-4-8";
+    const configDir = await createClaudeConfigDir({ model: modelId, effortLevel: "high" });
+    const { models } = await createCatalogClient("2.1.219", configDir).fetchCatalog({
+      scope: "workspace",
+      cwd: os.tmpdir(),
+      force: true,
+    });
+
+    expect(
+      models.find((model) => model.id === modelId)?.thinkingOptions?.map(({ id }) => id),
+    ).toEqual(["low", "medium", "high", "xhigh", "max", "ultracode"]);
+    expect(models.find((model) => model.id === modelId)?.defaultThinkingOptionId).toBe("high");
+  });
+
   it("appends concrete models from Claude settings.json", async () => {
     const configDir = await createClaudeConfigDir({
       model: "us.anthropic.claude-opus-4-7[1m]",
@@ -222,6 +263,15 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
         id: "us.anthropic.claude-opus-4-7[1m]",
         label: "us.anthropic.claude-opus-4-7[1m]",
         description: "From Claude settings.json model",
+        thinkingOptions: [
+          { id: "low", label: "Low" },
+          { id: "medium", label: "Medium" },
+          { id: "high", label: "High" },
+          { id: "xhigh", label: "Extra High" },
+          { id: "max", label: "Max" },
+          { id: "ultracode", label: "Ultra Code" },
+        ],
+        defaultThinkingOptionId: "low",
       },
       {
         provider: "claude",

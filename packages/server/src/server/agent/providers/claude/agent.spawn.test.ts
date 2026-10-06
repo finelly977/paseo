@@ -49,6 +49,51 @@ describe("Claude spawn override", () => {
     vi.restoreAllMocks();
   });
 
+  test("原生进程启动时不会被提供方环境覆盖会话所选强度", async () => {
+    let capturedOptions: Options | undefined;
+    const queryFactory = vi.fn(({ options }: ClaudeQueryInput) => {
+      capturedOptions = options;
+      return createQueryMock([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "thinking-spawn-session",
+          model: "anyrouter/claude-fable-5-1-reversed[1m]",
+        },
+        { type: "result", subtype: "success", usage: {}, total_cost_usd: 0 },
+      ]);
+    });
+    const spawnSpy = vi.spyOn(spawnUtils, "spawnProcess").mockReturnValue(createChildProcessStub());
+    const session = await new ClaudeAgentClient({
+      logger: createTestLogger(),
+      queryFactory,
+      resolveBinary: async () => "C:\\Claude\\claude.exe",
+      runtimeSettings: { env: { CLAUDE_CODE_EFFORT_LEVEL: "max" } },
+    }).createSession(
+      {
+        provider: "claude",
+        cwd: process.cwd(),
+        model: "anyrouter/claude-fable-5-1-reversed[1m]",
+        thinkingOptionId: "low",
+      },
+      { env: { CLAUDE_CODE_EFFORT_LEVEL: "max" } },
+    );
+    try {
+      await session.run("检查原生进程强度");
+      if (!capturedOptions?.spawnClaudeCodeProcess) throw new Error("缺少 Claude 进程启动函数");
+      capturedOptions.spawnClaudeCodeProcess({
+        command: "C:\\Claude\\claude.exe",
+        args: ["--output-format", "stream-json"],
+        cwd: process.cwd(),
+        env: capturedOptions.env ?? {},
+        signal: new AbortController().signal,
+      });
+      expect(spawnSpy.mock.calls[0][2]?.envOverlay?.CLAUDE_CODE_EFFORT_LEVEL).toBe("low");
+    } finally {
+      await session.close();
+    }
+  });
+
   test("bypasses the shell when spawning Claude Code", async () => {
     let capturedOptions: Options | undefined;
     const queryFactory = vi.fn(({ options }: ClaudeQueryInput) => {

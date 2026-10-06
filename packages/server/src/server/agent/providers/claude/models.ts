@@ -7,6 +7,8 @@ import type { AgentModelDefinition } from "../../agent-sdk-types.js";
 import {
   getClaudeManifestModels,
   normalizeClaudeRuntimeModelId as normalizeClaudeManifestRuntimeModelId,
+  resolveClaudeDisabledThinkingForModel,
+  CLAUDE_DISABLED_THINKING_OPTION_ID,
 } from "./model-manifest.js";
 
 const CLAUDE_SETTINGS_MODEL_ENV_KEYS = [
@@ -16,6 +18,20 @@ const CLAUDE_SETTINGS_MODEL_ENV_KEYS = [
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 ] as const;
+
+interface ClaudeSettingsModelsInput {
+  logger: Logger;
+  knownModels: AgentModelDefinition[];
+  configDir?: string;
+}
+
+interface AddSettingsModelInput {
+  models: AgentModelDefinition[];
+  value: unknown;
+  settingsKey: string;
+  knownModels: AgentModelDefinition[];
+  configuredEffort: unknown;
+}
 
 export function getClaudeModels(claudeCodeVersion?: string): AgentModelDefinition[] {
   return getClaudeManifestModels(claudeCodeVersion);
@@ -37,7 +53,11 @@ export async function getClaudeModelsWithSettings(
   claudeCodeVersion?: string,
 ): Promise<AgentModelDefinition[]> {
   const hardcodedModels = getClaudeModels(claudeCodeVersion);
-  const settingsModels = await readClaudeSettingsModels(logger, configDir);
+  const settingsModels = await readClaudeSettingsModels({
+    logger,
+    knownModels: hardcodedModels,
+    configDir,
+  });
   if (settingsModels.length === 0) {
     return hardcodedModels;
   }
@@ -56,10 +76,11 @@ export async function getClaudeModelsWithSettings(
   return models;
 }
 
-async function readClaudeSettingsModels(
-  logger: Logger,
-  configDir?: string,
-): Promise<AgentModelDefinition[]> {
+async function readClaudeSettingsModels({
+  logger,
+  knownModels,
+  configDir,
+}: ClaudeSettingsModelsInput): Promise<AgentModelDefinition[]> {
   const settingsPath = path.join(resolveClaudeConfigDir(configDir), "settings.json");
 
   let parsed: unknown;
@@ -77,7 +98,16 @@ async function readClaudeSettingsModels(
   }
 
   const models: AgentModelDefinition[] = [];
-  addSettingsModel(models, parsed.model, "model");
+  const configuredEffort = isRecord(parsed.env)
+    ? (parsed.env.CLAUDE_CODE_EFFORT_LEVEL ?? parsed.effortLevel)
+    : parsed.effortLevel;
+  addSettingsModel({
+    models,
+    value: parsed.model,
+    settingsKey: "model",
+    knownModels,
+    configuredEffort,
+  });
 
   const env = parsed.env;
   if (env === undefined) {
@@ -89,7 +119,13 @@ async function readClaudeSettingsModels(
   }
 
   for (const envKey of CLAUDE_SETTINGS_MODEL_ENV_KEYS) {
-    addSettingsModel(models, env[envKey], `env.${envKey}`);
+    addSettingsModel({
+      models,
+      value: env[envKey],
+      settingsKey: `env.${envKey}`,
+      knownModels,
+      configuredEffort,
+    });
   }
 
   return models;
@@ -99,11 +135,13 @@ function resolveClaudeConfigDir(configDir?: string): string {
   return configDir ?? process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), ".claude");
 }
 
-function addSettingsModel(
-  models: AgentModelDefinition[],
-  value: unknown,
-  settingsKey: string,
-): void {
+function addSettingsModel({
+  models,
+  value,
+  settingsKey,
+  knownModels,
+  configuredEffort,
+}: AddSettingsModelInput): void {
   if (typeof value !== "string") {
     return;
   }
@@ -113,12 +151,28 @@ function addSettingsModel(
     return;
   }
 
-  models.push({
+  const model: AgentModelDefinition = {
     provider: "claude",
     id,
     label: id,
     description: `From Claude settings.json ${settingsKey}`,
-  });
+  };
+  const knownModelId = normalizeClaudeRuntimeModelId(id);
+  const knownModel = knownModels.find((entry) => entry.id === knownModelId);
+  if (knownModel?.thinkingOptions) {
+    const supportsOff = resolveClaudeDisabledThinkingForModel(id).supported;
+    model.thinkingOptions = knownModel.thinkingOptions.filter(
+      (option) => supportsOff || option.id !== CLAUDE_DISABLED_THINKING_OPTION_ID,
+    );
+    const hasConfiguredEffort = model.thinkingOptions.some(
+      (option) => option.id === configuredEffort,
+    );
+    model.defaultThinkingOptionId =
+      hasConfiguredEffort && typeof configuredEffort === "string"
+        ? configuredEffort
+        : knownModel.defaultThinkingOptionId;
+  }
+  models.push(model);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

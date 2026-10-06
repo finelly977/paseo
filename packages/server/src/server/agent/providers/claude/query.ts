@@ -82,6 +82,11 @@ function applyRuntimeSettingsToClaudeOptions(
       });
       providerEnvSpec.envOverlay.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
       providerEnv.CLAUDE_CODE_ENTRYPOINT = CLAUDE_CLI_ENTRYPOINT;
+      const effortOverride = options.thinking?.type === "disabled" ? "unset" : options.effort;
+      if (effortOverride !== undefined) {
+        providerEnvSpec.envOverlay.CLAUDE_CODE_EFFORT_LEVEL = effortOverride;
+        providerEnv.CLAUDE_CODE_EFFORT_LEVEL = effortOverride;
+      }
       const selfNodeCommand = isDefaultRuntime
         ? buildSelfNodeCommand(resolved.args, providerEnv)
         : null;
