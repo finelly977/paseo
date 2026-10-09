@@ -2125,6 +2125,8 @@ export const fr: TranslationResources = {
         interfaceFontAccessibility: "Famille de polices d'interface",
         interfaceSize: "Taille de l'interface",
         interfaceSizeAccessibility: "Taille de la police de l'interface",
+        textBrightness: "Luminosité du texte",
+        textBrightnessSaveFailed: "Impossible d'enregistrer la luminosité du texte. Réessayez.",
         codeFont: "Police de code",
         codeFontHint:
           "Utilisé dans le code, les différences et la sortie du terminal. Laisser vide pour la valeur par défaut du système",

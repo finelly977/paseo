@@ -505,6 +505,32 @@ describe("parseTerminalScrollbackLines", () => {
 });
 
 describe("appearance settings", () => {
+  it("文字亮度默认保持主题原配色，并持久保存调整后的百分比", async () => {
+    const deps = makeDeps();
+    expect((await loadAppSettingsFromStorage(deps)).textBrightness).toBe(100);
+    await saveAppSettings({
+      queryClient: new QueryClient(),
+      updates: { textBrightness: 120 },
+      deps,
+    });
+    expect((await loadAppSettingsFromStorage(deps)).textBrightness).toBe(120);
+  });
+
+  it.each([
+    [0, 70],
+    [999, 150],
+    [120.9, 120],
+    ["85", 85],
+    ["无效", 100],
+  ])("规范化文字亮度 %s 为 %s", async (input, expected) => {
+    const deps = makeDeps({
+      storage: createInMemoryKeyValueStorage({
+        [APP_SETTINGS_KEY]: JSON.stringify({ textBrightness: input }),
+      }),
+    });
+    expect((await loadAppSettingsFromStorage(deps)).textBrightness).toBe(expected);
+  });
+
   it("defaults the appearance fields when an old blob omits them", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({

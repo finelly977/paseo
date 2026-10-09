@@ -2043,6 +2043,8 @@ export const zhCN: TranslationResources = {
         interfaceFontAccessibility: "界面字体族",
         interfaceSize: "界面字号",
         interfaceSizeAccessibility: "界面字号",
+        textBrightness: "文字亮度",
+        textBrightnessSaveFailed: "保存文字亮度失败，请重试。",
         codeFont: "代码字体",
         codeFontHint: "用于代码、diff 和终端输出。留空则使用系统默认",
         codeFontAccessibility: "代码字体族",

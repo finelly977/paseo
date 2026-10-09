@@ -699,6 +699,7 @@ const darkShadow = {
 export function buildDarkTheme(semanticColors: ReturnType<typeof buildDarkSemanticColors>) {
   return {
     colorScheme: "dark" as const,
+    baseForeground: semanticColors.foreground,
     colors: {
       ...semanticColors,
       palette: baseColors,
@@ -739,6 +740,7 @@ const lightShadow = {
 export function buildLightTheme(semanticColors: ReturnType<typeof buildLightSemanticColors>) {
   return {
     colorScheme: "light" as const,
+    baseForeground: semanticColors.foreground,
     colors: {
       ...semanticColors,
       palette: baseColors,

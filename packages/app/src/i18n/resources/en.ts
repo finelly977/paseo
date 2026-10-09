@@ -2079,6 +2079,8 @@ export const en = {
         interfaceFontAccessibility: "Interface font family",
         interfaceSize: "Interface size",
         interfaceSizeAccessibility: "Interface font size",
+        textBrightness: "Text brightness",
+        textBrightnessSaveFailed: "Could not save text brightness. Please retry.",
         codeFont: "Code font",
         codeFontHint:
           "Used in code, diffs, and the terminal output. Leave empty for the system default",

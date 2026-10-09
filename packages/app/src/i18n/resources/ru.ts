@@ -2108,6 +2108,8 @@ export const ru: TranslationResources = {
         interfaceFontAccessibility: "Семейство интерфейсных шрифтов",
         interfaceSize: "Размер интерфейса",
         interfaceSizeAccessibility: "Размер шрифта интерфейса",
+        textBrightness: "Яркость текста",
+        textBrightnessSaveFailed: "Не удалось сохранить яркость текста. Повторите попытку.",
         codeFont: "Шрифт кода",
         codeFontHint:
           "Используется в коде, различиях и выводе терминала. Оставьте пустым для системного значения по умолчанию.",

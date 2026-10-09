@@ -2103,6 +2103,8 @@ export const ptBR: TranslationResources = {
         interfaceFontAccessibility: "Família da fonte da interface",
         interfaceSize: "Tamanho da interface",
         interfaceSizeAccessibility: "Tamanho da fonte da interface",
+        textBrightness: "Brilho do texto",
+        textBrightnessSaveFailed: "Não foi possível salvar o brilho do texto. Tente novamente.",
         codeFont: "Fonte de código",
         codeFontHint:
           "Usada em código, diffs e saída do terminal. Deixe vazio para usar o padrão do sistema",

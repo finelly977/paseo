@@ -28,6 +28,7 @@ type ThemeUpdater = (theme: FakeTheme) => FakeTheme;
 // fake of this shape through `unknown` to ThemeUpdater's param is test-only.
 interface FakeTheme {
   colorScheme: "light" | "dark";
+  baseForeground: string;
   fontFamily: { ui: string; mono: string };
   fontSize: {
     xs: number;
@@ -41,12 +42,19 @@ interface FakeTheme {
     "4xl": number;
   };
   lineHeight: { diff: number };
-  colors: { foreground: string; syntax: Record<string, string> };
+  colors: {
+    surface0: string;
+    foreground: string;
+    syntax: Record<string, string>;
+    popoverForeground?: string;
+    secondaryForeground?: string;
+  };
 }
 
 function makeFakeTheme(): FakeTheme {
   return {
     colorScheme: "dark",
+    baseForeground: "#fff",
     fontFamily: { ui: "seed-ui-stack", mono: "seed-mono-stack" },
     fontSize: {
       xs: 12,
@@ -60,7 +68,7 @@ function makeFakeTheme(): FakeTheme {
       "4xl": 34,
     },
     lineHeight: { diff: 22 },
-    colors: { foreground: "#fff", syntax: {} },
+    colors: { surface0: "#111111", foreground: "#fff", syntax: {} },
   };
 }
 
@@ -69,6 +77,7 @@ function makeInput(overrides: Partial<AppearanceInput> = {}): AppearanceInput {
     uiFontFamily: "",
     monoFontFamily: "",
     uiFontSize: 16,
+    textBrightness: 100,
     codeFontSize: 12,
     syntaxTheme: "one",
     ...overrides,
@@ -76,9 +85,9 @@ function makeInput(overrides: Partial<AppearanceInput> = {}): AppearanceInput {
 }
 
 // Run a single captured updater (default the first) against a fresh fake theme.
-function runCapturedUpdater(call = 0): FakeTheme {
+function runCapturedUpdater(call = 0, theme = makeFakeTheme()): FakeTheme {
   const updater = updateTheme.mock.calls[call]?.[1] as unknown as ThemeUpdater;
-  return updater(makeFakeTheme());
+  return updater(theme);
 }
 
 describe("applyAppearance", () => {
@@ -91,6 +100,52 @@ describe("applyAppearance", () => {
 
     expect(updateTheme).toHaveBeenCalledTimes(8);
     expect(updateTheme.mock.calls.map((call) => call[0])).toEqual([...ALL_THEME_KEYS]);
+  });
+
+  it("文字亮度更新已有主题前景及别名，不改变背景", () => {
+    applyAppearance(makeInput({ textBrightness: 70 }));
+    const updated = runCapturedUpdater();
+    expect(updated.colors).toMatchObject({
+      surface0: "#111111",
+      foreground: "#b8b8b8",
+      popoverForeground: "#b8b8b8",
+      secondaryForeground: "#b8b8b8",
+    });
+  });
+
+  it("反复应用或修改字号不会累积亮度，恢复 100%% 返回原配色", () => {
+    applyAppearance(makeInput({ textBrightness: 70 }));
+    const first = runCapturedUpdater();
+    const second = runCapturedUpdater(0, first);
+    expect(second.colors.foreground).toBe(first.colors.foreground);
+    applyAppearance(makeInput({ textBrightness: 100, uiFontSize: 18 }));
+    expect(runCapturedUpdater(8, second).colors.foreground).toBe("#fff");
+  });
+
+  it("只调整主文字，保留辅助文字、语义色、背景和终端配色", () => {
+    applyAppearance(makeInput({ textBrightness: 125 }));
+    const source = makeFakeTheme();
+    const extraColors = {
+      foregroundMuted: "#a3a3a3",
+      accent: "#0169cc",
+      statusDanger: "#dc2626",
+      terminal: { foreground: "#d3d3d3" },
+    };
+    const updated = runCapturedUpdater(0, {
+      ...source,
+      colors: { ...source.colors, ...extraColors },
+    });
+    expect(updated.colors).toMatchObject(extraColors);
+    expect(updated.colors.surface0).toBe(source.colors.surface0);
+  });
+
+  it("插件主题更换后使用新主题自己的前景基准", () => {
+    applyAppearance(makeInput({ textBrightness: 125 }));
+    const source = makeFakeTheme();
+    const first = runCapturedUpdater(7, { ...source, baseForeground: "#345678" });
+    expect(first.colors.foreground).toBe("#9aabbc");
+    const next = runCapturedUpdater(7, { ...first, baseForeground: "#123456" });
+    expect(next.colors.foreground).toBe("#899aab");
   });
 
   it("resolves an empty UI font family to the default stack", () => {

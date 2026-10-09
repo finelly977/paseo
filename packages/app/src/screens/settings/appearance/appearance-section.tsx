@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Text, TextInput, View, type PressableStateCallbackType } from "react-native";
@@ -17,6 +18,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { SettingsSection } from "@/screens/settings/settings-section";
 import { useContributedThemes } from "@/appearance/provider";
 import {
@@ -31,6 +34,8 @@ import {
   MAX_SIDEBAR_ROW_VERTICAL_PADDING,
   MAX_SIDEBAR_SESSION_SPACING,
   MAX_UI_FONT_SIZE,
+  MAX_TEXT_BRIGHTNESS,
+  MIN_TEXT_BRIGHTNESS,
   MIN_CODE_FONT_SIZE,
   MIN_CONVERSATION_DIVIDER_SPACING,
   MIN_CONVERSATION_HORIZONTAL_PADDING,
@@ -407,23 +412,28 @@ function FontFamilyRow({
   );
 }
 
-interface FontSizeRowProps {
+interface NumericSettingRowProps {
   title: string;
   accessibilityLabel: string;
   draft: string;
   withBorder?: boolean;
   onChangeDraft: (value: string) => void;
   onCommit: () => void;
+  unit?: "px" | "%";
+  saving?: boolean;
 }
 
-function FontSizeRow({
+function NumericSettingRow({
   title,
   accessibilityLabel,
   draft,
   withBorder = true,
   onChangeDraft,
   onCommit,
-}: FontSizeRowProps) {
+  unit = "px",
+  saving = false,
+}: NumericSettingRowProps) {
+  const accessibilityState = useMemo(() => ({ busy: saving }), [saving]);
   return (
     <View style={withBorder ? styles.rowWithBorder : settingsStyles.row}>
       <View style={settingsStyles.rowContent}>
@@ -440,10 +450,65 @@ function FontSizeRow({
           selectTextOnFocus
           style={styles.sizeInput}
           accessibilityLabel={accessibilityLabel}
+          editable={!saving}
+          accessibilityState={accessibilityState}
         />
-        <Text style={styles.unit}>px</Text>
+        <Text style={styles.unit}>{unit}</Text>
       </View>
     </View>
+  );
+}
+
+interface TextBrightnessRowProps {
+  value: number;
+  onChange: (updates: Partial<AppSettings>) => Promise<void>;
+}
+
+function TextBrightnessRow({ value, onChange }: TextBrightnessRowProps) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(String(value));
+  const { isPending, isError, mutate } = useMutation({
+    mutationFn: (textBrightness: number) => onChange({ textBrightness }),
+  });
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+  const handleChange = useCallback((next: string) => {
+    setDraft(next.replace(/[^\d]/g, ""));
+  }, []);
+  const handleCommit = useCallback(() => {
+    if (isPending) return;
+    const parsed = parseBoundedInteger(draft, {
+      min: MIN_TEXT_BRIGHTNESS,
+      max: MAX_TEXT_BRIGHTNESS,
+    });
+    const next = parsed ?? value;
+    setDraft(String(next));
+    if (next !== value || isError) mutate(next);
+  }, [draft, isError, isPending, mutate, value]);
+
+  return (
+    <>
+      <NumericSettingRow
+        title={t("settings.appearance.fonts.textBrightness")}
+        accessibilityLabel={t("settings.appearance.fonts.textBrightness")}
+        draft={draft}
+        unit="%"
+        saving={isPending}
+        onChangeDraft={handleChange}
+        onCommit={handleCommit}
+      />
+      {isError ? (
+        <Alert
+          variant="error"
+          description={t("settings.appearance.fonts.textBrightnessSaveFailed")}
+        >
+          <Button variant="outline" size="sm" onPress={handleCommit}>
+            {t("common.actions.retry")}
+          </Button>
+        </Alert>
+      ) : null}
+    </>
   );
 }
 
@@ -861,7 +926,7 @@ export function AppearanceSection() {
               onCommit={commitUiFontFamily}
             />
           ) : null}
-          <FontSizeRow
+          <NumericSettingRow
             title={t("settings.appearance.fonts.interfaceSize")}
             accessibilityLabel={t("settings.appearance.fonts.interfaceSizeAccessibility")}
             draft={uiSizeDraft}
@@ -869,6 +934,7 @@ export function AppearanceSection() {
             onChangeDraft={handleUiSizeChange}
             onCommit={commitUiSize}
           />
+          <TextBrightnessRow value={settings.textBrightness} onChange={updateSettings} />
           {showFontFamilyRows ? (
             <FontFamilyRow
               title={t("settings.appearance.fonts.codeFont")}
@@ -882,7 +948,7 @@ export function AppearanceSection() {
               onCommit={commitMonoFontFamily}
             />
           ) : null}
-          <FontSizeRow
+          <NumericSettingRow
             title={t("settings.appearance.fonts.codeSize")}
             accessibilityLabel={t("settings.appearance.fonts.codeSizeAccessibility")}
             draft={codeSizeDraft}

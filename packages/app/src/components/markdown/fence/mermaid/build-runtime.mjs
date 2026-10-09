@@ -53,7 +53,12 @@ const html = `<!doctype html>
       body {
         margin: 0;
         padding: 0;
+        height: 100%;
         background: transparent;
+      }
+      #diagram {
+        width: 100%;
+        height: 100%;
       }
       #diagram svg {
         display: block;

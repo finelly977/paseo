@@ -42,6 +42,10 @@ The rule, condensed: text that _names_ a surface or a group is `medium`. Text th
 
 Foreground is for the thing being acted on: row titles, section headings, the selected sidebar item. `foregroundMuted` is for context: hints, descriptions, secondary metadata, placeholders, status text. 二开左侧导航、会话名称和辅助文字统一使用 `foreground`，不再通过降低会话文字透明度区分闲置状态；悬停和选中仍使用背景层级，错误和警告保留语义颜色。
 
+“外观 → 字体 → 文字亮度”按 70–150% 调整主前景色，100% 保留主题原配色；深色主题提高时趋向白色，浅色主题提高时趋向黑色。主前景的旧别名同步更新，辅助、强调和状态文字颜色不随之改变。每个主题保留未调整的 `baseForeground`，亮度始终从该基准计算；插件主题在构建时提供自己的基准。不得通过全页面透明度或滤镜实现，避免连带改变背景、图片与终端。
+
+Mermaid 的内容尺寸以 SVG `viewBox` 为准，不能把首次测量容器的缩放边界缓存为图表尺寸。网页与移动端预览最高 480 像素，SVG 在预览内保持比例适配；网页缩放由外层视口统一负责，移动端放大查看允许图表按宽度展开并滚动。
+
 `foregroundExtraMuted` is reserved for passive chrome that must sit behind muted text, such as an always-visible window control. Use the solid token instead of lowering SVG opacity; per-path opacity makes overlapping icon strokes render unevenly. Interactive hover and pressed states return to `foreground`.
 
 Accent is the one CTA per surface. A `<Button variant="default">` filled with `accent` appears at most once on a page. Most pages have zero — settings is mostly toggles and text, the workspace pane is mostly content, the chat composer is the input itself.

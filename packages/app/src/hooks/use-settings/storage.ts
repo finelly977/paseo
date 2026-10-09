@@ -16,6 +16,17 @@ import { z } from "zod";
 import { readValidatedJson } from "@/storage/validated-storage";
 import { APP_SETTINGS_KEY, LEGACY_SETTINGS_KEY } from "./keys";
 import { migrateAppSettings } from "./migrations";
+import {
+  DEFAULT_TEXT_BRIGHTNESS,
+  MIN_TEXT_BRIGHTNESS,
+  MAX_TEXT_BRIGHTNESS,
+} from "@/appearance/text-brightness";
+
+export {
+  DEFAULT_TEXT_BRIGHTNESS,
+  MIN_TEXT_BRIGHTNESS,
+  MAX_TEXT_BRIGHTNESS,
+} from "@/appearance/text-brightness";
 
 export { APP_SETTINGS_KEY } from "./keys";
 export const APP_SETTINGS_QUERY_KEY = ["app-settings"];
@@ -90,6 +101,7 @@ export interface AppSettings {
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
   uiFontSize: number; // clamped px, default 16
+  textBrightness: number; // 主文字亮度百分比，100 保留主题原配色
   codeFontSize: number; // clamped px, default 12
   syntaxTheme: SyntaxThemeId; // default "one"
   workspaceTitleSource: WorkspaceTitleSource;
@@ -126,6 +138,7 @@ const StoredAppSettingsSchema = z.looseObject({
   uiFontFamily: z.unknown().optional(),
   monoFontFamily: z.unknown().optional(),
   uiFontSize: z.unknown().optional(),
+  textBrightness: z.unknown().optional(),
   codeFontSize: z.unknown().optional(),
   syntaxTheme: z.unknown().optional(),
   workspaceTitleSource: z.unknown().optional(),
@@ -166,6 +179,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   uiFontFamily: "",
   monoFontFamily: "",
   uiFontSize: DEFAULT_UI_FONT_SIZE,
+  textBrightness: DEFAULT_TEXT_BRIGHTNESS,
   codeFontSize: DEFAULT_CODE_FONT_SIZE,
   syntaxTheme: "one",
   workspaceTitleSource: "title",
@@ -327,6 +341,7 @@ function parseToolCallDetailLevel(stored: StoredAppSettings): ToolCallDetailLeve
 
 type NumericAppSetting =
   | "uiFontSize"
+  | "textBrightness"
   | "codeFontSize"
   | "messageParagraphSpacing"
   | "conversationMessageSpacing"
@@ -415,6 +430,10 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
   copyClampedNumericSetting(result, "uiFontSize", stored.uiFontSize, {
     min: MIN_UI_FONT_SIZE,
     max: MAX_UI_FONT_SIZE,
+  });
+  copyClampedNumericSetting(result, "textBrightness", stored.textBrightness, {
+    min: MIN_TEXT_BRIGHTNESS,
+    max: MAX_TEXT_BRIGHTNESS,
   });
   copyClampedNumericSetting(result, "codeFontSize", stored.codeFontSize, {
     min: MIN_CODE_FONT_SIZE,

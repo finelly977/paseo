@@ -2083,6 +2083,8 @@ export const ja: TranslationResources = {
         interfaceFontAccessibility: "インターフェースフォントファミリー",
         interfaceSize: "インターフェースサイズ",
         interfaceSizeAccessibility: "インターフェースフォントサイズ",
+        textBrightness: "文字の明るさ",
+        textBrightnessSaveFailed: "文字の明るさを保存できませんでした。再試行してください。",
         codeFont: "コードフォント",
         codeFontHint:
           "コード、差分、ターミナル出力で使用されます。システムデフォルトにするには空のままにしてください",

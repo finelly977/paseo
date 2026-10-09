@@ -1,5 +1,6 @@
 import {
   classifyAssistantFileLink,
+  parseAssistantFileLink,
   isFileLookingAssistantToken,
   type AssistantFileLinkClassification,
   type InlinePathTarget,
@@ -112,6 +113,15 @@ export function classifyForResolution(
     return { kind: "resolved", value: { kind: "ignored" } };
   }
 
+  // 引用已明确指定文件路径，不能用短文件名覆盖，也不能按裸文本规则排除空格。
+  if (source.sourceInfo === "codex-file-citation") {
+    const target = parseAssistantFileLink(token, context);
+    return {
+      kind: "resolved",
+      value: target ? { kind: "file", target } : { kind: "ignored" },
+    };
+  }
+
   const classification = classifyAssistantFileLink(token, {
     workspaceRoot: context.workspaceRoot,
   });
@@ -147,6 +157,7 @@ export function classifyForResolution(
 }
 
 export function getAssistantFileLinkToken(source: AssistantFileLinkSource): string {
+  if (source.sourceInfo === "codex-file-citation") return source.href;
   const text = source.text?.trim();
   const hrefIsExternalUrl = /^https?:\/\//iu.test(source.href.trim());
   if (

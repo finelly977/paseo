@@ -2123,6 +2123,8 @@ export const es: TranslationResources = {
         interfaceFontAccessibility: "Familia de fuentes de interfaz",
         interfaceSize: "Tamaño de la interfaz",
         interfaceSizeAccessibility: "Tamaño de fuente de la interfaz",
+        textBrightness: "Brillo del texto",
+        textBrightnessSaveFailed: "No se pudo guardar el brillo del texto. Inténtalo de nuevo.",
         codeFont: "Fuente de código",
         codeFontHint:
           "Se utiliza en código, diferencias y salida del terminal. Déjelo vacío para el valor predeterminado del sistema.",

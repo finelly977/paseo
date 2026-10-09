@@ -59,6 +59,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
       uiFontFamily: settings.uiFontFamily,
       monoFontFamily: settings.monoFontFamily,
       uiFontSize: settings.uiFontSize,
+      textBrightness: settings.textBrightness,
       codeFontSize: settings.codeFontSize,
       syntaxTheme: settings.syntaxTheme,
     } satisfies Parameters<typeof applyAppearance>[0];
@@ -80,6 +81,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
     settings.uiFontFamily,
     settings.monoFontFamily,
     settings.uiFontSize,
+    settings.textBrightness,
     settings.codeFontSize,
     settings.syntaxTheme,
   ]);

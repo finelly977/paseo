@@ -2067,6 +2067,8 @@ export const ar: TranslationResources = {
         interfaceFontAccessibility: "عائلة خطوط الواجهة",
         interfaceSize: "حجم الواجهة",
         interfaceSizeAccessibility: "حجم الخط في الواجهة",
+        textBrightness: "سطوع النص",
+        textBrightnessSaveFailed: "تعذّر حفظ سطوع النص. يُرجى إعادة المحاولة.",
         codeFont: "خط الكود",
         codeFontHint:
           "تستخدم في الكود والاختلافات والمخرجات الطرفية. اتركه فارغًا للإعداد الافتراضي للنظام",

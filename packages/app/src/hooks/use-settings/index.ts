@@ -19,6 +19,9 @@ import {
   DEFAULT_THEME_PREFERENCE,
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   DEFAULT_UI_FONT_SIZE,
+  DEFAULT_TEXT_BRIGHTNESS,
+  MIN_TEXT_BRIGHTNESS,
+  MAX_TEXT_BRIGHTNESS,
   MAX_CODE_FONT_SIZE,
   MAX_TERMINAL_SCROLLBACK_LINES,
   MAX_UI_FONT_SIZE,
@@ -90,6 +93,9 @@ export {
   DEFAULT_THEME_PREFERENCE,
   DEFAULT_TERMINAL_SCROLLBACK_LINES,
   DEFAULT_UI_FONT_SIZE,
+  DEFAULT_TEXT_BRIGHTNESS,
+  MIN_TEXT_BRIGHTNESS,
+  MAX_TEXT_BRIGHTNESS,
   MAX_CODE_FONT_SIZE,
   MAX_TERMINAL_SCROLLBACK_LINES,
   MAX_UI_FONT_SIZE,
@@ -172,6 +178,7 @@ export interface UseSettingsReturn {
 type SettingsSelector<TSelected> = (settings: Settings) => TSelected;
 type NumericAppSetting =
   | "uiFontSize"
+  | "textBrightness"
   | "codeFontSize"
   | "messageParagraphSpacing"
   | "conversationMessageSpacing"
@@ -275,6 +282,7 @@ export function useSettings<TSelected>(
         appUpdates.monoFontFamily = updates.monoFontFamily;
       }
       copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
+      copyDefinedNumericAppSetting(appUpdates, updates, "textBrightness");
       copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
       copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
       copyDefinedNumericAppSetting(appUpdates, updates, "conversationMessageSpacing");

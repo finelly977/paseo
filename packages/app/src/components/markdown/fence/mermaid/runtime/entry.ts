@@ -69,19 +69,27 @@ async function render(message: MermaidRuntimeRenderMessage): Promise<void> {
     setViewport(message.interactive);
     const host = document.getElementById("diagram");
     if (!host) {
-      return;
+      throw new Error("Mermaid diagram host is missing");
     }
     host.innerHTML = svg;
-    const rect = host.querySelector("svg")?.getBoundingClientRect();
+    const diagram = host.querySelector("svg");
+    if (!diagram) throw new Error("Mermaid produced no SVG diagram");
+    // 测量容器尚未布局时可能只有几像素宽，不能把缩放后的边界当成图表原始尺寸。
+    const { width, height } = diagram.viewBox.baseVal;
+    if (width <= 0 || height <= 0) throw new Error("Mermaid produced an invalid SVG viewBox");
+    diagram.style.width = "100%";
+    diagram.style.height = message.interactive ? "auto" : "100%";
+    diagram.style.maxWidth = "none";
     sendToHost({
       type: "rendered",
       revision: message.revision,
       source: message.source,
       colorScheme: message.colorScheme,
-      height: Math.ceil(rect?.height ?? host.scrollHeight),
-      width: Math.ceil(rect?.width ?? host.scrollWidth),
+      height: Math.ceil(height),
+      width: Math.ceil(width),
     });
-  } catch {
+  } catch (error) {
+    console.error("Mermaid diagram rendering failed", error);
     if (message.revision === latestRevision) {
       sendToHost({ type: "renderError", revision: message.revision });
     }

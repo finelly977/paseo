@@ -141,7 +141,7 @@ function MermaidFenceHostImpl({
   const visible = state.visible;
   const canShowDiagram = visible !== null && hasRuntimeContent;
   const diagramVisible = canShowDiagram && !showSource;
-  const runtimeHeight = Math.max(visible?.height ?? 240, 1);
+  const runtimeHeight = Math.min(visible?.height ?? 240, 480);
   const actions = useMemo(
     () => [
       {
@@ -202,28 +202,39 @@ function MermaidFenceHostImpl({
           ) : null}
         </View>
       ) : null}
-      <ZoomableViewport
-        accessibilityLabel={t("message.diagram.diagram")}
-        actions={actions}
-        contentSize={diagramSize}
-        style={viewportStyle}
-        testID="mermaid-viewport"
-        wheelActivation="modifier"
-      >
-        <MermaidIframeRuntime
-          request={request}
-          height="100%"
-          onRendered={handleRendered}
-          onRenderFailed={renderFailed}
-        />
-      </ZoomableViewport>
+      <div inert={!diagramVisible} style={runtimeContainerStyle}>
+        <ZoomableViewport
+          accessibilityLabel={t("message.diagram.diagram")}
+          actions={actions}
+          contentSize={diagramSize}
+          style={viewportStyle}
+          testID="mermaid-viewport"
+          wheelActivation="modifier"
+        >
+          <MermaidIframeRuntime
+            request={request}
+            height="100%"
+            onRendered={handleRendered}
+            onRenderFailed={renderFailed}
+          />
+        </ZoomableViewport>
+      </div>
     </>
   );
 }
 
 const MEASURING_SIZE = { width: 240, height: 240 };
 const sourceContainerStyle: ViewStyle = { position: "relative" };
-const containerStyle: ViewStyle = { overflow: "hidden", position: "relative" };
+// 隐藏的运行时仍需布局，但其工具栏不能拦截源码视图的点击或键盘焦点。
+const runtimeContainerStyle: React.CSSProperties = { display: "contents" };
+// 对话流里的图表自行决定高度，不能继承填满父容器视口的零基准 Flex 布局。
+const containerStyle: ViewStyle = {
+  overflow: "hidden",
+  position: "relative",
+  flexGrow: 0,
+  flexShrink: 0,
+  flexBasis: "auto",
+};
 const measuringStyle: ViewStyle = {
   position: "absolute",
   left: 0,

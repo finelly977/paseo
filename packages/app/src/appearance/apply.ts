@@ -7,6 +7,7 @@ import {
   type Theme,
 } from "@/styles/theme";
 import { applyRootUiFont } from "./apply-root-font";
+import { resolveTextBrightness } from "./text-brightness";
 
 // 所有已注册的 Unistyles 主题键；插件槽也必须叠加用户的字体、字号与语法主题。
 // The `as const` element types are exactly `keyof UnistylesThemes`, so each key
@@ -29,6 +30,7 @@ export interface AppearanceInput {
   uiFontFamily: string; // "" -> default stack
   monoFontFamily: string; // "" -> default stack
   uiFontSize: number; // already clamped
+  textBrightness: number;
   codeFontSize: number; // already clamped
   syntaxTheme: SyntaxThemeId;
 }
@@ -82,13 +84,28 @@ export function applyAppearance(input: AppearanceInput): void {
       const fontFamily = { ui, mono };
       const fontSize = scaleFontSize(input.uiFontSize, input.codeFontSize);
       const lineHeight = { ...t.lineHeight, diff: diffLineHeight };
+      const foreground = resolveTextBrightness({
+        foreground: t.baseForeground,
+        background: t.colors.surface0,
+        colorScheme: t.colorScheme,
+        brightness: input.textBrightness,
+      });
+      const textColors = {
+        foreground,
+        popoverForeground: foreground,
+        secondaryForeground: foreground,
+      };
       if (t.colorScheme === "light") {
         return {
           ...t,
           fontFamily,
           fontSize,
           lineHeight,
-          colors: { ...t.colors, syntax: resolveSyntaxColors(input.syntaxTheme, t.colorScheme) },
+          colors: {
+            ...t.colors,
+            ...textColors,
+            syntax: resolveSyntaxColors(input.syntaxTheme, t.colorScheme),
+          },
         };
       }
       return {
@@ -96,7 +113,11 @@ export function applyAppearance(input: AppearanceInput): void {
         fontFamily,
         fontSize,
         lineHeight,
-        colors: { ...t.colors, syntax: resolveSyntaxColors(input.syntaxTheme, t.colorScheme) },
+        colors: {
+          ...t.colors,
+          ...textColors,
+          syntax: resolveSyntaxColors(input.syntaxTheme, t.colorScheme),
+        },
       };
     });
   }
