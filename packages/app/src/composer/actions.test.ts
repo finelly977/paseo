@@ -357,6 +357,29 @@ describe("pickAndPersistImages", () => {
 });
 
 describe("dispatchComposerAgentMessage", () => {
+  it("自动队列派发沿用排队标识并登记本地图片预览", async () => {
+    const client = createFakeSendClient();
+    const submission = createFakeStream();
+    await dispatchComposerAgentMessage({
+      agentId: "agent",
+      text: "排队图片",
+      clientMessageId: "queued-image",
+      attachments: [{ kind: "image", metadata: imageMetadata }],
+      attachmentSubmitFormat: "forge",
+      client,
+      submission,
+      encodeImages: passthroughEncodeImages,
+    });
+    const message = [
+      ...(submission.tail.get("agent") ?? []),
+      ...(submission.head.get("agent") ?? []),
+    ].find((item) => item.kind === "user_message");
+    expect(message).toMatchObject({ clientMessageId: "queued-image", images: [imageMetadata] });
+    expect(client.calls[0].options.messageId).toBe("queued-image");
+    expect(client.calls[0].options.images).toEqual([
+      { data: imageMetadata.id, mimeType: "image/png" },
+    ]);
+  });
   it("forwards the configured active-turn intent without provider capability checks", async () => {
     const client = createFakeSendClient();
     const stream = createFakeStream();

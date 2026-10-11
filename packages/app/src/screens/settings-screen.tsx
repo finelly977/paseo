@@ -18,7 +18,6 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Buffer } from "buffer";
 import {
-  ArrowLeft,
   Settings,
   Palette,
   Server,
@@ -42,7 +41,6 @@ import {
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
-import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { HostPicker as SharedHostPicker } from "@/components/hosts/host-picker";
 import { HostStatusDot } from "@/components/host-status-dot";
@@ -1094,7 +1092,6 @@ interface SettingsSidebarProps {
   onSelectHost: (serverId: string) => void;
   onSelectProjects: () => void;
   onAddHost: () => void;
-  onBackToWorkspace: () => void;
   activeHostServerId: string | null;
   layout: "desktop" | "mobile";
 }
@@ -1106,7 +1103,6 @@ function SettingsSidebar({
   onSelectHost,
   onSelectProjects,
   onAddHost,
-  onBackToWorkspace,
   activeHostServerId,
   layout,
 }: SettingsSidebarProps) {
@@ -1216,14 +1212,6 @@ function SettingsSidebar({
     >
       {isDesktop ? (
         <View style={innerContainerStyle}>
-          <View style={sidebarStyles.sidebarDragArea}>
-            <SidebarHeaderRow
-              icon={ArrowLeft}
-              label={t("settings.backToWorkspace")}
-              onPress={onBackToWorkspace}
-              testID="settings-back-to-workspace"
-            />
-          </View>
           <ScrollView style={sidebarStyles.scrollBody} showsVerticalScrollIndicator={false}>
             {sidebarBody}
           </ScrollView>
@@ -1668,7 +1656,6 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
             onSelectHost={handleSelectHost}
             onSelectProjects={handleSelectProjects}
             onAddHost={handleAddHost}
-            onBackToWorkspace={handleBackToWorkspace}
             activeHostServerId={activeHostServerId}
             layout="mobile"
           />
@@ -1729,7 +1716,6 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
             onSelectHost={handleSelectHost}
             onSelectProjects={handleSelectProjects}
             onAddHost={handleAddHost}
-            onBackToWorkspace={handleBackToWorkspace}
             activeHostServerId={activeHostServerId}
             layout="desktop"
           />
@@ -1883,9 +1869,6 @@ const sidebarStyles = StyleSheet.create((theme) => ({
   },
   scrollBody: {
     flex: 1,
-  },
-  sidebarDragArea: {
-    position: "relative",
   },
   mobileContainer: {
     paddingVertical: theme.spacing[2],

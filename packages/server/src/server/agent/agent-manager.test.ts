@@ -10356,6 +10356,7 @@ test("authoritative timeline includes provider-emitted submitted user prompt", a
 
     await manager.runAgent(snapshot.id, "hello from composer", {
       clientMessageId: "msg-client-1",
+      userMessageImages: [{ path: "C:/test/scheduled-image.png", mimeType: "image/png" }],
     });
 
     const timeline = manager.fetchTimeline(snapshot.id, { direction: "tail", limit: 20 }).rows;
@@ -10365,6 +10366,7 @@ test("authoritative timeline includes provider-emitted submitted user prompt", a
         item: {
           type: "user_message",
           text: "hello from composer",
+          images: [{ path: "C:/test/scheduled-image.png", mimeType: "image/png" }],
           messageId: "msg-client-1",
           clientMessageId: "msg-client-1",
           turnRole: "start",

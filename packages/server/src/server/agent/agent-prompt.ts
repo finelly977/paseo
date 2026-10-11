@@ -221,7 +221,7 @@ export interface StartCreatedAgentInitialPromptParams {
 const AGENT_RUN_START_TIMEOUT_MS = 60_000;
 
 export async function waitForAgentRunStartWithTimeout(
-  agentManager: AgentManager,
+  agentManager: Pick<AgentManager, "getAgent" | "waitForAgentRunStart">,
   agentId: string,
 ): Promise<void> {
   const provider = agentManager.getAgent(agentId)?.provider ?? "未知提供方";

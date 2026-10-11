@@ -166,6 +166,10 @@ Canonical submitted user rows carry the provider's `messageId` and Paseo's optio
 `clientMessageId`. Clients reconcile optimistic prompts by `clientMessageId`. Content matching is
 limited to the dated compatibility path for daemon timelines created before that field existed.
 
+自动队列发送与普通消息共用客户端提交登记，以排队消息标识作为 `clientMessageId` 保存本地图片元数据，再提交编码图片；权威用户记录到达时在原位置核对，不丢掉图片预览。
+
+定时消息由主机的 `ScheduledAgentMessages` 保存到 `scheduled-messages`，图片先保存为主机文件。到期派发使用普通回合入口，但禁止替换正在运行的回合；图片路径通过用户消息时间线登记，不依赖已关闭页面的乐观记录。恢复时保留逾期待发送项，发送中发生重启则显示明确错误而不是自动重发。定时消息接口位于 `agent.message.schedule.*` 与 `agent.message.schedules.list.*`，客户端通过 `scheduledAgentMessages` 能力声明启用。
+
 无提供方消息标识的独立图片结果不能与相邻助手正文拼接。实时头部切换、尾部续接和历史重建遵循相同的图片边界；同一消息标识下的普通流式 Markdown 仍正常拼接。纯图片消息包含多张图片时，客户端逐张显示可折叠缩略图，不回退为铺满正文的普通图片。
 
 ## Relevant code

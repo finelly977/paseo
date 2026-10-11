@@ -5,6 +5,10 @@ type InboundOperation = SessionInboundMessage["type"];
 type OutboundOperation = SessionOutboundMessage["type"];
 
 const INBOUND_PERMISSION = {
+  "agent.message.schedule.request": "workspace.write",
+  "agent.message.schedule.cancel.request": "workspace.write",
+  "agent.message.schedule.send-now.request": "workspace.write",
+  "agent.message.schedules.list.request": "workspace.read",
   abort_request: "workspace.write",
   "agent.codex_provider_injection.apply.request": "workspace.write",
   "agent.config.apply.request": "workspace.write",
@@ -196,6 +200,10 @@ const INBOUND_PERMISSION = {
 } as const satisfies Record<InboundOperation, DaemonPermission | null>;
 
 const OUTBOUND_PERMISSION = {
+  "agent.message.schedule.response": "workspace.write",
+  "agent.message.schedule.cancel.response": "workspace.write",
+  "agent.message.schedule.send-now.response": "workspace.write",
+  "agent.message.schedules.list.response": "workspace.read",
   activity_log: "workspace.read",
   "agent.codex_provider_injection.apply.response": "workspace.write",
   "agent.config.apply.response": "workspace.write",

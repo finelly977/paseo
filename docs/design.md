@@ -50,7 +50,7 @@ Mermaid 的内容尺寸以 SVG `viewBox` 为准，不能把首次测量容器的
 
 Accent is the one CTA per surface. A `<Button variant="default">` filled with `accent` appears at most once on a page. Most pages have zero — settings is mostly toggles and text, the workspace pane is mostly content, the chat composer is the input itself.
 
-二开输入框发送与停止按钮使用黑白配色：暗色主题白底黑图标，亮色主题黑底白图标；停止图标及回合末尾复制、分叉图标为 12 像素，完成耗时文字为 11 像素。图标缩小不缩减原有点击范围。
+二开输入框发送与停止按钮统一为 24 像素圆形，并使用黑白配色：暗色主题白底黑图标，亮色主题黑底白图标；停止图标及回合末尾复制、分叉图标为 12 像素，完成耗时文字为 11 像素。图标缩小不缩减原有点击范围。
 
 Destructive is a color, not a click. Restart-daemon and remove-host are `<Button variant="outline">` in the row trailing slot; the destructive surface only appears inside the `confirmDialog` (`packages/app/src/screens/settings/host-page.tsx:541-547`). Workspace archive opens a confirm dialog before any red appears (`packages/app/src/components/sidebar-workspace-list.tsx`). Red appears after the user has indicated intent.
 
@@ -268,5 +268,7 @@ The bespoke pills in `packages/app/src/screens/settings/host-page.tsx:97-116`, `
 
 - 对话正文、回合尾部、附件与输入框共用 `MAX_CHAT_CONTENT_WIDTH = 738`；文件预览和表单仍使用 820 像素上限。窄屏随可用宽度收缩，不强制固定宽度。
 - 默认 Dark 使用炭黑画布、略灰侧栏和输入面、低饱和蓝灰工作区选中态；状态色与其他主题的背景不受这套配色影响。侧栏普通文字比正文降低 8% 对比度，辅助灰字不重复弱化，用户的文字亮度设置仍生效。
-- 桌面输入框采用正文在上、工具栏在下的结构；模型与思考强度在同一入口中显示，菜单去掉“角色”标题并采用 240 像素紧凑宽度；桌面模型、推理子选项可悬停展开，使用安全区衔接并允许切换相邻行，模型列表按数量收缩且最高 320 像素，权限单独保留图标，提供商功能进入角色菜单。紧凑布局继续使用模型底部面板，不堆放横向子菜单。语音、发送与停止保留原业务状态。
+- 桌面输入框采用正文在上、工具栏在下的结构；模型与思考强度在同一入口中显示，菜单去掉“角色”标题并采用 240 像素紧凑宽度；桌面模型、推理子选项可悬停展开，使用安全区衔接并允许切换相邻行，模型列表按数量收缩且最高 400 像素，权限单独保留图标，提供商功能进入角色菜单。紧凑布局继续使用模型底部面板，不堆放横向子菜单。语音、发送与停止保留原业务状态。
 - 下拉浮层使用圆角表面、内缩选项和带勾的灰色选中行，不使用强调色大片填充。到底部入口是无阴影的 32 像素细箭头圆钮，扩大命中范围而不放大视觉体积。
+
+定时发送使用发送按钮的右键或长按菜单，不添加常驻控件；分钟设置仅在小型弹窗或紧凑底部面板中展示。输入框上方待发送项采用辅助文字的一行摘要与操作菜单，失败原因在摘要下方明确显示。创建失败时保留原草稿与附件。桌面设置浮层只保留右上角关闭按钮，移动端全屏导航保留返回。

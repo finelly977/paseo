@@ -39,8 +39,8 @@ function canReuseMaterializedImageAttachmentDir(dir: string): boolean {
   }
 }
 
-function getMaterializedImageAttachmentDir(): string {
-  const expectedDir = path.join(resolvePaseoHome(), PROVIDER_IMAGE_ATTACHMENT_DIR);
+function getMaterializedImageAttachmentDir(paseoHome: string): string {
+  const expectedDir = path.join(paseoHome, PROVIDER_IMAGE_ATTACHMENT_DIR);
   if (materializedImageAttachmentDir !== expectedDir) {
     materializedImageAttachmentDir = expectedDir;
   }
@@ -85,8 +85,9 @@ function normalizeImageData(mimeType: string, data: string): { mimeType: string;
 export function materializeProviderImage(image: {
   data: string;
   mimeType: string | null;
+  paseoHome?: string;
 }): MaterializedProviderImage {
-  const attachmentsDir = getMaterializedImageAttachmentDir();
+  const attachmentsDir = getMaterializedImageAttachmentDir(image.paseoHome ?? resolvePaseoHome());
   const normalized = normalizeImageData(image.mimeType ?? "image/png", image.data);
   const bytes = Buffer.from(normalized.data, "base64");
   const extension = getImageExtension(normalized.mimeType);

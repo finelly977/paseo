@@ -26,6 +26,12 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { ArrowUp, Mic, MicOff, CornerDownLeft, Plus, Square } from "lucide-react-native";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from "@/components/ui/context-menu";
 import { useDictation } from "@/hooks/use-dictation";
 import { DictationOverlay } from "@/components/dictation-controls";
 import { RealtimeVoiceOverlay } from "@/components/realtime-voice-overlay";
@@ -88,6 +94,7 @@ export interface AttachmentMenuItem {
 }
 
 export interface MessageInputProps {
+  onScheduleMessage?: (payload: MessagePayload) => void;
   value: string;
   onChangeText: (text: string) => void;
   onSubmit: (payload: MessagePayload) => void;
@@ -729,6 +736,7 @@ function VoiceButtonTooltip({
 }
 
 function SendButtonTooltip({
+  onScheduleMessage,
   shouldShow,
   canPressLoadingButton,
   onSubmitLoadingPress,
@@ -743,6 +751,7 @@ function SendButtonTooltip({
   sendKeys,
   sendTooltipLabel,
 }: {
+  onScheduleMessage: (() => void) | undefined;
   shouldShow: boolean;
   canPressLoadingButton: boolean;
   onSubmitLoadingPress: (() => void) | undefined;
@@ -758,26 +767,58 @@ function SendButtonTooltip({
   sendTooltipLabel: string;
 }) {
   if (!shouldShow) return null;
-  return (
+  const button = (
     <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
       <TooltipTrigger
+        asChild={onScheduleMessage !== undefined}
         onPress={canPressLoadingButton ? onSubmitLoadingPress : onDefaultSendAction}
         disabled={isSendButtonDisabled}
         accessibilityLabel={submitAccessibilityLabel}
         accessibilityRole="button"
         testID={submitButtonTestID}
         style={sendButtonCombinedStyle}
+        hitSlop={10}
       >
-        <SendButtonContent
-          isSubmitLoading={isSubmitLoading}
-          submitIcon={submitIcon}
-          buttonIconSize={buttonIconSize}
-        />
+        {onScheduleMessage ? (
+          <ContextMenuTrigger
+            enabledOnMobile
+            disabled={isSendButtonDisabled}
+            accessibilityLabel={submitAccessibilityLabel}
+            accessibilityRole="button"
+            testID={submitButtonTestID}
+            style={sendButtonCombinedStyle}
+            hitSlop={10}
+          >
+            <SendButtonContent
+              isSubmitLoading={isSubmitLoading}
+              submitIcon={submitIcon}
+              buttonIconSize={buttonIconSize}
+            />
+          </ContextMenuTrigger>
+        ) : (
+          <SendButtonContent
+            isSubmitLoading={isSubmitLoading}
+            submitIcon={submitIcon}
+            buttonIconSize={buttonIconSize}
+          />
+        )}
       </TooltipTrigger>
       <TooltipContent side="top" align="center" offset={8}>
         <SendTooltipBody label={sendTooltipLabel} sendKeys={sendKeys} />
+        {onScheduleMessage ? <Text style={styles.tooltipText}>右键可定时发送</Text> : null}
       </TooltipContent>
     </Tooltip>
+  );
+  if (!onScheduleMessage) return button;
+  return (
+    <ContextMenu>
+      {button}
+      <ContextMenuContent side="top" align="end" minWidth={160} mobileMode="sheet">
+        <ContextMenuItem onSelect={onScheduleMessage} testID="send-schedule-action">
+          定时发送…
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -1679,6 +1720,20 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       ],
       [inputHeight, maxInputHeight],
     );
+    const onScheduleMessage = props.onScheduleMessage;
+    const handleScheduleMessage = useMemo(
+      () =>
+        onScheduleMessage
+          ? () =>
+              onScheduleMessage({
+                text: valueRef.current.trim(),
+                attachments: attachments ?? [],
+                cwd,
+              })
+          : undefined,
+      [onScheduleMessage, attachments, cwd],
+    );
+
     const sendButtonCombinedStyle = useMemo(
       () => [styles.sendButton, isSendButtonDisabled && styles.buttonDisabled],
       [isSendButtonDisabled],
@@ -1796,6 +1851,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               />
               {rightContent}
               <SendButtonTooltip
+                onScheduleMessage={handleScheduleMessage}
                 shouldShow={resolveComposerSubmitVisibility(
                   shouldShowSendButton,
                   isAgentRunning,
@@ -1947,8 +2003,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     backgroundColor: theme.colors.destructive,
   },
   sendButton: {
-    width: 32,
-    height: 32,
+    width: 24,
+    height: 24,
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.foreground,
     alignItems: "center",

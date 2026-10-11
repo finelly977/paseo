@@ -157,6 +157,7 @@ export function cancelComposerAgent(input: CancelComposerAgentInput): boolean {
 }
 
 export interface DispatchComposerAgentMessageInput {
+  clientMessageId?: string;
   client: ComposerSendClient;
   agentId: string;
   text: string;
@@ -176,7 +177,7 @@ export async function dispatchComposerAgentMessage(
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments, {
     format: input.attachmentSubmitFormat,
   });
-  const clientMessageId = generateMessageId();
+  const clientMessageId = input.clientMessageId ?? generateMessageId();
   const userMessage = createUserMessage({
     clientMessageId,
     text: input.text,

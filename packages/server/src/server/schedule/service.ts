@@ -10,6 +10,7 @@ import { ensureAgentLoaded } from "../agent/agent-loading.js";
 import {
   formatSystemNotificationPrompt,
   startAgentRun,
+  waitForAgentRunStartWithTimeout,
   type AgentRunController,
 } from "../agent/agent-prompt.js";
 import { resolveCreateAgentTitles } from "../agent/create-agent-title.js";
@@ -17,6 +18,9 @@ import { type BoundCreateAgentCommand, formatProviderModel } from "../agent/crea
 import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../worktree-session.js";
 import { ScheduleStore } from "./store.js";
+import { ScheduledAgentMessages } from "./scheduled-agent-messages.js";
+import { buildAgentPrompt } from "../agent/prompt-attachments.js";
+import { readFile } from "node:fs/promises";
 import { computeNextRunAt, validateScheduleCadence } from "./cron.js";
 import type {
   CreateScheduleInput,
@@ -219,6 +223,7 @@ type ScheduleAgentManager = Pick<
     | "touchAgentActivity"
     | "waitForAgentEvent"
     | "waitForAgentClose"
+    | "waitForAgentRunStart"
   >;
 
 interface ScheduleWorkspaceCreateInput {
@@ -244,6 +249,7 @@ export interface ScheduleServiceOptions {
 }
 
 export class ScheduleService {
+  readonly scheduledMessages: ScheduledAgentMessages;
   private readonly store: ScheduleStore;
   private readonly logger: Logger;
   private readonly agentManager: ScheduleAgentManager;
@@ -274,10 +280,56 @@ export class ScheduleService {
     this.createPaseoWorktreeWorkspace = options.createPaseoWorktreeWorkspace;
     this.archiveWorkspace = options.archiveWorkspace;
     this.now = options.now ?? (() => new Date());
+    this.scheduledMessages = new ScheduledAgentMessages({
+      paseoHome: options.paseoHome,
+      logger: this.logger,
+      now: this.now,
+      canSend: async (agentId) => {
+        const record = await this.agentStorage.get(agentId);
+        if (!record || record.archivedAt) throw new Error("会话已被删除或归档，定时消息不能发送");
+        const agent = this.agentManager.getAgent(agentId);
+        if (this.agentManager.hasInFlightRun(agentId)) return false;
+        return (
+          !agent ||
+          (agent.pendingPermissions.size === 0 &&
+            agent.lifecycle !== "initializing" &&
+            agent.lifecycle !== "running")
+        );
+      },
+      deliver: async (message) => {
+        const agent = await ensureAgentLoaded(message.agentId, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          logger: this.logger,
+        });
+        const images = await Promise.all(
+          message.images.map(async (image) => ({
+            data: (await readFile(image.path)).toString("base64"),
+            mimeType: image.mimeType,
+          })),
+        );
+        const dispatch = await startAgentRun(
+          this.agentManager,
+          agent.id,
+          buildAgentPrompt(message.text, images, message.attachments),
+          this.logger,
+          {
+            replaceRunning: false,
+            runOptions: {
+              clientMessageId: message.clientMessageId,
+              userMessageImages: message.images,
+            },
+          },
+        );
+        if (dispatch.disposition === "turn_started")
+          await waitForAgentRunStartWithTimeout(this.agentManager, agent.id);
+      },
+    });
     this.runner = options.runner ?? ((schedule, runId) => this.executeSchedule(schedule, runId));
   }
 
   async start(): Promise<void> {
+    await this.scheduledMessages.start();
     await this.recoverInterruptedRuns();
     await this.sweepOrphanedSchedules();
     if (this.tickTimer) {
@@ -293,6 +345,7 @@ export class ScheduleService {
   }
 
   async stop(): Promise<void> {
+    await this.scheduledMessages.stop();
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;

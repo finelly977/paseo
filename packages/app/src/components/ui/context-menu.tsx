@@ -519,22 +519,22 @@ export function ContextMenuContent({
 
   if (useMobileSheet) {
     return (
-      <ContextMenuContext.Provider value={context}>
-        <IsolatedBottomSheetModal
-          contextBridge={null}
-          ref={bottomSheetRef}
-          index={0}
-          snapPoints={sheetSnapPoints}
-          enableDynamicSizing={false}
-          onChange={handleSheetChange}
-          onDismiss={handleSheetDismiss}
-          backdropComponent={renderSheetBackdrop}
-          enablePanDownToClose
-          backgroundStyle={sheetBackgroundStyle}
-          handleIndicatorStyle={sheetHandleStyle}
-          keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-        >
+      <IsolatedBottomSheetModal
+        contextBridge={null}
+        ref={bottomSheetRef}
+        index={0}
+        snapPoints={sheetSnapPoints}
+        enableDynamicSizing={false}
+        onChange={handleSheetChange}
+        onDismiss={handleSheetDismiss}
+        backdropComponent={renderSheetBackdrop}
+        enablePanDownToClose
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={sheetHandleStyle}
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+      >
+        <ContextMenuContext.Provider value={context}>
           <BottomSheetScrollView
             contentContainerStyle={styles.sheetScrollContent}
             keyboardShouldPersistTaps="handled"
@@ -543,8 +543,8 @@ export function ContextMenuContent({
           >
             {children}
           </BottomSheetScrollView>
-        </IsolatedBottomSheetModal>
-      </ContextMenuContext.Provider>
+        </ContextMenuContext.Provider>
+      </IsolatedBottomSheetModal>
     );
   }
 

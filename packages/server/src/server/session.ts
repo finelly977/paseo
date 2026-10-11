@@ -679,6 +679,7 @@ export class Session {
   private readonly checkoutSession: CheckoutSession;
   private readonly gitAiSession: GitAiSession;
   private readonly chatScheduleLoopSession: ChatScheduleLoopSession;
+  private readonly scheduledMessages: ScheduleService["scheduledMessages"];
   private readonly providerCatalogSession: ProviderCatalogSession;
   private readonly workspaceFilesSession: WorkspaceFilesSession;
   private readonly agentConfigSession: AgentConfigSession;
@@ -842,6 +843,7 @@ export class Session {
       onBranchChanged,
       logger: this.sessionLogger,
     });
+    this.scheduledMessages = scheduleService.scheduledMessages;
     this.chatScheduleLoopSession = new ChatScheduleLoopSession({
       host: {
         emit: (msg) => this.emit(msg),
@@ -2233,6 +2235,11 @@ export class Session {
 
   private dispatchMetadataMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "agent.message.schedule.request":
+      case "agent.message.schedules.list.request":
+      case "agent.message.schedule.cancel.request":
+      case "agent.message.schedule.send-now.request":
+        return this.handleScheduledAgentMessage(msg);
       case "agent.title.get.request": {
         return this.agentManager.readNativeSessionTitle(msg.agentId).then((title) => {
           return this.emit({
@@ -3408,6 +3415,79 @@ export class Session {
   /**
    * Handle text message to agent (with optional image attachments)
    */
+  private async handleScheduledAgentMessage(
+    msg: Extract<
+      SessionInboundMessage,
+      {
+        type:
+          | "agent.message.schedule.request"
+          | "agent.message.schedules.list.request"
+          | "agent.message.schedule.cancel.request"
+          | "agent.message.schedule.send-now.request";
+      }
+    >,
+  ): Promise<void> {
+    const service = this.scheduledMessages;
+    try {
+      if (msg.type === "agent.message.schedules.list.request") {
+        this.emit({
+          type: "agent.message.schedules.list.response",
+          payload: {
+            requestId: msg.requestId,
+            messages: await service.list(msg.agentId),
+            error: null,
+          },
+        });
+        return;
+      }
+      if (msg.type === "agent.message.schedule.request") {
+        const message = await service.create(msg);
+        this.emit({
+          type: "agent.message.schedule.response",
+          payload: { requestId: msg.requestId, message, error: null },
+        });
+      } else if (msg.type === "agent.message.schedule.cancel.request") {
+        const message = await service.cancel(msg.agentId, msg.messageId);
+        this.emit({
+          type: "agent.message.schedule.cancel.response",
+          payload: { requestId: msg.requestId, message, error: null },
+        });
+      } else {
+        const message = await service.sendNow(msg.agentId, msg.messageId);
+        this.emit({
+          type: "agent.message.schedule.send-now.response",
+          payload: { requestId: msg.requestId, message, error: null },
+        });
+      }
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, agentId: msg.agentId },
+        "Scheduled message request failed",
+      );
+      const reason = error instanceof Error ? error.message : String(error);
+      if (msg.type === "agent.message.schedules.list.request")
+        this.emit({
+          type: "agent.message.schedules.list.response",
+          payload: { requestId: msg.requestId, messages: [], error: reason },
+        });
+      else if (msg.type === "agent.message.schedule.request")
+        this.emit({
+          type: "agent.message.schedule.response",
+          payload: { requestId: msg.requestId, message: null, error: reason },
+        });
+      else if (msg.type === "agent.message.schedule.cancel.request")
+        this.emit({
+          type: "agent.message.schedule.cancel.response",
+          payload: { requestId: msg.requestId, message: null, error: reason },
+        });
+      else
+        this.emit({
+          type: "agent.message.schedule.send-now.response",
+          payload: { requestId: msg.requestId, message: null, error: reason },
+        });
+    }
+  }
+
   private async handleSendAgentMessage(
     agentId: string,
     text: string,

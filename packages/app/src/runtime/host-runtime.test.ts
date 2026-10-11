@@ -21,6 +21,7 @@ import {
   type HostRuntimeStorage,
 } from "./host-runtime";
 import { ReplicaCache } from "./replica-cache";
+import * as imageEncoding from "@/utils/encode-images";
 
 class FakeDaemonClient {
   private state: ConnectionState = { status: "idle" };
@@ -2560,6 +2561,18 @@ describe("HostRuntimeStore", () => {
     store.drainQueuedAgentMessage(host.serverId, "agent");
     await fakeClient.waitForSentMessages(1);
     expect(fakeClient.sentAgentMessages).toHaveLength(1);
+    expect(fakeClient.sentAgentMessages[0][2]?.messageId).toBe("first");
+    const session = useSessionStore.getState().sessions[host.serverId];
+    expect([
+      ...(session.agentStreamTail.get("agent") ?? []),
+      ...(session.agentStreamHead.get("agent") ?? []),
+    ]).toContainEqual(
+      expect.objectContaining({
+        kind: "user_message",
+        clientMessageId: "first",
+        text: "send once",
+      }),
+    );
 
     send.resolve();
     await vi.waitFor(() => {
@@ -2568,6 +2581,76 @@ describe("HostRuntimeStore", () => {
       ).toEqual([]);
     });
     useSessionStore.getState().clearSession(host.serverId);
+  });
+
+  it("排队图片自动送达时登记本地预览，不只把编码图片送给主机", async () => {
+    const host = makeHost({ serverId: "srv_image_queue_drain" });
+    const fakeClient = new FakeDaemonClient();
+    const image = {
+      id: "queued-image",
+      mimeType: "image/png",
+      storageType: "web-indexeddb" as const,
+      storageKey: "queued-image",
+      createdAt: 1,
+    };
+    const encoded = { data: "aW1hZ2U=", mimeType: "image/png" };
+    const encoder = vi.spyOn(imageEncoding, "encodeImages").mockResolvedValue([encoded]);
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => fakeClient as unknown as DaemonClient,
+        connectToDaemon: async () => ({
+          client: fakeClient as unknown as DaemonClient,
+          serverId: host.serverId,
+          hostname: null,
+        }),
+        getClientId: async () => "cid_image_queue_drain",
+      },
+    });
+    const sessionStore = useSessionStore.getState();
+    sessionStore.initializeSession(host.serverId, fakeClient as unknown as DaemonClient, 1);
+    sessionStore.setQueuedMessages(
+      host.serverId,
+      new Map([
+        [
+          "agent",
+          [
+            {
+              id: "queued-image-message",
+              text: "排队图片",
+              attachments: [{ kind: "image", metadata: image }],
+            },
+          ],
+        ],
+      ]),
+    );
+    try {
+      store.drainQueuedAgentMessage(host.serverId, "agent");
+      await fakeClient.waitForSentMessages(1);
+      expect(encoder).toHaveBeenCalledWith([image]);
+      expect(fakeClient.sentAgentMessages[0][2]).toMatchObject({
+        messageId: "queued-image-message",
+        images: [encoded],
+      });
+      await vi.waitFor(() =>
+        expect(
+          useSessionStore.getState().sessions[host.serverId].queuedMessages.get("agent"),
+        ).toEqual([]),
+      );
+      const session = useSessionStore.getState().sessions[host.serverId];
+      expect([
+        ...(session.agentStreamHead.get("agent") ?? []),
+        ...(session.agentStreamTail.get("agent") ?? []),
+      ]).toContainEqual(
+        expect.objectContaining({
+          kind: "user_message",
+          clientMessageId: "queued-image-message",
+          images: [image],
+        }),
+      );
+    } finally {
+      encoder.mockRestore();
+      sessionStore.clearSession(host.serverId);
+    }
   });
 
   it("uses legacy GitHub attachments when draining a queue for an old daemon", async () => {

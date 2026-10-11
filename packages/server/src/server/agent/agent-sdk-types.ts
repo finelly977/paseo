@@ -204,6 +204,8 @@ export type AgentPromptContentBlock =
 export type AgentPromptInput = string | AgentPromptContentBlock[];
 
 export interface AgentRunOptions {
+  /** 已保存的用户图片来源，仅供时间线登记使用，不改变提供方输入。 */
+  userMessageImages?: AgentUserMessageImage[];
   outputSchema?: unknown;
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;

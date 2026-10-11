@@ -1287,6 +1287,101 @@ const ImageAttachmentSchema = z.object({
   mimeType: z.string(), // e.g., "image/jpeg", "image/png"
 });
 
+// 定时消息的新协议仅使用结构声明，不沿用旧附件列表的转换与丢弃逻辑。
+const ScheduledMessageAttachmentSchema = z.discriminatedUnion("type", [
+  ForgeChangeRequestAttachmentSchema,
+  ForgeIssueAttachmentSchema,
+  GitHubPrAttachmentSchema,
+  GitHubIssueAttachmentSchema,
+  TextAttachmentSchema.in,
+  ReviewAttachmentSchema,
+  UploadedFileAttachmentSchema,
+]);
+export const ScheduledAgentMessageRecordSchema = z.object({
+  id: z.guid(),
+  agentId: z.guid(),
+  clientMessageId: z.string(),
+  text: z.string(),
+  images: z.array(z.object({ path: z.string(), mimeType: z.string() })),
+  attachments: z.array(ScheduledMessageAttachmentSchema),
+  sendAt: z.iso.datetime(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  status: z.enum(["waiting", "sending", "sent", "failed", "cancelled"]),
+  error: z.string().nullable(),
+});
+export type ScheduledAgentMessageRecord = z.infer<typeof ScheduledAgentMessageRecordSchema>;
+export const ScheduledAgentMessageSummarySchema = ScheduledAgentMessageRecordSchema.omit({
+  images: true,
+  attachments: true,
+}).extend({
+  imageCount: z.number().int().nonnegative(),
+  attachmentCount: z.number().int().nonnegative(),
+});
+export type ScheduledAgentMessageSummary = z.infer<typeof ScheduledAgentMessageSummarySchema>;
+export const AgentMessageScheduleRequestSchema = z.object({
+  type: z.literal("agent.message.schedule.request"),
+  requestId: z.string(),
+  agentId: z.guid(),
+  clientMessageId: z.string().min(1),
+  text: z.string(),
+  delayMinutes: z.number().int().min(1).max(10080),
+  images: z
+    .array(
+      ImageAttachmentSchema.extend({
+        data: z
+          .string()
+          .min(4)
+          .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+        mimeType: z.string().startsWith("image/"),
+      }),
+    )
+    .optional(),
+  attachments: z.array(ScheduledMessageAttachmentSchema).optional(),
+});
+export const AgentMessageSchedulesListRequestSchema = z.object({
+  type: z.literal("agent.message.schedules.list.request"),
+  requestId: z.string(),
+  agentId: z.guid(),
+});
+export const AgentMessageScheduleCancelRequestSchema = z.object({
+  type: z.literal("agent.message.schedule.cancel.request"),
+  requestId: z.string(),
+  agentId: z.guid(),
+  messageId: z.guid(),
+});
+export const AgentMessageScheduleSendNowRequestSchema = z.object({
+  type: z.literal("agent.message.schedule.send-now.request"),
+  requestId: z.string(),
+  agentId: z.guid(),
+  messageId: z.guid(),
+});
+const ScheduledMessageResponsePayloadSchema = z.object({
+  requestId: z.string(),
+  message: ScheduledAgentMessageSummarySchema.nullable(),
+  error: z.string().nullable(),
+});
+export const AgentMessageScheduleResponseSchema = z.object({
+  type: z.literal("agent.message.schedule.response"),
+  payload: ScheduledMessageResponsePayloadSchema,
+});
+export const AgentMessageScheduleCancelResponseSchema = z.object({
+  type: z.literal("agent.message.schedule.cancel.response"),
+  payload: ScheduledMessageResponsePayloadSchema,
+});
+export const AgentMessageScheduleSendNowResponseSchema = z.object({
+  type: z.literal("agent.message.schedule.send-now.response"),
+  payload: ScheduledMessageResponsePayloadSchema,
+});
+export const AgentMessageSchedulesListResponseSchema = z.object({
+  type: z.literal("agent.message.schedules.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    messages: z.array(ScheduledAgentMessageSummarySchema),
+    error: z.string().nullable(),
+  }),
+});
+
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
 
@@ -3035,6 +3130,10 @@ export const HubExecutionAgentCreateRequestSchema = z.object({
 export type HubExecutionAgentCreateRequest = z.infer<typeof HubExecutionAgentCreateRequestSchema>;
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
+  AgentMessageScheduleRequestSchema,
+  AgentMessageSchedulesListRequestSchema,
+  AgentMessageScheduleCancelRequestSchema,
+  AgentMessageScheduleSendNowRequestSchema,
   HubExecutionAgentCreateRequestSchema,
   BrowserAutomationExecuteResponseSchema,
   VoiceAudioChunkMessageSchema,
@@ -3502,6 +3601,8 @@ export const ServerInfoStatusPayloadSchema = z
         selectiveAgentTimeline: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): v0.2.6 新增，2027-01-30 后移除能力门控。
         canonicalSubmittedPrompts: z.boolean().optional(),
+        // COMPAT(scheduledAgentMessages): 2026-10-11 新增，2027-04-11 后移除能力门控。
+        scheduledAgentMessages: z.boolean().optional(),
         // COMPAT(agentTurnIdentity): v0.2.6 新增，2027-01-31 后移除可选兼容。
         agentTurnIdentity: z.boolean().optional(),
         // COMPAT(stableProjectIdentity): added in v0.1.109, remove gate after 2027-01-15.
@@ -6223,6 +6324,10 @@ export const PluginRpcInvokeResponseSchema = z.object({
 });
 
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
+  AgentMessageScheduleResponseSchema,
+  AgentMessageSchedulesListResponseSchema,
+  AgentMessageScheduleCancelResponseSchema,
+  AgentMessageScheduleSendNowResponseSchema,
   HubExecutionAgentCreateResponseSchema,
   HubExecutionAgentUpdateSchema,
   HubExecutionAgentStreamSchema,

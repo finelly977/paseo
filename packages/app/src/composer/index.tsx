@@ -50,6 +50,10 @@ import type { ImageAttachment, MessagePayload } from "./types";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import type { DraftCommandConfig } from "@/hooks/use-agent-commands-query";
 import { encodeImages } from "@/utils/encode-images";
+import { ScheduledSendDialog } from "./scheduled-send-dialog";
+import { ScheduledMessages } from "./scheduled-messages";
+import { generateMessageId } from "@/types/stream";
+import { queryClient } from "@/data/query-client";
 import { focusWithRetries } from "@/utils/web-focus";
 import {
   cancelComposerAgent,
@@ -104,7 +108,10 @@ import type {
   WorkspaceComposerAttachment,
 } from "@/attachments/types";
 import type { PickedFile } from "@/attachments/picked-file";
-import { resolveComposerAttachmentSubmitFormat } from "@/composer/attachments/submit";
+import {
+  resolveComposerAttachmentSubmitFormat,
+  splitComposerAttachmentsForSubmit,
+} from "@/composer/attachments/submit";
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
 import { useWorkspaceAttachmentsForScopes } from "@/attachments/workspace-attachments-store";
 import { droppedItemsToPickedFiles } from "@/composer/attachments/drop";
@@ -915,6 +922,7 @@ function ComposerCancelButton({
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         style={cancelButtonStyle}
+        hitSlop={10}
       >
         {icon}
       </TooltipTrigger>
@@ -1076,6 +1084,15 @@ export function Composer({
   const isConnected = useHostRuntimeIsConnected(serverId);
   const agentDirectoryStatus = useHostRuntimeAgentDirectoryStatus(serverId);
   const toast = useToast();
+  // COMPAT(scheduledAgentMessages): 2026-10-11 新增，2027-04-11 后移除能力门控。
+  const supportsScheduledMessages = useSessionStore(
+    (state) => state.sessions[serverId]?.serverInfo?.features?.scheduledAgentMessages === true,
+  );
+  const [scheduledDraft, setScheduledDraft] = useState<{
+    text: string;
+    attachments: ComposerAttachment[];
+    clientMessageId: string;
+  } | null>(null);
   const toastErrorRef = useRef(toast.error);
   toastErrorRef.current = toast.error;
   const voice = useVoiceOptional();
@@ -1383,6 +1400,69 @@ export function Composer({
       resetSuppression,
       setSelectedAttachments,
       setUserInput,
+    ],
+  );
+
+  const openSchedule = useCallback(
+    (payload: MessagePayload) => {
+      if (onSubmitMessageRef.current) {
+        toast.error("请先创建会话，再设置定时发送");
+        return;
+      }
+      if (!supportsScheduledMessages) {
+        toast.error("请更新主机后使用定时发送");
+        return;
+      }
+      const outgoing = buildOutgoingAttachments(attachments);
+      if (!payload.text.trim() && outgoing.length === 0) return;
+      setScheduledDraft({
+        text: payload.text.trim(),
+        attachments: outgoing,
+        clientMessageId: generateMessageId(),
+      });
+    },
+    [attachments, buildOutgoingAttachments, supportsScheduledMessages, toast],
+  );
+  const closeSchedule = useCallback(() => setScheduledDraft(null), []);
+  const schedule = useCallback(
+    async (minutes: number) => {
+      if (!client || !isConnected) throw new Error("主机已断开连接");
+      if (!scheduledDraft) throw new Error("没有待发送消息");
+      const wire = splitComposerAttachmentsForSubmit(scheduledDraft.attachments, {
+        format: "forge",
+      });
+      const images = await encodeImages(wire.images);
+      await client.scheduleAgentMessage({
+        agentId,
+        clientMessageId: scheduledDraft.clientMessageId,
+        text: scheduledDraft.text,
+        delayMinutes: minutes,
+        images,
+        attachments: wire.attachments,
+      });
+      if (userInput.trim() === scheduledDraft.text) {
+        setUserInput("");
+        setSelectedAttachments([]);
+        resetSuppression();
+        clearSentAttachments(scheduledDraft.attachments);
+        clearDraft("sent");
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["scheduled-agent-messages", serverId, agentId],
+      });
+    },
+    [
+      agentId,
+      client,
+      isConnected,
+      scheduledDraft,
+      userInput,
+      setUserInput,
+      setSelectedAttachments,
+      resetSuppression,
+      clearSentAttachments,
+      clearDraft,
+      serverId,
     ],
   );
 
@@ -2105,6 +2185,12 @@ export function Composer({
         <View style={inputAreaContainerStyle}>
           <View style={styles.inputAreaContent}>
             {queueList}
+            {supportsScheduledMessages ? (
+              <ScheduledMessages serverId={serverId} agentId={agentId} />
+            ) : null}
+            {scheduledDraft ? (
+              <ScheduledSendDialog onClose={closeSchedule} onConfirm={schedule} />
+            ) : null}
             {sendErrorNode}
 
             <View ref={messageInputContainerRef} style={styles.messageInputContainer}>
@@ -2154,6 +2240,8 @@ export function Composer({
                 isAgentRunning={isAgentRunning}
                 defaultSendBehavior={activeSendBehavior}
                 onQueue={handleQueue}
+                // 仅此发送入口支持右键/长按定时设置；新会话会提示先创建。
+                onScheduleMessage={openSchedule}
                 onSubmitLoadingPress={submitLoadingPressHandler}
                 onKeyPress={handleCommandKeyPress}
                 onSelectionChange={handleSelectionChange}

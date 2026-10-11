@@ -20,6 +20,8 @@ import {
   SessionInboundMessageSchema,
   type ActiveTurnBehavior,
   type ServerInfoStatusPayload,
+  type ScheduledAgentMessageSummary,
+  type AgentMessageScheduleRequestSchema,
   type WorkspaceEntryMutation,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -1874,6 +1876,50 @@ export class DaemonClient {
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));
     }
+  }
+
+  async scheduleAgentMessage(
+    input: Omit<z.infer<typeof AgentMessageScheduleRequestSchema>, "type" | "requestId">,
+  ): Promise<ScheduledAgentMessageSummary> {
+    const result =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.message.schedule.response">({
+        message: { type: "agent.message.schedule.request", ...input },
+      });
+    if (result.error) throw new Error(result.error);
+    if (result.message === null) throw new Error("主机未返回定时消息");
+    return result.message;
+  }
+  async listScheduledAgentMessages(agentId: string): Promise<ScheduledAgentMessageSummary[]> {
+    const result =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.message.schedules.list.response">({
+        message: { type: "agent.message.schedules.list.request", agentId },
+      });
+    if (result.error) throw new Error(result.error);
+    return result.messages;
+  }
+  async cancelScheduledAgentMessage(
+    agentId: string,
+    messageId: string,
+  ): Promise<ScheduledAgentMessageSummary> {
+    const result =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.message.schedule.cancel.response">({
+        message: { type: "agent.message.schedule.cancel.request", agentId, messageId },
+      });
+    if (result.error) throw new Error(result.error);
+    if (result.message === null) throw new Error("主机未返回取消结果");
+    return result.message;
+  }
+  async sendScheduledAgentMessageNow(
+    agentId: string,
+    messageId: string,
+  ): Promise<ScheduledAgentMessageSummary> {
+    const result =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.message.schedule.send-now.response">(
+        { message: { type: "agent.message.schedule.send-now.request", agentId, messageId } },
+      );
+    if (result.error) throw new Error(result.error);
+    if (result.message === null) throw new Error("主机未返回发送结果");
+    return result.message;
   }
 
   async clearAgentAttention(agentId: string | string[]): Promise<void> {

@@ -2342,7 +2342,10 @@ export class AgentManager {
       return false;
     }
     if (options?.clientMessageId) {
-      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, { turnRole: "start" });
+      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, {
+        images: options.userMessageImages,
+        turnRole: "start",
+      });
       this.emitState(agent);
     }
     const dispatch = (event: AgentStreamEvent): void => {
@@ -2522,6 +2525,7 @@ export class AgentManager {
       if (options?.clientMessageId) {
         this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, {
           messageId: options.clientMessageId,
+          images: options.userMessageImages,
           turnId,
           turnRole: "start",
           providerMessageId:
@@ -4726,6 +4730,7 @@ export class AgentManager {
       providerMessageId?: string;
       turnId?: string;
       turnRole?: "start" | "steer";
+      images?: import("./agent-sdk-types.js").AgentUserMessageImage[];
     },
   ): void {
     if (this.timelineStore.getSubmittedUserMessage(agent.id, clientMessageId)) {
@@ -4736,6 +4741,7 @@ export class AgentManager {
     const item: AgentTimelineItem = {
       type: "user_message",
       text: submittedPromptText(prompt),
+      ...(options?.images && options.images.length > 0 ? { images: options.images } : {}),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
       ...(options?.turnRole ? { turnRole: options.turnRole } : {}),
