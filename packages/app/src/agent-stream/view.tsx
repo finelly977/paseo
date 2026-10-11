@@ -121,7 +121,7 @@ import {
 } from "./history-index-model";
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
-import { getStandaloneMarkdownImage } from "./provider-image-message-model";
+import { getStandaloneMarkdownImages } from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { PluginTimelineItemView } from "@/plugins/timeline";
@@ -949,8 +949,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           spacing: layoutItem.assistantSpacing,
           phase: layoutItem.phase,
         } as const;
-        const providerImage =
-          context.provider === "codex" ? getStandaloneMarkdownImage(item.text) : null;
+        const providerImages =
+          context.provider === "codex" ? getStandaloneMarkdownImages(item.text) : null;
 
         return (
           <AssistantFileLinkResolverProvider
@@ -964,15 +964,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             }
             toast={toast}
           >
-            {providerImage ? (
-              <ProviderImageMessage
-                key={item.id}
-                source={providerImage.source}
-                alt={providerImage.alt}
-                client={client}
-                workspaceRoot={workspaceRoot}
-                serverId={resolvedServerId}
-              />
+            {providerImages ? (
+              <View>
+                {providerImages.map((image) => (
+                  <ProviderImageMessage
+                    key={image.key}
+                    source={image.source}
+                    alt={image.alt}
+                    client={client}
+                    workspaceRoot={workspaceRoot}
+                    serverId={resolvedServerId}
+                  />
+                ))}
+              </View>
             ) : (
               <AssistantMessage {...messageProps} />
             )}

@@ -5,11 +5,27 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import {
   isProviderImageMarkdown,
+  isStandaloneImageOutput,
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
 } from "./provider-image-output.js";
 
 const HASH = "a".repeat(64);
+
+describe("独立图片输出边界", () => {
+  test("识别提供方实际序列化的 Windows 路径、转义描述与多张图片", () => {
+    const output = renderProviderImageOutputAsAssistantMarkdown({
+      path: "C:\\项目 空格\\截图 (一).png",
+      altText: "窗口]预览",
+    });
+    if (!output || output.type !== "assistant_message") throw new Error("图片输出未生成");
+    expect(isStandaloneImageOutput(output.text)).toBe(true);
+    expect(isStandaloneImageOutput(`${output.text}\n\n${output.text}`)).toBe(true);
+    expect(isStandaloneImageOutput(`说明：${output.text}`)).toBe(false);
+    expect(isStandaloneImageOutput(`${output.text}检查完成。`)).toBe(false);
+    expect(isStandaloneImageOutput(`\`\`\`markdown\n${output.text}\n\`\`\``)).toBe(false);
+  });
+});
 
 function renderImageMarkdown(imagePath: string): string {
   const item = renderProviderImageOutputAsAssistantMarkdown({ path: imagePath });

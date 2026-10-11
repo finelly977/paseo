@@ -12,7 +12,6 @@ import {
   getWebMountedRecentStreamItems,
   getWebPartialVirtualizationThreshold,
   shouldAutoLoadOlderHistory,
-  shouldAdjustScrollForMeasuredItem,
   splitWebVirtualizedHistory,
   type IndexedStreamItem,
 } from "./web-virtualization";
@@ -119,30 +118,6 @@ describe("splitWebVirtualizedHistory", () => {
     expect(window.virtualizedEntries.at(-1)?.item.id).toBe("a4");
     expect(window.mountedEntries[0]?.item.id).toBe("u5");
     expect(window.mountedEntries).toHaveLength(50);
-  });
-});
-
-describe("shouldAdjustScrollForMeasuredItem", () => {
-  it("只补偿视口上方行的高度变化", () => {
-    const common = {
-      scrollOffset: 800,
-      distanceFromBottom: 2_000,
-      bottomThreshold: 64,
-    };
-
-    expect(shouldAdjustScrollForMeasuredItem({ ...common, itemStart: 320 })).toBe(true);
-    expect(shouldAdjustScrollForMeasuredItem({ ...common, itemStart: 920 })).toBe(false);
-  });
-
-  it("接近底部时交由自动跟随逻辑保持位置", () => {
-    expect(
-      shouldAdjustScrollForMeasuredItem({
-        itemStart: 320,
-        scrollOffset: 800,
-        distanceFromBottom: 40,
-        bottomThreshold: 64,
-      }),
-    ).toBe(false);
   });
 });
 

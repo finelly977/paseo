@@ -9,6 +9,7 @@ import type { AttachmentMetadata } from "@/attachments/types";
 import { extractTaskEntriesFromToolCall } from "../utils/tool-call-parsers";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { stripCodexGitDirectives } from "@/utils/codex-visible-message";
+import { getStandaloneMarkdownImages } from "@/agent-stream/provider-image-message-model";
 import type { InstalledPluginTimelineItem, TimelineItemTransform } from "@/plugins/timeline";
 
 /**
@@ -1104,6 +1105,30 @@ interface AppendAssistantTextInput {
   transformText?: (text: string) => string;
 }
 
+function hasAnonymousAssistantImageBoundary(input: {
+  previousText: string;
+  incomingText: string;
+  messageId: string | undefined;
+}): boolean {
+  if (input.messageId !== undefined) return false;
+  return (
+    getStandaloneMarkdownImages(input.previousText) !== null ||
+    getStandaloneMarkdownImages(input.incomingText) !== null
+  );
+}
+
+function hasAssistantImageEventBoundary(
+  previousText: string,
+  event: AgentStreamEventPayload,
+): boolean {
+  if (event.type !== "timeline" || event.item.type !== "assistant_message") return false;
+  return hasAnonymousAssistantImageBoundary({
+    previousText,
+    incomingText: event.item.text,
+    messageId: event.item.messageId,
+  });
+}
+
 function updateTrailingAssistantMessage(input: AppendAssistantTextInput): StreamItem[] | null {
   const last = input.state.at(-1);
   if (
@@ -1112,6 +1137,14 @@ function updateTrailingAssistantMessage(input: AppendAssistantTextInput): Stream
   ) {
     return null;
   }
+  if (
+    hasAnonymousAssistantImageBoundary({
+      previousText: last.text,
+      incomingText: input.chunk,
+      messageId: input.messageId,
+    })
+  )
+    return null;
   const mergedText = transformAssistantText(`${last.text}${input.chunk}`, input.transformText);
   if (!mergedText) {
     return input.state.slice(0, -1);
@@ -1140,6 +1173,14 @@ function updateAssistantBeforeOptimisticUser(
   ) {
     return null;
   }
+  if (
+    hasAnonymousAssistantImageBoundary({
+      previousText: assistant.text,
+      incomingText: input.chunk,
+      messageId: input.messageId,
+    })
+  )
+    return null;
   const mergedText = transformAssistantText(`${assistant.text}${input.chunk}`, input.transformText);
   if (!mergedText) {
     return [...input.state.slice(0, -2), last];
@@ -1998,6 +2039,7 @@ function getTailAssistantToResume(params: {
   if (incomingMessageId !== undefined && params.tailAssistant.messageId !== incomingMessageId) {
     return null;
   }
+  if (hasAssistantImageEventBoundary(params.tailAssistant.text, params.event)) return null;
   return params.tailAssistant;
 }
 
@@ -2130,6 +2172,7 @@ function shouldFlushHead(input: {
   }
 
   if (incomingKind === "assistant_message" && lastStreamable.kind === "assistant_message") {
+    if (hasAssistantImageEventBoundary(lastStreamable.text, event)) return true;
     const incomingMessageId = getIncomingAssistantMessageId(event);
     return incomingMessageId !== undefined && lastStreamable.messageId !== incomingMessageId;
   }

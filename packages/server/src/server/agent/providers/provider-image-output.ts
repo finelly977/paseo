@@ -109,6 +109,13 @@ export function isProviderImageMarkdown(text: string): boolean {
   return PROVIDER_IMAGE_MARKDOWN.test(text);
 }
 
+// 提供方图片输出采用固定 Markdown 序列化，必须整条匹配，不能把含说明的正文当作图片。
+const STANDALONE_IMAGE_OUTPUT = /^(?:!\[(?:\\.|[^\]\\])*\]\((?:\\.|[^)\\])+\)\s*)+$/u;
+
+export function isStandaloneImageOutput(text: string): boolean {
+  return STANDALONE_IMAGE_OUTPUT.test(text.trim());
+}
+
 interface RenderProviderImageOutputOptions {
   materialize?: (image: { data: string; mimeType: string | null }) => MaterializedProviderImage;
 }

@@ -9,6 +9,22 @@ import {
 } from "./timeline-projection.js";
 
 describe("projectTimelineRows", () => {
+  test("无消息标识的独立图片不会在历史投影中被拼入相邻正文", () => {
+    const texts = ["开始检查。", "![Image](file:///C:/repo/screenshot.png)", "检查完成。"];
+    const rows: AgentTimelineRow[] = texts.map((text, index) => ({
+      seq: index + 1,
+      timestamp: new Date(index * 1000).toISOString(),
+      item: { type: "assistant_message", text },
+    }));
+    const projected = projectTimelineRows({ rows, mode: "projected" });
+    expect(projected.map((entry) => entry.item)).toEqual(rows.map((row) => row.item));
+    expect(projected.map((entry) => entry.sourceSeqRanges)).toEqual([
+      [{ startSeq: 1, endSeq: 1 }],
+      [{ startSeq: 2, endSeq: 2 }],
+      [{ startSeq: 3, endSeq: 3 }],
+    ]);
+  });
+
   test("merges adjacent assistant chunks in projected mode", () => {
     const rows: AgentTimelineRow[] = [
       {

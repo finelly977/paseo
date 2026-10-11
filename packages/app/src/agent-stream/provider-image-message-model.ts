@@ -6,25 +6,29 @@ markdownParser.validateLink = (url: string) =>
   url.trim().toLowerCase().startsWith("file://") || defaultValidateLink(url);
 
 export interface StandaloneMarkdownImage {
+  key: string;
   source: string;
   alt: string;
 }
 
-export function getStandaloneMarkdownImage(markdown: string): StandaloneMarkdownImage | null {
+export function getStandaloneMarkdownImages(markdown: string): StandaloneMarkdownImage[] | null {
+  if (!markdown.trimStart().startsWith("![")) return null;
   const tokens = markdownParser.parse(markdown, {});
-  if (
-    tokens.length !== 3 ||
-    tokens[0].type !== "paragraph_open" ||
-    tokens[1].type !== "inline" ||
-    tokens[2].type !== "paragraph_close"
-  ) {
-    return null;
+  const images: StandaloneMarkdownImage[] = [];
+  const occurrencesBySource = new Map<string, number>();
+  for (const token of tokens) {
+    if (token.type === "paragraph_open" || token.type === "paragraph_close") continue;
+    if (token.type !== "inline" || token.children === null) return null;
+    for (const child of token.children) {
+      if (child.type === "softbreak" || child.type === "hardbreak") continue;
+      if (child.type === "text" && child.content.trim() === "") continue;
+      if (child.type !== "image") return null;
+      const source = child.attrGet("src");
+      if (source === null) throw new Error("Markdown image token is missing its source");
+      const occurrence = occurrencesBySource.get(source) ?? 0;
+      occurrencesBySource.set(source, occurrence + 1);
+      images.push({ key: `${source}:${occurrence}`, source, alt: child.content });
+    }
   }
-
-  const children = tokens[1].children;
-  if (!children || children.length !== 1 || children[0].type !== "image") return null;
-  const image = children[0];
-  const source = image.attrGet("src");
-  if (source === null) throw new Error("Markdown image token is missing its source");
-  return { source, alt: image.content };
+  return images.length > 0 ? images : null;
 }

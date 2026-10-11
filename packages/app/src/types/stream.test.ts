@@ -23,6 +23,41 @@ import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display"
 
 type CanonicalToolStatus = "running" | "completed" | "failed" | "canceled";
 
+describe("独立图片结果的消息边界", () => {
+  it("同一提供方消息内的普通图片与说明仍按流式正文合并", () => {
+    const image = "![Image](file:///C:/repo/screenshot.png)";
+    const caption = "\n\n这是正文中的图片说明。";
+    const state = hydrateStreamState(
+      [
+        { event: assistantTimeline(image, "codex", "native-message"), timestamp: new Date(0) },
+        { event: assistantTimeline(caption, "codex", "native-message"), timestamp: new Date(1000) },
+      ],
+      { source: "canonical" },
+    );
+    expect(
+      state.filter((item) => item.kind === "assistant_message").map((item) => item.text),
+    ).toEqual([image + caption]);
+  });
+
+  it("历史与实时消息都不会把无消息标识的图片结果拼进普通正文", () => {
+    const texts = ["开始检查页面。", "![Image](file:///C:/repo/screenshot.png)", "页面检查完成。"];
+    const updates = texts.map((text, index) => ({
+      event: assistantTimeline(text, "codex"),
+      timestamp: new Date(index * 1000),
+    }));
+    const history = hydrateStreamState(updates, { source: "canonical" });
+    expect(
+      history.filter((item) => item.kind === "assistant_message").map((item) => item.text),
+    ).toEqual(texts);
+    let live: { tail: StreamItem[]; head: StreamItem[] } = { tail: [], head: [] };
+    for (const update of updates) live = applyStreamEvent({ ...live, ...update });
+    const visible = [...live.tail, ...live.head];
+    expect(
+      visible.filter((item) => item.kind === "assistant_message").map((item) => item.text),
+    ).toEqual(texts);
+  });
+});
+
 describe("user message identity", () => {
   it("replaces provisional optimistic turn membership with canonical membership", () => {
     const optimistic = createUserMessage({

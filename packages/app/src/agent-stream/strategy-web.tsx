@@ -11,11 +11,7 @@ import React, {
 } from "react";
 import { ActivityIndicator } from "react-native";
 import { measureElement as measureVirtualElement, useVirtualizer } from "@tanstack/react-virtual";
-import {
-  estimateStreamItemHeight,
-  shouldAdjustScrollForMeasuredItem,
-  shouldAutoLoadOlderHistory,
-} from "./web-virtualization";
+import { estimateStreamItemHeight, shouldAutoLoadOlderHistory } from "./web-virtualization";
 import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
@@ -257,26 +253,21 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
           )
         : 120;
     },
-    measureElement: measureVirtualElement,
+    measureElement: (element, _entry, instance) => {
+      const scroll = instance.scrollElement;
+      if (!scroll || scroll.clientWidth <= 0 || scroll.clientHeight <= 0) {
+        const index = instance.indexFromElement(element);
+        return instance.measurementsCache[index].size;
+      }
+      // 延迟的观察记录可能来自补页前或隐藏时，测量当前 DOM，不能缓存旧的零高度。
+      return measureVirtualElement(element, undefined, instance);
+    },
     useAnimationFrameWithResizeObserver: true,
     overscan: 8,
   });
   useEffect(() => {
-    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-      const scrollContainer = scrollContainerRef.current;
-      if (!scrollContainer || scrollContainer.clientHeight <= 0) {
-        return false;
-      }
-      // 虚拟历史只是正文的前半段，后面还有常驻历史和实时内容。
-      // 不能把虚拟区末尾当作整个对话的底部，否则上方行重测会把正文推出视口。
-      const scrollOffset = instance.scrollOffset ?? scrollContainer.scrollTop;
-      return shouldAdjustScrollForMeasuredItem({
-        itemStart: item.start,
-        scrollOffset,
-        distanceFromBottom: getScrollContainerDistanceFromBottom(scrollContainer),
-        bottomThreshold: AUTO_SCROLL_BOTTOM_THRESHOLD_PX,
-      });
-    };
+    // 行在正常文档流中增高时浏览器已完成锚定，虚拟器再次补偿会重复移动阅读位置。
+    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
     return () => {
       rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
     };
@@ -284,11 +275,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualTotalSize = rowVirtualizer.getTotalSize();
 
-  // Measure during commit, not a frame later. Deferring guarantees one painted frame
-  // at the estimated height before the correction lands, which reads as the row
-  // expanding/collapsing while scrolling up into unmeasured history. Rows that resize
-  // afterwards (markdown, images) are still caught by the virtualizer's
-  // ResizeObserver, which runs on an animation frame.
+  // 提交时同步更新占位尺寸，后续正文、图表和图片增高由观察器继续测量。
   const measureVirtualizedRowElement = useCallback(
     (node: HTMLDivElement | null) => {
       rowVirtualizer.measureElement(node);
@@ -708,25 +695,17 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     };
   }, [scrollEnabled]);
   const virtualRowsContainerStyle = useMemo((): CSSProperties => {
+    const virtualPaddingTop = virtualRows[0]?.start ?? 0;
+    const virtualPaddingBottom = Math.max(0, virtualTotalSize - (virtualRows.at(-1)?.end ?? 0));
     return {
-      position: "relative",
-      width: "100%",
-      height: virtualTotalSize,
-      flexShrink: 0,
-    };
-  }, [virtualTotalSize]);
-  const renderVirtualRowStyle = useCallback(
-    (start: number): CSSProperties => ({
-      position: "absolute",
-      top: 0,
-      left: 0,
       display: "flex",
       flexDirection: "column",
       width: "100%",
-      transform: `translateY(${start}px)`,
-    }),
-    [],
-  );
+      paddingTop: virtualPaddingTop,
+      paddingBottom: virtualPaddingBottom,
+      flexShrink: 0,
+    };
+  }, [virtualRows, virtualTotalSize]);
   const mountedHistoryRows = useMemo(() => {
     return segments.historyMounted.map((item, index) => (
       <div key={item.id} data-stream-row-id={item.id} style={mountedRowStyle}>
@@ -767,6 +746,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     (anchor: HistoryAnchor) => {
       const scroll = scrollContainerRef.current;
       if (!scroll) return;
+      let stableFrames = 0;
+      let remainingFrames = ITEM_JUMP_MAX_FRAMES;
       const restoreMounted = () => {
         const row = Array.from(scroll.querySelectorAll<HTMLElement>("[data-stream-row-id]")).find(
           (candidate) => candidate.dataset.streamRowId === anchor.itemId,
@@ -774,23 +755,36 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         if (!row) return false;
         const delta =
           row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
-        scroll.scrollTop += delta;
+        if (Math.abs(delta) > USER_SCROLL_DELTA_EPSILON) {
+          stableFrames = 0;
+          scroll.scrollTop += delta;
+        } else {
+          stableFrames += 1;
+        }
         lastKnownScrollTopRef.current = scroll.scrollTop;
         return true;
       };
-      if (restoreMounted()) return;
-      const index = segments.historyVirtualized.findIndex((item) => item.id === anchor.itemId);
-      if (index < 0) return;
-      const target = rowVirtualizer.getOffsetForIndex(index, "start");
-      if (!target) return;
-      rowVirtualizer.scrollToOffset(target[0] + conversationVerticalPadding - anchor.offset);
-      lastKnownScrollTopRef.current = scroll.scrollTop;
+      if (!restoreMounted()) {
+        const index = segments.historyVirtualized.findIndex((item) => item.id === anchor.itemId);
+        if (index < 0) return;
+        const target = rowVirtualizer.getOffsetForIndex(index, "start");
+        if (!target) return;
+        rowVirtualizer.scrollToOffset(target[0] + conversationVerticalPadding - anchor.offset);
+        lastKnownScrollTopRef.current = scroll.scrollTop;
+      }
       if (pendingHistoryAnchorFrameRef.current !== null)
         window.cancelAnimationFrame(pendingHistoryAnchorFrameRef.current);
-      pendingHistoryAnchorFrameRef.current = window.requestAnimationFrame(() => {
+      // 补页后的新行会继续修正占位，阅读锚点需要保持到连续两帧布局稳定。
+      const settleAnchor = () => {
         pendingHistoryAnchorFrameRef.current = null;
+        if (scroll.clientHeight <= 0) return;
         restoreMounted();
-      });
+        remainingFrames -= 1;
+        if (stableFrames < ITEM_JUMP_STABLE_FRAMES && remainingFrames > 0) {
+          pendingHistoryAnchorFrameRef.current = window.requestAnimationFrame(settleAnchor);
+        }
+      };
+      pendingHistoryAnchorFrameRef.current = window.requestAnimationFrame(settleAnchor);
     },
     [conversationVerticalPadding, rowVirtualizer, segments.historyVirtualized],
   );
@@ -946,7 +940,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
                   data-index={virtualRow.index}
                   data-stream-row-id={item.id}
                   ref={measureVirtualizedRowElement}
-                  style={renderVirtualRowStyle(virtualRow.start)}
+                  style={mountedRowStyle}
                 >
                   {renderHistoryVirtualizedRow(item, virtualRow.index, segments.historyVirtualized)}
                 </div>

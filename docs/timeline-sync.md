@@ -49,7 +49,7 @@ The first load of an agent without a local cursor is different: it fetches a bou
 
 到达历史起点阈值时只加载一页更早内容，并保持当前可见内容锚点。游标推进本身不会连续触发下一页；只有新页面仍不足以填满视口或历史尚未脱离起点时，才在同一次加载操作中继续分页，直到填满视口或耗尽历史。
 
-网页端在补页改写 DOM 前记录可见消息及其相对视口的位置，提交后按消息身份恢复；首次从常驻列表切换为虚拟列表也遵循同一规则。行高重测是否需要补偿，按包含虚拟历史、常驻历史和实时内容的完整滚动区域判断，不能把虚拟区末尾当作对话底部。用户重新滚动时取消尚未执行的锚点校正。
+网页端在补页改写 DOM 前记录可见消息及其相对视口的位置，提交后按消息身份恢复；首次从常驻列表切换为虚拟列表也遵循同一规则。已挂载虚拟历史行使用正常文档流，视口外内容用上下占位保留；正文、图表和图片增高时，后续消息立即让位。隐藏视口保留最后有效行高，延迟测量读取当前 DOM，不把旧观察记录的零尺寸写入缓存。行高变化交由浏览器锚定，不叠加虚拟器补偿；自动跟随按完整对话区域判断底部。补页锚点保持到连续两帧稳定，不只校正一次。用户重新滚动时取消尚未执行的锚点校正。
 
 用户已经停在顶部时，继续上滚、触摸拖动或使用向上翻页键仍能触发加载，不依赖浏览器再次产生位置变化事件。若一页只有已折叠过程或已有工具的更新，画面几何可能不变；自动续页必须同时检查权威起始游标是否推进。同一游标、内容和几何不会因重复渲染无限重试，用户离开起点后停止自动续页。
 
@@ -165,6 +165,8 @@ instead of relocating visible user messages around newly fetched history.
 Canonical submitted user rows carry the provider's `messageId` and Paseo's optional
 `clientMessageId`. Clients reconcile optimistic prompts by `clientMessageId`. Content matching is
 limited to the dated compatibility path for daemon timelines created before that field existed.
+
+无提供方消息标识的独立图片结果不能与相邻助手正文拼接。实时头部切换、尾部续接和历史重建遵循相同的图片边界；同一消息标识下的普通流式 Markdown 仍正常拼接。纯图片消息包含多张图片时，客户端逐张显示可折叠缩略图，不回退为铺满正文的普通图片。
 
 ## Relevant code
 

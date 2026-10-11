@@ -1,5 +1,6 @@
 import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
+import { isStandaloneImageOutput } from "./providers/provider-image-output.js";
 
 export type TimelineProjectionMode = "canonical" | "projected";
 
@@ -228,6 +229,14 @@ function mergeAssistantChunks(entries: readonly WorkingEntry[]): WorkingEntry[] 
       entryAssistant.messageId !== undefined &&
       previousAssistant.messageId !== entryAssistant.messageId
     ) {
+      output.push(entry);
+      continue;
+    }
+    const anonymousImageBoundary =
+      entryAssistant.messageId === undefined &&
+      (isStandaloneImageOutput(previousAssistant.text) ||
+        isStandaloneImageOutput(entryAssistant.text));
+    if (anonymousImageBoundary) {
       output.push(entry);
       continue;
     }

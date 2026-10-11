@@ -17,6 +17,7 @@ function messages(start: number, count: number): StreamItem[] {
 let root: Root | null = null;
 let host: HTMLDivElement;
 const ROW_STYLE = { height: 80, flexShrink: 0 };
+const LONG_ROW_STYLE = { padding: 8, fontSize: 16, lineHeight: "24px" };
 
 afterEach(() => {
   root?.unmount();
@@ -92,7 +93,7 @@ function visibleAnchor(): { id: string; top: number } {
   for (const node of host.querySelectorAll<HTMLElement>("[data-message-id]")) {
     const box = node.getBoundingClientRect();
     const id = node.dataset.messageId;
-    if (id && box.height > 0 && box.top >= bounds.top && box.top < bounds.bottom) {
+    if (id && box.height > 0 && box.bottom > bounds.top && box.top < bounds.bottom) {
       return { id, top: box.top - bounds.top };
     }
   }
@@ -100,6 +101,80 @@ function visibleAnchor(): { id: string; top: number } {
 }
 
 describe("真实浏览器历史分页", () => {
+  it("多次向上翻页后，长正文和收起行不重叠且保持阅读锚点", async () => {
+    const renderRow = (item: StreamItem) => {
+      const ordinal = Math.abs(Number(item.id.replace("message-", "")));
+      if (ordinal % 4 === 0) return null;
+      return (
+        <div data-message-id={item.id} style={LONG_ROW_STYLE}>
+          {`${item.id}：历史正文需要保持完整展示。`.repeat(10 + (ordinal % 7) * 15)}
+        </div>
+      );
+    };
+    const view = mountViewport({
+      segments: {
+        historyVirtualized: messages(0, 400),
+        historyMounted: messages(400, 20),
+        liveHead: [],
+      },
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    for (let page = 1; page <= 6; page += 1) {
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+      scroll.scrollTop = 32;
+      await nextLayout();
+      const before = visibleAnchor();
+      view.render({
+        segments: {
+          historyVirtualized: messages(-page * 40, 400 + page * 40),
+          historyMounted: messages(400, 20),
+          liveHead: [],
+        },
+      });
+      await expect.poll(visibleAnchor).toEqual(before);
+      const rows = Array.from(host.querySelectorAll<HTMLElement>("[data-stream-row-id]"));
+      const overlaps = rows
+        .slice(1)
+        .filter(
+          (row, index) =>
+            row.getBoundingClientRect().top < rows[index].getBoundingClientRect().bottom,
+        );
+      expect(overlaps.map((row) => row.dataset.streamRowId)).toEqual([]);
+    }
+  });
+
+  it("历史正文异步增高时，相邻消息立即让位而不等待行高缓存更新", async () => {
+    mountViewport();
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+    scroll.scrollTop = 400;
+    await nextLayout();
+    const rows = Array.from(host.querySelectorAll<HTMLElement>("[data-stream-row-id]"));
+    const first = rows[0];
+    const next = rows[1];
+    if (!first || !next) throw new Error("测试需要相邻的虚拟历史行");
+    const content = first.querySelector<HTMLElement>("[data-message-id]");
+    if (!content) throw new Error("测试历史行缺少正文");
+    content.style.height = "700px";
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      first.getBoundingClientRect().bottom,
+    );
+    await nextLayout();
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      first.getBoundingClientRect().bottom,
+    );
+  });
+
   it("在顶部加载点继续向上滚动时仍可请求历史，无需先向下滚动", async () => {
     const onNearHistoryStart = vi.fn();
     const view = mountViewport({ hasOlderHistory: false, onNearHistoryStart });
@@ -134,7 +209,7 @@ describe("真实浏览器历史分页", () => {
       },
     });
     await nextLayout();
-    expect(visibleAnchor()).toEqual(before);
+    await expect.poll(visibleAnchor).toEqual(before);
   });
 
   it("隐藏后重新显示虚拟历史时不留下空白占位", async () => {
@@ -173,7 +248,7 @@ describe("真实浏览器历史分页", () => {
       boundary: { hasVirtualizedHistory: true, hasMountedHistory: true, hasLiveHead: false },
     });
     await nextLayout();
-    expect(visibleAnchor()).toEqual(before);
+    await expect.poll(visibleAnchor).toEqual(before);
   });
 
   it("补页只推进游标而没有新增可见行时继续加载，不因相同画面卡住或无限重试", async () => {
@@ -212,7 +287,7 @@ describe("真实浏览器历史分页", () => {
     preceding.style.height = "700px";
     await nextLayout();
     await nextLayout();
-    expect(visibleAnchor()).toEqual(before);
+    await expect.poll(visibleAnchor).toEqual(before);
   });
 
   it("阅读常驻历史时仍保留浏览器对上方内容增高的锚定", async () => {
@@ -231,7 +306,7 @@ describe("真实浏览器历史分页", () => {
     preceding.style.height = "700px";
     await nextLayout();
     await nextLayout();
-    expect(visibleAnchor()).toEqual(before);
+    await expect.poll(visibleAnchor).toEqual(before);
   });
 
   it("顶部翻页键可以加载，但消息内输入框的光标移动不会触发加载", async () => {
