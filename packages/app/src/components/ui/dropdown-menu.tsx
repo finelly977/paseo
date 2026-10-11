@@ -34,6 +34,7 @@ import { Check, CheckCircle, ChevronRight } from "lucide-react-native";
 import { FloatingScrollView, FloatingSurface } from "@/components/ui/floating";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isWeb } from "@/constants/platform";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
 import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
 import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
@@ -61,6 +62,7 @@ interface Size {
 interface DropdownMenuContextValue {
   open: boolean;
   setOpen: (open: boolean) => void;
+  activateTrigger: () => void;
   selectItem: (onSelect: (() => void) | undefined, closeOnSelect: boolean) => void;
   flushPendingSelect: () => void;
   triggerRef: React.RefObject<View | null>;
@@ -268,6 +270,7 @@ export function DropdownMenu({
   onOpenChange?: (open: boolean) => void;
 }>): ReactElement {
   const parentCloseAll = useContext(DropdownMenuDismissContext);
+  const isCompact = useIsCompactFormFactor();
   const parentMenu = useContext(DropdownMenuContext);
   const compact = compactProp ?? parentMenu?.compact ?? false;
   const passThroughBackdrop = openOnHover && parentMenu !== null;
@@ -280,8 +283,8 @@ export function DropdownMenu({
     onOpenChange,
   });
   useDismissKeyboardOnOpen(isOpen);
-  useHoverMenu({
-    enabled: openOnHover,
+  const activateTrigger = useHoverMenu({
+    enabled: openOnHover && !isCompact,
     open: isOpen,
     onOpenChange: setIsOpen,
     triggerRef,
@@ -331,6 +334,7 @@ export function DropdownMenu({
     () => ({
       open: isOpen,
       setOpen: setIsOpen,
+      activateTrigger,
       selectItem,
       flushPendingSelect,
       triggerRef,
@@ -338,7 +342,15 @@ export function DropdownMenu({
       compact,
       passThroughBackdrop,
     }),
-    [flushPendingSelect, isOpen, selectItem, setIsOpen, compact, passThroughBackdrop],
+    [
+      activateTrigger,
+      flushPendingSelect,
+      isOpen,
+      selectItem,
+      setIsOpen,
+      compact,
+      passThroughBackdrop,
+    ],
   );
 
   return (
@@ -374,12 +386,11 @@ export function DropdownMenuTrigger({
       activateDropdownMenuTrigger({
         event,
         disabled,
-        open: ctx.open,
-        setOpen: ctx.setOpen,
+        activateMenu: ctx.activateTrigger,
         ...(onPress ? { onPress } : {}),
       });
     },
-    [disabled, ctx.open, ctx.setOpen, onPress],
+    [disabled, ctx.activateTrigger, onPress],
   );
   const pressableStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => {

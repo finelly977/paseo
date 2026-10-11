@@ -24,8 +24,14 @@ function mount(enabled = true) {
   vi.useFakeTimers();
   return renderHook(() => {
     const [open, setOpen] = useState(false);
-    useHoverMenu({ enabled, open, onOpenChange: setOpen, triggerRef, contentRef });
-    return { open, setOpen };
+    const activateTrigger = useHoverMenu({
+      enabled,
+      open,
+      onOpenChange: setOpen,
+      triggerRef,
+      contentRef,
+    });
+    return { open, setOpen, activateTrigger };
   });
 }
 afterEach(() => {
@@ -34,6 +40,42 @@ afterEach(() => {
 });
 
 describe("子菜单悬停", () => {
+  it("悬停打开后点击触发行仍保持展开，不反向关闭", () => {
+    const { result } = mount();
+    point(40, 30);
+    elapsed(100);
+    expect(result.current.open).toBe(true);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(true);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(true);
+  });
+  it("悬停计时期间点击立即打开，并取消待执行的打开动作", () => {
+    const { result } = mount();
+    point(40, 30);
+    elapsed(50);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(true);
+    act(() => result.current.setOpen(false));
+    elapsed(200);
+    expect(result.current.open).toBe(false);
+  });
+  it("没有悬停交互时保留点击展开和再次点击收起", () => {
+    const { result } = mount(false);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(true);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(false);
+  });
+  it("宽屏触摸没有悬停打开动作时，点击仍可切换", () => {
+    const { result } = mount();
+    point(40, 30, "touch");
+    elapsed(200);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(true);
+    act(() => result.current.activateTrigger());
+    expect(result.current.open).toBe(false);
+  });
   it("短暂路过不打开，停留后打开，跨间隙进入选项不关闭", () => {
     const { result } = mount();
     point(40, 30);

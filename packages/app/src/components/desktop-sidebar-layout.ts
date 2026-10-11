@@ -1,4 +1,3 @@
-import { SETTINGS_DESKTOP_SPLIT_MIN_WIDTH } from "@/constants/layout";
 import {
   MAX_EXPLORER_SIDEBAR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -9,10 +8,8 @@ import {
 export const MIN_DESKTOP_CENTER_WIDTH = 400;
 
 /**
- * Mount and visibility are separate decisions. A retained sidebar stays mounted but
- * hidden — settings keeps it off screen while avoiding the workspace-projection
- * rebuild that stalls the way back to a conversation. Only `chromeEnabled` routes
- * may actually show it.
+ * 挂载与可见性独立控制。设置浮层保留背景侧栏，不重建会话投影；
+ * 只有允许应用导航的路由才显示它，窄窗口仍依据实际工作面宽度隐藏。
  */
 export function resolveDesktopSidebarPresence(input: {
   chromeEnabled: boolean;
@@ -90,19 +87,17 @@ export function resolveDesktopExplorerWidth(input: {
 }
 
 export function resolveDesktopAppContentMinimum(input: {
-  isSettingsRoute: boolean;
   isWorkspaceExplorerOpen: boolean;
   requestedExplorerWidth: number;
   viewportWidth: number;
 }): number {
-  const workspaceMinimum = input.isWorkspaceExplorerOpen
+  return input.isWorkspaceExplorerOpen
     ? MIN_DESKTOP_CENTER_WIDTH +
-      resolveDesktopExplorerWidth({
-        requestedWidth: input.requestedExplorerWidth,
-        viewportWidth: input.viewportWidth,
-      })
-    : 0;
-  return Math.max(input.isSettingsRoute ? SETTINGS_DESKTOP_SPLIT_MIN_WIDTH : 0, workspaceMinimum);
+        resolveDesktopExplorerWidth({
+          requestedWidth: input.requestedExplorerWidth,
+          viewportWidth: input.viewportWidth,
+        })
+    : MIN_DESKTOP_CENTER_WIDTH;
 }
 
 export function canDesktopAppSidebarShare(input: {

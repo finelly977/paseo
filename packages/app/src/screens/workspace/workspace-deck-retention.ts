@@ -2,6 +2,19 @@ import type { ActiveWorkspaceSelection } from "@/stores/navigation-active-worksp
 
 export const WORKSPACE_DECK_MAX_MOUNTED_WORKSPACES = 3;
 
+// 仅桌面设置浮层保留背景，不能让其他全局路由误激活旧工作区。
+export function resolveWorkspaceDeckDisplaySelection(input: {
+  activeSelection: ActiveWorkspaceSelection | null;
+  lastSelection: ActiveWorkspaceSelection | null;
+  pathname: string;
+  isCompact: boolean;
+}): ActiveWorkspaceSelection | null {
+  return (
+    input.activeSelection ??
+    (!input.isCompact && input.pathname.startsWith("/settings") ? input.lastSelection : null)
+  );
+}
+
 interface PruneMountedWorkspaceSelectionsInput {
   currentSelections: ActiveWorkspaceSelection[];
   activeSelection: ActiveWorkspaceSelection | null;

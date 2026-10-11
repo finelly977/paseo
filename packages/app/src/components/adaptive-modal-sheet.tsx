@@ -495,7 +495,7 @@ export function InlineHeaderView({ header }: { header: SheetHeader }) {
 }
 
 export interface AdaptiveModalSheetProps {
-  header: SheetHeader;
+  header: SheetHeader | null;
   visible: boolean;
   onClose: () => void;
   onDismiss?: () => void;
@@ -507,6 +507,8 @@ export interface AdaptiveModalSheetProps {
   testID?: string;
   /** Override the max width of the desktop card. */
   desktopMaxWidth?: number;
+  /** 桌面多栏设置等大型任务可以提供自己的卡片尺寸与内部标题栏。 */
+  desktopCardStyle?: StyleProp<ViewStyle>;
   scrollable?: boolean;
   presentation?: "push" | "replace";
   contentContainerStyle?: StyleProp<ViewStyle>;
@@ -527,6 +529,7 @@ export function AdaptiveModalSheet({
   snapPoints,
   testID,
   desktopMaxWidth,
+  desktopCardStyle: desktopCardStyleProp,
   scrollable = true,
   presentation,
   contentContainerStyle,
@@ -614,8 +617,12 @@ export function AdaptiveModalSheet({
   );
 
   const desktopCardStyle = useMemo(
-    () => [styles.desktopCard, desktopMaxWidth != null && { maxWidth: desktopMaxWidth }],
-    [desktopMaxWidth],
+    () => [
+      styles.desktopCard,
+      desktopMaxWidth != null && { maxWidth: desktopMaxWidth },
+      desktopCardStyleProp,
+    ],
+    [desktopMaxWidth, desktopCardStyleProp],
   );
   const desktopOverlayStyle = useMemo(
     () => [
@@ -667,7 +674,7 @@ export function AdaptiveModalSheet({
   if (isMobile) {
     const sheetContent = (
       <>
-        <SheetHeaderView header={header} onClose={onClose} testID={testID} />
+        {header ? <SheetHeaderView header={header} onClose={onClose} testID={testID} /> : null}
         {scrollable ? (
           <BottomSheetScrollView
             style={sizeContentToCurrentSnapPoint ? styles.bottomSheetVisibleScroll : undefined}
@@ -713,7 +720,7 @@ export function AdaptiveModalSheet({
 
   const cardInner = (
     <>
-      <SheetHeaderView header={header} onClose={onClose} />
+      {header ? <SheetHeaderView header={header} onClose={onClose} /> : null}
       {scrollable ? (
         <View style={styles.desktopScrollContainer}>
           <ScrollView

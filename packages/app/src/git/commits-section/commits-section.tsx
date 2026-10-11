@@ -315,7 +315,10 @@ export function CommitsSection({
         }),
     [collapsed, persistGraphHeight, resizeHeight, startResizeHeight, viewportHeight],
   );
-  const expandedHeightStyle = useAnimatedStyle(() => ({ height: resizeHeight.value }));
+  // 动画样式移除后不会自动撤回高度，收起时必须显式写回标题行高度。
+  const graphHeightStyle = useAnimatedStyle(() => ({
+    height: collapsed ? 22 : resizeHeight.value,
+  }));
   const handleFilterChange = useCallback(
     (nextFilter: CheckoutCommitRefFilter) => {
       setFilterState({ identity: filterIdentity, filter: nextFilter });
@@ -361,7 +364,8 @@ export function CommitsSection({
   return (
     <View style={styles.container}>
       <Animated.View
-        style={[animatedStaticStyles.resizableContainer, !collapsed && expandedHeightStyle]}
+        style={[animatedStaticStyles.resizableContainer, graphHeightStyle]}
+        testID="commits-section-frame"
       >
         {collapsed ? null : (
           <GraphResizeHandle

@@ -76,6 +76,12 @@ only use local param fallback during cold mount (`/` or empty pathname), or a
 hidden workspace can overwrite the remembered workspace before Settings or
 History returns.
 
+## 桌面设置浮层
+
+宽屏设置路由使用 `transparentModal`，保留原工作区路由作为背景；紧凑布局仍使用普通全屏路由。通用分类、项目和主机设置由根 Stack 注册，设置分类之间使用原有 replace，不新增隐藏工作区历史。
+
+设置浮层仅在自身路由获得焦点时显示。工作区 Deck 可以在桌面设置下展示最近工作区，但真实活动工作区仍为空，不把设置导航误记为工作区选择。背景保留右侧 Explorer 与原尺寸，快捷键、输入聚焦和路由副作用仍由真实焦点控制。直接打开设置深链接时没有此前工作面，因此不额外新建一个工作区背景。
+
 ## Agent Targets
 
 Notifications and agent URLs enter the router with different authoritative

@@ -143,24 +143,22 @@ describe("desktop sidebar layout", () => {
     expect(resolveDesktopExplorerWidth({ requestedWidth: 400, viewportWidth: 1440 })).toBe(400);
   });
 
-  it("yields app navigation when settings or Explorer need the shell width", () => {
+  it("设置浮层不挤占背景侧栏，Explorer 仍保留工作面宽度", () => {
     const settingsMinimum = resolveDesktopAppContentMinimum({
-      isSettingsRoute: true,
       isWorkspaceExplorerOpen: false,
       requestedExplorerWidth: 400,
       viewportWidth: 751,
     });
-    expect(settingsMinimum).toBe(720);
+    expect(settingsMinimum).toBe(400);
     expect(
       canDesktopAppSidebarShare({
         contentMinimumWidth: settingsMinimum,
         requestedSidebarWidth: 320,
         viewportWidth: 751,
       }),
-    ).toBe(false);
+    ).toBe(true);
 
     const explorerMinimum = resolveDesktopAppContentMinimum({
-      isSettingsRoute: false,
       isWorkspaceExplorerOpen: true,
       requestedExplorerWidth: 400,
       viewportWidth: 751,
@@ -176,7 +174,6 @@ describe("desktop sidebar layout", () => {
     expect(
       canDesktopAppSidebarShare({
         contentMinimumWidth: resolveDesktopAppContentMinimum({
-          isSettingsRoute: false,
           isWorkspaceExplorerOpen: true,
           requestedExplorerWidth: 400,
           viewportWidth: 1120,

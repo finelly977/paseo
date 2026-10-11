@@ -4,6 +4,7 @@ import {
   orderWorkspaceSelectionsForStableRender,
   pruneMountedWorkspaceSelections,
   shouldKeepWorkspaceDeckEntryMounted,
+  resolveWorkspaceDeckDisplaySelection,
 } from "@/screens/workspace/workspace-deck-retention";
 
 function workspace(workspaceId: string, serverId = "server"): ActiveWorkspaceSelection {
@@ -13,6 +14,56 @@ function workspace(workspaceId: string, serverId = "server"): ActiveWorkspaceSel
 function mountedWorkspaceIds(selections: ActiveWorkspaceSelection[]): string[] {
   return selections.map((selection) => selection.workspaceId);
 }
+
+describe("设置浮层下的工作区展示", () => {
+  it("宽屏设置使用最近工作区作背景，不修改真实活动工作区", () => {
+    const lastSelection = workspace("A");
+    expect(
+      resolveWorkspaceDeckDisplaySelection({
+        activeSelection: null,
+        lastSelection,
+        pathname: "/settings/appearance",
+        isCompact: false,
+      }),
+    ).toBe(lastSelection);
+    const activeSelection = workspace("B");
+    expect(
+      resolveWorkspaceDeckDisplaySelection({
+        activeSelection,
+        lastSelection,
+        pathname: "/settings/appearance",
+        isCompact: false,
+      }),
+    ).toBe(activeSelection);
+  });
+  it("紧凑设置和其他全局页面不展示背景工作区", () => {
+    const lastSelection = workspace("A");
+    expect(
+      resolveWorkspaceDeckDisplaySelection({
+        activeSelection: null,
+        lastSelection,
+        pathname: "/settings/general",
+        isCompact: true,
+      }),
+    ).toBeNull();
+    expect(
+      resolveWorkspaceDeckDisplaySelection({
+        activeSelection: null,
+        lastSelection,
+        pathname: "/sessions",
+        isCompact: false,
+      }),
+    ).toBeNull();
+    expect(
+      resolveWorkspaceDeckDisplaySelection({
+        activeSelection: null,
+        lastSelection: null,
+        pathname: "/settings/general",
+        isCompact: false,
+      }),
+    ).toBeNull();
+  });
+});
 
 describe("pruneMountedWorkspaceSelections", () => {
   it("retains the deck while an app-wide route temporarily clears the active workspace", () => {

@@ -17,12 +17,13 @@ export function useHoverMenu({
   onOpenChange,
   triggerRef,
   contentRef,
-}: HoverMenuInput): void {
+}: HoverMenuInput): () => void {
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressed = useRef(false);
   const closedByHover = useRef(false);
   const previousOpen = useRef(open);
+  const openedByHover = useRef(false);
   const clearOpen = useCallback(() => {
     if (openTimer.current !== null) clearTimeout(openTimer.current);
     openTimer.current = null;
@@ -33,6 +34,7 @@ export function useHoverMenu({
   }, []);
   useEffect(() => {
     if (previousOpen.current && !open) {
+      openedByHover.current = false;
       suppressed.current = !closedByHover.current;
       closedByHover.current = false;
     }
@@ -43,6 +45,7 @@ export function useHoverMenu({
     if (open || suppressed.current || openTimer.current !== null) return;
     openTimer.current = setTimeout(() => {
       openTimer.current = null;
+      openedByHover.current = true;
       onOpenChange(true);
     }, 100);
   }, [clearClose, open, onOpenChange]);
@@ -71,6 +74,14 @@ export function useHoverMenu({
     },
     [enabled, clearOpen, clearClose],
   );
+  // 点击已经由悬停打开的子菜单是确认展开；触摸、键盘或纯点击仍沿用切换。
+  return useCallback(() => {
+    clearOpen();
+    clearClose();
+    suppressed.current = false;
+    if (open && openedByHover.current) return;
+    onOpenChange(!open);
+  }, [clearOpen, clearClose, onOpenChange, open]);
 }
 
 export function resolveHoverMenuEnabled(

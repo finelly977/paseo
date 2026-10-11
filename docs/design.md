@@ -134,16 +134,16 @@ The whitespace is the design.
 
 Compact-first. The small case is designed; the large case adds chrome around it.
 
-The list+detail pattern is canonical and reused across surfaces. The settings shell (`packages/app/src/screens/settings-screen.tsx`) and the projects screen (`packages/app/src/screens/projects-screen.tsx`) implement it identically:
+分类与详情沿用同一组组件；设置页与 Projects 仅在桌面外框上有所不同：
 
 - On compact: full-screen list with `<BackHeader>` at the top. Tapping a row pushes a full-screen detail with its own `<BackHeader>` that returns to the list.
-- On desktop: a 320px sidebar on the left holds the list with `surfaceSidebar` background. The content pane on the right holds the selected detail with `<ScreenHeader>`, `<HeaderIconBadge>`, and `<ScreenTitle>`.
+- 桌面设置使用 `<AdaptiveModalSheet>` 的居中浮层，最大宽度 1120 像素、高度上限 90%，分类侧栏为 240 像素，内容独立滚动；分类使用较深的 `surface0`，主体使用 `surfaceSidebar`，沿用 `<ScreenHeader>`、`<HeaderIconBadge>`、`<ScreenTitle>`，右上角提供关闭按钮。背景工作区包括已展开的 Explorer 保持可见，不重新获取路由焦点；关闭时保留阅读位置。Projects 继续使用原有的全屏 320 像素侧栏与详情布局。
 
 The branching is one `useIsCompactFormFactor()` check at the top of the screen component. The list and the detail are the same components in both layouts; only the framing changes.
 
 The workspace screen (`packages/app/src/screens/workspace/workspace-screen.tsx`) follows a different but parallel rule: tabs collapse on compact, panes split on desktop. The sidebar (`packages/app/src/components/left-sidebar.tsx`) is overlaid on compact and pinned on desktop.
 
-On a narrow desktop route, app navigation yields to the rendered content topology when the remaining width cannot preserve its center target: Settings keeps its 320px list + 400px detail split, and a workspace Explorer keeps its current visible width plus a 400px center pane. That is a topology decision at the app container, not a second compact breakpoint. Temporary width clamps are render-only; widening restores the user's saved sidebar widths.
+窄桌面窗口依据实际工作面宽度决定是否显示应用侧栏：已展开的 Explorer 保留当前宽度及 400 像素中心目标宽度。设置浮层独立覆盖整个窗口，不再将其分类与详情宽度计入背景工作区的侧栏宽度预算。背景 Explorer 与专注模式继续参与工作区原有宽度计算，避免打开设置时改变后方布局。临时限制只影响渲染，放宽窗口后恢复用户保存的侧栏宽度，不另设紧凑断点。
 
 Electron window controls are top-corner obstructions, not a compact-layout condition. Rendered surfaces declare which top corners they physically occupy; only those corners receive clearance. Full-window overlays redeclare both corners. A focused split pane owns both corners; if focus restoration temporarily exposes the full split tree, the split boundary reserves one top strip instead of assigning a control rectangle to an arbitrarily narrow leaf. The 720px desktop breakpoint preserves the default 320px sidebar and target 400px center width when the Explorer is closed; it is product policy, not an obstruction gate.
 

@@ -124,7 +124,7 @@ export function CombinedModelSelector({
     [onClose, onOpen, prepareToOpen, reset],
   );
 
-  useHoverMenu({
+  const handleTriggerPress = useHoverMenu({
     enabled: resolveHoverMenuEnabled(openOnHover, isCompact, disabled),
     open: isOpen,
     onOpenChange: handleOpenChange,
@@ -151,10 +151,6 @@ export function CombinedModelSelector({
     });
     return () => cancelAnimationFrame(frame);
   }, [isOpen]);
-
-  const handleTriggerPress = useCallback(() => {
-    handleOpenChange(!isOpen);
-  }, [handleOpenChange, isOpen]);
 
   const triggerStyle = useCallback(
     ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => {

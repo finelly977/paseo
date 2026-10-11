@@ -483,7 +483,9 @@ function AppContainer({
   useCompactWebViewportZoomLock(isCompactLayout);
   const pathname = usePathname();
   const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(pathname) !== null;
-  const isWorkspaceFocusModeEnabled = isWorkspaceRoute && isFocusModeEnabled;
+  const isDesktopSettingsRoute = !isCompactLayout && pathname.startsWith("/settings");
+  const isWorkspaceBackgroundRoute = isWorkspaceRoute || isDesktopSettingsRoute;
+  const isWorkspaceFocusModeEnabled = isWorkspaceBackgroundRoute && isFocusModeEnabled;
   const chromeEnabled = chromeEnabledOverride ?? daemons.length > 0;
   const toggleAgentList = isCompactLayout ? toggleMobileAgentList : toggleDesktopAgentList;
   const toggleDesktopSidebars = useCallback(() => {
@@ -519,8 +521,8 @@ function AppContainer({
   useGlobalNewWorkspaceAction();
 
   const appContentMinimumWidth = resolveDesktopAppContentMinimum({
-    isSettingsRoute: pathname.includes("/settings"),
-    isWorkspaceExplorerOpen: isWorkspaceRoute && isDesktopFileExplorerOpen,
+    // 设置已由全窗口浮层承载，不再挤占工作区与应用侧栏的共享宽度。
+    isWorkspaceExplorerOpen: isWorkspaceBackgroundRoute && isDesktopFileExplorerOpen,
     requestedExplorerWidth: explorerWidth,
     viewportWidth,
   });
@@ -867,6 +869,7 @@ function OpenProjectListener() {
 
 function AppWithSidebar({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const isCompact = useIsCompactFormFactor();
   const hosts = useHosts();
   const storeReady = useStoreReady();
   const routeServerId = useMemo(() => parseServerIdFromPathname(pathname), [pathname]);
@@ -878,6 +881,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/new" ||
       pathname === "/sessions" ||
       pathname === "/schedules" ||
+      (!isCompact && pathname.startsWith("/settings")) ||
       routeHasKnownHost);
   const isSettingsRoute = pathname.startsWith("/settings");
 
@@ -897,18 +901,27 @@ const ROOT_STACK_SCREEN_OPTIONS = {
   headerShown: false,
   animation: "none" as const,
 };
+const DESKTOP_SETTINGS_SCREEN_OPTIONS = {
+  presentation: "transparentModal" as const,
+  contentStyle: { backgroundColor: "transparent" },
+};
 
 function RootStack() {
   const storeReady = useStoreReady();
+  const isCompact = useIsCompactFormFactor();
+  const settingsScreenOptions = isCompact ? undefined : DESKTOP_SETTINGS_SCREEN_OPTIONS;
   return (
     <ThemedStack screenOptions={ROOT_STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="index" />
       <Stack.Protected guard={storeReady}>
         <Stack.Screen name="welcome" />
-        <Stack.Screen name="settings/index" />
-        <Stack.Screen name="settings/[section]" />
-        <Stack.Screen name="settings/projects/index" />
-        <Stack.Screen name="settings/projects/[serverId]/[projectId]" />
+        <Stack.Screen name="settings/index" options={settingsScreenOptions} />
+        <Stack.Screen name="settings/[section]" options={settingsScreenOptions} />
+        <Stack.Screen name="settings/projects/index" options={settingsScreenOptions} />
+        <Stack.Screen
+          name="settings/projects/[serverId]/[projectId]"
+          options={settingsScreenOptions}
+        />
         <Stack.Screen name="new" />
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
@@ -916,8 +929,11 @@ function RootStack() {
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
-      <Stack.Screen name="settings/hosts/[serverId]/index" />
-      <Stack.Screen name="settings/hosts/[serverId]/[hostSection]" />
+      <Stack.Screen name="settings/hosts/[serverId]/index" options={settingsScreenOptions} />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/[hostSection]"
+        options={settingsScreenOptions}
+      />
     </ThemedStack>
   );
 }

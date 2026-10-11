@@ -373,9 +373,14 @@ export function useModelBrowser({
       compactMenu
         ? resolveCompactModelMenuHeight(
             countModelsInView(view, providers, normalizeSearchQuery(searchQuery)),
+            searchQuery.trim() || profiles === null
+              ? 0
+              : profiles.rows.filter(
+                  (row) => view.kind === "all" || row.provider === view.providerId,
+                ).length,
           )
         : resolveDesktopFixedHeight(view, providers),
-    [providers, view, compactMenu, searchQuery],
+    [providers, view, compactMenu, searchQuery, profiles],
   );
 
   return {
@@ -1233,7 +1238,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
   },
   profilesContainer: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: "transparent",
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },

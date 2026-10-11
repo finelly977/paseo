@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { StyleSheet, View } from "react-native";
-import { useGlobalSearchParams, useLocalSearchParams, useRootNavigationState } from "expo-router";
+import {
+  useGlobalSearchParams,
+  useLocalSearchParams,
+  useRootNavigationState,
+  usePathname,
+} from "expo-router";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { HostRouteBootstrapBoundary } from "@/components/host-route-bootstrap-boundary";
 import { RetainedPanel } from "@/components/retained-panel";
 import {
   type ActiveWorkspaceSelection,
   useActiveWorkspaceSelection,
+  useLastWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
 import { useHasHydratedWorkspaces, useWorkspaceExists } from "@/stores/session-store-hooks";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
@@ -19,6 +26,7 @@ import {
   orderWorkspaceSelectionsForStableRender,
   pruneMountedWorkspaceSelections,
   shouldKeepWorkspaceDeckEntryMounted,
+  resolveWorkspaceDeckDisplaySelection,
   WORKSPACE_DECK_MAX_MOUNTED_WORKSPACES,
 } from "@/screens/workspace/workspace-deck-retention";
 import {
@@ -198,6 +206,16 @@ function WorkspaceDeck({
   recoveryAgentId: string | null;
 }) {
   const activeSelection = useActiveWorkspaceSelection();
+  const lastSelection = useLastWorkspaceSelection();
+  const pathname = usePathname();
+  const isCompact = useIsCompactFormFactor();
+  // 设置浮层下展示既有工作区，但不将它重新标记为当前路由或启用快捷键。
+  const displayedSelection = resolveWorkspaceDeckDisplaySelection({
+    activeSelection,
+    lastSelection,
+    pathname,
+    isCompact,
+  });
   const [mountedSelections, setMountedSelections] = useState<ActiveWorkspaceSelection[]>(() =>
     activeSelection ? [activeSelection] : [],
   );
@@ -229,7 +247,7 @@ function WorkspaceDeck({
     }
   }, [mountedSelections, nextMountedSelections]);
 
-  if (!activeSelection) {
+  if (!displayedSelection) {
     return null;
   }
 
@@ -240,7 +258,8 @@ function WorkspaceDeck({
           <WorkspaceDeckEntry
             key={getWorkspaceSelectionKey(selection)}
             selection={selection}
-            activeSelection={activeSelection}
+            activeSelection={displayedSelection}
+            routeFocused={activeSelection !== null}
             recoveryRequested={recoveryRequested}
             recoveryAgentId={recoveryAgentId}
             onUnmountInactive={unmountWorkspaceSelection}
@@ -254,12 +273,14 @@ function WorkspaceDeck({
 function WorkspaceDeckEntry({
   selection,
   activeSelection,
+  routeFocused,
   recoveryRequested,
   recoveryAgentId,
   onUnmountInactive,
 }: {
   selection: ActiveWorkspaceSelection;
   activeSelection: ActiveWorkspaceSelection;
+  routeFocused: boolean;
   recoveryRequested: boolean;
   recoveryAgentId: string | null;
   onUnmountInactive: (selection: ActiveWorkspaceSelection) => void;
@@ -291,7 +312,8 @@ function WorkspaceDeckEntry({
       <WorkspaceScreen
         serverId={selection.serverId}
         workspaceId={selection.workspaceId}
-        isRouteFocused={isActive}
+        isRouteFocused={isActive && routeFocused}
+        isSettingsBackground={isActive && !routeFocused}
         recoveryRequested={isActive && recoveryRequested}
         recoveryAgentId={isActive ? recoveryAgentId : null}
       />

@@ -187,9 +187,14 @@ describe("模型菜单的紧凑高度", () => {
   it("少量模型不再占用 220 像素空框，长列表保留滚动上限", () => {
     expect(resolveCompactModelMenuHeight(1)).toBe(152);
     expect(resolveCompactModelMenuHeight(2)).toBe(192);
-    expect(resolveCompactModelMenuHeight(20)).toBe(320);
+    expect(resolveCompactModelMenuHeight(20)).toBe(400);
+    expect(resolveCompactModelMenuHeight(7)).toBe(392);
   });
   it("空模型仍保留搜索、创建配置和空状态的空间", () => {
     expect(resolveCompactModelMenuHeight(0)).toBe(152);
+  });
+  it("配置档案也占据列表空间，不将其高度误算为留白", () => {
+    expect(resolveCompactModelMenuHeight(2, 2)).toBe(296);
+    expect(resolveCompactModelMenuHeight(20, 2)).toBe(400);
   });
 });

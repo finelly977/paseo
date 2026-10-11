@@ -10,7 +10,7 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -38,6 +38,7 @@ import {
   Code2,
   Blocks,
   ServerCog,
+  X,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -72,8 +73,8 @@ import {
   resolveActiveHostServerId,
   type HostProfile,
 } from "@/types/host-connection";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
-import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
+import { WindowChromeRegion } from "@/utils/desktop-window";
+import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { BackHeader } from "@/components/headers/back-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
@@ -120,7 +121,11 @@ import {
 import { HostPluginsPage } from "@/screens/settings/plugins-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
-import { SETTINGS_DESKTOP_SIDEBAR_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
+import {
+  SETTINGS_DESKTOP_MAX_WIDTH,
+  SETTINGS_DESKTOP_SIDEBAR_WIDTH,
+  useIsCompactFormFactor,
+} from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import {
   type EnableBuiltInDaemonOption,
@@ -1212,8 +1217,6 @@ function SettingsSidebar({
       {isDesktop ? (
         <View style={innerContainerStyle}>
           <View style={sidebarStyles.sidebarDragArea}>
-            <TitlebarDragRegion />
-            <WindowChromeSafeArea placement="below" />
             <SidebarHeaderRow
               icon={ArrowLeft}
               label={t("settings.backToWorkspace")}
@@ -1243,6 +1246,7 @@ export interface SettingsScreenProps {
 
 export default function SettingsScreen({ view, openAddHostIntent = null }: SettingsScreenProps) {
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const voiceAudioEngine = useVoiceAudioEngineOptional();
@@ -1501,6 +1505,19 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     }
     router.replace(buildOpenProjectRoute());
   }, [router]);
+  const desktopCloseButton = useMemo(
+    () => (
+      <Button
+        variant="ghost"
+        size="xs"
+        leftIcon={X}
+        accessibilityLabel={t("common.actions.close")}
+        onPress={handleBackToWorkspace}
+        testID="settings-close"
+      />
+    ),
+    [handleBackToWorkspace, t],
+  );
 
   const detailHeader = ((): {
     title: string;
@@ -1524,6 +1541,13 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   })();
 
   const content = (() => {
+    if (settingsLoading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>{t("settings.loading")}</Text>
+        </View>
+      );
+    }
     if (view.kind === "host") {
       return renderHostSettingsContent(view, handleHostRemoved);
     }
@@ -1589,7 +1613,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     return null;
   })();
 
-  if (settingsLoading) {
+  if (settingsLoading && isCompactLayout) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>{t("settings.loading")}</Text>
@@ -1684,13 +1708,20 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     );
   }
 
-  // Desktop split view — mirrors AppContainer: sidebar owns the titlebar drag
-  // region + traffic-light padding; detail pane renders whatever header the
-  // selected section provides.
+  // 桌面设置使用同一自适应浮层，背景工作区和阅读位置继续保留。
   return (
-    <View style={styles.container}>
-      <View style={desktopStyles.row}>
-        <WindowChromeRegion corners="top-left">
+    <AdaptiveModalSheet
+      header={null}
+      visible={isFocused}
+      onClose={handleBackToWorkspace}
+      desktopMaxWidth={SETTINGS_DESKTOP_MAX_WIDTH}
+      desktopCardStyle={desktopStyles.dialog}
+      contentContainerStyle={desktopStyles.dialogContent}
+      scrollable={false}
+      testID="settings-dialog"
+    >
+      <WindowChromeRegion corners="none">
+        <View style={desktopStyles.row}>
           <SettingsSidebar
             view={view}
             onSelectSection={handleSelectSection}
@@ -1702,13 +1733,12 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
             activeHostServerId={activeHostServerId}
             layout="desktop"
           />
-        </WindowChromeRegion>
-        <WindowChromeRegion corners="top-right">
           <View style={desktopStyles.contentPane} testID="settings-detail-pane">
             <ScreenHeader
-              borderless={!detailHeader}
+              borderless
               left={desktopDetailHeaderLeft}
               leftStyle={desktopStyles.detailLeft}
+              right={desktopCloseButton}
             />
             {isNative ? (
               <NestableScrollContainer
@@ -1723,10 +1753,10 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               </ScrollView>
             )}
           </View>
-        </WindowChromeRegion>
-      </View>
+        </View>
+      </WindowChromeRegion>
       {addHostModals}
-    </View>
+    </AdaptiveModalSheet>
   );
 }
 
@@ -1819,12 +1849,25 @@ const styles = StyleSheet.create((theme) => ({
 }));
 
 const desktopStyles = StyleSheet.create((theme) => ({
+  dialog: {
+    height: "90%",
+    maxHeight: "90%",
+    overflow: "hidden",
+    backgroundColor: theme.colors.surfaceSidebar,
+  },
+  dialogContent: {
+    flex: 1,
+    padding: 0,
+    gap: 0,
+  },
   row: {
     flex: 1,
     flexDirection: "row",
   },
   contentPane: {
     flex: 1,
+    minWidth: 0,
+    minHeight: 0,
   },
   detailLeft: {
     gap: theme.spacing[2],
@@ -1836,7 +1879,7 @@ const sidebarStyles = StyleSheet.create((theme) => ({
     width: SETTINGS_DESKTOP_SIDEBAR_WIDTH,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.surface0,
   },
   scrollBody: {
     flex: 1,
