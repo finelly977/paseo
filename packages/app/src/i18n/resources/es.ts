@@ -148,6 +148,7 @@ export const es: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Proveedor",
       select: "Seleccionar proveedor de agente",
@@ -160,6 +161,7 @@ export const es: TranslationResources = {
       selectWithValue: "Seleccione la opción de pensamiento ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "Modelo desconocido",
     },
     features: {

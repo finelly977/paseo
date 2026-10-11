@@ -148,6 +148,7 @@ export const ja: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "プロバイダー",
       select: "エージェントプロバイダーを選択",
@@ -160,6 +161,7 @@ export const ja: TranslationResources = {
       selectWithValue: "思考オプションを選択（{{value}}）",
     },
     model: {
+      title: "模型",
       unknown: "不明なモデル",
     },
     features: {

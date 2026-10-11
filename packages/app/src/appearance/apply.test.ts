@@ -44,6 +44,8 @@ interface FakeTheme {
   lineHeight: { diff: number };
   colors: {
     surface0: string;
+    surfaceSidebar: string;
+    foregroundSidebar?: string;
     foreground: string;
     syntax: Record<string, string>;
     popoverForeground?: string;
@@ -68,7 +70,7 @@ function makeFakeTheme(): FakeTheme {
       "4xl": 34,
     },
     lineHeight: { diff: 22 },
-    colors: { surface0: "#111111", foreground: "#fff", syntax: {} },
+    colors: { surface0: "#111111", surfaceSidebar: "#191B1D", foreground: "#fff", syntax: {} },
   };
 }
 
@@ -229,5 +231,12 @@ describe("applyAppearance", () => {
     // makeFakeTheme().colorScheme === "dark" -> github resolves to the dark palette.
     expect(runCapturedUpdater().colors.syntax).toEqual(darkHighlightColors);
     expect(runCapturedUpdater().colors.syntax).toEqual(resolveSyntaxColors("github", "dark"));
+  });
+  it("侧栏略暗效果跟随文字亮度且反复应用不累积", () => {
+    applyAppearance(makeInput({ textBrightness: 125 }));
+    const first = runCapturedUpdater();
+    const second = runCapturedUpdater(0, first);
+    expect(first.colors.foregroundSidebar).not.toBe(first.colors.foreground);
+    expect(second.colors.foregroundSidebar).toBe(first.colors.foregroundSidebar);
   });
 });

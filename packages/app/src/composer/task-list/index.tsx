@@ -4,7 +4,7 @@ import { Check, ChevronDown, ChevronRight, Circle, CircleDot } from "lucide-reac
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
-import { MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import { useSessionStore } from "@/stores/session-store";
 import type { Theme } from "@/styles/theme";
 import type { TodoEntry } from "@/types/stream";
@@ -117,7 +117,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   track: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     marginBottom: -theme.spacing[4],
   },
   card: {

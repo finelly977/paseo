@@ -148,6 +148,7 @@ export const ar: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "مزود",
       select: "حدد مزود الوكيل",
@@ -160,6 +161,7 @@ export const ar: TranslationResources = {
       selectWithValue: "حدد خيار التفكير ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "نموذج غير معروف",
     },
     features: {

@@ -5,7 +5,7 @@ import { Archive, ChevronDown, ChevronRight, Unlink } from "lucide-react-native"
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { getProviderIcon } from "@/components/provider-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useIsCompactFormFactor, MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { useIsCompactFormFactor, MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import {
   WorkspaceTabIcon,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   track: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     marginBottom: -theme.spacing[4],
   },
   surface: {

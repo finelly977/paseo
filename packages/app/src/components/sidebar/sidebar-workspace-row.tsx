@@ -462,10 +462,10 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.shadow.md,
   },
   sidebarRowSelected: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surfaceSidebarSelected,
   },
   workspaceCreatingText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
   },

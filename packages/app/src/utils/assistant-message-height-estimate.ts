@@ -1,9 +1,9 @@
-import { MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import { estimateAssistantMessageHeightFromCache as estimateAssistantImageMessageHeightFromCache } from "@/utils/assistant-image-metadata";
 import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 
 const ASSISTANT_MARKDOWN_BLOCK_HEIGHT_CACHE_LIMIT = 1000;
-const ASSISTANT_MARKDOWN_BLOCK_ESTIMATE_WIDTH = MAX_CONTENT_WIDTH - 16;
+const ASSISTANT_MARKDOWN_BLOCK_ESTIMATE_WIDTH = MAX_CHAT_CONTENT_WIDTH - 16;
 const ASSISTANT_MESSAGE_VERTICAL_PADDING = 24;
 export const DEFAULT_ASSISTANT_MARKDOWN_BLOCK_GAP = 8;
 

@@ -1,3 +1,4 @@
+import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearAssistantMessageHeightEstimateCache,
@@ -18,12 +19,12 @@ describe("assistant message height estimate", () => {
   it("estimates assistant message height from measured markdown block heights", () => {
     setAssistantMarkdownBlockHeight({
       block: "First paragraph",
-      width: 804,
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
       height: 18.2,
     });
     setAssistantMarkdownBlockHeight({
       block: "Second paragraph",
-      width: 804,
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
       height: 41.1,
     });
 
@@ -48,12 +49,12 @@ describe("assistant message height estimate", () => {
   it("reuses measured block heights with different paragraph spacing", () => {
     setAssistantMarkdownBlockHeight({
       block: "First paragraph",
-      width: 804,
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
       height: 18.2,
     });
     setAssistantMarkdownBlockHeight({
       block: "Second paragraph",
-      width: 804,
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
       height: 41.1,
     });
 
@@ -66,9 +67,21 @@ describe("assistant message height estimate", () => {
   });
 
   it("高度预估不重复计算横线两侧的段落间距", () => {
-    setAssistantMarkdownBlockHeight({ block: "Before", width: 804, height: 18 });
-    setAssistantMarkdownBlockHeight({ block: "---", width: 804, height: 1 });
-    setAssistantMarkdownBlockHeight({ block: "After", width: 804, height: 20 });
+    setAssistantMarkdownBlockHeight({
+      block: "Before",
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
+      height: 18,
+    });
+    setAssistantMarkdownBlockHeight({
+      block: "---",
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
+      height: 1,
+    });
+    setAssistantMarkdownBlockHeight({
+      block: "After",
+      width: MAX_CHAT_CONTENT_WIDTH - 16,
+      height: 20,
+    });
 
     expect(estimateAssistantMessageHeightFromCache("Before\n\n---\n\nAfter", 8)).toBe(63);
   });

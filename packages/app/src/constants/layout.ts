@@ -11,8 +11,10 @@ export const HEADER_INNER_HEIGHT_MOBILE = 56;
 export const WORKSPACE_SECONDARY_HEADER_HEIGHT = 36;
 export const HEADER_TOP_PADDING_MOBILE = 8;
 
-// Max width for chat content (stream view, input area, new agent form)
+// 表单与文件预览的宽屏上限。
 export const MAX_CONTENT_WIDTH = 820;
+// 对话正文、输入框及其附件共用的宽屏上限，比原布局缩窄 10%。
+export const MAX_CHAT_CONTENT_WIDTH = 738;
 export const COMPACT_FORM_FACTOR_WIDTH = 500;
 
 // Settings uses the canonical desktop list + detail layout. Its sidebar and

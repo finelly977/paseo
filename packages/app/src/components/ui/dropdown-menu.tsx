@@ -414,7 +414,12 @@ export function DropdownMenuSubTrigger({
   );
 
   return (
-    <DropdownMenuTrigger disabled={disabled} style={triggerStyle} testID={testID}>
+    <DropdownMenuTrigger
+      accessibilityRole="button"
+      disabled={disabled}
+      style={triggerStyle}
+      testID={testID}
+    >
       {leading ? <View style={styles.leadingSlot}>{leading}</View> : null}
       <View style={styles.itemContent}>
         <Text numberOfLines={1} style={styles.itemText}>
@@ -1021,10 +1026,11 @@ const styles = StyleSheet.create((theme) => ({
     left: 0,
   },
   content: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.popover,
+    paddingVertical: theme.spacing[1],
     borderWidth: 1,
-    borderColor: theme.colors.borderAccent,
-    borderRadius: theme.borderRadius.lg,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.xl,
     overflow: "hidden",
     ...theme.shadow.md,
   },
@@ -1054,6 +1060,8 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
   },
   item: {
+    marginHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
     flexDirection: "row",
     alignItems: "center",
     minHeight: 36,
@@ -1064,16 +1072,16 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: "transparent",
   },
   itemHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   itemPressed: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   itemSelected: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   itemSelectedInteractive: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   itemSelectedAccent: {
     backgroundColor: theme.colors.accent,

@@ -146,6 +146,7 @@ export const en = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Provider",
       select: "Select agent provider",
@@ -158,6 +159,7 @@ export const en = {
       selectWithValue: "Select thinking option ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "Unknown model",
     },
     features: {

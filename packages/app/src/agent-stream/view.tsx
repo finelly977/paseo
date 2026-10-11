@@ -23,10 +23,10 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { MAX_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
+import { MAX_CHAT_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { Check, ChevronDown, X } from "lucide-react-native";
+import { ArrowDown, Check, ChevronDown, X } from "lucide-react-native";
 import { usePanelStore } from "@/stores/panel-store";
 import {
   AssistantMessage,
@@ -1432,12 +1432,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
                 <Pressable
                   style={stylesheet.scrollToBottomButton}
+                  hitSlop={8}
                   onPress={scrollToBottom}
                   accessibilityRole="button"
                   accessibilityLabel={t("agentStream.scrollToBottom")}
                   testID="scroll-to-bottom-button"
                 >
-                  <ChevronDown size={24} color={stylesheet.scrollToBottomIcon.color} />
+                  <ArrowDown
+                    size={20}
+                    strokeWidth={1.7}
+                    color={stylesheet.scrollToBottomIcon.color}
+                  />
                 </Pressable>
               </Animated.View>
             </View>
@@ -1905,7 +1910,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   contentWrapper: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },
@@ -1926,7 +1931,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   streamItemWrapper: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },
@@ -1955,7 +1960,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   completedTurnProcessToggleRow: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
     paddingBottom: theme.spacing[2],
@@ -2007,16 +2012,15 @@ const stylesheet = StyleSheet.create((theme) => ({
     alignItems: "center",
   },
   scrollToBottomButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.surface2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface3,
     alignItems: "center",
     justifyContent: "center",
-    ...theme.shadow.sm,
   },
   scrollToBottomIcon: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundMuted,
   },
 }));
 

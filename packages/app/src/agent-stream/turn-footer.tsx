@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useMemo, type ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import type { Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
@@ -189,7 +189,7 @@ function TurnFooterRow({ children }: { children: ReactNode }) {
 const stylesheet = StyleSheet.create((theme) => ({
   streamItemWrapper: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
   },

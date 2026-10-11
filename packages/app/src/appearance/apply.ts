@@ -92,6 +92,12 @@ export function applyAppearance(input: AppearanceInput): void {
       });
       const textColors = {
         foreground,
+        foregroundSidebar: resolveTextBrightness({
+          foreground,
+          background: t.colors.surfaceSidebar,
+          colorScheme: t.colorScheme,
+          brightness: 92,
+        }),
         popoverForeground: foreground,
         secondaryForeground: foreground,
       };

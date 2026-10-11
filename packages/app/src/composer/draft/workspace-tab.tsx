@@ -45,7 +45,7 @@ import {
 import type { UserMessageImageAttachment } from "@/types/stream";
 import {
   COMPACT_FORM_FACTOR_WIDTH,
-  MAX_CONTENT_WIDTH,
+  MAX_CHAT_CONTENT_WIDTH,
   useIsCompactFormFactor,
 } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
@@ -765,7 +765,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   importPillContent: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     flexDirection: "row",
   },
   errorContainer: {

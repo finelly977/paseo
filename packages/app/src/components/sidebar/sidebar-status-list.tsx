@@ -1011,7 +1011,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
   },
   statusGroupTitle: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     minWidth: 0,

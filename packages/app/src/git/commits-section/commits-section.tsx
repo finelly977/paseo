@@ -473,7 +473,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   title: {
     fontSize: 13,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   count: {
     fontSize: 12,

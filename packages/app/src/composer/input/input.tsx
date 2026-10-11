@@ -1,3 +1,4 @@
+import { resolveComposerSubmitVisibility } from "./state";
 import {
   View,
   Text,
@@ -1577,7 +1578,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     const { canPressLoadingButton, isSendButtonDisabled, defaultActionQueues } =
       computeSendButtonState({
         disabled,
-        isSubmitDisabled,
+        isSubmitDisabled: isSubmitDisabled || !shouldShowSendButton,
         isSubmitLoading,
         onSubmitLoadingPress,
         defaultSendBehavior,
@@ -1795,7 +1796,11 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               />
               {rightContent}
               <SendButtonTooltip
-                shouldShow={shouldShowSendButton}
+                shouldShow={resolveComposerSubmitVisibility(
+                  shouldShowSendButton,
+                  isAgentRunning,
+                  isRealtimeVoiceForCurrentAgent,
+                )}
                 canPressLoadingButton={canPressLoadingButton}
                 onSubmitLoadingPress={onSubmitLoadingPress}
                 onDefaultSendAction={handleDefaultSendAction}
@@ -1849,13 +1854,13 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexShrink: 1,
     flexDirection: "column",
     gap: theme.spacing[3],
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface2,
     borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.borderAccent,
+    borderColor: theme.colors.border,
     borderRadius: theme.borderRadius["2xl"],
     paddingVertical: {
       xs: theme.spacing[2],
-      md: theme.spacing[4],
+      md: theme.spacing[3],
     },
     paddingHorizontal: {
       xs: theme.spacing[3],
@@ -1900,7 +1905,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
   buttonRow: {
     flexShrink: 0,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
     marginHorizontal: -6,
   },
@@ -1909,7 +1914,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexShrink: 1,
     flexGrow: 1,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: theme.spacing[0],
   },
   rightButtonGroup: {
@@ -1942,11 +1947,10 @@ const styles = StyleSheet.create((theme: Theme) => ({
     backgroundColor: theme.colors.destructive,
   },
   sendButton: {
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     borderRadius: theme.borderRadius.full,
-    backgroundColor:
-      theme.colorScheme === "dark" ? theme.colors.palette.white : theme.colors.palette.black,
+    backgroundColor: theme.colors.foreground,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: theme.spacing[1],
@@ -2016,8 +2020,8 @@ const ThemedTextInput = withUnistyles(TextInput);
 const iconForegroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const iconForegroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const submitIconColorMapping = (theme: Theme) => ({
-  color: theme.colorScheme === "dark" ? theme.colors.palette.black : theme.colors.palette.white,
+  color: theme.colors.surface0,
 });
 const textInputPlaceholderColorMapping = (theme: Theme) => ({
-  placeholderTextColor: theme.colors.surface4,
+  placeholderTextColor: theme.colors.foregroundExtraMuted,
 });

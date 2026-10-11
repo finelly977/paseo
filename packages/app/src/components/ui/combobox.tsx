@@ -69,7 +69,7 @@ export { buildDesktopFrameStyle } from "./combobox-frame-style";
 const IS_WEB = isWeb;
 
 export type ComboboxOption = ComboboxOptionModel;
-export type ComboboxDesktopPlacement = "top-start" | "bottom-start";
+export type ComboboxDesktopPlacement = "top-start" | "bottom-start" | "right-start";
 
 export interface ComboboxProps {
   options: ComboboxOption[];
@@ -282,12 +282,13 @@ export function ComboboxItem({
   const itemPressableStyle = useCallback(
     ({ pressed, hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.comboboxItem,
+      selected && styles.comboboxItemSelected,
       hovered && (elevated ? styles.comboboxItemHoveredElevated : styles.comboboxItemHovered),
       pressed && (elevated ? styles.comboboxItemPressedElevated : styles.comboboxItemPressed),
       active && styles.comboboxItemActive,
       disabled && styles.comboboxItemDisabled,
     ],
-    [elevated, active, disabled],
+    [elevated, active, disabled, selected],
   );
 
   const itemContentStyle = useMemo(
@@ -1651,7 +1652,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     paddingHorizontal: theme.spacing[3],
     paddingVertical: theme.spacing[2],
-    borderRadius: 0,
+    borderRadius: theme.borderRadius.md,
     ...(IS_WEB
       ? {}
       : {
@@ -1659,20 +1660,23 @@ const styles = StyleSheet.create((theme) => ({
           marginBottom: theme.spacing[1],
         }),
   },
+  comboboxItemSelected: {
+    backgroundColor: theme.colors.surface3,
+  },
   comboboxItemHovered: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface3,
   },
   comboboxItemHoveredElevated: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   comboboxItemPressed: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface3,
   },
   comboboxItemPressedElevated: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   comboboxItemActive: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface3,
   },
   comboboxItemDisabled: {
     opacity: 0.55,
@@ -1747,8 +1751,8 @@ const styles = StyleSheet.create((theme) => ({
     left: 0,
   },
   desktopContainer: {
-    backgroundColor: theme.colors.surface0,
-    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.popover,
+    borderRadius: theme.borderRadius.xl,
     borderWidth: 1,
     borderColor: theme.colors.border,
     ...theme.shadow.md,
@@ -1760,7 +1764,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
   },
   desktopScrollContent: {
-    paddingVertical: theme.spacing[1],
+    padding: theme.spacing[1],
   },
   desktopChildrenScrollContent: {
     // No padding — custom children (e.g. model selector) control their own spacing

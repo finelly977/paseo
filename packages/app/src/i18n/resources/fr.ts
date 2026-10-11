@@ -150,6 +150,7 @@ export const fr: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Fournisseur",
       select: "Sélectionnez le fournisseur d'agent",
@@ -162,6 +163,7 @@ export const fr: TranslationResources = {
       selectWithValue: "Sélectionnez l'option de réflexion ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "Modèle inconnu",
     },
     features: {

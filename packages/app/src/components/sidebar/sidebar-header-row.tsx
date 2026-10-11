@@ -151,10 +151,10 @@ const styles = StyleSheet.create((theme) => ({
   label: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   labelHighlighted: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   shortcut: {
     marginLeft: "auto",

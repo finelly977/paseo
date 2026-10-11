@@ -10,7 +10,7 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
 const foregroundColorMapping = (theme: Theme) => ({
-  color: theme.colors.foreground,
+  color: theme.colors.foregroundSidebar,
 });
 const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronUp = withUnistyles(ChevronUp);
@@ -92,13 +92,13 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   text: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,
   },
   textHovered: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,

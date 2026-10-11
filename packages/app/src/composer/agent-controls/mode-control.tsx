@@ -118,8 +118,13 @@ export function AgentModeControl({
   onSelectMode,
   disabled = false,
   surface = "toolbar",
+  iconOnly = false,
   onClose,
-}: AgentModeControlValue & { surface?: "toolbar" | "sheet"; onClose?: () => void }) {
+}: AgentModeControlValue & {
+  surface?: "toolbar" | "sheet";
+  iconOnly?: boolean;
+  onClose?: () => void;
+}) {
   const { presentation } = useComposerControlLayout();
   const { t } = useTranslation();
   const { isActiveComposer } = useComposerKeyboardScope();
@@ -236,8 +241,8 @@ export function AgentModeControl({
             surface={surface}
             label={t("agentControls.mode.title")}
             value={selectedModeLabel}
-            showToolbarLabel={presentation.showModeLabel}
-            showCaret={surface === "toolbar" && presentation.showCarets}
+            showToolbarLabel={!iconOnly && presentation.showModeLabel}
+            showCaret={!iconOnly && surface === "toolbar" && presentation.showCarets}
             open={open}
             disabled={disabled}
             onPress={handlePress}

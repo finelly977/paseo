@@ -349,7 +349,7 @@ const styles = StyleSheet.create((theme) => {
       flexDirection: "row",
       alignItems: "center",
       gap: theme.spacing[2],
-      backgroundColor: theme.colors.surface2,
+      backgroundColor: theme.colors.surface0,
     },
     triggerSm: {
       ...geometry.fieldControlSm,

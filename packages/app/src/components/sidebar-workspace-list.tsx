@@ -171,7 +171,7 @@ const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
 
 const foregroundColorMapping = (theme: Theme) => ({
-  color: theme.colors.foreground,
+  color: theme.colors.foregroundSidebar,
 });
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -421,10 +421,10 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 14,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   textHovered: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
 }));
 
@@ -2918,7 +2918,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   newWorkspaceGhostText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,
@@ -2927,7 +2927,7 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     minWidth: 0,
     flexShrink: 1,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   emptyContainer: {
     marginHorizontal: theme.spacing[2],
@@ -2941,13 +2941,13 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[3],
   },
   emptyTitle: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     textAlign: "center",
   },
   emptyText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     textAlign: "center",
   },
@@ -3016,7 +3016,7 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: 9,
   },
   projectTitle: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     minWidth: 0,
@@ -3035,7 +3035,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
   projectActionButtonText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.xs,
   },
   projectIconActionButton: {
@@ -3085,7 +3085,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
   },
   projectActionTooltipText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
   },
   projectActionTooltipShortcut: {},
@@ -3142,7 +3142,7 @@ const styles = StyleSheet.create((theme) => ({
     ...theme.shadow.md,
   },
   sidebarRowSelected: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surfaceSidebarSelected,
   },
   workspaceRowContainer: {
     position: "relative",
@@ -3176,12 +3176,12 @@ const styles = StyleSheet.create((theme) => ({
     zIndex: 1,
   },
   workspaceArchivingText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.xs,
     fontWeight: "600",
   },
   workspaceBranchText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     lineHeight: 20,
@@ -3195,7 +3195,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingLeft: WORKSPACE_STATUS_DOT_WIDTH + theme.spacing[2],
   },
   workspaceCreatingText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.xs,
     flexShrink: 0,
   },

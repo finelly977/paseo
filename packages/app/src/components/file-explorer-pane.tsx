@@ -1520,7 +1520,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   entryName: {
     flex: 1,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
   },
   contextMetaBlock: {
@@ -1540,7 +1540,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   contextMetaValue: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontWeight: theme.fontWeight.medium,
     flex: 1,
     minWidth: 0,
@@ -1548,7 +1548,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   previewHeaderText: {
     flex: 1,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
   },
@@ -1585,7 +1585,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingBottom: theme.spacing[3] + theme.spacing[2],
   },
   codeText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontFamily: theme.fontFamily.mono,
     fontSize: theme.fontSize.code,
     flexShrink: 0,
@@ -1618,7 +1618,7 @@ const styles = StyleSheet.create((theme) => ({
   sheetTitle: {
     fontSize: theme.fontSize.lg,
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     flex: 1,
   },
   sheetCloseButton: {

@@ -33,7 +33,7 @@ import {
   Paperclip,
 } from "lucide-react-native";
 import Animated from "react-native-reanimated";
-import { FOOTER_HEIGHT, MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { FOOTER_HEIGHT, MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import {
   AgentControls,
   DraftAgentControls,
@@ -1823,7 +1823,7 @@ export function Composer({
         contextWindowMaxTokens,
         contextWindowUsedTokens,
         agentState.totalCostUsd,
-        false,
+        !isCompactLayout,
         serverId,
         agentState.provider,
         appSettings.contextWindowProviderUsageEnabled,
@@ -1839,6 +1839,7 @@ export function Composer({
       appSettings.contextWindowProviderUsageEnabled,
       contextWindowPending,
       contextWindowMeterGlyphSize,
+      isCompactLayout,
     ],
   );
   const beforeVoiceContent = useMemo(
@@ -2221,7 +2222,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
   inputAreaContent: {
     flexShrink: 1,
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     gap: theme.spacing[3],
   },
   messageInputContainer: {
@@ -2246,7 +2247,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     gap: theme.spacing[1],
   },
   contextWindowMeterSlot: {
-    width: 28,
+    minWidth: 28,
     height: 28,
     flexShrink: 0,
     alignItems: "center",

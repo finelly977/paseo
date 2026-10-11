@@ -148,6 +148,7 @@ export const ptBR: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Provedor",
       select: "Selecionar provedor do agente",
@@ -160,6 +161,7 @@ export const ptBR: TranslationResources = {
       selectWithValue: "Selecionar opção de raciocínio ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "Modelo desconhecido",
     },
     features: {

@@ -366,7 +366,9 @@ function ExplorerSidebarContent({
                 forge={prPane.forge}
                 size={13}
                 color={
-                  resolvedTab === "pr" ? theme.colors.foreground : theme.colors.foregroundMuted
+                  resolvedTab === "pr"
+                    ? theme.colors.foregroundSidebar
+                    : theme.colors.foregroundMuted
                 }
               />
             </ExplorerTabButton>
@@ -388,7 +390,9 @@ function ExplorerSidebarContent({
                 <X
                   size={18}
                   color={
-                    hovered || pressed ? theme.colors.foreground : theme.colors.foregroundMuted
+                    hovered || pressed
+                      ? theme.colors.foregroundSidebar
+                      : theme.colors.foregroundMuted
                   }
                 />
               )}
@@ -593,7 +597,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
   },
   tabTextActive: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   tabTextMuted: {
     opacity: 0.8,

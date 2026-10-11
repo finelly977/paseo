@@ -79,8 +79,8 @@ const currentReferenceIconMapping = (theme: {
 const badgeIconMapping = (theme: { colors: { accentForeground: string } }) => ({
   color: theme.colors.accentForeground,
 });
-const branchBadgeIconMapping = (theme: { colors: { foreground: string } }) => ({
-  color: theme.colors.foreground,
+const branchBadgeIconMapping = (theme: { colors: { foregroundSidebar: string } }) => ({
+  color: theme.colors.foregroundSidebar,
 });
 const tagBadgeIconMapping = (theme: {
   colorScheme: "light" | "dark";
@@ -610,10 +610,10 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     fontSize: 13,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   subject: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   subjectCurrent: {
     fontWeight: theme.fontWeight.medium,
@@ -662,10 +662,10 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.accentForeground,
   },
   referenceOverflowText: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   referenceTextBranch: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   referenceTextTag: {
     color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
@@ -709,7 +709,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   fileName: {
     fontSize: 13,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     flexShrink: 0,
   },
   fileDirectory: {

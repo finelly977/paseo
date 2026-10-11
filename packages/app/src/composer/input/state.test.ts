@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  resolveComposerSubmitVisibility,
   computeCanStartDictation,
   resolveActiveSendBehavior,
   resolveComposerSurfacePresentation,
@@ -290,5 +291,18 @@ describe("stopRealtimeVoice", () => {
     });
 
     expect(calls).toEqual(["cancel agent", "stop voice"]);
+  });
+});
+
+describe("发送入口的可见性", () => {
+  it("空闲空输入保留发送入口，发送能力本身仍由禁用状态控制", () => {
+    expect(resolveComposerSubmitVisibility(false, false, false)).toBe(true);
+  });
+  it("运行中空输入不叠加发送按钮，已有草稿仍可发送", () => {
+    expect(resolveComposerSubmitVisibility(false, true, false)).toBe(false);
+    expect(resolveComposerSubmitVisibility(true, true, false)).toBe(true);
+  });
+  it("实时语音状态不叠加空发送入口", () => {
+    expect(resolveComposerSubmitVisibility(false, false, true)).toBe(false);
   });
 });

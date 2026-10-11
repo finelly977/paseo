@@ -148,6 +148,7 @@ export const zhCN: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Provider",
       select: "选择 Agent Provider",
@@ -160,6 +161,7 @@ export const zhCN: TranslationResources = {
       selectWithValue: "选择 thinking 选项（{{value}}）",
     },
     model: {
+      title: "模型",
       unknown: "未知 Model",
     },
     features: {

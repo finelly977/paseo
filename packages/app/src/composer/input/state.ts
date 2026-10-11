@@ -154,3 +154,12 @@ export async function stopRealtimeVoice(ctx: StopRealtimeVoiceContext): Promise<
 
   await ctx.voice.stopVoice();
 }
+
+// 空闲时保留禁用的发送入口；运行中由发送/停止状态决定，实时语音不叠加发送按钮。
+export function resolveComposerSubmitVisibility(
+  hasSendAction: boolean,
+  isAgentRunning: boolean,
+  isRealtimeVoice: boolean,
+): boolean {
+  return hasSendAction || (!isAgentRunning && !isRealtimeVoice);
+}

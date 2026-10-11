@@ -684,7 +684,7 @@ const styles = StyleSheet.create((theme) => ({
   sectionTitle: {
     fontSize: 13,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   repositoryRow: {
     minHeight: 28,
@@ -702,7 +702,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   repositoryName: {
     fontSize: theme.fontSize.sm,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     flexShrink: 1,
   },
   repositoryBranch: {

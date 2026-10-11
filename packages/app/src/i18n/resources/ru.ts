@@ -148,6 +148,7 @@ export const ru: TranslationResources = {
     },
   },
   agentControls: {
+    role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Поставщик",
       select: "Выберите поставщика агентов",
@@ -160,6 +161,7 @@ export const ru: TranslationResources = {
       selectWithValue: "Выберите вариант мышления ({{value}})",
     },
     model: {
+      title: "模型",
       unknown: "Неизвестная модель",
     },
     features: {

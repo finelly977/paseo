@@ -1,3 +1,4 @@
+import { resolveTextBrightness } from "@/appearance/text-brightness";
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
 
@@ -160,6 +161,7 @@ const lightSemanticColors = {
 
   // Text
   foreground: "#1a1a1e",
+  foregroundSidebar: "#2b2b2f",
   foregroundMuted: "#71717a",
   foregroundExtraMuted: "#a1a1aa",
 
@@ -286,6 +288,12 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surfaceSidebarHover: tint.surface1,
     surfaceSidebarSelected: tint.surface3,
     surfaceWorkspace: tint.surface0,
+    foregroundSidebar: resolveTextBrightness({
+      foreground: tint.foreground,
+      background: tint.surfaceSidebar,
+      colorScheme: "light",
+      brightness: 92,
+    }),
     foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
@@ -329,6 +337,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
 // ---------------------------------------------------------------------------
 
 export interface DarkThemeConfig {
+  surfaceSidebarSelected?: string;
   surface0: string;
   surface1: string;
   surface2: string;
@@ -380,9 +389,16 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
     surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surfaceSidebarHover,
+    surfaceSidebarSelected: tint.surfaceSidebarSelected ?? tint.surface2,
     surfaceWorkspace: tint.surface1,
     userMessageBackground: "#ffffff09",
 
+    foregroundSidebar: resolveTextBrightness({
+      foreground: tint.foreground,
+      background: tint.surfaceSidebar,
+      colorScheme: "dark",
+      brightness: 92,
+    }),
     foreground: tint.foreground,
     foregroundMuted: tint.foregroundMuted,
     foregroundExtraMuted: tint.foregroundExtraMuted,
@@ -456,20 +472,21 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
 // Dark tint definitions
 // ---------------------------------------------------------------------------
 
-// 默认 Dark 主题：中性黑灰表面与蓝色强调色
+// 默认 Dark 主题：炭黑低对比度表面，选中态使用低饱和蓝灰色
 const paseoDarkColors = buildDarkSemanticColors({
-  surface0: "#111111",
-  surface1: "#111111",
-  surface2: "#1F1F1F",
-  surface3: "#2A2A2A",
-  surface4: "#3A3A3A",
-  surfaceDiffEmpty: "#181818",
-  surfaceSidebar: "#0D0D0D",
-  surfaceSidebarHover: "#1F1F1F",
+  surface0: "#121416",
+  surface1: "#121416",
+  surface2: "#202224",
+  surface3: "#2A2D30",
+  surface4: "#3A3E42",
+  surfaceDiffEmpty: "#191B1D",
+  surfaceSidebar: "#191B1D",
+  surfaceSidebarHover: "#202224",
+  surfaceSidebarSelected: "#263139",
   foreground: "#D3D3D3",
   foregroundMuted: "#A3A3A3",
   foregroundExtraMuted: "#6F6F6F",
-  scrollbarHandle: "#3A3A3A",
+  scrollbarHandle: "#3A3E42",
   border: "#262626",
   borderAccent: "#333333",
   accent: "#0169CC",

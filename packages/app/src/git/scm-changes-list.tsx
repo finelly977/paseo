@@ -61,8 +61,8 @@ const ThemedPlus = withUnistyles(Plus);
 const ThemedMinus = withUnistyles(Minus);
 const ThemedUndo2 = withUnistyles(Undo2);
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
-const foregroundIconColorMapping = (theme: { colors: { foreground: string } }) => ({
-  color: theme.colors.foreground,
+const foregroundIconColorMapping = (theme: { colors: { foregroundSidebar: string } }) => ({
+  color: theme.colors.foregroundSidebar,
 });
 const mutedIconColorMapping = (theme: { colors: { foregroundMuted: string } }) => ({
   color: theme.colors.foregroundMuted,
@@ -504,7 +504,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: 6,
   },
   fileName: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: 13,
     flexShrink: 0,
   },

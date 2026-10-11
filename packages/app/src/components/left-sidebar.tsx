@@ -87,7 +87,7 @@ function SidebarIcon({ icon: Icon, size, tone, foregroundColor, mutedColor }: Si
 
 const ThemedSidebarIcon = withUnistyles(SidebarIcon);
 const sidebarIconColorMapping = (theme: Theme) => ({
-  foregroundColor: theme.colors.foreground,
+  foregroundColor: theme.colors.foregroundSidebar,
   mutedColor: theme.colors.foregroundMuted,
 });
 
@@ -1004,7 +1004,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingBottom: theme.spacing[1],
   },
   workspacesSectionTitle: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
   },
@@ -1096,10 +1096,10 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   footerAddProjectLabelHovered: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   footerIconButton: {
     width: 28,

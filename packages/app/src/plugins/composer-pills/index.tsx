@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Platform, Pressable, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { MAX_CONTENT_WIDTH } from "@/constants/layout";
+import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import type { Theme } from "@/styles/theme";
@@ -180,7 +180,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   rail: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    maxWidth: MAX_CHAT_CONTENT_WIDTH,
     minWidth: 0,
     flexDirection: "row",
     alignItems: "center",

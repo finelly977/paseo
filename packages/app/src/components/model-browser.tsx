@@ -519,12 +519,13 @@ function ModelBrowserRow({
   const pressableStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.browserRow,
+      selected && styles.browserRowSelected,
       spacing === "model" && styles.browserModelRow,
       Boolean(hovered) &&
         (tone === "elevated" ? styles.browserRowHoveredElevated : styles.browserRowHovered),
       pressed && (tone === "default" ? styles.browserRowPressed : styles.browserRowPressedElevated),
     ],
-    [spacing, tone],
+    [spacing, tone, selected],
   );
   const contentStyle = useMemo(
     () => [styles.browserRowText, description && styles.browserRowTextInline],
@@ -1243,22 +1244,27 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
   },
   browserRow: {
+    marginHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
     flexDirection: "row",
     paddingVertical: theme.spacing[2],
     minHeight: 36,
   },
   browserModelRow: isWeb ? {} : { marginBottom: theme.spacing[1] },
+  browserRowSelected: {
+    backgroundColor: theme.colors.surface3,
+  },
   browserRowHovered: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface3,
   },
   browserRowHoveredElevated: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   browserRowPressed: {
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface3,
   },
   browserRowPressedElevated: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   browserRowContent: {
     flex: 1,
