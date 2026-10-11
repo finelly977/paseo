@@ -2185,7 +2185,7 @@ export function Composer({
         <View style={inputAreaContainerStyle}>
           <View style={styles.inputAreaContent}>
             {queueList}
-            {supportsScheduledMessages ? (
+            {hasAgent && supportsScheduledMessages ? (
               <ScheduledMessages serverId={serverId} agentId={agentId} />
             ) : null}
             {scheduledDraft ? (

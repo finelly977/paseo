@@ -1634,6 +1634,10 @@ export function DraftAgentControls({
   selectedCodexProviderInjectionId = null,
   onSelectCodexProviderInjection,
 }: DraftAgentControlsProps) {
+  const providerOptions = useMemo<AgentControlOption[]>(
+    () => modelSelectorProviders.map(({ id, label }) => ({ id, label })),
+    [modelSelectorProviders],
+  );
   const mappedThinkingOptions = useMemo<AgentControlOption[]>(() => {
     return toThinkingControlOptions(thinkingOptions);
   }, [thinkingOptions]);
@@ -1704,6 +1708,9 @@ export function DraftAgentControls({
     <ControlledAgentControls
       providerLocked={false}
       provider={selectedProvider ?? ""}
+      providerOptions={providerOptions}
+      selectedProviderId={selectedProvider ?? undefined}
+      onSelectProvider={onSelectProvider}
       modelSelectorProviders={modelSelectorProviders}
       modelOptions={modelOptions}
       selectedModelId={selectedModel}

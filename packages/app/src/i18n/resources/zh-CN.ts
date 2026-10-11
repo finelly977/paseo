@@ -151,7 +151,7 @@ export const zhCN: TranslationResources = {
     role: { title: "角色", thinking: "推理" },
     provider: {
       fallback: "Provider",
-      select: "选择 Agent Provider",
+      select: "选择智能体",
     },
     thinking: {
       title: "Thinking",

@@ -27,7 +27,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
-import { HEADER_INNER_HEIGHT, MAX_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
+import {
+  HEADER_INNER_HEIGHT,
+  MAX_CHAT_CONTENT_WIDTH,
+  useIsCompactFormFactor,
+} from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useAgentInputDraft } from "@/composer/draft/input-draft";
 import { useForgeSearchQuery } from "@/git/use-forge-search-query";
@@ -78,7 +82,7 @@ import {
   type HostProjectListItem,
 } from "@/projects/host-projects";
 import { useProjectIconDataByProjectKey } from "@/projects/project-icons";
-import { ICON_SIZE, type Theme } from "@/styles/theme";
+import { ICON_SIZE, SPACING, type Theme } from "@/styles/theme";
 import type { ComposerAttachment } from "@/attachments/types";
 import { useDraftWorkspaceAttachmentScopeKey } from "@/attachments/workspace-attachments-store";
 import type { MessagePayload } from "@/composer/types";
@@ -2483,7 +2487,8 @@ export function NewWorkspaceScreen({
 const animatedStaticStyles = RNStyleSheet.create({
   centered: {
     width: "100%",
-    maxWidth: MAX_CONTENT_WIDTH,
+    // 外层包含输入框两侧留白，选择器和输入框使用同一内容边界。
+    maxWidth: MAX_CHAT_CONTENT_WIDTH + SPACING[4] * 2,
   },
 });
 

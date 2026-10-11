@@ -244,10 +244,9 @@ const styles = StyleSheet.create((theme) => ({
     marginHorizontal: -theme.spacing[1],
     paddingHorizontal: theme.spacing[4],
     borderRadius: theme.borderRadius["2xl"],
-    backgroundColor: theme.colors.surface1,
   },
   sheetRowInteractive: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surface3,
   },
   sheetGlyph: {
     width: 20,
