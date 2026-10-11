@@ -1,3 +1,4 @@
+import { resolveHoverMenuEnabled, useHoverMenu } from "@/hooks/use-hover-menu";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -58,6 +59,8 @@ interface CombinedModelSelectorProps {
    * (the composer's layout).
    */
   triggerFill?: boolean;
+  openOnHover?: boolean;
+  compactMenu?: boolean;
   toolbar?: {
     glyphSize: number;
     showCaret: boolean;
@@ -84,15 +87,19 @@ export function CombinedModelSelector({
   desktopPlacement,
   desktopMinWidth,
   triggerFill = false,
+  openOnHover = false,
+  compactMenu,
   toolbar,
 }: CombinedModelSelectorProps) {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const modelBrowserScrolling = resolveModelBrowserScrolling({ isNative, isCompact });
   const anchorRef = useRef<View>(null);
+  const contentRef = useRef<View>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isContentReady, setIsContentReady] = useState(isWeb);
   const browser = useModelBrowser({
+    compactMenu,
     providerLocked,
     providers,
     selectedProvider,
@@ -116,6 +123,14 @@ export function CombinedModelSelector({
     },
     [onClose, onOpen, prepareToOpen, reset],
   );
+
+  useHoverMenu({
+    enabled: resolveHoverMenuEnabled(openOnHover, isCompact, disabled),
+    open: isOpen,
+    onOpenChange: handleOpenChange,
+    triggerRef: anchorRef,
+    contentRef,
+  });
 
   const handleSelect = useCallback(
     (provider: string, modelId: string) => {
@@ -252,6 +267,8 @@ export function CombinedModelSelector({
         open={isOpen}
         onOpenChange={handleOpenChange}
         anchorRef={anchorRef}
+        desktopContentRef={contentRef}
+        desktopPassThroughBackdrop={openOnHover}
         desktopPlacement={desktopPlacement}
         desktopMinWidth={desktopMinWidth}
         desktopLockWidth

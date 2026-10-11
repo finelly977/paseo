@@ -5,6 +5,7 @@ import { createHoverSafeZoneTracker, type RectLike } from "@/hooks/hover-safe-zo
 
 interface UseHoverSafeZoneParams {
   enabled: boolean;
+  hoverOnly?: boolean;
   triggerRef: RefObject<View | null>;
   contentRef: RefObject<View | null>;
   onEnterSafeZone: () => void;
@@ -18,6 +19,7 @@ function readRect(ref: RefObject<View | null>): RectLike | null {
 
 export function useHoverSafeZone({
   enabled,
+  hoverOnly = false,
   triggerRef,
   contentRef,
   onEnterSafeZone,
@@ -34,6 +36,7 @@ export function useHoverSafeZone({
     });
 
     function handlePointerMove(event: PointerEvent) {
+      if (hoverOnly && (event.pointerType === "touch" || event.buttons !== 0)) return;
       tracker.pointerMoved(event.clientX, event.clientY);
     }
 
@@ -55,5 +58,5 @@ export function useHoverSafeZone({
       window.removeEventListener("pointerout", handlePointerOut);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [enabled, triggerRef, contentRef, onEnterSafeZone, onLeaveSafeZone]);
+  }, [enabled, hoverOnly, triggerRef, contentRef, onEnterSafeZone, onLeaveSafeZone]);
 }

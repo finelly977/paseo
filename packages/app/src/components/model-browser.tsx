@@ -51,6 +51,7 @@ import {
 import { useProviderSettingsStore } from "@/stores/provider-settings-store";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import {
+  resolveCompactModelMenuHeight,
   resolveInitialModelBrowserView,
   resolveModelBrowserAllView,
   type ModelBrowserView,
@@ -139,6 +140,7 @@ const headerSettingsMapping = (disabled: boolean) => (theme: Theme) => ({
 });
 
 interface ModelBrowserInput {
+  compactMenu?: boolean;
   providerLocked?: boolean;
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
@@ -218,12 +220,16 @@ function iconButtonStyle({ hovered, pressed }: PressableStateCallbackType & { ho
   ];
 }
 
-function countModelsInView(view: ModelBrowserView, providers: ProviderSelectorProvider[]): number {
-  if (view.kind === "all") {
-    return getAllProviderModelRows(providers).length;
-  }
+function countModelsInView(
+  view: ModelBrowserView,
+  providers: ProviderSelectorProvider[],
+  query = "",
+): number {
+  if (view.kind === "all")
+    return filterAndRankModelRows(getAllProviderModelRows(providers), query).length;
   const provider = providers.find((entry) => entry.id === view.providerId);
-  return provider?.modelSelection.kind === "models" ? getProviderModelRows(provider).length : 0;
+  const rows = provider?.modelSelection.kind === "models" ? getProviderModelRows(provider) : [];
+  return filterAndRankModelRows(rows, query).length;
 }
 
 function resolveDesktopFixedHeight(
@@ -241,6 +247,7 @@ function resolveDesktopFixedHeight(
 }
 
 export function useModelBrowser({
+  compactMenu = false,
   providerLocked = false,
   providers,
   selectedProvider,
@@ -362,8 +369,13 @@ export function useModelBrowser({
   }, [selectedModelLabel, t]);
 
   const desktopFixedHeight = useMemo(
-    () => resolveDesktopFixedHeight(view, providers),
-    [providers, view],
+    () =>
+      compactMenu
+        ? resolveCompactModelMenuHeight(
+            countModelsInView(view, providers, normalizeSearchQuery(searchQuery)),
+          )
+        : resolveDesktopFixedHeight(view, providers),
+    [providers, view, compactMenu, searchQuery],
   );
 
   return {

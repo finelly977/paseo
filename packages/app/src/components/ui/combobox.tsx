@@ -1,3 +1,4 @@
+import { getOverlayRoot, OVERLAY_Z } from "@/lib/overlay-root";
 import {
   useCallback,
   useEffect,
@@ -109,6 +110,10 @@ export interface ComboboxProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   desktopPlacement?: ComboboxDesktopPlacement;
+  /** 供悬停安全区测量子菜单。 */
+  desktopContentRef?: React.RefObject<View | null>;
+  /** 子菜单背景穿透到父菜单，允许悬停切换相邻菜单行。 */
+  desktopPassThroughBackdrop?: boolean;
   /**
    * Prevents an initial frame at 0,0 by hiding desktop content until floating
    * coordinates resolve. This intentionally disables fade enter/exit animation
@@ -1063,6 +1068,8 @@ function MobileComboboxBody(props: MobileBodyProps): ReactElement {
 }
 
 interface DesktopBodyProps {
+  desktopContentRef?: React.RefObject<View | null>;
+  desktopPassThroughBackdrop: boolean;
   isOpen: boolean;
   handleClose: () => void;
   refs: ReturnType<typeof useFloating>["refs"];
@@ -1190,6 +1197,71 @@ function DesktopComboboxOptionsBody(props: {
 }
 
 function DesktopComboboxBody(props: DesktopBodyProps): ReactElement {
+  const { refs, desktopContentRef } = props;
+  const setFloating = useCallback(
+    (node: View | null) => {
+      refs.setFloating(node);
+      if (desktopContentRef) desktopContentRef.current = node;
+    },
+    [refs, desktopContentRef],
+  );
+  const overlay = (
+    <View
+      ref={props.refs.setOffsetParent}
+      collapsable={false}
+      style={[styles.desktopOverlay, props.desktopPassThroughBackdrop && styles.desktopOverlayWeb]}
+      pointerEvents={props.desktopPassThroughBackdrop ? "box-none" : "auto"}
+    >
+      {props.desktopPassThroughBackdrop ? null : (
+        <Pressable style={styles.desktopBackdrop} onPress={props.handleClose} />
+      )}
+      <FloatingSurface
+        testID="combobox-desktop-container"
+        entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
+        exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
+        style={styles.desktopContainer}
+        frameStyle={props.desktopFrameStyle}
+        ref={setFloating}
+        collapsable={false}
+        onLayout={props.handleDesktopContentLayout}
+      >
+        {props.hasChildren ? (
+          <DesktopComboboxChildrenBody
+            header={props.header}
+            stickyHeader={props.stickyHeader}
+            scrollEnabled={props.childrenScrollEnabled}
+          >
+            {props.children}
+          </DesktopComboboxChildrenBody>
+        ) : (
+          <DesktopComboboxOptionsBody
+            header={props.header}
+            stickyHeader={props.stickyHeader}
+            searchable={props.searchable}
+            searchPlaceholder={props.searchPlaceholder}
+            searchQuery={props.searchQuery}
+            setSearchQueryWithCallback={props.setSearchQueryWithCallback}
+            handleSubmitSearch={props.handleSubmitSearch}
+            effectiveOptionsPosition={props.effectiveOptionsPosition}
+            desktopOptionsScrollRef={props.desktopOptionsScrollRef}
+            desktopAboveSearchContentContainerStyle={props.desktopAboveSearchContentContainerStyle}
+            handleDesktopOptionsContentSizeChange={props.handleDesktopOptionsContentSizeChange}
+            orderedVisibleOptions={props.orderedVisibleOptions}
+            value={props.value}
+            activeIndex={props.activeIndex}
+            emptyText={props.emptyText}
+            handleSelect={props.handleSelect}
+            renderOption={props.renderOption}
+          />
+        )}
+        {props.footer ? <View style={styles.footer}>{props.footer}</View> : null}
+      </FloatingSurface>
+    </View>
+  );
+  if (isWeb && props.desktopPassThroughBackdrop) {
+    const { createPortal } = require("react-dom") as typeof import("react-dom");
+    return createPortal(overlay, getOverlayRoot());
+  }
   return (
     <Modal
       transparent
@@ -1197,52 +1269,7 @@ function DesktopComboboxBody(props: DesktopBodyProps): ReactElement {
       visible={props.isOpen}
       onRequestClose={props.handleClose}
     >
-      <View ref={props.refs.setOffsetParent} collapsable={false} style={styles.desktopOverlay}>
-        <Pressable style={styles.desktopBackdrop} onPress={props.handleClose} />
-        <FloatingSurface
-          testID="combobox-desktop-container"
-          entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
-          exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
-          style={styles.desktopContainer}
-          frameStyle={props.desktopFrameStyle}
-          ref={props.refs.setFloating}
-          collapsable={false}
-          onLayout={props.handleDesktopContentLayout}
-        >
-          {props.hasChildren ? (
-            <DesktopComboboxChildrenBody
-              header={props.header}
-              stickyHeader={props.stickyHeader}
-              scrollEnabled={props.childrenScrollEnabled}
-            >
-              {props.children}
-            </DesktopComboboxChildrenBody>
-          ) : (
-            <DesktopComboboxOptionsBody
-              header={props.header}
-              stickyHeader={props.stickyHeader}
-              searchable={props.searchable}
-              searchPlaceholder={props.searchPlaceholder}
-              searchQuery={props.searchQuery}
-              setSearchQueryWithCallback={props.setSearchQueryWithCallback}
-              handleSubmitSearch={props.handleSubmitSearch}
-              effectiveOptionsPosition={props.effectiveOptionsPosition}
-              desktopOptionsScrollRef={props.desktopOptionsScrollRef}
-              desktopAboveSearchContentContainerStyle={
-                props.desktopAboveSearchContentContainerStyle
-              }
-              handleDesktopOptionsContentSizeChange={props.handleDesktopOptionsContentSizeChange}
-              orderedVisibleOptions={props.orderedVisibleOptions}
-              value={props.value}
-              activeIndex={props.activeIndex}
-              emptyText={props.emptyText}
-              handleSelect={props.handleSelect}
-              renderOption={props.renderOption}
-            />
-          )}
-          {props.footer ? <View style={styles.footer}>{props.footer}</View> : null}
-        </FloatingSurface>
-      </View>
+      {overlay}
     </Modal>
   );
 }
@@ -1271,6 +1298,8 @@ export function Combobox({
   open,
   onOpenChange,
   desktopPlacement = "bottom-start",
+  desktopContentRef,
+  desktopPassThroughBackdrop,
   desktopPreventInitialFlash = true,
   desktopMinWidth,
   desktopLockWidth,
@@ -1588,6 +1617,8 @@ export function Combobox({
 
   return (
     <DesktopComboboxBody
+      desktopContentRef={desktopContentRef}
+      desktopPassThroughBackdrop={Boolean(desktopPassThroughBackdrop)}
       isOpen={isOpen}
       handleClose={handleClose}
       refs={refs}
@@ -1740,6 +1771,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[2],
     paddingTop: theme.spacing[1],
   },
+  desktopOverlayWeb: { ...StyleSheet.absoluteFillObject, zIndex: OVERLAY_Z.modal },
   desktopOverlay: {
     flex: 1,
   },

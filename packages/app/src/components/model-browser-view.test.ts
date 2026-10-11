@@ -1,3 +1,4 @@
+import { resolveCompactModelMenuHeight } from "./model-browser-view";
 import { describe, expect, it } from "vitest";
 import type {
   ProviderSelectionModelRow,
@@ -179,5 +180,16 @@ describe("model browser all view", () => {
     expect(
       resolveModelBrowserAllView({ providers: [loading, failed], normalizedQuery: "opus" }),
     ).toEqual({ kind: "noSearchMatches" });
+  });
+});
+
+describe("模型菜单的紧凑高度", () => {
+  it("少量模型不再占用 220 像素空框，长列表保留滚动上限", () => {
+    expect(resolveCompactModelMenuHeight(1)).toBe(152);
+    expect(resolveCompactModelMenuHeight(2)).toBe(192);
+    expect(resolveCompactModelMenuHeight(20)).toBe(320);
+  });
+  it("空模型仍保留搜索、创建配置和空状态的空间", () => {
+    expect(resolveCompactModelMenuHeight(0)).toBe(152);
   });
 });

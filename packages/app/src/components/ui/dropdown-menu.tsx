@@ -1,3 +1,4 @@
+import { useHoverMenu } from "@/hooks/use-hover-menu";
 import {
   createContext,
   useCallback,
@@ -63,6 +64,9 @@ interface DropdownMenuContextValue {
   selectItem: (onSelect: (() => void) | undefined, closeOnSelect: boolean) => void;
   flushPendingSelect: () => void;
   triggerRef: React.RefObject<View | null>;
+  contentRef: React.RefObject<View | null>;
+  compact: boolean;
+  passThroughBackdrop: boolean;
 }
 
 const DropdownMenuContext = createContext<DropdownMenuContextValue | null>(null);
@@ -197,6 +201,7 @@ function renderDropdownSurface(input: {
   content: ReactElement;
   surfaceNativeID: string;
   onExited: () => void;
+  contentRef: React.RefObject<View | null>;
 }): ReactElement {
   const {
     frameStyle,
@@ -207,6 +212,7 @@ function renderDropdownSurface(input: {
     content,
     surfaceNativeID,
     onExited,
+    contentRef,
   } = input;
 
   const body = scrollable ? (
@@ -224,6 +230,7 @@ function renderDropdownSurface(input: {
 
   return (
     <FloatingSurface
+      ref={contentRef}
       collapsable={false}
       nativeID={surfaceNativeID}
       testID={testID}
@@ -247,16 +254,24 @@ function renderDropdownSurface(input: {
 }
 
 export function DropdownMenu({
+  compact: compactProp,
+  openOnHover = false,
   open,
   defaultOpen,
   onOpenChange,
   children,
 }: PropsWithChildren<{
+  compact?: boolean;
+  openOnHover?: boolean;
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
 }>): ReactElement {
   const parentCloseAll = useContext(DropdownMenuDismissContext);
+  const parentMenu = useContext(DropdownMenuContext);
+  const compact = compactProp ?? parentMenu?.compact ?? false;
+  const passThroughBackdrop = openOnHover && parentMenu !== null;
+  const contentRef = useRef<View>(null);
   const triggerRef = useRef<View>(null);
   const pendingSelectRef = useRef<(() => void) | null>(null);
   const [isOpen, setIsOpen] = useControllableOpenState({
@@ -265,6 +280,13 @@ export function DropdownMenu({
     onOpenChange,
   });
   useDismissKeyboardOnOpen(isOpen);
+  useHoverMenu({
+    enabled: openOnHover,
+    open: isOpen,
+    onOpenChange: setIsOpen,
+    triggerRef,
+    contentRef,
+  });
 
   const flushPendingSelect = useCallback(() => {
     const pendingSelect = pendingSelectRef.current;
@@ -312,8 +334,11 @@ export function DropdownMenu({
       selectItem,
       flushPendingSelect,
       triggerRef,
+      contentRef,
+      compact,
+      passThroughBackdrop,
     }),
-    [flushPendingSelect, isOpen, selectItem, setIsOpen],
+    [flushPendingSelect, isOpen, selectItem, setIsOpen, compact, passThroughBackdrop],
   );
 
   return (
@@ -390,8 +415,9 @@ export function DropdownMenuTrigger({
 
 export function DropdownMenuSub({
   children,
-}: PropsWithChildren<Record<never, never>>): ReactElement {
-  return <DropdownMenu>{children}</DropdownMenu>;
+  openOnHover = false,
+}: PropsWithChildren<{ openOnHover?: boolean }>): ReactElement {
+  return <DropdownMenu openOnHover={openOnHover}>{children}</DropdownMenu>;
 }
 
 export function DropdownMenuSubTrigger({
@@ -404,13 +430,15 @@ export function DropdownMenuSubTrigger({
   disabled?: boolean;
   testID?: string;
 }>): ReactElement {
+  const { compact } = useDropdownMenuContext("DropdownMenuSubTrigger");
   const triggerStyle = useCallback(
     ({ pressed, hovered, open }: TriggerState) => [
       styles.item,
+      compact && styles.itemCompact,
       disabled ? styles.itemDisabled : null,
       (hovered || pressed || open) && !disabled ? styles.itemHovered : null,
     ],
-    [disabled],
+    [disabled, compact],
   );
 
   return (
@@ -554,8 +582,15 @@ export function DropdownMenuContent({
   testID?: string;
 }>): ReactElement | null {
   const { t } = useTranslation();
-  const { open, setOpen, triggerRef, flushPendingSelect } =
-    useDropdownMenuContext("DropdownMenuContent");
+  const {
+    open,
+    setOpen,
+    triggerRef,
+    contentRef,
+    compact,
+    passThroughBackdrop,
+    flushPendingSelect,
+  } = useDropdownMenuContext("DropdownMenuContent");
   const [modalVisible, setModalVisible] = useState(false);
   const surfaceNativeID = useId();
   const [closing, setClosing] = useState(false);
@@ -697,7 +732,7 @@ export function DropdownMenuContent({
     [],
   );
 
-  const surfaceStyle = styles.content;
+  const surfaceStyle = useMemo(() => [styles.content, compact && styles.contentCompact], [compact]);
   const frameStyle = useMemo(() => {
     const { width: screenWidth } = Dimensions.get("window");
     const resolvedWidthStyle: ViewStyle = fullWidth
@@ -741,10 +776,14 @@ export function DropdownMenuContent({
   );
 
   const overlay = (
-    <View style={[styles.overlay, isWeb ? styles.overlayWeb : null]}>
+    <View
+      style={[styles.overlay, isWeb ? styles.overlayWeb : null]}
+      pointerEvents={isWeb && passThroughBackdrop ? "box-none" : "auto"}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("menu.backdrop")}
+        pointerEvents={isWeb && passThroughBackdrop ? "none" : "auto"}
         style={styles.backdrop}
         onPress={handleClose}
         testID={testID ? `${testID}-backdrop` : undefined}
@@ -757,6 +796,7 @@ export function DropdownMenuContent({
             scrollable,
             scrollViewportStyle,
             content,
+            contentRef,
             surfaceNativeID,
             onExited: () => setModalVisible(false),
           })
@@ -891,7 +931,7 @@ export function DropdownMenuItem({
   tooltip?: string;
 }>): ReactElement {
   const { theme } = useUnistyles();
-  const { selectItem } = useDropdownMenuContext("DropdownMenuItem");
+  const { selectItem, compact } = useDropdownMenuContext("DropdownMenuItem");
 
   // Derive state from status prop (preferred) or legacy loading prop
   const isPending = status === "pending" || loading;
@@ -935,6 +975,7 @@ export function DropdownMenuItem({
       }
       return [
         styles.item,
+        compact && styles.itemCompact,
         selectedStyle,
         selected && (hovered || pressed) && selectedVariant !== "accent"
           ? styles.itemSelectedInteractive
@@ -945,7 +986,7 @@ export function DropdownMenuItem({
         pressed && !isDisabled ? styles.itemPressed : null,
       ];
     },
-    [selected, selectedVariant, isDisabled, muted],
+    [selected, selectedVariant, isDisabled, muted, compact],
   );
 
   const itemTextStyle = useMemo(
@@ -1033,6 +1074,12 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.xl,
     overflow: "hidden",
     ...theme.shadow.md,
+  },
+  contentCompact: { paddingVertical: theme.spacing[1] },
+  itemCompact: {
+    minHeight: 32,
+    paddingVertical: theme.spacing[1.5],
+    paddingHorizontal: theme.spacing[2],
   },
   labelContainer: {
     paddingHorizontal: theme.spacing[3],

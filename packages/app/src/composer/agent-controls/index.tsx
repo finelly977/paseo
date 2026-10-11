@@ -10,7 +10,6 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuSub,
@@ -743,7 +742,15 @@ interface DesktopAgentControlsContentProps {
 
 function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
-  const { onDropdownClose, disabled, displayProvider, provider } = props;
+  const {
+    onDropdownClose,
+    disabled,
+    displayProvider,
+    provider,
+    handleDesktopModelSelect,
+    onApplyAgentProfile,
+    onEditAgentProfiles,
+  } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const modelLabel = resolveSelectedModelLabel({
     providers: props.modelSelectorProviders,
@@ -756,6 +763,28 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     setMenuOpen(false);
     onDropdownClose?.();
   }, [onDropdownClose]);
+  const handleModelSelect = useCallback(
+    (providerId: string, modelId: string) => {
+      handleDesktopModelSelect(providerId, modelId);
+      closeMenu();
+    },
+    [handleDesktopModelSelect, closeMenu],
+  );
+  const handleApplyProfile = useCallback(
+    (profileId: string) => {
+      onApplyAgentProfile?.(profileId);
+      closeMenu();
+    },
+    [onApplyAgentProfile, closeMenu],
+  );
+  const handleEditProfiles = useCallback(() => {
+    closeMenu();
+    onEditAgentProfiles?.();
+  }, [closeMenu, onEditAgentProfiles]);
+  const editProfilesAction = useMemo(
+    () => (onEditAgentProfiles ? handleEditProfiles : undefined),
+    [onEditAgentProfiles, handleEditProfiles],
+  );
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
       setMenuOpen(open);
@@ -806,11 +835,11 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
 
   return (
     <>
-      <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
+      <DropdownMenu compact open={menuOpen} onOpenChange={handleMenuOpenChange}>
         <DropdownMenuTrigger
           disabled={props.disabled}
           accessibilityRole="button"
-          accessibilityLabel={`${t("agentControls.role.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
+          accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
           testID="agent-role-selector"
           style={chipStyle}
         >
@@ -828,14 +857,13 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
         <DropdownMenuContent
           side="top"
           align="start"
-          width={280}
+          width={240}
           maxHeight={420}
           scrollable
           testID="agent-role-menu"
         >
-          <DropdownMenuLabel>{t("agentControls.role.title")}</DropdownMenuLabel>
           {props.providerOptions && props.providerOptions.length > 0 ? (
-            <DropdownMenuSub>
+            <DropdownMenuSub openOnHover={!props.disabled}>
               <DropdownMenuSubTrigger
                 disabled={props.disabled || !props.canSelectProvider}
                 testID="agent-provider-selector"
@@ -864,25 +892,26 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
               providers={props.modelSelectorProviders}
               selectedProvider={props.provider}
               selectedModel={props.selectedModelId ?? ""}
-              onSelect={props.handleDesktopModelSelect}
+              onSelect={handleModelSelect}
               profiles={props.agentProfiles}
-              onApplyProfile={props.onApplyAgentProfile}
-              onEditProfiles={props.onEditAgentProfiles}
+              onApplyProfile={props.onApplyAgentProfile ? handleApplyProfile : undefined}
+              onEditProfiles={editProfilesAction}
               isLoading={props.isModelLoading}
               disabled={props.modelDisabled}
               onOpen={props.onModelSelectorOpen}
-              onClose={closeMenu}
               onRetryProvider={props.onRetryModelProvider}
               isRetryingProvider={props.isRetryingModelProvider}
               serverId={props.modelSelectorServerId}
               desktopPlacement="right-start"
-              desktopMinWidth={360}
+              desktopMinWidth={300}
+              openOnHover
+              compactMenu
               triggerFill
               renderTrigger={renderModelRow}
             />
           ) : null}
           {props.canSelectThinking && props.thinkingOptions ? (
-            <DropdownMenuSub>
+            <DropdownMenuSub openOnHover={!props.disabled}>
               <DropdownMenuSubTrigger disabled={props.disabled} testID="agent-thinking-selector">
                 {t("agentControls.role.thinking")} · {props.displayThinking}
               </DropdownMenuSubTrigger>
@@ -1182,7 +1211,7 @@ function RoleMenuFeature({
       </DropdownMenuItem>
     );
   return (
-    <DropdownMenuSub>
+    <DropdownMenuSub openOnHover={!disabled}>
       <DropdownMenuSubTrigger
         disabled={disabled || !onSetFeature}
         testID={`agent-feature-${feature.id}`}
@@ -1744,8 +1773,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   roleMenuRow: {
     marginHorizontal: theme.spacing[1],
-    paddingHorizontal: theme.spacing[3],
-    minHeight: 36,
+    paddingHorizontal: theme.spacing[2],
+    minHeight: 32,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],

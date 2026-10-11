@@ -339,6 +339,7 @@ function FooterIconButton({
           accessible
           accessibilityLabel={label}
           accessibilityRole="button"
+          hitSlop={4}
           onPress={onPress}
         >
           {({ hovered }) => (
@@ -383,6 +384,7 @@ function FooterAddProjectButton({
           accessible
           accessibilityLabel={label}
           accessibilityRole="button"
+          hitSlop={4}
           onPress={onPress}
         >
           {({ hovered }) => {
@@ -563,7 +565,7 @@ function SidebarFooter({
   const settingsKeys = useShortcutKeys("toggle-settings");
 
   return (
-    <View style={styles.sidebarFooter}>
+    <View style={styles.sidebarFooter} testID="sidebar-footer">
       <FooterAddProjectButton
         onPress={handleOpenProject}
         label={labels.addProject}
@@ -1065,16 +1067,16 @@ const styles = StyleSheet.create((theme) => ({
   sidebarFooter: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: { xs: theme.spacing[2], md: theme.spacing[1] },
     paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[3],
+    paddingVertical: { xs: theme.spacing[2], md: theme.spacing[1] },
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
   footerIconRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: { xs: theme.spacing[2], md: theme.spacing[1] },
     flexShrink: 0,
   },
   footerAddProjectButton: {
@@ -1084,7 +1086,7 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingVertical: theme.spacing[1.5],
+    paddingVertical: theme.spacing[1],
     paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
   },
@@ -1102,8 +1104,8 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundSidebar,
   },
   footerIconButton: {
-    width: 28,
-    height: 28,
+    width: { xs: 36, md: 28 },
+    height: { xs: 36, md: 28 },
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: theme.spacing[1],

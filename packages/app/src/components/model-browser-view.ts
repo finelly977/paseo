@@ -75,3 +75,8 @@ export function resolveInitialModelBrowserView({
 
   return { kind: "all" };
 }
+
+// 112 像素覆盖标题、搜索和配置入口；空列表也保留一行状态，长列表在 320 像素内滚动。
+export function resolveCompactModelMenuHeight(modelCount: number): number {
+  return Math.min(320, 112 + Math.max(modelCount, 1) * 40);
+}
