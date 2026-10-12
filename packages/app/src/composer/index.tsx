@@ -52,6 +52,8 @@ import type { DraftCommandConfig } from "@/hooks/use-agent-commands-query";
 import { encodeImages } from "@/utils/encode-images";
 import { ScheduledSendDialog } from "./scheduled-send-dialog";
 import { ScheduledMessages } from "./scheduled-messages";
+import { appendRestoredScheduledText, type RestoredScheduledDraft } from "./scheduled-draft";
+import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { generateMessageId } from "@/types/stream";
 import { queryClient } from "@/data/query-client";
 import { focusWithRetries } from "@/utils/web-focus";
@@ -115,7 +117,6 @@ import {
 import { composerWorkspaceAttachment } from "@/composer/attachments/workspace";
 import { useWorkspaceAttachmentsForScopes } from "@/attachments/workspace-attachments-store";
 import { droppedItemsToPickedFiles } from "@/composer/attachments/drop";
-import { getFileTypeLabel } from "@/attachments/file-types";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
 import { AttachmentLabel, AttachmentPill, AttachmentThumbnail } from "@/components/attachment-pill";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
@@ -401,10 +402,10 @@ function renderComposerAttachmentPill(args: RenderComposerAttachmentPillArgs): R
       />
     );
   }
-  if (attachment.kind === "file") {
+  if (attachment.kind === "file" || attachment.kind === "restored") {
     return (
       <FileAttachmentPill
-        key={attachment.attachment.id}
+        key={attachment.kind === "restored" ? attachment.id : attachment.attachment.id}
         attachment={attachment}
         index={index}
         disabled={disabled}
@@ -700,7 +701,7 @@ function GithubAttachmentPill({
 }
 
 interface FileAttachmentPillProps {
-  attachment: Extract<ComposerAttachment, { kind: "file" }>;
+  attachment: Extract<ComposerAttachment, { kind: "file" | "restored" }>;
   index: number;
   disabled: boolean;
   onRemove: (index: number) => void;
@@ -718,21 +719,17 @@ function FileAttachmentPill({
   const handleRemove = useCallback(() => {
     onRemove(index);
   }, [onRemove, index]);
-  const fileName = attachment.attachment.fileName;
+  const content = getAgentAttachmentPillContent(attachment.attachment, t);
   return (
     <AttachmentPill
       testID="composer-file-attachment-pill"
       onOpen={noopCallback}
       onRemove={handleRemove}
-      openAccessibilityLabel={fileName}
+      openAccessibilityLabel={content.title}
       removeAccessibilityLabel={removeLabel}
       disabled={disabled}
     >
-      <AttachmentLabel
-        icon={filePillIcon}
-        title={fileName}
-        subtitle={getFileTypeLabel(fileName) ?? t("message.attachments.file")}
-      />
+      <AttachmentLabel icon={content.icon} title={content.title} subtitle={content.subtitle} />
     </AttachmentPill>
   );
 }
@@ -1424,6 +1421,16 @@ export function Composer({
     [attachments, buildOutgoingAttachments, supportsScheduledMessages, toast],
   );
   const closeSchedule = useCallback(() => setScheduledDraft(null), []);
+  const currentInputRef = useRef(userInput);
+  currentInputRef.current = userInput;
+  const restoreScheduledDraft = useCallback(
+    (draft: RestoredScheduledDraft) => {
+      setUserInput(appendRestoredScheduledText(currentInputRef.current, draft.text));
+      setSelectedAttachments((current) => [...current, ...draft.attachments]);
+      focusInput();
+    },
+    [setUserInput, setSelectedAttachments, focusInput],
+  );
   const schedule = useCallback(
     async (minutes: number) => {
       if (!client || !isConnected) throw new Error("主机已断开连接");
@@ -2186,7 +2193,11 @@ export function Composer({
           <View style={styles.inputAreaContent}>
             {queueList}
             {hasAgent && supportsScheduledMessages ? (
-              <ScheduledMessages serverId={serverId} agentId={agentId} />
+              <ScheduledMessages
+                serverId={serverId}
+                agentId={agentId}
+                onRestore={restoreScheduledDraft}
+              />
             ) : null}
             {scheduledDraft ? (
               <ScheduledSendDialog onClose={closeSchedule} onConfirm={schedule} />

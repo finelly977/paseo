@@ -27,7 +27,12 @@ interface ScheduledMessagesOptions {
 
 function summarize(message: ScheduledAgentMessageRecord): ScheduledAgentMessageSummary {
   const { images, attachments, ...summary } = message;
-  return { ...summary, imageCount: images.length, attachmentCount: attachments.length };
+  return {
+    ...summary,
+    imageCount: images.length,
+    attachmentCount: attachments.length,
+    restore: { images, attachments },
+  };
 }
 
 // 定时消息是用户输入，而非计划任务系统提示；由主机持久保存，独立于页面和连接生命周期。

@@ -1876,7 +1876,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   daemonHeaderLabel: {
     flexShrink: 1,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foreground,
   },

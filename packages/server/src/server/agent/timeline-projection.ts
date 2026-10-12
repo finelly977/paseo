@@ -78,6 +78,20 @@ function mergeToolCallDetail(existing: ToolCallDetail, incoming: ToolCallDetail)
   if (incoming.type === "unknown" && existing.type !== "unknown") {
     return existing;
   }
+  if (existing.type === "shell" && incoming.type === "shell") {
+    const merged = { ...existing, ...incoming };
+    if (incoming.output === undefined && existing.output !== undefined)
+      merged.output = existing.output;
+    if (incoming.exitCode == null && existing.exitCode != null) merged.exitCode = existing.exitCode;
+    return merged;
+  }
+  if (existing.type === "unknown" && incoming.type === "unknown") {
+    return {
+      type: "unknown",
+      input: incoming.input ?? existing.input,
+      output: incoming.output ?? existing.output,
+    };
+  }
   return incoming;
 }
 
@@ -97,6 +111,13 @@ function mergeToolCallItems(
     detail: mergedDetail,
     metadata: mergedMetadata,
   };
+
+  // 迟到的运行中快照不能覆盖已经收到的完成结果。
+  if (incoming.status === "running" && existing.status !== "running") {
+    merged.status = existing.status;
+    merged.error = existing.error;
+    return merged;
+  }
 
   if (incoming.status === "failed") {
     merged.error = incoming.error;

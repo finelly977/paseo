@@ -1902,7 +1902,7 @@ const sidebarStyles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
   label: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
     fontWeight: theme.fontWeight.normal,
     flex: 1,
@@ -1922,7 +1922,7 @@ const sidebarStyles = StyleSheet.create((theme) => ({
   pickerTriggerLabel: {
     flex: 1,
     minWidth: 0,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
     fontWeight: theme.fontWeight.normal,
   },

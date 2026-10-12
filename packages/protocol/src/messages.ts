@@ -1317,6 +1317,8 @@ export const ScheduledAgentMessageSummarySchema = ScheduledAgentMessageRecordSch
 }).extend({
   imageCount: z.number().int().nonnegative(),
   attachmentCount: z.number().int().nonnegative(),
+  // COMPAT(scheduledDraftRestore): 2026-10-12 新增，2027-04-12 后可提升最低主机版本。
+  restore: ScheduledAgentMessageRecordSchema.pick({ images: true, attachments: true }).optional(),
 });
 export type ScheduledAgentMessageSummary = z.infer<typeof ScheduledAgentMessageSummarySchema>;
 export const AgentMessageScheduleRequestSchema = z.object({

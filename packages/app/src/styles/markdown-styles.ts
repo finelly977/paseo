@@ -307,12 +307,14 @@ export function createMarkdownStyles(theme: Theme) {
     // =========================================================================
 
     blockquote: {
-      backgroundColor: theme.colors.surface2,
-      borderLeftWidth: 4,
-      borderLeftColor: theme.colors.primary,
-      paddingHorizontal: theme.spacing[4],
-      paddingVertical: theme.spacing[3],
-      marginVertical: theme.spacing[3],
+      backgroundColor: theme.colors.surfaceSidebar,
+      borderWidth: 1,
+      borderLeftWidth: 1,
+      borderColor: theme.colors.border,
+      marginLeft: 0,
+      paddingHorizontal: theme.spacing[3],
+      paddingVertical: theme.spacing[2],
+      marginVertical: theme.spacing[2],
       borderRadius: theme.borderRadius.md,
     },
 

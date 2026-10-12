@@ -28,7 +28,7 @@ Before adding a new component, read `components/ui/`. The primitive usually exis
 
 ## 3. Hierarchy
 
-Hierarchy is conveyed through weight and color, not size. Most labels, titles, and hints across the app are `fontSize.base` or `fontSize.xs`. The distinction between a row's primary line and its secondary line is `foreground` versus `foregroundMuted`.
+Hierarchy is conveyed through weight and color, not size. Most labels, titles, and hints across the app are `fontSize.base` or `fontSize.xs`. 设置项、设置分类及主机名称统一使用 `fontSize.sm`，默认 14 像素，与常驻工具界面的标签一致。 The distinction between a row's primary line and its secondary line is `foreground` versus `foregroundMuted`.
 
 二开使用一套统一的界面与对话字号，默认值为 16 像素；“外观”设置中的界面字号会同步缩放标题、消息正文、输入框和常驻面板，不另设只对移动端生效的正文字号。用户显式选择的字号始终优先，代码字号继续独立配置。对话正文的一至六级 Markdown 标题统一使用 `fontSize.lg`（默认 18 像素）与半粗字重，行高为字号的 1.4 倍；段前后间距与分隔线保留层级，文件预览和紧凑工具详情继续沿用各自标题样式。
 
@@ -40,7 +40,7 @@ Weight has three tiers, applied by role:
 
 The rule, condensed: text that _names_ a surface or a group is `medium`. Text that lives _inside_ a surface or a group is `normal`. Top-of-screen titles are `<ScreenTitle>`, which is lighter still.
 
-Foreground is for the thing being acted on: row titles, section headings, the selected sidebar item. `foregroundMuted` is for context: hints, descriptions, secondary metadata, placeholders, status text. 二开侧栏普通文字使用 `foregroundSidebar`，辅助文字沿用原有灰色。仅会话名称按选中状态区分：选中使用 `foreground`，未选中使用 `foregroundMuted`；不通过整行透明度改变图标、状态、项目名称或选中背景，项目分组、状态分组与两种置顶保持一致。错误和警告保留语义颜色。
+Foreground is for the thing being acted on: row titles, section headings, the selected sidebar item. `foregroundMuted` is for context: hints, descriptions, secondary metadata, placeholders, status text. 二开侧栏普通文字使用 `foregroundSidebar`，辅助文字沿用原有灰色。仅会话名称按选中状态区分：选中使用 `foregroundSidebar`，未选中以该色为基准向侧栏背景混合 6%，两者均不比工作区名称更亮；不通过整行透明度改变图标、状态、项目名称或选中背景，项目分组、状态分组与两种置顶保持一致。错误和警告保留语义颜色。
 
 “外观 → 字体 → 文字亮度”按 70–150% 调整主前景色，100% 保留主题原配色；深色主题提高时趋向白色，浅色主题提高时趋向黑色。主前景的旧别名同步更新，辅助、强调和状态文字颜色不随之改变。每个主题保留未调整的 `baseForeground`，亮度始终从该基准计算；插件主题在构建时提供自己的基准。不得通过全页面透明度或滤镜实现，避免连带改变背景、图片与终端。
 
@@ -271,4 +271,6 @@ The bespoke pills in `packages/app/src/screens/settings/host-page.tsx:97-116`, `
 - 桌面输入框采用正文在上、工具栏在下的结构；模型与思考强度在同一入口中显示，菜单去掉“角色”标题并采用 240 像素紧凑宽度；桌面模型、推理子选项可悬停展开，使用安全区衔接并允许切换相邻行，模型列表按数量收缩且最高 400 像素，权限单独保留图标，提供商功能进入角色菜单。紧凑布局继续使用模型底部面板，不堆放横向子菜单。语音、发送与停止保留原业务状态。
 - 下拉浮层使用圆角表面、内缩选项和带勾的灰色选中行，不使用强调色大片填充。到底部入口是无阴影的 32 像素细箭头圆钮，扩大命中范围而不放大视觉体积。
 
-定时发送使用发送按钮的右键或长按菜单，不添加常驻控件；分钟设置仅在小型弹窗或紧凑底部面板中展示。输入框上方待发送项采用辅助文字的一行摘要与操作菜单，失败原因在摘要下方明确显示。创建失败时保留原草稿与附件。桌面设置浮层只保留右上角关闭按钮，使用共享 `lg` 尺寸的 44 像素点击区和 20 像素图标，移动端全屏导航保留返回。
+定时发送使用发送按钮的右键或长按菜单，不添加常驻控件；分钟设置仅在小型弹窗或紧凑底部面板中展示。输入框上方待发送项采用辅助文字的一行摘要与操作菜单，失败原因在摘要下方明确显示。创建失败时保留原草稿与附件。取消定时发送先下载图片，再取消服务端消息，成功后将正文与完整附件追加回输入框，不覆盖新草稿。桌面设置浮层只保留右上角关闭按钮，使用共享 `lg` 尺寸的 44 像素点击区和 20 像素图标，移动端全屏导航保留返回。
+
+对话与 Markdown 文档引用块使用细边框和轻微灰底，内边距 12×8 像素，不使用粗亮侧边条。模型菜单标签不可收缩，长模型值单行省略；Fast 状态在桌面和移动端首层入口用黄色闪电表达。主机筛选独立放在工作区标题操作区，保留显示偏好中的项目筛选与分组设置。

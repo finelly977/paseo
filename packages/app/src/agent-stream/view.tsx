@@ -40,6 +40,7 @@ import {
   type InlinePathTarget,
 } from "@/components/message";
 import { PlanCard } from "@/components/plan-card";
+import { activeToolCallIds } from "@/tool-calls/execution";
 import type { StreamItem } from "@/types/stream";
 import type { PendingPermission } from "@/types/shared";
 import type {
@@ -474,6 +475,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
     const streamHead = providedStreamHead ?? sessionStreamHead;
+    const activeTurnId = useSessionStore(
+      (state) => state.sessions[resolvedServerId]?.agents.get(agentId)?.activeTurn?.turnId ?? null,
+    );
     const conversationIndexSummaries = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.agentConversationIndex.get(agentId) ??
@@ -684,6 +688,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }
     const effectiveStreamItems = isActive ? streamItems : frozenStreamItemsRef.current;
     const effectiveStreamHead = isActive ? streamHead : frozenStreamHeadRef.current;
+    const executingToolIds = useMemo(
+      () =>
+        activeToolCallIds({
+          tail: effectiveStreamItems,
+          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+          running: context.status === "running",
+          turnId: activeTurnId,
+        }),
+      [effectiveStreamItems, effectiveStreamHead, context.status, activeTurnId],
+    );
     // Keep retained history outside the 48ms live-head flush path.
     const preparedToolCallHistory = useMemo(
       () => prepareToolCallHistory(toolCallDetailLevel, effectiveStreamItems),
@@ -1041,6 +1055,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               toolName={data.name}
               error={data.error}
               status={data.status}
+              executionActive={executingToolIds.has(item.id)}
               detail={data.detail}
               cwd={context.cwd}
               metadata={data.metadata}
@@ -1060,13 +1075,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             args={data.arguments}
             result={data.result}
             status={data.status}
+            executionActive={executingToolIds.has(item.id)}
             isLastInSequence={isLastInSequence}
             onOpenFilePath={handleToolCallOpenFile}
             maxDetailHeight={maxDetailHeight}
           />
         );
       },
-      [context.cwd, setInlineDetailsExpanded, handleToolCallOpenFile],
+      [context.cwd, executingToolIds, setInlineDetailsExpanded, handleToolCallOpenFile],
     );
 
     const renderToolCallItem = useCallback(
@@ -1079,6 +1095,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         return (
           <OverviewToolCallGroupView
             group={group}
+            executionActive={group.run.calls.some((call) => executingToolIds.has(call.id))}
             expanded={expanded}
             isLastInSequence={layoutItem.isLastInToolSequence}
             onExpandedChange={setToolCallGroupExpanded}
@@ -1099,6 +1116,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [
         projectedToolCalls.groupsByHostId,
+        executingToolIds,
         expandedToolCallGroupIds,
         renderSingleToolCallItem,
         setToolCallGroupExpanded,

@@ -179,3 +179,8 @@ limited to the dated compatibility path for daemon timelines created before that
 - App viewed-agent synchronization: `packages/app/src/timeline/viewed-timeline-sync.ts`
 - App stream/timeline reducer: `packages/app/src/timeline/session-stream-reducers.ts`
 - Session wiring: `packages/app/src/contexts/session-context.tsx`
+
+## 工具结束状态的展示边界
+
+- 同一命令的迟到运行中快照不得覆盖已收到的终态，缺字段的 Shell 快照继续保留已收到输出和退出码。
+- 前端以当前原生回合和实际退出码约束运行中动效；已结束回合中缺少结束结果的工具停止动画并明确显示结果缺失，不伪造成功或补造输出。概览分组与展开详情采用相同判断，steer 仍属于原生活动回合。

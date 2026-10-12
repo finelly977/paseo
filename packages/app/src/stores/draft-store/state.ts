@@ -6,6 +6,7 @@ import {
 import { PluginResourceComposerAttachmentSchema } from "@/plugins/attachments";
 import { isEphemeralDraftKey } from "@/stores/draft-keys";
 import { z } from "zod";
+import { AgentAttachmentSchema } from "@getpaseo/protocol/messages";
 
 export const DRAFT_STORE_VERSION = 5;
 export const FINALIZED_DRAFT_TTL_MS = 5 * 60 * 1000;
@@ -82,6 +83,11 @@ export const UserComposerAttachmentSchema: z.ZodType<UserComposerAttachment> = z
   [
     z.strictObject({ kind: z.literal("image"), metadata: AttachmentMetadataSchema }),
     z.strictObject({ kind: z.literal("file"), attachment: UploadedFileSchema }),
+    z.strictObject({
+      kind: z.literal("restored"),
+      id: z.string(),
+      attachment: AgentAttachmentSchema,
+    }),
     z.strictObject({
       kind: z.literal("workspace_file"),
       path: z.string(),

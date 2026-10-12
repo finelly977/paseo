@@ -28,7 +28,10 @@ import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { resolveDesktopSidebarWidth } from "@/components/desktop-sidebar-layout";
 import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
-import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/sidebar-display-preferences-menu";
+import {
+  SidebarDisplayPreferencesMenu,
+  SidebarHostFilterMenu,
+} from "@/components/sidebar/sidebar-display-preferences-menu";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -960,6 +963,7 @@ function WorkspacesSectionHeader() {
             <IconTooltipContent label={t("sidebar.displayPreferences.ariaLabel")} />
           </TooltipContent>
         </Tooltip>
+        <SidebarHostFilterMenu />
       </View>
     </View>
   );

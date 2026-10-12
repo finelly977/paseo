@@ -37,6 +37,7 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { getProviderIcon } from "@/components/provider-icons";
+import { resolveTextBrightness } from "@/appearance/text-brightness";
 
 const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
@@ -555,10 +556,15 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
   },
   workspaceBranchTextSelected: {
-    color: theme.colors.foreground,
+    color: theme.colors.foregroundSidebar,
   },
   workspaceBranchTextUnselected: {
-    color: theme.colors.foregroundMuted,
+    color: resolveTextBrightness({
+      foreground: theme.colors.foregroundSidebar,
+      background: theme.colors.surfaceSidebar,
+      colorScheme: theme.colorScheme,
+      brightness: 94,
+    }),
   },
   workspaceBranchTextFlexible: {
     flex: 1,

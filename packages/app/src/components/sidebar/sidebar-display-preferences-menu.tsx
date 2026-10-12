@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { Text, View, type PressableStateCallbackType } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Settings2 } from "lucide-react-native";
+import { Settings2, Server } from "lucide-react-native";
 import type { Theme } from "@/styles/theme";
 import {
   DropdownMenu,
@@ -23,6 +23,7 @@ import {
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 
 const ThemedSettings2 = withUnistyles(Settings2);
+const ThemedServer = withUnistyles(Server);
 const filterColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
 const GROUP_MODE_ITEMS: Array<{ value: SidebarGroupMode; labelKey: "project" | "status" }> = [
@@ -51,16 +52,15 @@ export function SidebarDisplayPreferencesMenu() {
   const { t } = useTranslation();
   const groupMode = useSidebarViewStore((state) => state.groupMode);
   const projectSortMode = useSidebarViewStore((state) => state.projectSortMode);
-  const hostFilters = useSidebarViewStore((state) => state.hostFilters);
+
   const projectFilters = useSidebarViewStore((state) => state.projectFilters);
   const setGroupMode = useSidebarViewStore((state) => state.setGroupMode);
   const setProjectSortMode = useSidebarViewStore((state) => state.setProjectSortMode);
-  const toggleHostFilter = useSidebarViewStore((state) => state.toggleHostFilter);
-  const clearHostFilters = useSidebarViewStore((state) => state.clearHostFilters);
+
   const toggleProjectFilter = useSidebarViewStore((state) => state.toggleProjectFilter);
   const clearProjectFilters = useSidebarViewStore((state) => state.clearProjectFilters);
   const { allProjects, resolvedProjectFilters } = useSidebarModel();
-  const hosts = useHosts();
+
   const {
     settings: { workspaceTitleSource },
     updateSettings,
@@ -94,8 +94,6 @@ export function SidebarDisplayPreferencesMenu() {
     [],
   );
 
-  const showHostFilter = hosts.length > 1;
-  const allHostsSelected = hostFilters.length === 0;
   const showProjectFilter = allProjects.length > 1 || projectFilters.length > 0;
   const allProjectsSelected = resolvedProjectFilters.length === 0;
 
@@ -143,31 +141,6 @@ export function SidebarDisplayPreferencesMenu() {
             ))}
           </>
         ) : null}
-        {showHostFilter ? (
-          <>
-            <DropdownMenuSeparator />
-            <View style={styles.menuHeader}>
-              <Text style={styles.menuHeaderLabel}>{t("sidebar.displayPreferences.filter")}</Text>
-            </View>
-            <DropdownMenuItem
-              testID="sidebar-host-filter-all"
-              selected={allHostsSelected}
-              closeOnSelect={false}
-              onSelect={clearHostFilters}
-            >
-              {t("sidebar.displayPreferences.allHosts")}
-            </DropdownMenuItem>
-            {hosts.map((host) => (
-              <HostFilterItem
-                key={host.serverId}
-                label={host.label?.trim() || host.serverId}
-                serverId={host.serverId}
-                selected={hostFilters.includes(host.serverId)}
-                onToggle={toggleHostFilter}
-              />
-            ))}
-          </>
-        ) : null}
         {showProjectFilter ? (
           <>
             <DropdownMenuSeparator />
@@ -209,6 +182,64 @@ export function SidebarDisplayPreferencesMenu() {
             isSelected={workspaceTitleSource === item.value}
             testIDPrefix="sidebar-workspace-title-source"
             onSelect={handleWorkspaceTitleSourceSelect}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function SidebarHostFilterMenu() {
+  const hosts = useHosts();
+  const hostFilters = useSidebarViewStore((state) => state.hostFilters);
+  const toggleHostFilter = useSidebarViewStore((state) => state.toggleHostFilter);
+  const clearHostFilters = useSidebarViewStore((state) => state.clearHostFilters);
+  const filtered = hostFilters.length > 0;
+  const triggerStyle = useCallback(
+    ({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.trigger,
+      (hovered || filtered) && styles.triggerHovered,
+    ],
+    [filtered],
+  );
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        style={triggerStyle}
+        accessibilityLabel={
+          filtered ? `筛选主机：已选 ${hostFilters.length} 台` : "筛选主机：全部主机"
+        }
+        testID="sidebar-host-filter-menu"
+      >
+        <ThemedServer size={14} uniProps={filterColorMapping} />
+        {filtered ? <View style={styles.filterDot} /> : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        width={220}
+        maxHeight={360}
+        scrollable
+        testID="sidebar-host-filter-content"
+      >
+        <View style={styles.menuHeader}>
+          <Text style={styles.menuHeaderLabel}>显示哪些主机</Text>
+        </View>
+        <DropdownMenuItem
+          testID="sidebar-host-filter-all"
+          selected={!filtered}
+          closeOnSelect={false}
+          onSelect={clearHostFilters}
+        >
+          全部主机
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {hosts.map((host) => (
+          <HostFilterItem
+            key={host.serverId}
+            label={host.label?.trim() || host.serverId}
+            serverId={host.serverId}
+            selected={hostFilters.includes(host.serverId)}
+            onToggle={toggleHostFilter}
           />
         ))}
       </DropdownMenuContent>
@@ -302,6 +333,15 @@ function HostFilterItem({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  filterDot: {
+    position: "absolute",
+    right: 3,
+    top: 3,
+    width: 5,
+    height: 5,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.accent,
+  },
   trigger: {
     width: 28,
     height: 28,

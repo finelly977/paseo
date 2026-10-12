@@ -7,6 +7,20 @@ import {
 import { darkTheme } from "./theme";
 
 describe("createMarkdownStyles", () => {
+  it("引用块采用细边框与紧凑留白，不再显示粗亮侧边条", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.blockquote).toEqual({
+      backgroundColor: darkTheme.colors.surfaceSidebar,
+      borderWidth: 1,
+      borderLeftWidth: 1,
+      borderColor: darkTheme.colors.border,
+      marginLeft: 0,
+      paddingHorizontal: darkTheme.spacing[3],
+      paddingVertical: darkTheme.spacing[2],
+      marginVertical: darkTheme.spacing[2],
+      borderRadius: darkTheme.borderRadius.md,
+    });
+  });
   it("对话六级标题统一字号和行高，文档预览保留原有层级", () => {
     const conversation = createConversationMarkdownStyles(darkTheme);
     const document = createMarkdownStyles(darkTheme);

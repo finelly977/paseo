@@ -9,6 +9,40 @@ import {
 } from "./timeline-projection.js";
 
 describe("projectTimelineRows", () => {
+  test("迟到的运行中快照不覆盖命令退出状态和输出", () => {
+    const rows: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        turnId: "turn",
+        timestamp: new Date(0).toISOString(),
+        item: {
+          type: "tool_call",
+          callId: "cmd",
+          name: "exec_command",
+          status: "completed",
+          error: null,
+          detail: { type: "shell", command: "echo done", output: "done", exitCode: 0 },
+        },
+      },
+      {
+        seq: 2,
+        turnId: "turn",
+        timestamp: new Date(1).toISOString(),
+        item: {
+          type: "tool_call",
+          callId: "cmd",
+          name: "exec_command",
+          status: "running",
+          error: null,
+          detail: { type: "shell", command: "echo done", exitCode: null },
+        },
+      },
+    ];
+    expect(projectTimelineRows({ rows, mode: "projected" })[0].item).toMatchObject({
+      status: "completed",
+      detail: { output: "done", exitCode: 0 },
+    });
+  });
   test("无消息标识的独立图片不会在历史投影中被拼入相邻正文", () => {
     const texts = ["开始检查。", "![Image](file:///C:/repo/screenshot.png)", "检查完成。"];
     const rows: AgentTimelineRow[] = texts.map((text, index) => ({

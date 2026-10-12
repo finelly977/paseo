@@ -56,7 +56,7 @@ export const settingsStyles = StyleSheet.create((theme) => ({
   },
   rowTitle: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.sm,
   },
   rowHint: {
     color: theme.colors.foregroundMuted,

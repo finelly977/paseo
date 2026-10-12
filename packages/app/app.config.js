@@ -4,6 +4,7 @@ const pkg = require("./package.json");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const appVariant = process.env.APP_VARIANT ?? "production";
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
+const isLocalApkBuild = process.env.PASEO_LOCAL_APK === "1";
 
 const buildProfile = isFdroidBuild
   ? {
@@ -131,6 +132,7 @@ export default {
     updates: {
       url: "https://u.expo.dev/0e7f65ce-0367-46c8-a238-2b65963d235a",
       ...buildProfile.updates,
+      ...(isLocalApkBuild ? { enabled: false } : {}),
     },
     ios: {
       supportsTablet: true,

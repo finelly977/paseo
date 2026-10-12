@@ -62,6 +62,7 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "reac
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
+import { resolveToolCallStatus } from "@/tool-calls/execution";
 import type {
   StreamItem,
   TaskActivity,
@@ -3402,6 +3403,7 @@ interface ToolCallProps {
   result?: unknown;
   error?: unknown;
   status: "executing" | "running" | "completed" | "failed" | "canceled";
+  executionActive?: boolean;
   detail?: ToolCallDetail;
   cwd?: string;
   metadata?: Record<string, unknown>;
@@ -3421,6 +3423,7 @@ export const ToolCall = memo(function ToolCall({
   result,
   error,
   status,
+  executionActive = true,
   detail,
   cwd,
   metadata,
@@ -3438,6 +3441,7 @@ export const ToolCall = memo(function ToolCall({
 
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
+  const renderedStatus = resolveToolCallStatus(status, detail);
 
   const effectiveDetail = useMemo<ToolCallDetail | undefined>(() => {
     if (detail) {
@@ -3457,14 +3461,14 @@ export const ToolCall = memo(function ToolCall({
     () =>
       buildToolCallPresentation({
         toolName,
-        status,
+        status: renderedStatus,
         error: error ?? null,
         detail: effectiveDetail,
         metadata,
         cwd,
         resolveIcon: resolveToolCallIcon,
       }),
-    [toolName, status, error, effectiveDetail, metadata, cwd],
+    [toolName, renderedStatus, error, effectiveDetail, metadata, cwd],
   );
   const handleOpenFile = useMemo(() => {
     const openFilePath = presentation.openFilePath;
@@ -3483,7 +3487,7 @@ export const ToolCall = memo(function ToolCall({
         detail: effectiveDetail,
         errorText: presentation.errorText,
         icon: presentation.icon,
-        showLoadingSkeleton: presentation.isLoadingDetails,
+        showLoadingSkeleton: presentation.isLoadingDetails && executionActive,
       });
     } else {
       setIsExpanded((prev) => !prev);
@@ -3498,6 +3502,7 @@ export const ToolCall = memo(function ToolCall({
     presentation.icon,
     presentation.isLoadingDetails,
     effectiveDetail,
+    executionActive,
   ]);
 
   useEffect(() => {
@@ -3536,7 +3541,7 @@ export const ToolCall = memo(function ToolCall({
         detail={effectiveDetail}
         errorText={presentation.errorText}
         maxHeight={maxDetailHeight}
-        showLoadingSkeleton={presentation.isLoadingDetails}
+        showLoadingSkeleton={presentation.isLoadingDetails && executionActive}
       />
     );
   }, [
@@ -3545,6 +3550,7 @@ export const ToolCall = memo(function ToolCall({
     effectiveDetail,
     presentation.errorText,
     presentation.isLoadingDetails,
+    executionActive,
     maxDetailHeight,
   ]);
 
@@ -3562,14 +3568,20 @@ export const ToolCall = memo(function ToolCall({
     <ExpandableBadge
       testID="tool-call-badge"
       label={presentation.displayName}
-      secondaryLabel={presentation.summary}
+      secondaryLabel={
+        !executionActive && (renderedStatus === "running" || renderedStatus === "executing")
+          ? "回合已结束，未收到工具结束结果"
+          : presentation.summary
+      }
       icon={presentation.icon}
       isExpanded={shouldRenderInline && isExpanded}
       onToggle={presentation.canOpenDetails ? handleToggle : undefined}
       onOpenFile={handleOpenFile}
       renderDetails={presentation.canOpenDetails && shouldRenderInline ? renderDetails : undefined}
-      isLoading={status === "running" || status === "executing"}
-      isError={status === "failed"}
+      isLoading={
+        executionActive && (renderedStatus === "running" || renderedStatus === "executing")
+      }
+      isError={renderedStatus === "failed"}
       isLastInSequence={isLastInSequence}
       disableOuterSpacing={disableOuterSpacing}
       onDetailHoverChange={onInlineDetailsHoverChange}
@@ -3583,6 +3595,7 @@ function areToolCallPropsEqual(previous: ToolCallProps, next: ToolCallProps) {
   if (previous.result !== next.result) return false;
   if (previous.error !== next.error) return false;
   if (previous.status !== next.status) return false;
+  if (previous.executionActive !== next.executionActive) return false;
   if (previous.detail !== next.detail) return false;
   if (previous.cwd !== next.cwd) return false;
   if (previous.metadata !== next.metadata) return false;

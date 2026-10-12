@@ -1355,6 +1355,13 @@ export function mergeToolCallDetail(
   if (incoming.type === "unknown" && existing.type !== "unknown") {
     return existing;
   }
+  if (existing.type === "shell" && incoming.type === "shell") {
+    const merged = { ...existing, ...incoming };
+    if (incoming.output === undefined && existing.output !== undefined)
+      merged.output = existing.output;
+    if (incoming.exitCode == null && existing.exitCode != null) merged.exitCode = existing.exitCode;
+    return hasSameIncomingFields(existing, merged) ? existing : merged;
+  }
 
   if (existing.type === "unknown" && incoming.type === "unknown") {
     const input = mergeUnknownValue(existing.input, incoming.input);

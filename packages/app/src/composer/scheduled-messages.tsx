@@ -12,8 +12,18 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import type { ScheduledAgentMessageSummary } from "@getpaseo/protocol/messages";
+import { prepareScheduledDraft, type RestoredScheduledDraft } from "./scheduled-draft";
+import { resolveProviderUserImage } from "@/attachments/provider-user-image";
 
-export function ScheduledMessages({ serverId, agentId }: { serverId: string; agentId: string }) {
+export function ScheduledMessages({
+  serverId,
+  agentId,
+  onRestore,
+}: {
+  serverId: string;
+  agentId: string;
+  onRestore: (draft: RestoredScheduledDraft) => void;
+}) {
   const client = useHostRuntimeClient(serverId);
   const connected = useHostRuntimeIsConnected(serverId);
   const query = useFetchQuery({
@@ -37,6 +47,7 @@ export function ScheduledMessages({ serverId, agentId }: { serverId: string; age
           message={message}
           serverId={serverId}
           onChange={query.refetch}
+          onRestore={onRestore}
         />
       ))}
     </View>
@@ -46,10 +57,12 @@ function ScheduledMessageRow({
   message,
   serverId,
   onChange,
+  onRestore,
 }: {
   message: ScheduledAgentMessageSummary;
   serverId: string;
   onChange: () => Promise<unknown>;
+  onRestore: (draft: RestoredScheduledDraft) => void;
 }) {
   const client = useHostRuntimeClient(serverId);
   const toast = useToast();
@@ -71,11 +84,18 @@ function ScheduledMessageRow({
     (action: "cancel" | "send") => {
       if (pending || !client) return;
       setPending(true);
-      const operation =
-        action === "cancel"
-          ? client.cancelScheduledAgentMessage(message.agentId, message.id)
-          : client.sendScheduledAgentMessageNow(message.agentId, message.id);
-      void operation
+      const operation = async () => {
+        if (action === "cancel") {
+          const draft = await prepareScheduledDraft(message, (image) =>
+            resolveProviderUserImage({ image, serverId, client }),
+          );
+          await client.cancelScheduledAgentMessage(message.agentId, message.id);
+          onRestore(draft);
+        } else {
+          await client.sendScheduledAgentMessageNow(message.agentId, message.id);
+        }
+      };
+      void operation()
         .then(onChange)
         .catch((error) => {
           console.error("[Composer] Scheduled message action failed", error);
@@ -83,7 +103,7 @@ function ScheduledMessageRow({
         })
         .finally(() => setPending(false));
     },
-    [client, message.agentId, message.id, onChange, pending, toast],
+    [client, message, serverId, onChange, onRestore, pending, toast],
   );
   const send = useCallback(() => run("send"), [run]);
   const cancel = useCallback(() => run("cancel"), [run]);
@@ -112,7 +132,7 @@ function ScheduledMessageRow({
               {message.status === "failed" ? "重试发送" : "立即发送"}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={cancel} leading={cross}>
-              取消发送
+              取消并恢复到输入框
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

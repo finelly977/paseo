@@ -24,6 +24,14 @@ import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display"
 type CanonicalToolStatus = "running" | "completed" | "failed" | "canceled";
 
 describe("独立图片结果的消息边界", () => {
+  it("迟到的空 Shell 快照保留已经收到的命令输出和退出码", () => {
+    expect(
+      mergeToolCallDetail(
+        { type: "shell", command: "echo done", output: "done", exitCode: 0 },
+        { type: "shell", command: "echo done", output: undefined, exitCode: null },
+      ),
+    ).toEqual({ type: "shell", command: "echo done", output: "done", exitCode: 0 });
+  });
   it("同一提供方消息内的普通图片与说明仍按流式正文合并", () => {
     const image = "![Image](file:///C:/repo/screenshot.png)";
     const caption = "\n\n这是正文中的图片说明。";

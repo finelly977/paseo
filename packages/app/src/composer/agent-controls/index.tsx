@@ -70,6 +70,7 @@ import {
   type AgentControlIconTone,
 } from "@/composer/agent-controls/control";
 import { CompactModelSheet } from "@/composer/agent-controls/model-sheet";
+import { FastModeIndicator } from "./fast-mode-indicator";
 import {
   useAgentProfilePicker,
   type AgentProfileApplyTarget,
@@ -823,7 +824,9 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
       <View
         style={[styles.roleMenuRow, (hovered || pressed || isOpen) && styles.roleMenuRowActive]}
       >
-        <Text style={styles.roleMenuLabel}>{t("agentControls.model.title")}</Text>
+        <Text numberOfLines={1} style={styles.roleMenuLabel}>
+          {t("agentControls.model.title")}
+        </Text>
         <Text numberOfLines={1} style={styles.roleMenuValue}>
           {selectedModelLabel}
         </Text>
@@ -844,6 +847,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           style={chipStyle}
         >
           <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
+          <FastModeIndicator features={props.features} />
           <Text numberOfLines={1} style={styles.roleChipText}>
             {label}
           </Text>
@@ -1123,6 +1127,7 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
 
   return canSelectModel ? (
     <CompactModelSheet
+      features={features}
       providerLocked={providerLocked}
       providers={modelSelectorProviders}
       selectedProvider={provider}
@@ -1788,10 +1793,12 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.md,
   },
   roleMenuRowActive: { backgroundColor: theme.colors.surface3 },
-  roleMenuLabel: { fontSize: theme.fontSize.sm, color: theme.colors.foreground },
+  roleMenuLabel: { flexShrink: 0, fontSize: theme.fontSize.sm, color: theme.colors.foreground },
   roleMenuValue: {
     minWidth: 0,
+    flex: 1,
     flexShrink: 1,
+    textAlign: "right",
     marginLeft: "auto",
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,

@@ -10,6 +10,7 @@ import { OverviewToolCallGroupSheet } from "./sheet";
 
 interface OverviewGroupProps {
   group: OverviewToolCallGroup;
+  executionActive: boolean;
   expanded: boolean;
   isLastInSequence: boolean;
   onExpandedChange: (groupId: string, expanded: boolean) => void;
@@ -55,6 +56,7 @@ function useOverviewSummary(summary: OverviewSummary): string {
 
 export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView({
   group,
+  executionActive,
   expanded,
   isLastInSequence,
   onExpandedChange,
@@ -95,7 +97,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
           testID="tool-call-group"
           label={aggregateSummary}
           icon={Wrench}
-          isLoading={group.isLoading}
+          isLoading={group.isLoading && executionActive}
           isExpanded={false}
           isLastInSequence={isLastInSequence}
           onToggle={toggle}
@@ -112,7 +114,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
       testID="tool-call-group"
       label={aggregateSummary}
       icon={Wrench}
-      isLoading={group.isLoading}
+      isLoading={group.isLoading && executionActive}
       isExpanded={expanded}
       isLastInSequence={isLastInSequence}
       onToggle={toggle}

@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Keyboard, ScrollView, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import type { AgentProvider } from "@getpaseo/protocol/agent-types";
+import type { AgentProvider, AgentFeature } from "@getpaseo/protocol/agent-types";
+import { FastModeIndicator } from "./fast-mode-indicator";
 import type { AgentProfilePicker } from "@/agent-profiles";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -36,6 +37,7 @@ interface CompactModelSheetProps {
   disabled?: boolean;
   serverId?: string | null;
   glyphSize: number;
+  features?: readonly AgentFeature[];
   children: ReactNode;
 }
 
@@ -61,6 +63,7 @@ export function CompactModelSheet({
   disabled = false,
   serverId = null,
   glyphSize,
+  features,
   children,
 }: CompactModelSheetProps) {
   const { t } = useTranslation();
@@ -163,6 +166,7 @@ export function CompactModelSheet({
         <Text style={styles.triggerText} numberOfLines={1}>
           {shortModelLabel(browser.triggerLabel)}
         </Text>
+        <FastModeIndicator features={features} />
       </ComboboxTrigger>
 
       <AdaptiveModalSheet

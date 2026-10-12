@@ -173,3 +173,25 @@ npx eas build:view <build-id>
 The Play Console (Internal testing → Production tracks) is the final confirmation that the binary reached the store.
 
 See [docs/release.md](release.md) for the full mobile-build babysitting flow.
+
+## 二开本地 APK
+
+本地侧载安装包在 Expo prebuild 与 Gradle 两阶段都设置 `PASEO_LOCAL_APK=1`，停用指向上游 Expo 项目的 OTA 更新，保留相机配对等常规功能。不要使用上游 EAS 账号或发布上游商店版本。
+
+Windows 可直接使用已安装 JDK、Android SDK 和生成工程内的 `gradlew.bat`。依赖与 SDK 下载完成后，执行：
+
+```powershell
+$env:APP_VARIANT = 'production'
+$env:PASEO_LOCAL_APK = '1'
+$env:ANDROID_HOME = '<Android SDK 绝对路径>'
+$env:NODE_ENV = 'production'
+npm.cmd run build:app-deps
+Push-Location 'packages\app'
+npx.cmd expo prebuild --platform android --no-install
+Push-Location 'android'
+.\gradlew.bat :app:assembleRelease '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=2 '-Dorg.gradle.parallel=false' -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease
+Pop-Location
+Pop-Location
+```
+
+产物位于 `packages/app/android/app/build/outputs/apk/release/app-release.apk`。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10。默认本地生成工程使用开发测试签名，不能覆盖签名不同的官方安装包；正式分发前必须配置独立持久的发布密钥，不能误报为官方签名。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。

@@ -43,6 +43,34 @@ afterEach(async () => {
   directories.length = 0;
 });
 describe("普通定时消息", () => {
+  it("列表与取消结果返回完整恢复数据，取消后图片仍可读取", async () => {
+    const t = await setup();
+    const attachments = [
+      {
+        type: "text" as const,
+        mimeType: "text/plain" as const,
+        title: "引用",
+        text: "完整引用内容",
+      },
+    ];
+    const image = { data: "aW1hZ2U=", mimeType: "image/png" };
+    const message = await t.service.create({
+      agentId,
+      clientMessageId: "restore",
+      text: "保留正文",
+      delayMinutes: 5,
+      images: [image],
+      attachments,
+    });
+    expect((await t.service.list(agentId))[0].restore).toEqual(message.restore);
+    const cancelled = await t.service.cancel(agentId, message.id);
+    expect(cancelled.restore?.attachments).toEqual(attachments);
+    expect(cancelled.restore?.images).toHaveLength(1);
+    const path = cancelled.restore?.images[0].path;
+    if (!path) throw new Error("取消结果缺少图片路径");
+    expect((await readFile(path)).toString("base64")).toBe(image.data);
+    expect(await t.service.list(agentId)).toEqual([]);
+  });
   it("取消与到期并发时不会继续派发，重复立即发送被拒绝", async () => {
     const t = await setup();
     const a = await t.service.create({
