@@ -1497,7 +1497,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     () => (
       <Button
         variant="ghost"
-        size="xs"
+        size="lg"
         leftIcon={X}
         accessibilityLabel={t("common.actions.close")}
         onPress={handleBackToWorkspace}

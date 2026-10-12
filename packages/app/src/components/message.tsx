@@ -1776,6 +1776,7 @@ const MemoizedMarkdownBlock = React.memo(function MemoizedMarkdownBlock({
   return (
     <MarkdownRenderer
       text={text}
+      conversation
       enableHtmlish={false}
       rules={rules}
       markdownit={parser}

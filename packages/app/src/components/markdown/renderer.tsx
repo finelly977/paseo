@@ -30,7 +30,11 @@ import { MarkdownTableCellText } from "@/components/markdown-text-selection";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { createMarkdownParser } from "@/utils/markdown-parser";
-import { createCompactMarkdownStyles, createMarkdownStyles } from "@/styles/markdown-styles";
+import {
+  createCompactMarkdownStyles,
+  createConversationMarkdownStyles,
+  createMarkdownStyles,
+} from "@/styles/markdown-styles";
 import type { Theme } from "@/styles/theme";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { isNative } from "@/constants/platform";
@@ -48,7 +52,10 @@ export type MarkdownStyles = Record<string, TextStyle & ViewStyle & { [key: stri
 
 interface MarkdownWithStableRendererProps {
   children: ReactNode;
-  style: ReturnType<typeof createMarkdownStyles> | ReturnType<typeof createCompactMarkdownStyles>;
+  style:
+    | ReturnType<typeof createMarkdownStyles>
+    | ReturnType<typeof createCompactMarkdownStyles>
+    | ReturnType<typeof createConversationMarkdownStyles>;
   rules?: RenderRules;
   markdownit?: ReturnType<typeof MarkdownIt>;
   onLinkPress?: (url: string) => boolean;
@@ -67,6 +74,10 @@ function compactMarkdownStyleMapping(theme: Theme): Partial<MarkdownWithStableRe
   return { style: createCompactMarkdownStyles(theme) };
 }
 
+function conversationMarkdownStyleMapping(theme: Theme): Partial<MarkdownWithStableRendererProps> {
+  return { style: createConversationMarkdownStyles(theme) };
+}
+
 // 用于 PR 评论和 Markdown 文件预览；智能体消息会传入自己的解析器。
 // 文件预览必须忠实显示磁盘内容，因此禁止排版字符替换。
 const defaultMarkdownParser = createMarkdownParser({ linkify: true });
@@ -75,6 +86,7 @@ const MARKDOWN_LIST_ITEM_CONTENT_FLEX: ViewStyle = { flex: 1, flexShrink: 1, min
 export interface MarkdownRendererProps {
   text: string;
   compact?: boolean;
+  conversation?: boolean;
   rules?: RenderRules;
   markdownit?: ReturnType<typeof MarkdownIt>;
   onLinkPress?: (url: string) => boolean;
@@ -86,6 +98,7 @@ export interface MarkdownRendererProps {
 export function MarkdownRenderer({
   text,
   compact = false,
+  conversation = false,
   rules,
   markdownit = defaultMarkdownParser,
   onLinkPress,
@@ -101,6 +114,7 @@ export function MarkdownRenderer({
   const rendererProps = useMemo(
     () => ({
       compact,
+      conversation,
       rules: markdownRules,
       markdownit,
       onLinkPress,
@@ -110,6 +124,7 @@ export function MarkdownRenderer({
     [
       allowedImageHandlers,
       compact,
+      conversation,
       markdownRules,
       markdownit,
       onLinkPress,
@@ -199,13 +214,19 @@ function MarkdownPart({
 function MarkdownFragment({
   text,
   compact,
+  conversation,
   rules,
   markdownit,
   onLinkPress,
   allowedImageHandlers,
   topLevelMaxExceededItem,
 }: MarkdownRendererProps & { rules: RenderRules }) {
-  const uniProps = compact ? compactMarkdownStyleMapping : markdownStyleMapping;
+  let uniProps = markdownStyleMapping;
+  if (compact) {
+    uniProps = compactMarkdownStyleMapping;
+  } else if (conversation) {
+    uniProps = conversationMarkdownStyleMapping;
+  }
   return (
     <ThemedMarkdown
       uniProps={uniProps}

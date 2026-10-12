@@ -111,6 +111,7 @@ export function SidebarWorkspaceRowFrame({
 
 export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowContent({
   workspace,
+  selected,
   subtitle,
   scriptIconKind = null,
   isLoading,
@@ -120,6 +121,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
+  selected: boolean;
   subtitle?: string | null;
   scriptIconKind?: SidebarWorkspaceScriptIconKind | null;
   isLoading: boolean;
@@ -136,9 +138,10 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
+      selected ? styles.workspaceBranchTextSelected : styles.workspaceBranchTextUnselected,
       scriptIconKind ? styles.workspaceBranchTextWithAccessory : styles.workspaceBranchTextFlexible,
     ],
-    [scriptIconKind],
+    [scriptIconKind, selected],
   );
 
   return (
@@ -546,11 +549,16 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.palette.green[500],
   },
   workspaceBranchText: {
-    color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: "400",
     lineHeight: 20,
     minWidth: 0,
+  },
+  workspaceBranchTextSelected: {
+    color: theme.colors.foreground,
+  },
+  workspaceBranchTextUnselected: {
+    color: theme.colors.foregroundMuted,
   },
   workspaceBranchTextFlexible: {
     flex: 1,

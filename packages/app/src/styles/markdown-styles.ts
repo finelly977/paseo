@@ -347,6 +347,32 @@ export function createMarkdownStyles(theme: Theme) {
   };
 }
 
+// 对话标题保持克制，文档预览继续使用完整的 Markdown 层级。
+export function createConversationMarkdownStyles(theme: Theme) {
+  const baseStyles = createMarkdownStyles(theme);
+  const headingStyle = {
+    fontSize: theme.fontSize.lg,
+    lineHeight: Math.round(theme.fontSize.lg * 1.4),
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.foreground,
+  };
+
+  return {
+    ...baseStyles,
+    heading1: { ...baseStyles.heading1, ...headingStyle },
+    heading2: { ...baseStyles.heading2, ...headingStyle },
+    heading3: { ...baseStyles.heading3, ...headingStyle },
+    heading4: { ...baseStyles.heading4, ...headingStyle },
+    heading5: { ...baseStyles.heading5, ...headingStyle },
+    heading6: {
+      ...baseStyles.heading6,
+      ...headingStyle,
+      textTransform: "none" as const,
+      letterSpacing: 0,
+    },
+  };
+}
+
 /**
  * Creates a smaller variant of markdown styles for compact UI elements
  * like thought bubbles, tooltips, or side panels.

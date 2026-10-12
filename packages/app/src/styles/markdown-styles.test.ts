@@ -1,8 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { createCompactMarkdownStyles, createMarkdownStyles } from "./markdown-styles";
+import {
+  createCompactMarkdownStyles,
+  createConversationMarkdownStyles,
+  createMarkdownStyles,
+} from "./markdown-styles";
 import { darkTheme } from "./theme";
 
 describe("createMarkdownStyles", () => {
+  it("对话六级标题统一字号和行高，文档预览保留原有层级", () => {
+    const conversation = createConversationMarkdownStyles(darkTheme);
+    const document = createMarkdownStyles(darkTheme);
+    const headings = [
+      conversation.heading1,
+      conversation.heading2,
+      conversation.heading3,
+      conversation.heading4,
+      conversation.heading5,
+      conversation.heading6,
+    ];
+
+    for (const heading of headings) {
+      expect(heading).toMatchObject({
+        fontSize: darkTheme.fontSize.lg,
+        lineHeight: Math.round(darkTheme.fontSize.lg * 1.4),
+        fontWeight: darkTheme.fontWeight.semibold,
+        color: darkTheme.colors.foreground,
+      });
+    }
+    expect(document.heading1.fontSize).toBe(darkTheme.fontSize["3xl"]);
+    expect(document.heading2.fontSize).toBe(darkTheme.fontSize["2xl"]);
+    expect(conversation.body).toEqual(document.body);
+    expect(conversation.code_inline).toEqual(document.code_inline);
+  });
+
+  it("对话标题行高随界面字号同步缩放，不改变六级标题的原文大小写", () => {
+    const styles = createConversationMarkdownStyles({
+      ...darkTheme,
+      fontSize: { ...darkTheme.fontSize, lg: 24 },
+    });
+    expect(styles.heading1).toMatchObject({ fontSize: 24, lineHeight: 34 });
+    expect(styles.heading6).toMatchObject({
+      fontSize: 24,
+      lineHeight: 34,
+      textTransform: "none",
+      letterSpacing: 0,
+    });
+  });
+
   it("applies shrink-and-wrap constraints to long markdown text and links", () => {
     const styles = createMarkdownStyles(darkTheme);
 

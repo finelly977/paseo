@@ -309,6 +309,7 @@ function WorkspaceRowBody({
             >
               <SidebarWorkspaceRowContent
                 workspace={workspace}
+                selected={selected}
                 subtitle={subtitle}
                 scriptIconKind={scriptIconKind}
                 isLoading={isArchiving || isCreating}
