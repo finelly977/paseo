@@ -18,6 +18,15 @@ const customWebPlatform = (process.env.PASEO_WEB_PLATFORM ?? "")
   .toLowerCase();
 
 const config = getDefaultConfig(projectRoot);
+// 原生打包以应用为服务根时，仍需解析仓库内的共享包和根依赖。
+if (process.env.EXPO_NO_METRO_WORKSPACE_ROOT === "1") {
+  const workspaceRoot = path.resolve(projectRoot, "../..");
+  config.watchFolders = [
+    path.join(workspaceRoot, "packages"),
+    path.join(workspaceRoot, "node_modules"),
+  ];
+  config.resolver.nodeModulesPaths = [appNodeModulesRoot, path.join(workspaceRoot, "node_modules")];
+}
 const defaultResolveRequest = config.resolver.resolveRequest ?? resolve;
 
 // Keep app exports deterministic across dev machines and CI. Metro's Watchman

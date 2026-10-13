@@ -183,6 +183,7 @@ Windows 可直接使用已安装 JDK、Android SDK 和生成工程内的 `gradle
 ```powershell
 $env:APP_VARIANT = 'production'
 $env:PASEO_LOCAL_APK = '1'
+$env:EXPO_NO_METRO_WORKSPACE_ROOT = '1'
 $env:ANDROID_HOME = '<Android SDK 绝对路径>'
 $env:NODE_ENV = 'production'
 npm.cmd run build:app-deps
@@ -195,3 +196,5 @@ Pop-Location
 ```
 
 产物位于 `packages/app/android/app/build/outputs/apk/release/app-release.apk`。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10。默认本地生成工程使用开发测试签名，不能覆盖签名不同的官方安装包；正式分发前必须配置独立持久的发布密钥，不能误报为官方签名。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。
+
+Windows 原生打包需要 EXPO_NO_METRO_WORKSPACE_ROOT=1，使 Gradle 传入的相对入口按应用目录解析。Metro 在此模式下显式监听 packages 与仓库根 node_modules，并保留两层依赖路径，避免共享包的链接被当作不存在；普通网页和开发服务器不启用该标记。
