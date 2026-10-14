@@ -13,6 +13,7 @@ import {
   HEADER_INNER_HEIGHT_MOBILE,
   HEADER_TOP_PADDING_MOBILE,
 } from "@/constants/layout";
+import { MOTION_BEZIER, MOTION_DURATION } from "@/styles/motion";
 import { SPACING, type Theme } from "@/styles/theme";
 
 export type ToastVariant = "default" | "info" | "success" | "warning" | "error";
@@ -142,14 +143,14 @@ export function ToastViewport({
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 0,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
+        duration: MOTION_DURATION.fast,
+        easing: Easing.bezier(...MOTION_BEZIER.standard),
         useNativeDriver: true,
       }),
       Animated.timing(translateY, {
         toValue: -8,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
+        duration: MOTION_DURATION.fast,
+        easing: Easing.bezier(...MOTION_BEZIER.standard),
         useNativeDriver: true,
       }),
     ]).start(({ finished }) => {
@@ -209,14 +210,14 @@ export function ToastViewport({
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
+        duration: MOTION_DURATION.fast,
+        easing: Easing.bezier(...MOTION_BEZIER.standard),
         useNativeDriver: true,
       }),
       Animated.timing(translateY, {
         toValue: 0,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
+        duration: MOTION_DURATION.fast,
+        easing: Easing.bezier(...MOTION_BEZIER.standard),
         useNativeDriver: true,
       }),
     ]).start();

@@ -264,6 +264,18 @@ The bespoke pills in `packages/app/src/screens/settings/host-page.tsx:97-116`, `
 | Right-click / long-press menu                       | `packages/app/src/components/ui/context-menu.tsx` (used in `sidebar-workspace-list.tsx`)                                                                                                                                                                                                                 |
 | Headers (back, screen, menu)                        | `packages/app/src/components/headers/back-header.tsx`, `screen-header.tsx`, `menu-header.tsx`                                                                                                                                                                                                            |
 
+## 15. Motion
+
+Motion is tokenized in `packages/app/src/styles/motion.ts` — durations, easings, spring presets, and press scales. Animation code imports from there; hardcoded duration literals in animation contexts are wrong.
+
+Durations: `instant` 60ms (exit, micro feedback), `fast` 120ms (menus and toasts), `base` 200ms (toggles, hover, focus transitions), `slow` 300ms (block entrances), `reveal` 450ms (message emphasis). Easings are three curves — `standard` (decelerate, ≈ easeOutQuart), `snap` (fast start, decisive settle), `overshoot` (slight 1.3× bounce) — usable as `Easing.bezier(...MOTION_BEZIER.x)` on Reanimated/Animated or `MOTION_EASING_CSS.x` in web CSS. Springs: `press` 600/30, `card` 320/28, `bouncy` 380/18, `drag` 1200/80/mass 0.1.
+
+Press feedback is a scale, not an opacity dip: `MOTION_PRESS_SCALE.button` (0.95) for text buttons, `MOTION_PRESS_SCALE.iconButton` (0.92) for small circular icon buttons. Disabled stays opacity-only (§10); never combine a large opacity change with the scale.
+
+Stream entrance animations play only when an item arrives live. History restore, pagination, reconnect snapshots, and virtualization remounts never replay them, and every new animation carries a `useReducedMotion`/`AccessibilityInfo` fallback. The installed Reanimated `Keyframe` has no custom easing, so menu enter/exit keeps its default easing and only tokenized durations.
+
+---
+
 ## 二开对话外观
 
 - 对话正文、回合尾部、附件与输入框共用 `MAX_CHAT_CONTENT_WIDTH = 738`；文件预览和表单仍使用 820 像素上限。窄屏随可用宽度收缩，不强制固定宽度。
@@ -274,3 +286,5 @@ The bespoke pills in `packages/app/src/screens/settings/host-page.tsx:97-116`, `
 定时发送使用发送按钮的右键或长按菜单，不添加常驻控件；分钟设置仅在小型弹窗或紧凑底部面板中展示。输入框上方待发送项采用辅助文字的一行摘要与操作菜单，失败原因在摘要下方明确显示。创建失败时保留原草稿与附件。取消定时发送先下载图片，再取消服务端消息，成功后将正文与完整附件追加回输入框，不覆盖新草稿。桌面设置浮层只保留右上角关闭按钮，使用共享 `lg` 尺寸的 44 像素点击区和 20 像素图标，移动端全屏导航保留返回。
 
 对话与 Markdown 文档引用块使用细边框和轻微灰底，内边距 12×8 像素，不使用粗亮侧边条。模型菜单标签不可收缩，长模型值单行省略；Fast 状态在桌面和移动端首层入口用黄色闪电表达。主机筛选独立放在工作区标题操作区，保留显示偏好中的项目筛选与分组设置。
+
+动效统一走 `styles/motion.ts` 的时长、曲线与弹簧 token；按压反馈为缩放（文本按钮 0.95、小圆形图标钮 0.92），禁用态保持纯透明度。Claude 主题对齐 Claude Desktop 暖色阶梯：表面、侧栏、边框与文字换成暖炭黑与暖中性色，陶土色强调不变。桌面与 Electron 的输入框采用单层 1px 边框叠加极淡环境影，聚焦时只加深边框色与投影，不追加第二圈外环；不使用强调色描边，原生端以边框加深近似。

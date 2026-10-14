@@ -28,6 +28,7 @@ vi.mock("react-native-reanimated", () => ({
   Easing: {
     ease: "ease",
     inOut: (value: unknown) => value,
+    bezier: (_x1: number, _y1: number, _x2: number, _y2: number) => (t: number) => t,
   },
   interpolateColor: (value: number, _input: number[], output: string[]) =>
     value >= 1 ? output[1] : output[0],

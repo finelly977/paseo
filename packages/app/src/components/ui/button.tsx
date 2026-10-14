@@ -22,6 +22,7 @@ import {
   createControlGeometry,
   type ButtonControlSize,
 } from "@/components/ui/control-geometry";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import type { Theme } from "@/styles/theme";
 
 type ButtonVariant = "default" | "secondary" | "outline" | "ghost" | "destructive";
@@ -130,7 +131,7 @@ const styles = StyleSheet.create((theme) => {
       borderColor: theme.colors.destructive,
     },
     pressed: {
-      opacity: 0.85,
+      transform: [{ scale: MOTION_PRESS_SCALE.button }],
     },
     disabled: {
       opacity: theme.opacity[50],

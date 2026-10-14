@@ -279,16 +279,55 @@ export async function importProviderSession(
   }
   const key = await resolveProviderSessionImportMutationKey(input);
   return serializeProviderSessionImport(input.agentManager, key, async () => {
+    const requestedWorkspaceId = await resolveImportWorkspaceTarget(input, cwd);
     const placement = await input.workspaceProvisioning.runInImportWorkspace(
       {
         cwd,
-        requestedWorkspaceId: input.request.workspaceId,
+        ...(requestedWorkspaceId ? { requestedWorkspaceId } : {}),
         ...(input.request.title ? { title: input.request.title } : {}),
       },
       (workspace) => importProviderSessionNow(input, cwd, workspace.workspaceId),
     );
     return { ...placement.value, createdWorkspace: placement.createdWorkspace };
   });
+}
+
+/**
+ * 只有在重新导入已有（已归档）会话，或目标工作区还没有根智能体时才沿用调用方指定的工作区。
+ * 其余情况返回 undefined，让服务端按会话目录新建工作区：侧栏每一行代表一个工作区，
+ * 把新会话并入已有根智能体的工作区，会让它在侧栏里没有自己的会话行。
+ */
+async function resolveImportWorkspaceTarget(
+  input: ImportProviderSessionInput,
+  cwd: string,
+): Promise<string | undefined> {
+  const requestedWorkspaceId = input.request.workspaceId?.trim();
+  if (!requestedWorkspaceId) {
+    return undefined;
+  }
+  const records = await input.agentStorage.list();
+  const identity = {
+    provider: input.request.provider,
+    providerHandleId: input.request.providerHandleId,
+  };
+  const matchesCwd = createRealpathAwarePathMatcher(cwd);
+  const restoresArchivedOwner = records.some(
+    (record) =>
+      Boolean(record.archivedAt) &&
+      recordMatchesProviderHandle(record, identity) &&
+      matchesCwd(record.cwd),
+  );
+  if (restoresArchivedOwner) {
+    return requestedWorkspaceId;
+  }
+  const hasRootAgent = records.some(
+    (record) =>
+      !record.archivedAt &&
+      !record.internal &&
+      record.workspaceId?.trim() === requestedWorkspaceId &&
+      !getParentAgentIdFromLabels(record.labels),
+  );
+  return hasRootAgent ? undefined : requestedWorkspaceId;
 }
 
 async function importProviderSessionNow(

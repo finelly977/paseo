@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { MOTION_DURATION } from "@/styles/motion";
 import {
   BottomSheetScrollView,
   BottomSheetBackdrop,
@@ -1217,8 +1218,8 @@ function DesktopComboboxBody(props: DesktopBodyProps): ReactElement {
       )}
       <FloatingSurface
         testID="combobox-desktop-container"
-        entering={props.shouldUseDesktopFade ? FadeIn.duration(100) : undefined}
-        exiting={props.shouldUseDesktopFade ? FadeOut.duration(100) : undefined}
+        entering={props.shouldUseDesktopFade ? FadeIn.duration(MOTION_DURATION.fast) : undefined}
+        exiting={props.shouldUseDesktopFade ? FadeOut.duration(MOTION_DURATION.fast) : undefined}
         style={styles.desktopContainer}
         frameStyle={props.desktopFrameStyle}
         ref={setFloating}

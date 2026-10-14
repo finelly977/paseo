@@ -538,22 +538,22 @@ const midnightDarkColors = buildDarkSemanticColors({
   destructive: "#c44a52", // red with a hint of cool lean against the blue tint
 });
 
-// Claude — warm neutral with subtle orange undertone
+// Claude — warm charcoal ladder aligned to Claude Desktop (CDS) tokens
 const claudeDarkColors = buildDarkSemanticColors({
-  surface0: "#1f1f1e",
-  surface1: "#262523",
-  surface2: "#2f2d2b",
-  surface3: "#4a4745",
-  surface4: "#605d5b",
-  surfaceDiffEmpty: "#2a2826",
-  surfaceSidebar: "#1a1918",
-  surfaceSidebarHover: "#222120",
-  foreground: "#e0e0e4",
-  foregroundMuted: "#ada9a5",
-  foregroundExtraMuted: "#78746f",
-  scrollbarHandle: "#78746f",
-  border: "#2c2a27",
-  borderAccent: "#36332f",
+  surface0: "#191817",
+  surface1: "#1f1e1c",
+  surface2: "#282624",
+  surface3: "#3b3834",
+  surface4: "#524e49",
+  surfaceDiffEmpty: "#1e1d1b",
+  surfaceSidebar: "#121110",
+  surfaceSidebarHover: "#1b1a18",
+  foreground: "#eae9e6",
+  foregroundMuted: "#a9a49e",
+  foregroundExtraMuted: "#78726b",
+  scrollbarHandle: "#57534d",
+  border: "#2a2825",
+  borderAccent: "#37332e",
   accent: "#d97757",
   accentBright: "#e89a7f",
   destructive: "#cf513e", // warm orange-red, hue ~10 — sits with the Claude orange accent

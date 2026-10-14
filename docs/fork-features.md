@@ -42,6 +42,7 @@
 
 - 导入时优先使用智能体 CLI 返回的原生会话名称；CLI 没有名称时使用首条用户消息，不再默认退回 Git 分支名。
 - 原生名称会同时写入新建工作区和智能体记录；导入到已有工作区时不擅自覆盖已有工作区名称。
+- 导入目标工作区只在目标工作区还没有根智能体，或该原生会话此前已导入（重新导入已归档会话）时沿用；已有根智能体的工作区不再被并入，改为按会话目录新建工作区，导入的会话因此在侧栏里有自己的会话行；导入完成后客户端直接切到该工作区并打开会话标签，导入到当前工作区时仍按原路径聚焦标签。
 - Claude 从会话文件中读取最新一次自定义名称，而不是只读取首条消息。
 - Claude、Codex、OpenCode、Pi 和 OMP 的会话标签重命名直接调用原生 SDK、API 或 RPC；原生写入成功后才保存 Paseo 名称并通知连接同一主机的客户端，失败保留旧显示和可重试错误，不通过发送提示词或私自改写原生存储来模拟改名。原生会话尚未建立时明确提示先开始对话。
 - 每个客户端连接后首次读取会话目录时，在后台按提供方读取原生名称；恢复运行时时也重新读取当前名称。原生端的改名会更新 Paseo 会话标题，不修改工作区标题、Git 分支或目录。并发的旧名称读取不能覆盖 Paseo 中刚完成的改名；读取失败保留当前显示并记录完整错误，下次连接或恢复可重试。Pi/OMP 读取完整 JSONL 中的名称元数据，名称位于长对话中间也不会错用头尾旧值。
@@ -660,3 +661,27 @@
 - `packages/server/src/server/agent/providers/claude/models.ts`
 - `packages/server/src/server/agent/providers/claude/agent.ts`
 - `packages/server/src/server/agent/providers/claude/query.ts`
+
+### 29. 前端动效 token、按压反馈与 Claude 主题暖色对齐
+
+- 新增全局动效 token 模块 `styles/motion.ts`：五档时长（60/120/200/300/450 毫秒）、三条贝塞尔曲线（减速/咬合/超调）、四个弹簧预设与两档按压缩放，取自 Claude Desktop 设计系统的逆向参数。toast 出入、开关切换、下拉浮层出入、输入框聚焦过渡、combobox、右键浮层、tooltip、悬停卡片与对话滚动指示器的出入时长全部迁移到该模块。
+- 按压反馈由透明度改为缩放：文本按钮 0.95、小圆形图标钮 0.92。输入框的附件、语音、发送按钮与消息展开按钮均已接入；禁用态保持纯透明度。
+- 桌面与 Electron 的输入框保持单层 1px 边框叠加极淡环境影：聚焦时只加深边框色与投影，不再追加第二圈外环，过渡走 motion token；原生端以边框加深近似。
+- Claude 主题对齐 Claude Desktop 暖色阶梯：表面、侧栏、边框与文字全部换成暖炭黑与暖中性色，陶土色强调不变；其他主题配色不受影响。
+- 数字读数启用 tabular-nums：diff 增删行数、上下文用量百分比与 token 数、用户消息时间戳。
+
+主要涉及：
+
+- `packages/app/src/styles/motion.ts`
+- `packages/app/src/styles/theme.ts`
+- `packages/app/src/components/ui/button.tsx`
+- `packages/app/src/components/ui/switch.tsx`
+- `packages/app/src/components/ui/dropdown-menu.tsx`
+- `packages/app/src/components/ui/tooltip.tsx`
+- `packages/app/src/components/ui/combobox.tsx`
+- `packages/app/src/components/ui/context-menu.tsx`
+- `packages/app/src/components/toast-host.tsx`
+- `packages/app/src/composer/input/input.tsx`
+- `packages/app/src/components/message.tsx`
+- `packages/app/src/components/diff-stat.tsx`
+- `packages/app/src/components/context-window-meter.tsx`

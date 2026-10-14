@@ -36,11 +36,13 @@ const styles = StyleSheet.create((theme) => ({
   additions: {
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
+    fontVariant: ["tabular-nums"],
     color: theme.colors.diffAddition,
   },
   deletions: {
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
+    fontVariant: ["tabular-nums"],
     color: theme.colors.diffDeletion,
   },
 }));

@@ -25,6 +25,7 @@ import {
 } from "lucide-react-native";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import { ForgeBrandIcon } from "@/git/forge-icon";
+import { MOTION_DURATION } from "@/styles/motion";
 import type { Theme } from "@/styles/theme";
 import { DiffStat } from "@/components/diff-stat";
 import { Pressable } from "react-native";
@@ -272,8 +273,8 @@ function WorkspaceHoverCardContent({
       <View pointerEvents="box-none" style={styles.portalOverlay}>
         <FloatingSurface
           ref={contentRef}
-          entering={FadeIn.duration(80)}
-          exiting={FadeOut.duration(80)}
+          entering={FadeIn.duration(MOTION_DURATION.instant)}
+          exiting={FadeOut.duration(MOTION_DURATION.instant)}
           collapsable={false}
           onLayout={handleLayout}
           accessibilityRole="menu"

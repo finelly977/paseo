@@ -14,6 +14,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { createControlGeometry, switchGeometry } from "@/components/ui/control-geometry";
+import { MOTION_BEZIER, MOTION_DURATION } from "@/styles/motion";
 import type { Theme } from "@/styles/theme";
 
 interface SwitchProps {
@@ -25,7 +26,10 @@ interface SwitchProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const TIMING = { duration: 180, easing: Easing.inOut(Easing.ease) };
+const TIMING = {
+  duration: MOTION_DURATION.base,
+  easing: Easing.bezier(...MOTION_BEZIER.snap),
+};
 
 interface SwitchTrackProps {
   value: boolean;

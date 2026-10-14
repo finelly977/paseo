@@ -269,6 +269,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
+    fontVariant: ["tabular-nums"],
   },
   skeletonLabel: {
     width: 22,
@@ -288,10 +289,12 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     lineHeight: theme.fontSize.sm * 1.4,
+    fontVariant: ["tabular-nums"],
   },
   tooltipDetail: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     lineHeight: theme.fontSize.xs * 1.4,
+    fontVariant: ["tabular-nums"],
   },
 }));

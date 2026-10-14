@@ -37,6 +37,7 @@ import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
 import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
+import { MOTION_DURATION } from "@/styles/motion";
 import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
 
 // Action status for menu items with loading/success feedback
@@ -514,7 +515,7 @@ function getTransformOrigin(placement: Placement, alignment: Alignment): string 
   return `${vertical} ${horizontal}`;
 }
 
-const CONTENT_ENTERING_DURATION_MS = 150;
+const CONTENT_ENTERING_DURATION_MS = MOTION_DURATION.fast;
 
 const contentEntering = new Keyframe({
   0: { opacity: 0, transform: [{ scale: 0.97 }] },
@@ -524,7 +525,7 @@ const contentEntering = new Keyframe({
 const contentExiting = new Keyframe({
   0: { opacity: 1, transform: [{ scale: 1 }] },
   100: { opacity: 0, transform: [{ scale: 0.97 }] },
-}).duration(100);
+}).duration(MOTION_DURATION.instant);
 
 function releaseFixedMenuHeight(surfaceNativeID: string): void {
   if (!isWeb) return;

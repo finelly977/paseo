@@ -30,6 +30,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
 import { getOverlayRoot, OVERLAY_Z } from "@/lib/overlay-root";
+import { MOTION_DURATION } from "@/styles/motion";
 
 type Side = "top" | "bottom" | "left" | "right";
 type Align = "start" | "center" | "end";
@@ -569,8 +570,8 @@ export function TooltipContent({
           pointerEvents={ctx.interactive ? "auto" : "none"}
           onMouseEnter={ctx.interactive ? handleContentHoverIn : undefined}
           onMouseLeave={ctx.interactive ? handleContentHoverOut : undefined}
-          entering={FadeIn.duration(80)}
-          exiting={FadeOut.duration(80)}
+          entering={FadeIn.duration(MOTION_DURATION.instant)}
+          exiting={FadeOut.duration(MOTION_DURATION.instant)}
           collapsable={false}
           testID={testID}
           onLayout={handleLayout}
@@ -595,8 +596,8 @@ export function TooltipContent({
       <Pressable style={styles.overlay} onPress={handleDismiss}>
         <FloatingSurface
           pointerEvents={ctx.interactive ? "auto" : "none"}
-          entering={FadeIn.duration(80)}
-          exiting={FadeOut.duration(80)}
+          entering={FadeIn.duration(MOTION_DURATION.instant)}
+          exiting={FadeOut.duration(MOTION_DURATION.instant)}
           collapsable={false}
           testID={testID}
           onLayout={handleLayout}

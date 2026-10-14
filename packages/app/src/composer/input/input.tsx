@@ -24,6 +24,7 @@ import {
 } from "react";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
+import { MOTION_DURATION, MOTION_EASING_CSS, MOTION_PRESS_SCALE } from "@/styles/motion";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { ArrowUp, Mic, MicOff, CornerDownLeft, Plus, Square } from "lucide-react-native";
 import {
@@ -1678,18 +1679,20 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     }, [onFocusChange]);
 
     const attachButtonStyle = useCallback(
-      ({ hovered }: { hovered?: boolean }) => [
+      ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
         styles.attachButton,
         Boolean(hovered) && styles.iconButtonHovered,
+        Boolean(pressed) && styles.iconButtonPressed,
         (!isConnected || disabled) && styles.buttonDisabled,
       ],
       [isConnected, disabled],
     );
 
     const voiceButtonStyle = useCallback(
-      ({ hovered }: { hovered?: boolean }) => [
+      ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
         styles.voiceButton,
         Boolean(hovered) && !isDictating && styles.iconButtonHovered,
+        Boolean(pressed) && styles.iconButtonPressed,
         !isDictationStartEnabled && styles.buttonDisabled,
         isDictating && styles.voiceButtonRecording,
       ],
@@ -1704,9 +1707,10 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       () => [
         styles.inputWrapper,
         inputWrapperStyle,
+        isInputFocused ? styles.inputWrapperFocused : null,
         { opacity: surfacePresentation.input.opacity },
       ],
-      [inputWrapperStyle, surfacePresentation.input.opacity],
+      [inputWrapperStyle, isInputFocused, surfacePresentation.input.opacity],
     );
     const textInputStyle = useMemo(
       () => [
@@ -1734,8 +1738,12 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [onScheduleMessage, attachments, cwd],
     );
 
-    const sendButtonCombinedStyle = useMemo(
-      () => [styles.sendButton, isSendButtonDisabled && styles.buttonDisabled],
+    const sendButtonCombinedStyle = useCallback(
+      ({ pressed }: { pressed: boolean }) => [
+        styles.sendButton,
+        isSendButtonDisabled && styles.buttonDisabled,
+        pressed && styles.iconButtonPressed,
+      ],
       [isSendButtonDisabled],
     );
     const overlayContainerStyle = useMemo(
@@ -1924,9 +1932,18 @@ const styles = StyleSheet.create((theme: Theme) => ({
     },
     ...(isWeb
       ? {
-          transitionProperty: "border-color",
-          transitionDuration: "200ms",
-          transitionTimingFunction: "ease-in-out",
+          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.035)",
+          transitionProperty: "border-color, box-shadow",
+          transitionDuration: `${MOTION_DURATION.base}ms`,
+          transitionTimingFunction: MOTION_EASING_CSS.standard,
+        }
+      : {}),
+  },
+  inputWrapperFocused: {
+    borderColor: theme.colors.foregroundExtraMuted,
+    ...(isWeb
+      ? {
+          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.075)",
         }
       : {}),
   },
@@ -2013,6 +2030,9 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   iconButtonHovered: {
     backgroundColor: theme.colors.surface2,
+  },
+  iconButtonPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
   },
   tooltipRow: {
     flexDirection: "row",

@@ -31,6 +31,7 @@ import {
 import { FadeIn, FadeOut } from "react-native-reanimated";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { MOTION_DURATION } from "@/styles/motion";
 import { Check, CheckCircle } from "lucide-react-native";
 import { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -567,8 +568,8 @@ export function ContextMenuContent({
           testID={testID ? `${testID}-backdrop` : undefined}
         />
         <FloatingSurface
-          entering={FadeIn.duration(100)}
-          exiting={FadeOut.duration(100)}
+          entering={FadeIn.duration(MOTION_DURATION.fast)}
+          exiting={FadeOut.duration(MOTION_DURATION.fast)}
           collapsable={false}
           testID={testID}
           onLayout={handleContentLayout}

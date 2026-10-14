@@ -73,6 +73,8 @@ import { useToast } from "@/contexts/toast-context";
 import { selectIsFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
 import { type ExplorerCheckoutContext } from "@/stores/explorer-checkout-context";
 import { useSessionStore, type WorkspaceDescriptor } from "@/stores/session-store";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
+import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import {
   collectAllTabs,
   getFocusedBrowserId,
@@ -2244,16 +2246,36 @@ function WorkspaceScreenContent({
     [focusWorkspaceTab, persistenceKey],
   );
   const handleImportedAgent = useCallback(
-    (agentId: string) => {
+    (agent: AgentSnapshotPayload) => {
+      const importedWorkspaceId = agent.workspaceId?.trim();
+      if (
+        normalizedServerId &&
+        importedWorkspaceId &&
+        importedWorkspaceId !== normalizedWorkspaceId
+      ) {
+        // 导入的会话可能落在新工作区，当前工作区里没有它的标签，直接切过去打开。
+        navigateToWorkspace({
+          serverId: normalizedServerId,
+          workspaceId: importedWorkspaceId,
+          target: { kind: "agent", agentId: agent.id },
+        });
+        return;
+      }
       if (!persistenceKey) {
         return;
       }
-      const tabId = openWorkspaceTabFocused(persistenceKey, { kind: "agent", agentId });
+      const tabId = openWorkspaceTabFocused(persistenceKey, { kind: "agent", agentId: agent.id });
       if (tabId) {
         navigateToTabId(tabId);
       }
     },
-    [navigateToTabId, openWorkspaceTabFocused, persistenceKey],
+    [
+      navigateToTabId,
+      normalizedServerId,
+      normalizedWorkspaceId,
+      openWorkspaceTabFocused,
+      persistenceKey,
+    ],
   );
 
   const emptyWorkspaceSeedRef = useRef<string | null>(null);
@@ -3857,7 +3879,7 @@ function WorkspaceScreenContent({
               cwd={workspaceDirectory}
               workspaceId={normalizedWorkspaceId}
               onClose={closeImportSheet}
-              onImportedAgent={handleImportedAgent}
+              onImported={handleImportedAgent}
             />
             <WorkspaceTabRenameModal
               renamingTab={renamingTab}

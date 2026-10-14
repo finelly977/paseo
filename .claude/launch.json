@@ -1,0 +1,9 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "claude-storybook",
+      "url": "https://claude-storybook.bystanderss.chatgpt.site/"
+    }
+  ]
+}

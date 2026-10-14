@@ -24,6 +24,7 @@ import {
 } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MAX_CHAT_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
+import { MOTION_DURATION } from "@/styles/motion";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { ArrowDown, Check, ChevronDown, X } from "lucide-react-native";
@@ -521,10 +522,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const shouldDisableEntryExitAnimations = Platform.OS === "android";
     const scrollIndicatorFadeIn = shouldDisableEntryExitAnimations
       ? undefined
-      : FadeIn.duration(200);
+      : FadeIn.duration(MOTION_DURATION.base);
     const scrollIndicatorFadeOut = shouldDisableEntryExitAnimations
       ? undefined
-      : FadeOut.duration(200);
+      : FadeOut.duration(MOTION_DURATION.base);
 
     useEffect(() => {
       setIsNearBottom(true);

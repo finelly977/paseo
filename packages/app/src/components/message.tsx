@@ -48,6 +48,7 @@ import {
   FileSymlink,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import type { Theme } from "@/styles/theme";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import Animated, {
@@ -405,7 +406,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   expandTogglePressed: {
-    opacity: 0.8,
+    transform: [{ scale: MOTION_PRESS_SCALE.button }],
   },
   expandToggleText: {
     color: theme.colors.foregroundMuted,
@@ -450,6 +451,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   timestampText: {
     color: theme.colors.foregroundMuted,
     fontSize: STREAM_METADATA_FONT_SIZE,
+    fontVariant: ["tabular-nums"],
   },
 }));
 

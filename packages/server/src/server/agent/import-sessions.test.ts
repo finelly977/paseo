@@ -132,6 +132,29 @@ function createImportWorkspace(
   };
 }
 
+function createRecordingImportWorkspace(record: {
+  requestedWorkspaceIds: Array<string | undefined>;
+}): Pick<WorkspaceProvisioningService, "runInImportWorkspace"> {
+  return {
+    async runInImportWorkspace(input, operation) {
+      record.requestedWorkspaceIds.push(input.requestedWorkspaceId);
+      const workspace = createPersistedWorkspaceRecord({
+        workspaceId: input.requestedWorkspaceId ?? "ws-created",
+        projectId: `project-${input.requestedWorkspaceId ?? "created"}`,
+        cwd: input.cwd,
+        kind: "directory",
+        displayName: "imported",
+        createdAt: "2026-04-30T00:00:00.000Z",
+        updatedAt: "2026-04-30T00:00:00.000Z",
+      });
+      return {
+        value: await operation(workspace),
+        createdWorkspace: input.requestedWorkspaceId ? null : workspace,
+      };
+    },
+  };
+}
+
 function makeRequest(
   overrides: Partial<FetchRecentProviderSessionsRequestMessage> = {},
 ): FetchRecentProviderSessionsRequestMessage {
@@ -906,8 +929,10 @@ class ProviderImportHarness {
   import(input: {
     providerHandleId: string;
     cwd?: string;
+    workspaceId?: string;
     title?: string;
     labels?: Record<string, string>;
+    workspaceProvisioning?: Pick<WorkspaceProvisioningService, "runInImportWorkspace">;
   }) {
     return importProviderSession({
       request: {
@@ -915,10 +940,11 @@ class ProviderImportHarness {
         provider: "codex",
         providerHandleId: input.providerHandleId,
         cwd: input.cwd,
+        workspaceId: input.workspaceId,
         title: input.title,
         labels: input.labels,
       },
-      workspaceProvisioning: createImportWorkspace("ws-restored"),
+      workspaceProvisioning: input.workspaceProvisioning ?? createImportWorkspace("ws-restored"),
       agentManager: this.manager,
       agentStorage: this.storage,
       logger: createTestLogger(),
@@ -1264,4 +1290,80 @@ test("importProviderSession requires cwd from the selected provider row", async 
   await expect(harness.import({ providerHandleId: "thread-imported" })).rejects.toThrow(
     "Import requires cwd from the selected provider session",
   );
+});
+
+test("导入新会话时不再并入已有根智能体的工作区，改为按会话目录新建工作区", async () => {
+  const harness = await ProviderImportHarness.create();
+  await harness.seed(
+    makeStoredProviderSession({
+      id: "occupying-root-agent",
+      cwd: harness.snapshot.cwd,
+      sessionId: "thread-occupying",
+      workspaceId: "ws-occupied",
+      archivedAt: null,
+    }),
+  );
+  const record = { requestedWorkspaceIds: [] as Array<string | undefined> };
+
+  const result = await harness.import({
+    providerHandleId: "thread-imported",
+    cwd: harness.snapshot.cwd,
+    workspaceId: "ws-occupied",
+    workspaceProvisioning: createRecordingImportWorkspace(record),
+  });
+
+  expect(record.requestedWorkspaceIds).toEqual([undefined]);
+  expect(harness.freshImports).toEqual([expect.objectContaining({ workspaceId: "ws-created" })]);
+  expect(result.createdWorkspace?.workspaceId).toBe("ws-created");
+});
+
+test("导入新会话时空工作区仍沿用导入目标", async () => {
+  const harness = await ProviderImportHarness.create();
+  const record = { requestedWorkspaceIds: [] as Array<string | undefined> };
+
+  const result = await harness.import({
+    providerHandleId: "thread-imported",
+    cwd: harness.snapshot.cwd,
+    workspaceId: "ws-empty",
+    workspaceProvisioning: createRecordingImportWorkspace(record),
+  });
+
+  expect(record.requestedWorkspaceIds).toEqual(["ws-empty"]);
+  expect(harness.freshImports).toEqual([expect.objectContaining({ workspaceId: "ws-empty" })]);
+  expect(result.createdWorkspace).toBeNull();
+});
+
+test("重新导入已归档会话时继续沿用导入目标工作区", async () => {
+  const harness = await ProviderImportHarness.create({ sessionId: "thread-archived-target" });
+  await harness.seed(
+    makeStoredProviderSession({
+      id: harness.snapshot.id,
+      cwd: harness.snapshot.cwd,
+      sessionId: "thread-archived-target",
+      workspaceId: "ws-old-home",
+    }),
+  );
+  await harness.seed(
+    makeStoredProviderSession({
+      id: "occupying-root-agent",
+      cwd: harness.snapshot.cwd,
+      sessionId: "thread-occupying",
+      workspaceId: "ws-occupied",
+      archivedAt: null,
+    }),
+  );
+  const record = { requestedWorkspaceIds: [] as Array<string | undefined> };
+
+  await harness.import({
+    providerHandleId: "thread-archived-target",
+    cwd: harness.snapshot.cwd,
+    workspaceId: "ws-occupied",
+    workspaceProvisioning: createRecordingImportWorkspace(record),
+  });
+
+  expect(record.requestedWorkspaceIds).toEqual(["ws-occupied"]);
+  expect(await harness.storage.get(harness.snapshot.id)).toMatchObject({
+    workspaceId: "ws-occupied",
+    archivedAt: null,
+  });
 });
