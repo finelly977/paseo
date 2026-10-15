@@ -1081,6 +1081,10 @@ function appendUserMessage(
     return next;
   }
 
+  if (source === "canonical" && clientMessageId) {
+    return upsertUserMessage(state, nextItem);
+  }
+
   return [...state, nextItem];
 }
 
@@ -1922,6 +1926,21 @@ export function hydrateStreamState(
     return reduceStreamUpdate(state, event, timestamp, { ...options, timelineCursor });
   }, []);
 
+  const occupied = new Set(options?.reservedItemIds);
+  for (const [index, item] of hydrated.entries()) {
+    let id = item.id;
+    if (occupied.has(id)) {
+      const position = item.timelineCursor;
+      const suffix = position ? `${position.epoch}:${position.seq}` : `hydrated:${index}`;
+      const base = `${id}:position:${suffix}`;
+      id = base;
+      let collision = 1;
+      while (occupied.has(id)) id = `${base}:${collision++}`;
+    }
+    occupied.add(id);
+    // 这些条目由本次水合新建，不与现有会话数组共享。
+    item.id = id;
+  }
   return finalizeActiveThoughts(hydrated);
 }
 

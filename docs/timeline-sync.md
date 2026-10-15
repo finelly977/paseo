@@ -120,6 +120,8 @@ Codex 分页回退优先使用完整原生历史提供的消息到回合映射�
 如果旧版本已经在同一用户回合内留下标识相同但没有回合归属的提供方副本，下一次对齐应删除该
 副本并把修正后的时间线重新持久化。
 
+历史对齐先认领全部提供方匹配项，按提供方顺序输出时，未到输出位置的已认领规范行不能再当作未匹配前缀插入；多片段助手消息仍逐片保留原回合与位置。重新对齐只清理可由同一提交身份、完整字段或同回合的原生完整消息标识与时间共同证明的旧副本，不按正文相同删除真正的重复发言。
+
 历史对齐在单次操作内建立用户身份候选、结构候选、助手连续片段分组和用户边界索引，避免每条提供方消息都扫描全部规范记录或重新拼接助手正文。候选仍按原有顺序匹配，保留重复用户文本、完整元数据、回合归属与既有副本清理规则；优化不改变官方历史读取与完整快照提交的先后关系。
 
 ## Client replica lifetime
@@ -150,7 +152,11 @@ version.
 
 ## Projected pages reconcile with live presentation
 
-A projected page is canonical state, not a sequence of live deltas. One projected item can overlap
+A projected page is canonical state, not a sequence of live deltas.
+
+向前补页按完整投影身份归并：工具以提供方、原生回合和调用标识认领，用户消息以客户端提交标识认领，其余记录按权威时间线位置认领。跨页工具快照只保留一条并归位至原始调用位置，不把两个独立助手回复按相邻文本拼接。分页水合会避开已挂载条目的渲染身份；提供方消息标识可重复，不能让布局索引、React 键或虚拟行测量缓存覆盖另一条消息。相同正文但不同提交的用户消息继续保留。
+
+One projected item can overlap
 rows already received live—for example, a tool call retained at its original display position while
 its completion advances `seqEnd`, followed by a merged assistant message. The app uses
 `sourceSeqRanges` to replace overlapping assistant and reasoning projections before applying the

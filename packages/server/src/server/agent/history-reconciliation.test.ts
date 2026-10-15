@@ -16,6 +16,94 @@ const assistant = (text: string, messageId: string) => ({
 });
 
 describe("reconcileProviderHistory", () => {
+  test("提供方顺序与旧规范顺序不一致时不把后续已匹配记录作为前缀再次输出", () => {
+    const canonical: AgentTimelineRow[] = [
+      {
+        seq: 1,
+        timestamp: "2026-01-01T00:00:00Z",
+        item: user("第一条", "client-one"),
+        turnId: "turn-one",
+      },
+      {
+        seq: 2,
+        timestamp: "2026-01-01T00:00:01Z",
+        item: assistant("第一条回复", "assistant-one"),
+        turnId: "turn-one",
+      },
+      {
+        seq: 3,
+        timestamp: "2026-01-01T00:00:02Z",
+        item: user("第二条", "client-two"),
+        turnId: "turn-two",
+      },
+      {
+        seq: 4,
+        timestamp: "2026-01-01T00:00:03Z",
+        item: assistant("第二条回复", "assistant-two"),
+        turnId: "turn-two",
+      },
+    ];
+    const provider = [canonical[2], canonical[3], canonical[0], canonical[1]].map((row) => ({
+      item: row.item,
+      timestamp: row.timestamp,
+    }));
+    const result = reconcileProviderHistory(canonical, provider);
+    expect(result.map((row) => row.item)).toEqual(provider.map((entry) => entry.item));
+    expect(reconcileProviderHistory(result, provider)).toEqual(result);
+  });
+
+  test("重新对齐时仅删除具有同一提交身份的完全相同旧副本，保留真正重复发送", () => {
+    const first: AgentTimelineRow = {
+      seq: 1,
+      timestamp: "2026-01-01T00:00:00Z",
+      item: user("继续", "submission-one"),
+      turnId: "turn-one",
+    };
+    const second: AgentTimelineRow = {
+      seq: 3,
+      timestamp: "2026-01-01T00:00:01Z",
+      item: user("继续", "submission-two"),
+      turnId: "turn-two",
+    };
+    const result = reconcileProviderHistory(
+      [first, { ...first, seq: 2 }, second],
+      [{ item: first.item }, { item: second.item }],
+    );
+    expect(result.map((row) => row.item)).toEqual([first.item, second.item]);
+  });
+
+  test("官方历史能证明是同一完整助手消息的旧副本只保留一次", () => {
+    const prompt: AgentTimelineRow = {
+      seq: 1,
+      timestamp: "2026-01-01T00:00:00Z",
+      item: user("检查", "user-one"),
+      turnId: "turn-one",
+    };
+    const answer: AgentTimelineRow = {
+      seq: 2,
+      timestamp: "2026-01-01T00:00:01Z",
+      item: assistant("检查完成", "native-answer"),
+      turnId: "turn-one",
+    };
+    const tool: AgentTimelineRow = {
+      seq: 3,
+      timestamp: "2026-01-01T00:00:02Z",
+      item: {
+        type: "tool_call",
+        callId: "tool-one",
+        name: "test",
+        status: "completed",
+        error: null,
+        detail: { type: "shell", command: "test" },
+      },
+      turnId: "turn-one",
+    };
+    const result = reconcileProviderHistory(
+      [prompt, answer, tool, { ...answer, seq: 4 }],
+      [{ item: prompt.item }, { item: answer.item }, { item: tool.item }],
+    );
+    expect(result.map((row) => row.item)).toEqual([prompt.item, answer.item, tool.item]);
+  });
   test("长历史索引保持重复正文的顺序和每个片段的回合归属", () => {
     const canonical: AgentTimelineRow[] = [];
     const provider = [];

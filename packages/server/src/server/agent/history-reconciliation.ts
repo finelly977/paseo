@@ -63,21 +63,24 @@ export function reconcileProviderHistory(
     providerRows,
     index,
   );
+  markRedundantSubmissions(remaining, emittedCanonicalIndexes);
   let prefixEnd = 0;
 
   for (const { entry, match } of providerRows) {
     if (match) {
       while (prefixEnd < match.canonicalIndex) {
         const candidate = remaining[prefixEnd++]!;
-        if (!emittedCanonicalIndexes.has(candidate.canonicalIndex)) {
+        if (!candidate.used && !emittedCanonicalIndexes.has(candidate.canonicalIndex)) {
           rows.push({ ...candidate.row });
           emittedCanonicalIndexes.add(candidate.canonicalIndex);
         }
       }
-      rows.push(
-        match.transferProviderIdentity ? mergeMatchedRow(match.row, entry) : { ...match.row },
-      );
       for (const canonicalIndex of match.canonicalIndexes) {
+        if (emittedCanonicalIndexes.has(canonicalIndex)) continue;
+        const matchedRow = remaining[canonicalIndex]!.row;
+        rows.push(
+          match.transferProviderIdentity ? mergeMatchedRow(matchedRow, entry) : { ...matchedRow },
+        );
         emittedCanonicalIndexes.add(canonicalIndex);
       }
       continue;
@@ -100,6 +103,23 @@ export function reconcileProviderHistory(
     row.seq = position + 1;
   });
   return rows;
+}
+
+function markRedundantSubmissions(
+  candidates: readonly CanonicalCandidate[],
+  redundant: Set<number>,
+): void {
+  const submissions = new Map<string, CanonicalCandidate>();
+  for (const candidate of candidates) {
+    const item = candidate.row.item;
+    if (item.type !== "user_message" || !item.clientMessageId) continue;
+    const previous = submissions.get(item.clientMessageId);
+    if (previous && isDeepStrictEqual(previous.row.item, item)) {
+      redundant.add(candidate.canonicalIndex);
+    } else {
+      submissions.set(item.clientMessageId, candidate);
+    }
+  }
 }
 
 function takeMatch(
@@ -251,9 +271,14 @@ function findRedundantProviderAssistantRows(
     for (const group of groups) {
       const first = group[0]!;
       const last = group.at(-1)!;
+      const sameNativeSnapshot =
+        match.row.item.type === "assistant_message" &&
+        first.row.turnId === match.row.turnId &&
+        last.row.timestamp === match.row.timestamp &&
+        first.row.item.messageId === match.row.item.messageId;
       if (
         group.some((candidate) => candidate.used) ||
-        first.row.turnId !== undefined ||
+        (first.row.turnId !== undefined && !sameNativeSnapshot) ||
         first.row.item.messageId !== entry.item.messageId ||
         hasUserMessageBetween(index.userPrefix, last.canonicalIndex, match.canonicalIndex)
       ) {

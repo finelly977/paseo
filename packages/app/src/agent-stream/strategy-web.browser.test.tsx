@@ -4,6 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import { createWebStreamStrategy } from "./strategy-web";
 import type { StreamRenderInput, StreamViewportHandle } from "./strategy";
+import {
+  processTimelineResponse,
+  type ProcessTimelineResponseInput,
+  type TimelineCursor,
+} from "@/timeline/session-stream-reducers";
+import { buildAgentStreamRenderModel } from "./model";
 
 function messages(start: number, count: number): StreamItem[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -101,6 +107,124 @@ function visibleAnchor(): { id: string; top: number } {
 }
 
 describe("真实浏览器历史分页", () => {
+  it("连续补页时复用提供方标识的不同消息不串行渲染，也不产生重复节点或空白视口", async () => {
+    const entries: ProcessTimelineResponseInput["payload"]["entries"] = [];
+    for (let round = 0; round < 100; round++) {
+      entries.push(
+        {
+          seqStart: round * 2 + 1,
+          seqEnd: round * 2 + 1,
+          provider: "codex",
+          turnId: `turn-${round}`,
+          timestamp: new Date(round * 1000).toISOString(),
+          item: {
+            type: "user_message",
+            text: `用户 ${round}`,
+            messageId: `native-user-${round % 5}`,
+            clientMessageId: `submitted-${round}`,
+          },
+        },
+        {
+          seqStart: round * 2 + 2,
+          seqEnd: round * 2 + 2,
+          provider: "codex",
+          turnId: `turn-${round}`,
+          timestamp: new Date(round * 1000 + 1).toISOString(),
+          item: {
+            type: "assistant_message",
+            text: `回复 ${round}`,
+            messageId: `native-assistant-${round % 5}`,
+          },
+        },
+      );
+    }
+    let tail: StreamItem[] = [];
+    let cursor: TimelineCursor | undefined;
+    const view = mountViewport();
+    for (let page = 0; page < 5; page++) {
+      const start = 160 - page * 40;
+      const result = processTimelineResponse({
+        currentTail: tail,
+        currentHead: [],
+        currentCursor: cursor,
+        isInitializing: false,
+        hasActiveInitDeferred: false,
+        initRequestDirection: "tail",
+        payload: {
+          agentId: "browser-history",
+          direction: page === 0 ? "tail" : "before",
+          projection: "projected",
+          reset: page === 0,
+          epoch: "epoch",
+          startCursor: { seq: start + 1 },
+          endCursor: { seq: start + 40 },
+          hasOlder: start > 0,
+          hasNewer: false,
+          error: null,
+          entries: entries.slice(start, start + 40),
+        },
+      });
+      tail = result.tail;
+      cursor = result.cursor ?? undefined;
+      const byId = new Map(tail.map((item) => [item.id, item]));
+      expect(byId.size).toBe(tail.length);
+      const row = (item: StreamItem) => {
+        const displayed = byId.get(item.id);
+        if (
+          !displayed ||
+          (displayed.kind !== "user_message" && displayed.kind !== "assistant_message")
+        )
+          throw new Error("缺少可显示历史消息");
+        return (
+          <div
+            data-message-id={item.id}
+            data-expected-text={
+              item.kind === "user_message" || item.kind === "assistant_message" ? item.text : ""
+            }
+            style={ROW_STYLE}
+          >
+            {displayed.text}
+          </div>
+        );
+      };
+      const model = buildAgentStreamRenderModel({
+        tail,
+        head: [],
+        agentStatus: "idle",
+        platform: "web",
+        isMobileBreakpoint: false,
+      });
+      view.render({
+        segments: model.segments,
+        boundary: model.boundary,
+        renderers: {
+          renderHistoryVirtualizedRow: row,
+          renderHistoryMountedRow: row,
+          renderLiveHeadRow: row,
+          renderLiveAuxiliary: () => null,
+        },
+      });
+      await nextLayout();
+      const scroll = viewport();
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -400 }));
+      scroll.scrollTop = 40;
+      await nextLayout();
+      const nodes = Array.from(host.querySelectorAll<HTMLElement>("[data-message-id]"));
+      expect(nodes.length).toBeGreaterThan(0);
+      expect(new Set(nodes.map((node) => node.dataset.messageId)).size).toBe(nodes.length);
+      expect(nodes.map((node) => node.textContent)).toEqual(
+        nodes.map((node) => node.dataset.expectedText),
+      );
+      expect(visibleAnchor().top).toBeLessThanOrEqual(80);
+      for (let index = 1; index < nodes.length; index++) {
+        expect(nodes[index].getBoundingClientRect().top).toBeGreaterThanOrEqual(
+          nodes[index - 1].getBoundingClientRect().bottom,
+        );
+      }
+    }
+    expect(tail.filter((item) => item.kind === "user_message")).toHaveLength(100);
+  });
+
   it("多次向上翻页后，长正文和收起行不重叠且保持阅读锚点", async () => {
     const renderRow = (item: StreamItem) => {
       const ordinal = Math.abs(Number(item.id.replace("message-", "")));

@@ -601,6 +601,56 @@ function mergePrependedCanonicalTail(olderTail: StreamItem[], currentTail: Strea
   ];
 }
 
+function projectedItemIdentity(item: StreamItem): string | null {
+  if (item.kind === "user_message" && item.clientMessageId && !item.optimistic) {
+    return `submitted:${item.clientMessageId}`;
+  }
+  if (isAgentToolCallItem(item)) {
+    return `tool:${item.payload.data.provider}:${item.turnId ?? ""}:${item.payload.data.callId}`;
+  }
+  if (item.timelineCursor) {
+    return `${item.kind}:${item.timelineCursor.epoch}:${item.timelineCursor.seq}`;
+  }
+  return null;
+}
+
+function mergePrependedProjectedTail(
+  olderTail: StreamItem[],
+  currentTail: StreamItem[],
+): StreamItem[] {
+  const existingByIdentity = new Map<string, StreamItem>();
+  for (const item of currentTail) {
+    const identity = projectedItemIdentity(item);
+    if (identity !== null) existingByIdentity.set(identity, item);
+  }
+  const claimed = new Set<string>();
+  const prepended = olderTail.map((item) => {
+    const identity = projectedItemIdentity(item);
+    const existing = identity === null ? undefined : existingByIdentity.get(identity);
+    if (!existing || identity === null) return item;
+    claimed.add(identity);
+    if (isAgentToolCallItem(item) && isAgentToolCallItem(existing)) {
+      const merged = mergeAgentToolCallItem(
+        item,
+        existing.payload.data,
+        existing.timestamp,
+        existing.timelineCursor,
+      );
+      return { ...merged, id: existing.id };
+    }
+    if (item.kind === "user_message" && existing.kind === "user_message") {
+      return { ...mergeCanonicalUserWithLocalPresentation(item, existing), id: existing.id };
+    }
+    return existing;
+  });
+  const remaining = currentTail.filter((item) => {
+    const identity = projectedItemIdentity(item);
+    return identity === null || !claimed.has(identity);
+  });
+  // 投影页是完整快照，不把相邻的独立回复再次当作流式片段拼接。
+  return [...prepended, ...remaining];
+}
+
 function replaceLiveAssistantWithProjectedText(params: {
   head: StreamItem[];
   event: AgentStreamEventPayload;
@@ -962,9 +1012,19 @@ function applyTimelineIncrementalPath(args: {
           timestamp,
           timelineCursor: { epoch: payload.epoch, seq: seqEnd },
         })),
-        { source: "canonical", transformTimelineItem: args.transformTimelineItem },
+        {
+          source: "canonical",
+          transformTimelineItem: args.transformTimelineItem,
+          reservedItemIds:
+            payload.projection === "projected"
+              ? new Set([...currentTail, ...currentHead].map((item) => item.id))
+              : undefined,
+        },
       );
-      nextTail = mergePrependedCanonicalTail(olderTail, currentTail);
+      nextTail =
+        payload.projection === "projected"
+          ? mergePrependedProjectedTail(olderTail, currentTail)
+          : mergePrependedCanonicalTail(olderTail, currentTail);
     } else {
       const applied = applyAcceptedForwardTimelineUnits({
         units: acceptedUnits,

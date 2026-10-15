@@ -288,6 +288,136 @@ const baseStreamInput: ProcessAgentStreamEventInput = {
 // ---------------------------------------------------------------------------
 
 describe("processTimelineResponse", () => {
+  it("投影旧页中的工具快照跨越分页边界时只保留一个调用，并移动到原始位置", () => {
+    const call = makeToolCallTimelineEntry(2, "spanning-tool", "completed", {
+      type: "shell",
+      command: "test",
+      output: "done",
+      exitCode: 0,
+    });
+    call.seqEnd = 7;
+    const current = processTimelineResponse({
+      ...baseTimelineInput,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "tail",
+        reset: true,
+        projection: "projected",
+        startCursor: { seq: 4 },
+        endCursor: { seq: 8 },
+        entries: [
+          makeTimelineEntry(4, "新问题", "user_message"),
+          call,
+          makeTimelineEntry(8, "新回复"),
+        ],
+      },
+    });
+    const older = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail: current.tail,
+      currentCursor: current.cursor ?? undefined,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "before",
+        projection: "projected",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 3 },
+        entries: [
+          makeTimelineEntry(1, "旧问题", "user_message"),
+          call,
+          makeTimelineEntry(3, "旧回复"),
+        ],
+      },
+    });
+    expect(getAgentToolCalls(older.tail)).toHaveLength(1);
+    expect(new Set(older.tail.map((item) => item.id)).size).toBe(older.tail.length);
+    expect(older.tail.map((item) => item.kind)).toEqual([
+      "user_message",
+      "tool_call",
+      "assistant_message",
+      "user_message",
+      "assistant_message",
+    ]);
+    expect(getAssistantTexts(older.tail)).toEqual(["旧回复", "新回复"]);
+  });
+
+  it("多页重复提交副本不生成重复气泡，真正重复发送的同文消息继续保留", () => {
+    const userEntry = (seq: number, clientMessageId: string) => ({
+      ...makeTimelineEntry(seq, "继续", "user_message"),
+      item: { type: "user_message", text: "继续", messageId: clientMessageId, clientMessageId },
+    });
+    const current = processTimelineResponse({
+      ...baseTimelineInput,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "tail",
+        reset: true,
+        projection: "projected",
+        startCursor: { seq: 4 },
+        endCursor: { seq: 6 },
+        entries: [
+          userEntry(4, "same-submission"),
+          makeTimelineEntry(5, "当前回复"),
+          userEntry(6, "new-submission"),
+        ],
+      },
+    });
+    const older = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail: current.tail,
+      currentCursor: current.cursor ?? undefined,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "before",
+        projection: "projected",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 3 },
+        entries: [
+          userEntry(1, "older-submission"),
+          userEntry(2, "same-submission"),
+          makeTimelineEntry(3, "旧回复"),
+        ],
+      },
+    });
+    expect(
+      older.tail.filter((item) => item.kind === "user_message").map((item) => item.clientMessageId),
+    ).toEqual(["older-submission", "same-submission", "new-submission"]);
+    expect(new Set(older.tail.map((item) => item.id)).size).toBe(older.tail.length);
+  });
+
+  it("旧页与当前页复用提供方消息标识时，各自的独立回复仍有唯一渲染身份", () => {
+    const assistantEntry = (seq: number, text: string) => ({
+      ...makeTimelineEntry(seq, text),
+      item: { type: "assistant_message", text, messageId: "reused-provider-id" },
+    });
+    const current = processTimelineResponse({
+      ...baseTimelineInput,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "tail",
+        reset: true,
+        projection: "projected",
+        startCursor: { seq: 3 },
+        endCursor: { seq: 4 },
+        entries: [makeTimelineEntry(3, "新问题", "user_message"), assistantEntry(4, "新回复")],
+      },
+    });
+    const older = processTimelineResponse({
+      ...baseTimelineInput,
+      currentTail: current.tail,
+      currentCursor: current.cursor ?? undefined,
+      payload: {
+        ...baseTimelineInput.payload,
+        direction: "before",
+        projection: "projected",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 2 },
+        entries: [makeTimelineEntry(1, "旧问题", "user_message"), assistantEntry(2, "旧回复")],
+      },
+    });
+    expect(getAssistantTexts(older.tail)).toEqual(["旧回复", "新回复"]);
+    expect(new Set(older.tail.map((item) => item.id)).size).toBe(older.tail.length);
+  });
   it("discards an unchanged resume tail without replacing timeline state", () => {
     const canonical = createUserMessage({
       id: "canonical-prompt",
