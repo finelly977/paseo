@@ -178,6 +178,22 @@ See [docs/release.md](release.md) for the full mobile-build babysitting flow.
 
 本地侧载安装包在 Expo prebuild 与 Gradle 两阶段都设置 `PASEO_LOCAL_APK=1`，停用指向上游 Expo 项目的 OTA 更新，保留相机配对等常规功能。不要使用上游 EAS 账号或发布上游商店版本。
 
+### 二开 GitHub 应用内更新
+
+安卓版在“设置 → 关于 → 安卓应用更新”检查 `finelly977/paseo` 的公开 GitHub Releases，只接受 `android-apk-vX.Y.Z` 正式发布中的 `Paseo-X.Y.Z-android.apk`。草稿、预发布、桌面标签、相同或更低版本不会作为更新。下载期间显示进度，离开设置再回来仍保留当前任务；网络和校验失败显示重试入口，不会谎报已是最新。
+
+下载完成后原生侧校验 GitHub 提供的 SHA256、大小、包名、版本号和安装签名，再打开安卓系统安装确认。首次需要在系统设置允许 Paseo 安装应用，返回后点击“继续安装”，无需再次下载。APK 下载与校验在后台队列运行，不在 UI 线程读取整包。更新保留配对、设置和应用数据，不更新远程守护进程。旧 APK 没有此入口，第一次仍需手动覆盖安装带此功能的版本。
+
+当前侧载系列继续沿用原已分发测试签名以支持覆盖安装，不冒充官方商店签名。密钥备份在被 Git 忽略的 `packages/app/.secrets/android-local.keystore`，生成原生工程后、执行 Gradle 前复制到 `android/app/debug.keystore`；保管备份，不上传仓库。未来不能直接更换签名，否则已安装用户无法覆盖更新。需改用独立正式密钥时，必须另行设计迁移。
+
+后续发布步骤：同步并递增仓库版本，构建及验收同签名 Release APK，提交并推送 `origin`，再执行：
+
+```powershell
+.\scripts\publish-android-apk.ps1 -ApkPath '.output\deliverables\Paseo-0.2.3-android.apk' -NotesPath '.output\android-release-notes.md' -SdkRoot $env:ANDROID_HOME
+```
+
+脚本检查包名、版本、签名与干净源码，上传草稿并核对 GitHub 资产摘要后正式发布。`android-apk-v*` 不触发原作者的 `v*` / `android-v*` EAS 与商店工作流，不发布 npm。未来使用者在应用内检查、下载并确认系统安装即可，不再手工传 APK。
+
 Windows 可直接使用已安装 JDK、Android SDK 和生成工程内的 `gradlew.bat`。依赖与 SDK 下载完成后，执行：
 
 ```powershell
@@ -189,6 +205,7 @@ $env:NODE_ENV = 'production'
 npm.cmd run build:app-deps
 Push-Location 'packages\app'
 npx.cmd expo prebuild --platform android --no-install
+Copy-Item -LiteralPath '.secrets\android-local.keystore' -Destination 'android\app\debug.keystore' -Force
 Push-Location 'android'
 .\gradlew.bat :app:assembleRelease '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=2 '-Dorg.gradle.parallel=false' -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease
 Pop-Location
@@ -198,3 +215,11 @@ Pop-Location
 产物位于 `packages/app/android/app/build/outputs/apk/release/app-release.apk`。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10。默认本地生成工程使用开发测试签名，不能覆盖签名不同的官方安装包；正式分发前必须配置独立持久的发布密钥，不能误报为官方签名。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。
 
 Windows 原生打包需要 EXPO_NO_METRO_WORKSPACE_ROOT=1，使 Gradle 传入的相对入口按应用目录解析。Metro 在此模式下显式监听 packages 与仓库根 node_modules，并保留两层依赖路径，避免共享包的链接被当作不存在；普通网页和开发服务器不启用该标记。
+
+### Android 冷启动验收
+
+本地 APK 交付不能只检查 Gradle、签名、包名和字节码。必须在隔离安卓设备或模拟器安装 Release APK，冷启动后确认 `welcome-screen` 或实际业务界面已经出现，`startup-splash` 消失，且 `logcat` 中没有 React Native JavaScript 启动异常。没有真机时应明确记录模拟器和 ABI，不把未进行的真机验证写成已通过。
+
+原生启动失败时先保留 `logcat`，使用同一次构建的 `app/build/generated/sourcemaps/react/release/index.android.bundle.map` 还原 Hermes 堆栈。Android Hermes 不提供 `Intl.RelativeTimeFormat`，Git 提交相对时间使用应用自己的单位计算与语言资源，不能在被根布局导入的模块顶层创建该格式器；由此引发的后续路由 `ErrorBoundary` 缺失不应被误判为 Expo Router 的首个错误。
+
+x86_64 模拟器即使声明支持 ARM 翻译，也可能无法通过 SoLoader 从未解压的 ARM64 APK 读取原生库。此类原生库错误不能直接当作 ARM64 手机故障；应使用包含模拟器 ABI 的安装包验证，确保诊断包与交付包使用相同的前端字节码。用户已有手机或模拟器数据不应为启动诊断被清除。

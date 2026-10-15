@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const zhCN: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "刚刚",
+      past: "{{value}}{{unit}}前",
+      future: "{{value}}{{unit}}后",
+      second: "秒",
+      minute: "分钟",
+      hour: "小时",
+      day: "天",
+      week: "周",
+      month: "个月",
+      year: "年",
+    },
     back: "返回",
     loading: "加载中...",
     actions: {

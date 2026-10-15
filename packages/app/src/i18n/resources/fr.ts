@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const fr: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "à l’instant",
+      past: "il y a {{value}} {{unit}}",
+      future: "dans {{value}} {{unit}}",
+      second: "s",
+      minute: "min",
+      hour: "h",
+      day: "j",
+      week: "sem.",
+      month: "mois",
+      year: "a",
+    },
     back: "Dos",
     loading: "Chargement...",
     actions: {

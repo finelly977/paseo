@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const ru: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "только что",
+      past: "{{value}} {{unit}} назад",
+      future: "через {{value}} {{unit}}",
+      second: "с",
+      minute: "мин",
+      hour: "ч",
+      day: "дн.",
+      week: "нед.",
+      month: "мес.",
+      year: "г.",
+    },
     back: "Назад",
     loading: "Загрузка...",
     actions: {

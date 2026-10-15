@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const ja: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "たった今",
+      past: "{{value}}{{unit}}前",
+      future: "{{value}}{{unit}}後",
+      second: "秒",
+      minute: "分",
+      hour: "時間",
+      day: "日",
+      week: "週間",
+      month: "か月",
+      year: "年",
+    },
     back: "戻る",
     loading: "読み込み中...",
     actions: {

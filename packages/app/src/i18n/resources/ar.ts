@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const ar: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "الآن",
+      past: "قبل {{value}} {{unit}}",
+      future: "بعد {{value}} {{unit}}",
+      second: "ث",
+      minute: "د",
+      hour: "س",
+      day: "ي",
+      week: "أسبوع",
+      month: "شهر",
+      year: "سنة",
+    },
     back: "خلف",
     loading: "تحميل...",
     actions: {

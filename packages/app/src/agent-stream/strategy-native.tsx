@@ -3,6 +3,7 @@ import {
   type ReactElement,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -19,6 +20,9 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import type { StreamItem } from "@/types/stream";
+import { Button } from "@/components/ui/button";
+import { useRetainedPanelActive } from "@/components/retained-panel";
+import { shouldLoadNativeHistory, visibleNativeHistoryRows } from "./native-history-pagination";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -32,7 +36,7 @@ const DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION = Object.freeze({
   minIndexForVisible: 0,
   autoscrollToTopThreshold: 0,
 });
-const HISTORY_START_THRESHOLD_PX = 96;
+const HISTORY_FOOTER_STYLE = { alignItems: "center", paddingVertical: 12 } as const;
 
 interface HistoryRowDisplayVariants {
   regular?: StreamItem;
@@ -57,6 +61,7 @@ function keyExtractor(item: { id: string }): string {
 }
 
 function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrategy }) {
+  const isActive = useRetainedPanelActive();
   const {
     agentId,
     segments,
@@ -72,6 +77,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     onNearHistoryStart,
     isLoadingOlderHistory,
     hasOlderHistory,
+    historyStartCursor,
     scrollEnabled,
     listStyle,
     baseListContentContainerStyle,
@@ -95,6 +101,47 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const [isNativeViewportSettling, setIsNativeViewportSettling] = useState(false);
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
   const historyStartReadyRef = useRef(false);
+  const lastHistoryRequestRef = useRef<string | null>(null);
+
+  const loadHistoryAtOldestEdge = useStableEvent((manual = false) => {
+    const metrics = streamViewportMetricsRef.current;
+    if (
+      !shouldLoadNativeHistory({
+        ready:
+          historyStartReadyRef.current &&
+          isActive &&
+          isAuthoritativeHistoryReady &&
+          metrics.contentMeasuredForKey !== null,
+        hasOlder: hasOlderHistory,
+        loading: isLoadingOlderHistory,
+        viewportHeight: metrics.viewportHeight,
+        contentHeight: metrics.contentHeight,
+        offsetY: metrics.offsetY,
+      })
+    )
+      return;
+    const requestKey = `${agentId}:${historyStartCursor ?? ""}:${segments.historyMounted.length}:${segments.historyVirtualized.length}`;
+    // 自动补页失败后停在当前游标，由滚动或点击明确重试，避免无限请求。
+    if (!manual && lastHistoryRequestRef.current === requestKey) return;
+    lastHistoryRequestRef.current = requestKey;
+    onNearHistoryStart();
+  });
+  const handleManualHistoryLoad = useStableEvent(() => loadHistoryAtOldestEdge(true));
+  const handleEndReached = useStableEvent(() => loadHistoryAtOldestEdge());
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => loadHistoryAtOldestEdge());
+    return () => cancelAnimationFrame(frame);
+  }, [
+    historyStartCursor,
+    isLoadingOlderHistory,
+    isAuthoritativeHistoryReady,
+    hasOlderHistory,
+    isActive,
+    segments.historyMounted.length,
+    segments.historyVirtualized.length,
+    loadHistoryAtOldestEdge,
+  ]);
 
   const historyItems = useMemo(() => {
     if (segments.historyVirtualized.length === 0) {
@@ -116,13 +163,19 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       ),
     [globallyRevisedHistoryRows, historyRowRevision?.displayStateById],
   );
-  const historyRows = useMemo(
-    () =>
-      displayStateHistoryRows.map((item) =>
-        historyRowRevision?.contentById.has(item.id) ? { ...item } : item,
-      ),
-    [displayStateHistoryRows, historyRowRevision?.contentById],
-  );
+  const historyRows = useMemo(() => {
+    const visibleRows = historyRowRevision
+      ? visibleNativeHistoryRows({
+          items: displayStateHistoryRows,
+          collapsedHeights: historyRowRevision.estimatedHeightById,
+        })
+      : displayStateHistoryRows;
+    // 只替换内容发生变化的行引用，不能原地修改共享时间线对象。
+    // oxlint-disable-next-line oxc/no-map-spread
+    return visibleRows.map((item) =>
+      historyRowRevision?.contentById.has(item.id) ? { ...item } : item,
+    );
+  }, [displayStateHistoryRows, historyRowRevision]);
 
   const clearNativeViewportSettling = useCallback(() => {
     if (nativeViewportSettlingFrameIdRef.current !== null) {
@@ -206,7 +259,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       ? undefined
       : DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     streamViewportMetricsRef.current = {
       containerKey: "native-virtualized",
       contentHeight: 0,
@@ -222,16 +275,19 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     clearNativeViewportSettling();
     setIsNativeViewportSettling(false);
     historyStartReadyRef.current = false;
+    lastHistoryRequestRef.current = null;
     const frame = requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
+      loadHistoryAtOldestEdge();
     });
     return () => {
       cancelAnimationFrame(frame);
       clearPendingUserScrollEnd();
     };
-  }, [agentId, clearNativeViewportSettling, clearPendingUserScrollEnd]);
+  }, [agentId, clearNativeViewportSettling, clearPendingUserScrollEnd, loadHistoryAtOldestEdge]);
 
   useEffect(() => {
+    if (!isActive) return;
     const keyboardEvents = [
       "keyboardWillShow",
       "keyboardWillHide",
@@ -251,7 +307,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       }
       clearNativeViewportSettling();
     };
-  }, [clearNativeViewportSettling, markNativeViewportSettling]);
+  }, [clearNativeViewportSettling, markNativeViewportSettling, isActive]);
 
   useEffect(() => {
     bottomAnchorController.prepareForStickyContentChange();
@@ -333,17 +389,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     const nearBottom = isScrollEventNearBottom(event);
     onNearBottomChange(nearBottom);
 
-    const distanceFromOldestEdge =
-      streamViewportMetricsRef.current.contentHeight -
-      streamViewportMetricsRef.current.viewportHeight -
-      contentOffset.y;
-    if (
-      historyStartReadyRef.current &&
-      hasOlderHistory &&
-      distanceFromOldestEdge <= HISTORY_START_THRESHOLD_PX
-    ) {
-      onNearHistoryStart();
-    }
+    loadHistoryAtOldestEdge(isUserScrollActiveRef.current);
 
     if (
       !isUserScrollActiveRef.current &&
@@ -396,6 +442,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     const previousViewportHeight = streamViewportMetricsRef.current.viewportHeight;
     const viewportWidth = Math.max(0, event.nativeEvent.layout.width);
     const viewportHeight = Math.max(0, event.nativeEvent.layout.height);
+    if (!isActive || viewportWidth <= 0 || viewportHeight <= 0) return;
     const viewportChanged =
       (previousViewportWidth > 0 && previousViewportWidth !== viewportWidth) ||
       (previousViewportHeight > 0 && previousViewportHeight !== viewportHeight);
@@ -415,9 +462,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       previousViewportHeight,
       viewportHeight,
     });
+    loadHistoryAtOldestEdge();
   });
 
   const handleContentSizeChange = useStableEvent((_width: number, height: number) => {
+    if (!isActive || height <= 0) return;
     const previousContentHeight = streamViewportMetricsRef.current.contentHeight;
     const nextContentHeight = Math.max(0, height);
     streamViewportMetricsRef.current = {
@@ -430,6 +479,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       previousContentHeight,
       contentHeight: nextContentHeight,
     });
+    loadHistoryAtOldestEdge();
   });
 
   const renderItem = useStableEvent(
@@ -471,15 +521,26 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   ]);
 
   const historyFooterContent = useMemo(() => {
-    if (!isLoadingOlderHistory) {
+    if (!hasOlderHistory && !isLoadingOlderHistory) {
       return null;
     }
     return (
-      <View testID="load-older-history-spinner">
-        <ActivityIndicator size="small" />
+      <View style={HISTORY_FOOTER_STYLE}>
+        {isLoadingOlderHistory ? (
+          <ActivityIndicator testID="load-older-history-spinner" size="small" />
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            testID="load-older-history"
+            onPress={handleManualHistoryLoad}
+          >
+            加载更早消息
+          </Button>
+        )}
       </View>
     );
-  }, [isLoadingOlderHistory]);
+  }, [hasOlderHistory, isLoadingOlderHistory, handleManualHistoryLoad]);
 
   // RN's FlatList strictMode keeps its internal renderItem wrapper stable when
   // data or the live header changes, preserving the row identities above.
@@ -504,6 +565,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       onMomentumScrollEnd={handleMomentumScrollEnd}
       scrollEventThrottle={16}
       onContentSizeChange={handleContentSizeChange}
+      onEndReached={handleEndReached}
+      onEndReachedThreshold={0.2}
       maintainVisibleContentPosition={maintainVisibleContentPosition}
       initialNumToRender={40}
       maxToRenderPerBatch={40}

@@ -3,6 +3,18 @@ import type { TranslationResources } from "./en";
 
 export const ptBR: TranslationResources = {
   common: {
+    relativeTime: {
+      justNow: "agora",
+      past: "há {{value}} {{unit}}",
+      future: "em {{value}} {{unit}}",
+      second: "s",
+      minute: "min",
+      hour: "h",
+      day: "d",
+      week: "sem.",
+      month: "m",
+      year: "a",
+    },
     back: "Voltar",
     loading: "Carregando...",
     actions: {

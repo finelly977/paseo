@@ -28,6 +28,7 @@ type KeyboardShiftMode = "translate" | "padding";
 
 interface KeyboardShiftContextValue {
   shift: SharedValue<number>;
+  settledShift: SharedValue<number>;
   bottomInset: SharedValue<number>;
 }
 
@@ -37,6 +38,7 @@ export function KeyboardShiftProvider({ children }: { children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const { height: keyboardHeight, progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const bottomInset = useSharedValue(insets.bottom);
+  const settledShift = useSharedValue(0);
   const isIos = Platform.OS === "ios";
 
   useEffect(() => {
@@ -47,13 +49,20 @@ export function KeyboardShiftProvider({ children }: { children: ReactNode }) {
     {
       onEnd: (event) => {
         "worklet";
+        settledShift.value = resolveKeyboardShift({
+          rawKeyboardHeight: event.height,
+          keyboardProgress: event.progress,
+          bottomInset: bottomInset.value,
+          isIos,
+          iosMinHeight: DEFAULT_IOS_KEYBOARD_INSET_MIN_HEIGHT,
+        });
         if (isIos) {
           keyboardHeight.value = -event.height;
           keyboardProgress.value = event.progress;
         }
       },
     },
-    [isIos, keyboardHeight, keyboardProgress],
+    [isIos, keyboardHeight, keyboardProgress, bottomInset, settledShift],
   );
 
   const shift = useDerivedValue(() => {
@@ -70,9 +79,10 @@ export function KeyboardShiftProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       shift,
+      settledShift,
       bottomInset,
     }),
-    [bottomInset, shift],
+    [bottomInset, shift, settledShift],
   );
 
   return createElement(KeyboardShiftContext.Provider, { value }, children);

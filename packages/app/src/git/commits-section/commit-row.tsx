@@ -43,6 +43,7 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { renderCommitMessageText } from "@/git/commit-message-text";
 import { CommitGraphNode, CommitGraphPlaceholder } from "./commit-graph-node";
 import type { CommitGraphViewModel } from "./graph-model";
+import { resolveCommitRelativeTime } from "./relative-time";
 
 interface CommitRowProps {
   viewModel: CommitGraphViewModel;
@@ -88,33 +89,6 @@ const tagBadgeIconMapping = (theme: {
 }) => ({
   color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
 });
-
-const commitRelativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-function formatCommitRelativeTime(date: Date, now: Date): string {
-  const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
-  const absoluteSeconds = Math.abs(seconds);
-  if (absoluteSeconds < 30) {
-    return commitRelativeTimeFormatter.format(0, "second");
-  }
-
-  const ranges: Array<[number, Intl.RelativeTimeFormatUnit, number]> = [
-    [60, "second", 1],
-    [3_600, "minute", 60],
-    [86_400, "hour", 3_600],
-    [604_800, "day", 86_400],
-    [2_592_000, "week", 604_800],
-    [31_536_000, "month", 2_592_000],
-    [Number.POSITIVE_INFINITY, "year", 31_536_000],
-  ];
-  const range = ranges.find(([maximum]) => absoluteSeconds < maximum);
-  if (!range) {
-    throw new Error("无法确定提交时间的相对单位");
-  }
-  const [, unit, divisor] = range;
-  const value = Math.sign(seconds) * Math.max(1, Math.floor(absoluteSeconds / divisor));
-  return commitRelativeTimeFormatter.format(value, unit);
-}
 
 function commitRowPressableStyle({
   hovered,
@@ -451,7 +425,12 @@ export const CommitRow = memo(function CommitRow({
       }),
     [commit.authorDate],
   );
-  const relativeTime = formatCommitRelativeTime(new Date(commit.authorDate), now);
+  const relative = resolveCommitRelativeTime({ date: new Date(commit.authorDate), now });
+  let relativeTime = t("common.relativeTime.justNow");
+  if (relative.kind === "relative") {
+    const unit = t(`common.relativeTime.${relative.unit}`);
+    relativeTime = t(`common.relativeTime.${relative.direction}`, { value: relative.value, unit });
+  }
   const showInlineActions = isHovered || isSelected || isNative || isCompact;
   const rowStyle = useCallback(
     (state: PressableStateCallbackType & { hovered?: boolean }) => [

@@ -1,6 +1,18 @@
 import { pluginSettings } from "./plugin-settings";
 export const en = {
   common: {
+    relativeTime: {
+      justNow: "just now",
+      past: "{{value}}{{unit}} ago",
+      future: "in {{value}}{{unit}}",
+      second: "s",
+      minute: "m",
+      hour: "h",
+      day: "d",
+      week: "w",
+      month: "mo",
+      year: "y",
+    },
     back: "Back",
     loading: "Loading...",
     actions: {
