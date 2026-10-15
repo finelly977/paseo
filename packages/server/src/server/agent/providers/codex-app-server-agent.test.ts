@@ -6610,7 +6610,7 @@ describe("Codex app-server provider", () => {
 });
 
 describe("Codex importable sessions", () => {
-  test("listImportableSessions uses thread list metadata without hydrating thread history", async () => {
+  test("listImportableSessions reads authoritative metadata without hydrating thread history", async () => {
     const allThreads = [
       {
         id: "thread-a1",
@@ -6704,10 +6704,13 @@ describe("Codex importable sessions", () => {
         method: "thread/list",
         params: { limit: 100, cwd: "/workspace/project-a", archived: true },
       },
+      { method: "thread/list", params: { limit: 100, useStateDbOnly: true } },
+      { method: "thread/list", params: { limit: 100, archived: true, useStateDbOnly: true } },
       {
         method: "thread/list",
         params: { limit: 100, cursor: "page-2", cwd: "/workspace/project-a" },
       },
+      { method: "thread/list", params: { limit: 100, cursor: "page-2", useStateDbOnly: true } },
     ]);
   });
 

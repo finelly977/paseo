@@ -731,6 +731,11 @@ export class AgentManager {
       readNative: async (record) => (await this.readNativeSessionTitle(record.id)).title,
       renameNative: async (record, title) => {
         this.requireEnabledProvider(record.provider);
+        const client = this.requireClient(record.provider);
+        if (client.renameNativeSessionTitle && record.persistence) {
+          await client.renameNativeSessionTitle({ handle: record.persistence, title });
+          return;
+        }
         const agent = await ensureAgentLoaded(record.id, {
           agentManager: this,
           agentStorage: this.requireRegistry(),

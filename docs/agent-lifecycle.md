@@ -101,9 +101,9 @@ releases the live runtime and writes `lastStatus: closed` on the still-active re
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
 1. Snapshot the current session into the registry
-2. Set `archivedAt` and normalize `lastStatus` away from `running`/`initializing`
-3. Notify subscribers
-4. Close the runtime (kills the process if still running)
+2. 关闭运行时，释放仍被 Codex app-server 加载的线程
+3. 调用提供方原生归档钩子；自定义提供方和模型配置包装不得丢失此钩子，原生失败时不保存本地归档状态
+4. 原生操作成功后设置 `archivedAt`，规范状态并通知订阅者
 5. **Cascade-archive children** — any agent whose `paseo.parent-agent-id` label matches the archived agent gets archived too, recursively
 
 Cascade is what keeps subagent fleets from outliving their orchestrator.

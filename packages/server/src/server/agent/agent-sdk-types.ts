@@ -736,8 +736,14 @@ export interface ResolveAgentDefaultModeInput {
   env?: Record<string, string>;
 }
 
+export interface RenameNativeSessionTitleInput {
+  handle: AgentPersistenceHandle;
+  title: string;
+}
+
 export interface AgentClient {
   getNativeSessionTitle?(handle: AgentPersistenceHandle): Promise<string | null>;
+  renameNativeSessionTitle?(input: RenameNativeSessionTitleInput): Promise<void>;
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
   createSession(
@@ -777,8 +783,8 @@ export interface AgentClient {
   isAvailable(): Promise<boolean>;
   getDiagnostic?(): Promise<{ diagnostic: string }>;
   /**
-   * Archive a durable native session (best-effort). Runtime release belongs to AgentSession.close().
-   * Called when Paseo archives an agent so the provider's own UI reflects the same state.
+   * 归档原生持久会话，失败必须向上传递。运行时释放由 AgentSession.close() 负责。
+   * Paseo 归档智能体时调用，使原生客户端与 Paseo 保持相同归档状态。
    */
   archiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
   /**

@@ -34,6 +34,7 @@ import {
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
   type ListImportableSessionsOptions,
+  type RenameNativeSessionTitleInput,
   type ProviderCatalog,
 } from "../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
@@ -1024,6 +1025,100 @@ const CodexModelSchema = z.object({
 });
 type CodexModel = z.infer<typeof CodexModelSchema>;
 
+const CodexSessionMetadataSchema = z.object({
+  thread: z.object({
+    name: z.string().nullable().optional(),
+    preview: z.string().optional(),
+  }),
+});
+
+interface CodexSessionMetadataRequest {
+  client: Pick<CodexAppServerClientLike, "request">;
+  threadId: string;
+}
+
+interface CodexSessionTitleWrite extends CodexSessionMetadataRequest {
+  title: string;
+}
+
+interface CodexSessionTitleWriteFailure {
+  threadId: string;
+  expectedTitle: string;
+  actualTitle: string | null;
+}
+
+async function readCodexSessionMetadata({
+  client,
+  threadId,
+}: CodexSessionMetadataRequest): Promise<z.infer<typeof CodexSessionMetadataSchema>["thread"]> {
+  try {
+    const response = CodexSessionMetadataSchema.parse(
+      await client.request("thread/read", { threadId, includeTurns: false }),
+    );
+    return response.thread;
+  } catch (error) {
+    if (!isCodexMissingActiveRollout(error, threadId)) throw error;
+    // Codex 的 thread/read 不读取已归档 rollout；原生索引仍可提供名称，无需取消归档。
+    const archived = await fetchCodexThreadList(client, undefined, {
+      archived: true,
+      indexedOnly: true,
+    });
+    const thread = archived.find((entry) => entry.id === threadId);
+    if (!thread) throw error;
+    return CodexSessionMetadataSchema.parse({ thread }).thread;
+  }
+}
+
+function isCodexMissingActiveRollout(error: unknown, threadId: string): boolean {
+  return (
+    error instanceof CodexAppServerRpcError &&
+    error.message.includes(`no rollout found for thread id ${threadId}`)
+  );
+}
+
+function codexSessionTitle(
+  thread: z.infer<typeof CodexSessionMetadataSchema>["thread"],
+): string | null {
+  return thread.name?.trim() || thread.preview?.trim() || null;
+}
+
+export class CodexSessionTitleWriteError extends Error {
+  readonly threadId: string;
+  readonly expectedTitle: string;
+  readonly actualTitle: string | null;
+
+  constructor(input: CodexSessionTitleWriteFailure) {
+    super("Codex 尚未保存新的会话名称，请重试；Paseo 未保存本地改名。");
+    this.name = "CodexSessionTitleWriteError";
+    this.threadId = input.threadId;
+    this.expectedTitle = input.expectedTitle;
+    this.actualTitle = input.actualTitle;
+  }
+}
+
+async function renameCodexSessionTitle({
+  client,
+  threadId,
+  title,
+}: CodexSessionTitleWrite): Promise<void> {
+  try {
+    await client.request("thread/name/set", { threadId, name: title });
+  } catch (error) {
+    if (!isCodexMissingActiveRollout(error, threadId)) throw error;
+    throw new Error("Codex 未找到可改名的活动会话；若会话已归档，请先取消归档再修改名称。", {
+      cause: error,
+    });
+  }
+  const thread = await readCodexSessionMetadata({ client, threadId });
+  if (thread.name !== title) {
+    throw new CodexSessionTitleWriteError({
+      threadId,
+      expectedTitle: title,
+      actualTitle: thread.name ?? null,
+    });
+  }
+}
+
 const CodexModelListResponseSchema = z.object({
   data: z.array(CodexModelSchema),
   nextCursor: z.string().nullable().optional(),
@@ -1052,27 +1147,36 @@ function filterCodexThreadsByCwd(
   return threads.filter((thread) => typeof thread.cwd === "string" && matchesCwd(thread.cwd));
 }
 
+interface CodexThreadListSource {
+  archived: boolean;
+  indexedOnly: boolean;
+}
+
+const CodexThreadListPageSchema = z.object({
+  data: z.array(z.object({ id: z.string().min(1) }).passthrough()),
+  nextCursor: z.string().nullable().optional(),
+});
+
 async function fetchCodexThreadList(
-  client: CodexAppServerClientLike,
+  client: Pick<CodexAppServerClientLike, "request">,
   options: ListImportableSessionsOptions | undefined,
-  archived: boolean,
+  source: CodexThreadListSource,
 ): Promise<Array<Record<string, unknown>>> {
   const pageLimit = options?.limit === undefined ? 100 : Math.max(options.limit, 50);
   const allThreads: Array<Record<string, unknown>> = [];
   let cursor: string | undefined;
   for (;;) {
-    const response = toObjectRecord(
+    const response = CodexThreadListPageSchema.parse(
       await client.request("thread/list", {
         limit: pageLimit,
         ...(cursor ? { cursor } : {}),
         ...(options?.cwd ? { cwd: options.cwd } : {}),
-        ...(archived ? { archived: true } : {}),
+        ...(source.archived ? { archived: true } : {}),
+        ...(source.indexedOnly ? { useStateDbOnly: true } : {}),
       }),
     );
-    if (Array.isArray(response?.data)) {
-      allThreads.push(...response.data.filter(isRecord));
-    }
-    const nextCursor = typeof response?.nextCursor === "string" ? response.nextCursor : null;
+    allThreads.push(...response.data);
+    const nextCursor = response.nextCursor ?? null;
     const matchedCount = options?.cwd
       ? filterCodexThreadsByCwd(allThreads, options.cwd).length
       : allThreads.length;
@@ -1088,10 +1192,14 @@ async function fetchAllCodexThreads(
   client: CodexAppServerClientLike,
   options: ListImportableSessionsOptions | undefined,
 ): Promise<Array<Record<string, unknown>>> {
-  const [activeThreads, archivedThreads] = await Promise.all([
-    fetchCodexThreadList(client, options, false),
-    fetchCodexThreadList(client, options, true),
+  const [activeThreads, archivedThreads, activeIndex, archivedIndex] = await Promise.all([
+    fetchCodexThreadList(client, options, { archived: false, indexedOnly: false }),
+    fetchCodexThreadList(client, options, { archived: true, indexedOnly: false }),
+    fetchCodexThreadList(client, undefined, { archived: false, indexedOnly: true }),
+    fetchCodexThreadList(client, undefined, { archived: true, indexedOnly: true }),
   ]);
+  // 保留文件发现覆盖范围；已经建立原生索引的 ID 必须使用索引元数据，而不是某次续接的快照。
+  const indexed = new Map([...activeIndex, ...archivedIndex].map((thread) => [thread.id, thread]));
   const seenThreadIds = new Set<string>();
   const mergedThreads: Array<Record<string, unknown>> = [];
   for (const thread of [...activeThreads, ...archivedThreads]) {
@@ -1102,7 +1210,7 @@ async function fetchAllCodexThreads(
       }
       seenThreadIds.add(threadId);
     }
-    mergedThreads.push(thread);
+    mergedThreads.push(indexed.get(threadId) ?? thread);
   }
   return mergedThreads;
 }
@@ -4594,25 +4702,14 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async getSessionTitle(): Promise<string | null> {
     if (!this.client || !this.currentThreadId) return null;
-    const response = z
-      .object({
-        thread: z.object({
-          name: z.string().nullable().optional(),
-          preview: z.string().optional(),
-        }),
-      })
-      .parse(
-        await this.client.request("thread/read", {
-          threadId: this.currentThreadId,
-          includeTurns: false,
-        }),
-      );
-    return response.thread.name ?? response.thread.preview ?? null;
+    return codexSessionTitle(
+      await readCodexSessionMetadata({ client: this.client, threadId: this.currentThreadId }),
+    );
   }
 
   async renameSessionTitle(title: string): Promise<void> {
     if (!this.client || !this.currentThreadId) throw new Error("Codex 原生会话尚未建立。");
-    await this.client.request("thread/name/set", { threadId: this.currentThreadId, name: title });
+    await renameCodexSessionTitle({ client: this.client, threadId: this.currentThreadId, title });
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
@@ -7492,8 +7589,9 @@ export class CodexAppServerAgentClient implements AgentClient {
       return selectedThreads.map((thread) => {
         const threadId = typeof thread.id === "string" ? thread.id : "";
         const cwd = typeof thread.cwd === "string" ? thread.cwd : process.cwd();
-        const preview = typeof thread.preview === "string" ? thread.preview : null;
-        const title = typeof thread.name === "string" && thread.name.trim() ? thread.name : preview;
+        const metadata = CodexSessionMetadataSchema.parse({ thread }).thread;
+        const preview = metadata.preview ?? null;
+        const title = codexSessionTitle(metadata);
 
         return {
           providerHandleId: threadId,
@@ -7611,20 +7709,28 @@ export class CodexAppServerAgentClient implements AgentClient {
     try {
       await client.request("initialize", buildCodexAppServerInitializeParams());
       client.notify("initialized", {});
-      const response = z
-        .object({
-          thread: z.object({
-            name: z.string().nullable().optional(),
-            preview: z.string().optional(),
-          }),
-        })
-        .parse(
-          await client.request("thread/read", {
-            threadId: handle.nativeHandle ?? handle.sessionId,
-            includeTurns: false,
-          }),
-        );
-      return response.thread.name ?? response.thread.preview ?? null;
+      return codexSessionTitle(
+        await readCodexSessionMetadata({
+          client,
+          threadId: handle.nativeHandle ?? handle.sessionId,
+        }),
+      );
+    } finally {
+      await client.dispose();
+    }
+  }
+
+  async renameNativeSessionTitle({ handle, title }: RenameNativeSessionTitleInput): Promise<void> {
+    const child = await this.spawnAppServer();
+    const client = new CodexAppServerClient(child, this.logger);
+    try {
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+      await renameCodexSessionTitle({
+        client,
+        threadId: handle.nativeHandle ?? handle.sessionId,
+        title,
+      });
     } finally {
       await client.dispose();
     }

@@ -390,7 +390,7 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   };
 }
 
-function wrapClientProvider(
+export function wrapClientProvider(
   provider: AgentProvider,
   inner: AgentClient,
   profileModels: ProviderProfileModel[],
@@ -401,6 +401,9 @@ function wrapClientProvider(
   const importSession = inner.importSession?.bind(inner);
   const listFeatures = inner.listFeatures?.bind(inner);
   const getNativeSessionTitle = inner.getNativeSessionTitle?.bind(inner);
+  const renameNativeSessionTitle = inner.renameNativeSessionTitle?.bind(inner);
+  const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
+  const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
 
   return {
     provider,
@@ -419,6 +422,16 @@ function wrapClientProvider(
       ),
     getNativeSessionTitle: getNativeSessionTitle
       ? (handle) => getNativeSessionTitle({ ...handle, provider: inner.provider })
+      : undefined,
+    renameNativeSessionTitle: renameNativeSessionTitle
+      ? ({ handle, title }) =>
+          renameNativeSessionTitle({ handle: { ...handle, provider: inner.provider }, title })
+      : undefined,
+    archiveNativeSession: archiveNativeSession
+      ? (handle) => archiveNativeSession({ ...handle, provider: inner.provider })
+      : undefined,
+    unarchiveNativeSession: unarchiveNativeSession
+      ? (handle) => unarchiveNativeSession({ ...handle, provider: inner.provider })
       : undefined,
     resumeSession: async (handle, overrides, launchContext, options) =>
       wrapSessionProvider(
