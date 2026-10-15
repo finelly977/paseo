@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)][string]$ApkPath,
     [Parameter(Mandatory = $true)][string]$NotesPath,
-    [string]$SdkRoot = $env:ANDROID_HOME
+    [string]$SdkRoot = $env:ANDROID_HOME,
+    [switch]$ResumeDraft
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,14 +35,18 @@ $commit = (& git -C $root rev-parse HEAD).Trim()
 $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
 $hashFile = "$apk.sha256"
 [IO.File]::WriteAllText($hashFile, "$sha  $name`n")
-& gh release create $tag --repo $repo --target $commit --draft --title "Paseo 安卓 v$version" --notes-file $notes $apk $hashFile
-if ($LASTEXITCODE -ne 0) { throw 'GitHub 草稿上传失败，请检查草稿后重试，不要改用上游仓库' }
-$release = (& gh api "repos/$repo/releases/tags/$tag" | ConvertFrom-Json)
+if (-not $ResumeDraft) {
+    & gh release create $tag --repo $repo --target $commit --draft --title "Paseo 安卓 v$version" --notes-file $notes $apk $hashFile
+    if ($LASTEXITCODE -ne 0) { throw 'GitHub 草稿上传失败，请检查草稿后重试，不要改用上游仓库' }
+}
+# 草稿尚未创建真实标签，不能用 REST 的按标签读取接口查询。
+$release = (& gh release view $tag --repo $repo --json assets,isDraft | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0) { throw '无法读取 GitHub 草稿' }
+if (-not $release.isDraft) { throw '目标已正式发布，拒绝改写现有版本' }
 $asset = $release.assets | Where-Object name -EQ $name
 if ($asset.digest -ne "sha256:$sha" -or $asset.size -ne (Get-Item -LiteralPath $apk).Length) {
     throw 'GitHub 安装包摘要或大小不一致，草稿未发布'
 }
-& gh release edit $tag --repo $repo --draft=false --latest=false
+& gh release edit $tag --repo $repo --target $commit --draft=false --latest=false
 if ($LASTEXITCODE -ne 0) { throw '发布失败，安装包仍留在 GitHub 草稿中' }
 Write-Output "已发布：https://github.com/$repo/releases/tag/$tag"

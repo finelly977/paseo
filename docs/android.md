@@ -192,7 +192,7 @@ See [docs/release.md](release.md) for the full mobile-build babysitting flow.
 .\scripts\publish-android-apk.ps1 -ApkPath '.output\deliverables\Paseo-0.2.3-android.apk' -NotesPath '.output\android-release-notes.md' -SdkRoot $env:ANDROID_HOME
 ```
 
-脚本检查包名、版本、签名与干净源码，上传草稿并核对 GitHub 资产摘要后正式发布。`android-apk-v*` 不触发原作者的 `v*` / `android-v*` EAS 与商店工作流，不发布 npm。未来使用者在应用内检查、下载并确认系统安装即可，不再手工传 APK。
+脚本检查包名、版本、签名与干净源码，上传草稿并核对 GitHub 资产摘要后正式发布。上传完成但后续步骤失败时，检查现有草稿后可加 `-ResumeDraft` 继续校验和发布，不重复上传；正式发布的版本禁止覆盖。`android-apk-v*` 不触发原作者的 `v*` / `android-v*` EAS 与商店工作流，不发布 npm。未来使用者在应用内检查、下载并确认系统安装即可，不再手工传 APK。
 
 Windows 可直接使用已安装 JDK、Android SDK 和生成工程内的 `gradlew.bat`。依赖与 SDK 下载完成后，执行：
 
