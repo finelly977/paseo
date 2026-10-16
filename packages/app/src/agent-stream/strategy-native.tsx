@@ -1,4 +1,4 @@
-import {
+import React, {
   Fragment,
   type ReactElement,
   useCallback,
@@ -25,6 +25,8 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { shouldLoadNativeHistory, visibleNativeHistoryRows } from "./native-history-pagination";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
+import { useContentToggleAnchor } from "./use-content-toggle-anchor";
+import type { ContentToggleRequest } from "./content-toggle-anchor";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import {
   createStreamStrategy,
@@ -37,6 +39,8 @@ const DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION = Object.freeze({
   autoscrollToTopThreshold: 0,
 });
 const HISTORY_FOOTER_STYLE = { alignItems: "center", paddingVertical: 12 } as const;
+const VIEWPORT_STYLE = { flex: 1 } as const;
+const HISTORY_EDGE_STYLE = { width: 1, height: 1 } as const;
 
 interface HistoryRowDisplayVariants {
   regular?: StreamItem;
@@ -58,6 +62,16 @@ function getHistoryRowDisplayVariant(item: StreamItem, compact: boolean): Stream
 
 function keyExtractor(item: { id: string }): string {
   return item.id;
+}
+
+function measureAnchorBounds(input: {
+  scroll: View;
+  edge: View;
+  onMeasured: (bounds: { scrollTop: number; edgeTop: number }) => void;
+}): void {
+  input.scroll.measureInWindow((_x, scrollTop) => {
+    input.edge.measureInWindow((_edgeX, edgeTop) => input.onMeasured({ scrollTop, edgeTop }));
+  });
 }
 
 function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrategy }) {
@@ -85,6 +99,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   } = props;
   const { renderHistoryMountedRow, renderLiveHeadRow, renderLiveAuxiliary } = renderers;
   const flatListRef = useRef<FlatList<StreamItem>>(null);
+  const nativeViewportRef = useRef<View>(null);
+  const historyEdgeRef = useRef<View>(null);
+  const [preservedTopGap, setPreservedTopGap] = useState(0);
+  const nativeContentStyle = useMemo(
+    () => [
+      baseListContentContainerStyle,
+      {
+        paddingBottom: (props.conversationVerticalPadding ?? 0) + preservedTopGap,
+      },
+    ],
+    [baseListContentContainerStyle, props.conversationVerticalPadding, preservedTopGap],
+  );
   const streamViewportMetricsRef = useRef({
     containerKey: "native-virtualized",
     contentHeight: 0,
@@ -102,8 +128,20 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
   const historyStartReadyRef = useRef(false);
   const lastHistoryRequestRef = useRef<string | null>(null);
+  const toggleTargetRef = useRef<{
+    itemId: string;
+    previousIndex: number;
+    viewportTop: number;
+    revealedIndex: number | null;
+    contentHeight: number;
+    contentChanged: boolean;
+    topGap: number;
+    resolved: boolean;
+    lastMeasuredIndex: number;
+  } | null>(null);
 
   const loadHistoryAtOldestEdge = useStableEvent((manual = false) => {
+    if (isToggleAnchoring) return;
     const metrics = streamViewportMetricsRef.current;
     if (
       !shouldLoadNativeHistory({
@@ -128,20 +166,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
   const handleManualHistoryLoad = useStableEvent(() => loadHistoryAtOldestEdge(true));
   const handleEndReached = useStableEvent(() => loadHistoryAtOldestEdge());
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => loadHistoryAtOldestEdge());
-    return () => cancelAnimationFrame(frame);
-  }, [
-    historyStartCursor,
-    isLoadingOlderHistory,
-    isAuthoritativeHistoryReady,
-    hasOlderHistory,
-    isActive,
-    segments.historyMounted.length,
-    segments.historyVirtualized.length,
-    loadHistoryAtOldestEdge,
-  ]);
 
   const historyItems = useMemo(() => {
     if (segments.historyVirtualized.length === 0) {
@@ -252,10 +276,173 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     },
     scrollToBottom,
   });
+  const setAnchorOffset = useStableEvent((offset: number) => {
+    programmaticScrollEventBudgetRef.current = 3;
+    scrollOffsetYRef.current = offset;
+    streamViewportMetricsRef.current.offsetY = offset;
+    flatListRef.current?.scrollToOffset({ offset, animated: false });
+  });
+  const {
+    active: isToggleAnchoring,
+    preserve: preserveToggleAnchor,
+    cancel: cancelToggleAnchor,
+  } = useContentToggleAnchor({
+    inverted: true,
+    getOffset: () => scrollOffsetYRef.current,
+    setOffset: setAnchorOffset,
+    detach: () => {
+      clearPendingUserScrollEnd();
+      bottomAnchorController.detachByUser();
+    },
+  });
+  const preserveProcessAnchor = useStableEvent((request: ContentToggleRequest) => {
+    let captured = false;
+    let capturedTarget: typeof toggleTargetRef.current = null;
+    const previousIndex = historyRows.findIndex((item) => item.id === request.itemId);
+    preserveToggleAnchor({
+      ...request,
+      applyChange: () => {
+        // 只在共享控制器确认本次点击仍有效后发布原生定位目标。
+        toggleTargetRef.current = capturedTarget;
+        if (capturedTarget) setPreservedTopGap(capturedTarget.topGap);
+        request.applyChange();
+      },
+      measure: (callback) => {
+        if (captured) revealProcessAnchor(true);
+        request.measure((top) => {
+          if (captured || top === null) {
+            const target = toggleTargetRef.current;
+            if (captured && target !== capturedTarget) {
+              callback(null);
+              return;
+            }
+            if (captured && target && !target.contentChanged) {
+              callback(null);
+              return;
+            }
+            if (captured && target) target.resolved = top !== null;
+            callback(top);
+            return;
+          }
+          captured = true;
+          const scroll = nativeViewportRef.current;
+          const edge = historyEdgeRef.current;
+          if (!scroll || !edge) {
+            callback(null);
+            return;
+          }
+          measureAnchorBounds({
+            scroll,
+            edge,
+            onMeasured: ({ scrollTop, edgeTop }) => {
+              capturedTarget = {
+                itemId: request.itemId,
+                previousIndex,
+                viewportTop: top - scrollTop,
+                revealedIndex: null,
+                contentHeight: streamViewportMetricsRef.current.contentHeight,
+                contentChanged: false,
+                topGap:
+                  streamViewportMetricsRef.current.contentHeight <=
+                  streamViewportMetricsRef.current.viewportHeight + 1
+                    ? Math.max(preservedTopGap, edgeTop - scrollTop)
+                    : preservedTopGap,
+                resolved: false,
+                lastMeasuredIndex: -1,
+              };
+              console.debug("[AgentStream] Captured process anchor", {
+                itemId: request.itemId,
+                top,
+                scrollTop,
+                edgeTop,
+                contentHeight: streamViewportMetricsRef.current.contentHeight,
+                viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+                topGap: capturedTarget.topGap,
+              });
+              callback(top);
+            },
+          });
+        });
+      },
+    });
+  });
+  const revealProcessAnchor = useStableEvent((force = false) => {
+    const target = toggleTargetRef.current;
+    if (!isToggleAnchoring || !target || target.resolved) return;
+    const index = historyRows.findIndex((item) => item.id === target.itemId);
+    if (index < 0)
+      console.debug("[AgentStream] Missing process row", {
+        itemId: target.itemId,
+        count: historyRows.length,
+      });
+    if (index < 0 || index === target.previousIndex || (!force && index === target.revealedIndex))
+      return;
+    // 展开会把同一个入口移到较大的虚拟下标，先让其重新进入渲染窗口，再精确校正屏幕坐标。
+    target.revealedIndex = index;
+    flatListRef.current?.scrollToIndex({
+      index,
+      viewPosition: 1,
+      viewOffset: -target.viewportTop,
+      animated: false,
+    });
+  });
+  useLayoutEffect(() => {
+    if (!isToggleAnchoring) {
+      toggleTargetRef.current = null;
+      return;
+    }
+    revealProcessAnchor();
+  }, [historyRows, isToggleAnchoring, revealProcessAnchor]);
+  const handleScrollToIndexFailed = useStableEvent(
+    (input: { index: number; averageItemLength: number; highestMeasuredFrameIndex: number }) => {
+      const target = toggleTargetRef.current;
+      if (!isToggleAnchoring || !target) {
+        console.error(
+          "[AgentStream] 历史定位目标尚未测量",
+          new Error("Unmeasured history row"),
+          input,
+        );
+        return;
+      }
+      if (target.lastMeasuredIndex !== input.highestMeasuredFrameIndex) {
+        target.lastMeasuredIndex = input.highestMeasuredFrameIndex;
+        console.debug("[AgentStream] Seeking process row", {
+          ...input,
+          contentHeight: streamViewportMetricsRef.current.contentHeight,
+          viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+          offset: scrollOffsetYRef.current,
+        });
+      }
+      setAnchorOffset(
+        Math.max(
+          0,
+          input.averageItemLength * (input.index + 1) -
+            streamViewportMetricsRef.current.viewportHeight +
+            target.viewportTop,
+        ),
+      );
+    },
+  );
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => loadHistoryAtOldestEdge());
+    return () => cancelAnimationFrame(frame);
+  }, [
+    historyStartCursor,
+    isLoadingOlderHistory,
+    isAuthoritativeHistoryReady,
+    hasOlderHistory,
+    isToggleAnchoring,
+    isActive,
+    segments.historyMounted.length,
+    segments.historyVirtualized.length,
+    loadHistoryAtOldestEdge,
+  ]);
+
   // Android's maintainVisibleContentPosition ignores the list inversion transform and
   // fights the controller's offset-zero correction while the live header grows.
   const maintainVisibleContentPosition =
-    Platform.OS === "android" && bottomAnchorController.mode === "sticky-bottom"
+    isToggleAnchoring ||
+    (Platform.OS === "android" && bottomAnchorController.mode === "sticky-bottom")
       ? undefined
       : DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION;
 
@@ -275,6 +462,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     clearNativeViewportSettling();
     setIsNativeViewportSettling(false);
     historyStartReadyRef.current = false;
+    setPreservedTopGap(0);
     lastHistoryRequestRef.current = null;
     const frame = requestAnimationFrame(() => {
       historyStartReadyRef.current = true;
@@ -285,6 +473,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       clearPendingUserScrollEnd();
     };
   }, [agentId, clearNativeViewportSettling, clearPendingUserScrollEnd, loadHistoryAtOldestEdge]);
+
+  useEffect(() => {
+    if (!isActive) cancelToggleAnchor();
+    return () => cancelToggleAnchor();
+  }, [agentId, isActive, cancelToggleAnchor]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -315,13 +508,17 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   useEffect(() => {
     const handle: StreamViewportHandle = {
+      preserveScrollAnchor: preserveProcessAnchor,
       scrollToBottom: (reason = "jump-to-bottom") => {
+        cancelToggleAnchor();
+        setPreservedTopGap(0);
         bottomAnchorController.requestLocalAnchor({
           agentId,
           reason,
         });
       },
       scrollToItem: (itemId) => {
+        cancelToggleAnchor();
         const index = historyRows.findIndex((item) => item.id === itemId);
         if (index >= 0) {
           try {
@@ -357,6 +554,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     markNativeViewportSettling,
     segments.liveHead,
     viewportRef,
+    preserveProcessAnchor,
+    cancelToggleAnchor,
   ]);
 
   const isScrollEventNearBottom = useStableEvent(
@@ -407,6 +606,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
 
   const handleScrollBeginDrag = useStableEvent(() => {
+    cancelToggleAnchor();
     clearPendingUserScrollEnd();
     isUserScrollActiveRef.current = true;
     bottomAnchorController.beginUserScroll();
@@ -469,6 +669,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     if (!isActive || height <= 0) return;
     const previousContentHeight = streamViewportMetricsRef.current.contentHeight;
     const nextContentHeight = Math.max(0, height);
+    const target = toggleTargetRef.current;
+    if (target && nextContentHeight !== target.contentHeight) target.contentChanged = true;
     streamViewportMetricsRef.current = {
       ...streamViewportMetricsRef.current,
       containerKey: "native-virtualized",
@@ -479,6 +681,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       previousContentHeight,
       contentHeight: nextContentHeight,
     });
+    revealProcessAnchor(true);
     loadHistoryAtOldestEdge();
   });
 
@@ -521,23 +724,30 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   ]);
 
   const historyFooterContent = useMemo(() => {
-    if (!hasOlderHistory && !isLoadingOlderHistory) {
-      return null;
-    }
     return (
-      <View style={HISTORY_FOOTER_STYLE}>
-        {isLoadingOlderHistory ? (
-          <ActivityIndicator testID="load-older-history-spinner" size="small" />
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            testID="load-older-history"
-            onPress={handleManualHistoryLoad}
-          >
-            加载更早消息
-          </Button>
-        )}
+      <View>
+        <View
+          ref={historyEdgeRef}
+          collapsable={false}
+          pointerEvents="none"
+          style={HISTORY_EDGE_STYLE}
+        />
+        {hasOlderHistory || isLoadingOlderHistory ? (
+          <View style={HISTORY_FOOTER_STYLE}>
+            {isLoadingOlderHistory ? (
+              <ActivityIndicator testID="load-older-history-spinner" size="small" />
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                testID="load-older-history"
+                onPress={handleManualHistoryLoad}
+              >
+                加载更早消息
+              </Button>
+            )}
+          </View>
+        ) : null}
       </View>
     );
   }, [hasOlderHistory, isLoadingOlderHistory, handleManualHistoryLoad]);
@@ -545,38 +755,41 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   // RN's FlatList strictMode keeps its internal renderItem wrapper stable when
   // data or the live header changes, preserving the row identities above.
   return (
-    <FlatList
-      ref={flatListRef}
-      data={historyRows}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      strictMode
-      testID="agent-chat-scroll"
-      nativeID="agent-chat-scroll-native-virtualized"
-      ListHeaderComponent={liveHeaderContent ?? undefined}
-      ListFooterComponent={historyFooterContent ?? undefined}
-      contentContainerStyle={baseListContentContainerStyle}
-      style={listStyle}
-      onLayout={handleListLayout}
-      onScroll={handleScroll}
-      onScrollBeginDrag={handleScrollBeginDrag}
-      onScrollEndDrag={handleScrollEndDrag}
-      onMomentumScrollBegin={handleMomentumScrollBegin}
-      onMomentumScrollEnd={handleMomentumScrollEnd}
-      scrollEventThrottle={16}
-      onContentSizeChange={handleContentSizeChange}
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.2}
-      maintainVisibleContentPosition={maintainVisibleContentPosition}
-      initialNumToRender={40}
-      maxToRenderPerBatch={40}
-      updateCellsBatchingPeriod={0}
-      windowSize={21}
-      removeClippedSubviews={false}
-      scrollEnabled={scrollEnabled}
-      showsVerticalScrollIndicator
-      inverted
-    />
+    <View ref={nativeViewportRef} collapsable={false} style={VIEWPORT_STYLE}>
+      <FlatList
+        ref={flatListRef}
+        data={historyRows}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        strictMode
+        testID="agent-chat-scroll"
+        nativeID="agent-chat-scroll-native-virtualized"
+        ListHeaderComponent={liveHeaderContent ?? undefined}
+        ListFooterComponent={historyFooterContent ?? undefined}
+        contentContainerStyle={nativeContentStyle}
+        style={listStyle}
+        onLayout={handleListLayout}
+        onScroll={handleScroll}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollBegin={handleMomentumScrollBegin}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        scrollEventThrottle={16}
+        onContentSizeChange={handleContentSizeChange}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.2}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        maintainVisibleContentPosition={maintainVisibleContentPosition}
+        initialNumToRender={40}
+        maxToRenderPerBatch={40}
+        updateCellsBatchingPeriod={0}
+        windowSize={21}
+        removeClippedSubviews={false}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator
+        inverted
+      />
+    </View>
   );
 }
 

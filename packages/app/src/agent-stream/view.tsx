@@ -123,6 +123,7 @@ import {
 } from "./history-index-model";
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
+import { renderCompletedProcessRow } from "./completed-process-row";
 import { getStandaloneMarkdownImages } from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
@@ -303,13 +304,26 @@ function CompletedTurnProcessToggle({
   model,
   expanded,
   onToggle,
+  registerAnchor,
+  anchorItemId,
 }: {
   model: CompletedTurnProcessToggleModel;
   expanded: boolean;
-  onToggle: (turnId: string) => void;
+  onToggle: (input: { turnId: string; itemId: string }) => void;
+  registerAnchor: (input: { turnId: string; node: View }) => () => void;
+  anchorItemId: string;
 }) {
   const { t, i18n } = useTranslation();
-  const handlePress = useCallback(() => onToggle(model.turnId), [model.turnId, onToggle]);
+  const handlePress = useCallback(
+    () => onToggle({ turnId: model.turnId, itemId: anchorItemId }),
+    [anchorItemId, model.turnId, onToggle],
+  );
+  const anchorRef = useCallback(
+    (node: View | null) => {
+      if (node) return registerAnchor({ turnId: model.turnId, node });
+    },
+    [model.turnId, registerAnchor],
+  );
   const iconStyle = useMemo(
     () => [stylesheet.completedTurnProcessToggleIcon, expanded && stylesheet.processToggleExpanded],
     [expanded],
@@ -336,7 +350,12 @@ function CompletedTurnProcessToggle({
   );
 
   return (
-    <View style={rowStyle}>
+    <View
+      ref={anchorRef}
+      collapsable={false}
+      style={rowStyle}
+      testID={`completed-process-${model.turnId}`}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
@@ -773,17 +792,43 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       streamLayout.liveHead,
     ]);
 
-    const toggleCompletedTurnProcess = useCallback((turnId: string) => {
-      setExpandedCompletedTurnIds((previous) => {
-        const next = new Set(previous);
-        if (next.has(turnId)) {
-          next.delete(turnId);
-        } else {
-          next.add(turnId);
-        }
-        return next;
-      });
-    }, []);
+    const completedProcessAnchors = useRef(new Map<string, View>());
+    const registerCompletedProcessAnchor = useCallback(
+      ({ turnId, node }: { turnId: string; node: View }) => {
+        completedProcessAnchors.current.set(turnId, node);
+        return () => {
+          if (completedProcessAnchors.current.get(turnId) === node)
+            completedProcessAnchors.current.delete(turnId);
+        };
+      },
+      [],
+    );
+    const toggleCompletedTurnProcess = useCallback(
+      ({ turnId, itemId }: { turnId: string; itemId: string }) => {
+        viewportRef.current?.preserveScrollAnchor({
+          itemId,
+          measure: (callback) => {
+            const node = completedProcessAnchors.current.get(turnId);
+            if (!node) {
+              callback(null);
+              return;
+            }
+            node.measureInWindow((_x, top, _width, height) => callback(height > 0 ? top : null));
+          },
+          applyChange: () =>
+            setExpandedCompletedTurnIds((previous) => {
+              const next = new Set(previous);
+              if (next.has(turnId)) {
+                next.delete(turnId);
+              } else {
+                next.add(turnId);
+              }
+              return next;
+            }),
+        });
+      },
+      [],
+    );
     const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
       const seen = new Set<string>();
@@ -1203,16 +1248,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         if (!toggle) {
           return renderedItem;
         }
-        return (
-          <>
+        return renderCompletedProcessRow({
+          order: layoutItem.frameOrder,
+          content: renderedItem,
+          toggle: (
             <CompletedTurnProcessToggle
               model={toggle}
               expanded={expandedCompletedTurnIds.has(toggle.turnId)}
               onToggle={toggleCompletedTurnProcess}
+              registerAnchor={registerCompletedProcessAnchor}
+              anchorItemId={layoutItem.item.id}
             />
-            {renderedItem}
-          </>
-        );
+          ),
+        });
       },
       [
         completedTurnProcess,
@@ -1223,6 +1271,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
         supportsAgentForkContextCursor,
         toggleCompletedTurnProcess,
+        registerCompletedProcessAnchor,
       ],
     );
 
@@ -1376,10 +1425,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const streamScrollEnabled =
       !streamRenderStrategy.shouldDisableParentScrollOnInlineDetailsExpansion() ||
       expandedInlineToolCallIds.size === 0;
-    const historyDisplayStateIds = useMemo(
-      () => new Set([...expandedToolCallGroupIds, ...expandedCompletedTurnIds]),
-      [expandedCompletedTurnIds, expandedToolCallGroupIds],
-    );
+    const processMembershipRef = useRef(completedTurnProcess.turnIdByProcessItemId);
+    processMembershipRef.current = completedTurnProcess.turnIdByProcessItemId;
+    const historyDisplayStateIds = useMemo(() => {
+      const ids = new Set([...expandedToolCallGroupIds, ...expandedCompletedTurnIds]);
+      // 原生单元按条目身份缓存；只有一个过程项时下标不会改变，也需要刷新入口和正文。
+      for (const [itemId, turnId] of processMembershipRef.current) {
+        if (expandedCompletedTurnIds.has(turnId)) ids.add(itemId);
+      }
+      return ids;
+    }, [expandedCompletedTurnIds, expandedToolCallGroupIds]);
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {

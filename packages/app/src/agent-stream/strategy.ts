@@ -7,6 +7,7 @@ import type {
   BottomAnchorLocalRequest,
   BottomAnchorRouteRequest,
 } from "./bottom-anchor-controller";
+import type { ContentToggleRequest } from "./content-toggle-anchor";
 
 type EdgeSlot = "header" | "footer";
 type NeighborRelation = "above" | "below";
@@ -44,6 +45,7 @@ export interface StreamViewportHandle {
   scrollToBottom: (reason?: BottomAnchorLocalRequest["reason"]) => void;
   scrollToItem: (itemId: string) => void;
   prepareForViewportChange: () => void;
+  preserveScrollAnchor: (request: ContentToggleRequest) => void;
 }
 
 export interface StreamSegmentRenderers {

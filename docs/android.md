@@ -186,7 +186,7 @@ See [docs/release.md](release.md) for the full mobile-build babysitting flow.
 
 当前侧载系列继续沿用原已分发测试签名以支持覆盖安装，不冒充官方商店签名。密钥备份在被 Git 忽略的 `packages/app/.secrets/android-local.keystore`，生成原生工程后、执行 Gradle 前复制到 `android/app/debug.keystore`；保管备份，不上传仓库。未来不能直接更换签名，否则已安装用户无法覆盖更新。需改用独立正式密钥时，必须另行设计迁移。
 
-后续发布步骤：同步并递增仓库版本，构建及验收同签名 Release APK，提交并推送 `origin`，再执行：
+后续发布可在同步、递增版本并提交推送二开 `main` 后，点击工作区运行菜单的“打包并发布 Android”，自动完整构建、校验并发布；中断后重新点击可继续同一草稿。具体前提见 [release.md](release.md#二开工作区安装包发布按钮)。也保留已经构建及验收 APK 的手动发布方式：
 
 ```powershell
 .\scripts\publish-android-apk.ps1 -ApkPath '.output\deliverables\Paseo-0.2.3-android.apk' -NotesPath '.output\android-release-notes.md' -SdkRoot $env:ANDROID_HOME
@@ -194,25 +194,17 @@ See [docs/release.md](release.md) for the full mobile-build babysitting flow.
 
 脚本检查包名、版本、签名与干净源码，上传草稿并核对 GitHub 资产摘要后正式发布。上传完成但后续步骤失败时，检查现有草稿后可加 `-ResumeDraft` 继续校验和发布，不重复上传；正式发布的版本禁止覆盖。`android-apk-v*` 不触发原作者的 `v*` / `android-v*` EAS 与商店工作流，不发布 npm。未来使用者在应用内检查、下载并确认系统安装即可，不再手工传 APK。
 
-Windows 可直接使用已安装 JDK、Android SDK 和生成工程内的 `gradlew.bat`。依赖与 SDK 下载完成后，执行：
+Windows 的仅构建入口使用已安装 JDK、Android SDK 和生成工程内的 `gradlew.bat`。依赖与 SDK 下载完成后，执行：
 
 ```powershell
-$env:APP_VARIANT = 'production'
-$env:PASEO_LOCAL_APK = '1'
-$env:EXPO_NO_METRO_WORKSPACE_ROOT = '1'
+$env:JAVA_HOME = '<JDK 绝对路径>'
 $env:ANDROID_HOME = '<Android SDK 绝对路径>'
-$env:NODE_ENV = 'production'
-npm.cmd run build:app-deps
-Push-Location 'packages\app'
-npx.cmd expo prebuild --platform android --no-install
-Copy-Item -LiteralPath '.secrets\android-local.keystore' -Destination 'android\app\debug.keystore' -Force
-Push-Location 'android'
-.\gradlew.bat :app:assembleRelease '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=2 '-Dorg.gradle.parallel=false' -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease
-Pop-Location
-Pop-Location
+npm run build:android:apk
+# 仅检查本地工具与签名备份，不构建：
+npm run build:android:apk -- -CheckOnly
 ```
 
-产物位于 `packages/app/android/app/build/outputs/apk/release/app-release.apk`。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10。默认本地生成工程使用开发测试签名，不能覆盖签名不同的官方安装包；正式分发前必须配置独立持久的发布密钥，不能误报为官方签名。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。
+脚本依次重建应用依赖、终端与 Mermaid 资源、生成原生工程、复制原侧载密钥，再使用单 Gradle worker、双 Metro worker 构建 ARM64 与 x86_64 Release APK；不跳过前端编译。构建后恢复被生成器改写的受控资源源码和临时 Gradle 并行设置；若资源在构建期间被外部修改，保留该修改并停止，不覆盖用户编辑。产物复制到 `.output/deliverables/Paseo-X.Y.Z-android.apk`，并校验包名、版本、同签名及原生库 16 KB 对齐；不会自动上传或安装。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10；`x86_64` 便于隔离模拟器验收。沿用持久备份的原侧载测试签名，不更换签名，也不冒充官方安装包。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。
 
 Windows 原生打包需要 EXPO_NO_METRO_WORKSPACE_ROOT=1，使 Gradle 传入的相对入口按应用目录解析。Metro 在此模式下显式监听 packages 与仓库根 node_modules，并保留两层依赖路径，避免共享包的链接被当作不存在；普通网页和开发服务器不启用该标记。
 

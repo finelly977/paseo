@@ -15,6 +15,7 @@ import { estimateStreamItemHeight, shouldAutoLoadOlderHistory } from "./web-virt
 import { getStreamItemDomId } from "./history-index-model";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { createStreamStrategy } from "./strategy";
+import { useContentToggleAnchor } from "./use-content-toggle-anchor";
 
 interface CreateWebStreamStrategyInput {
   isMobileBreakpoint: boolean;
@@ -314,6 +315,35 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
   }, []);
 
+  const {
+    active: isToggleAnchoring,
+    preserve: preserveToggleAnchor,
+    cancel: cancelToggleAnchor,
+  } = useContentToggleAnchor({
+    inverted: false,
+    getOffset: () => {
+      const scroll = scrollContainerRef.current;
+      if (!scroll) throw new Error("展开时对话视口未挂载");
+      return scroll.scrollTop;
+    },
+    setOffset: (offset) => {
+      const scroll = scrollContainerRef.current;
+      if (!scroll) return;
+      scroll.scrollTop = offset;
+      lastKnownScrollTopRef.current = scroll.scrollTop;
+    },
+    detach: () => {
+      setFollowOutput(false);
+      pendingUserScrollUpIntentRef.current = false;
+      cancelPendingStickToBottom();
+      cancelPendingHistoryAnchor();
+      if (pendingItemJumpFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingItemJumpFrameRef.current);
+        pendingItemJumpFrameRef.current = null;
+      }
+    },
+  });
+
   const scrollMessagesToBottom = useCallback(
     (behavior: ScrollBehaviorLike = "auto") => {
       const scrollContainer = scrollContainerRef.current;
@@ -374,7 +404,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     const scrolledDown =
       currentScrollTop > lastKnownScrollTopRef.current + USER_SCROLL_DELTA_EPSILON;
 
-    if (!followOutputRef.current && isAtBottom && scrolledDown) {
+    if (!isToggleAnchoring && !followOutputRef.current && isAtBottom && scrolledDown) {
       setFollowOutput(true);
       pendingUserScrollUpIntentRef.current = false;
     } else if (followOutputRef.current && pendingUserScrollUpIntentRef.current) {
@@ -393,6 +423,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     lastKnownScrollTopRef.current = currentScrollTop;
     updateScrollMetrics();
     if (
+      !isToggleAnchoring &&
       historyStartReadyRef.current &&
       isAuthoritativeHistoryReady &&
       !isLoadingOlderHistory &&
@@ -408,6 +439,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     isLoadingOlderHistory,
     onNearHistoryStart,
     updateScrollMetrics,
+    isToggleAnchoring,
   ]);
 
   const requestOlderHistoryFromUserIntent = useCallback(() => {
@@ -427,6 +459,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   }, [hasOlderHistory, isAuthoritativeHistoryReady, isLoadingOlderHistory, onNearHistoryStart]);
 
   const autoLoadOlderHistoryIfViewportIsTooShort = useCallback(() => {
+    if (isToggleAnchoring) return;
     const scrollContainer = scrollContainerRef.current;
     if (
       !scrollContainer ||
@@ -474,6 +507,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     segments.historyMounted,
     segments.historyVirtualized,
     segments.liveHead,
+    isToggleAnchoring,
   ]);
 
   useEffect(() => {
@@ -588,6 +622,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
 
     const handleWheel = (event: WheelEvent) => {
+      cancelToggleAnchor();
       cancelPendingHistoryAnchor();
       if (event.deltaY < 0) {
         pendingUserScrollUpIntentRef.current = true;
@@ -596,6 +631,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
     };
     const handlePointerDown = () => {
+      cancelToggleAnchor();
       cancelPendingHistoryAnchor();
       isPointerScrollActiveRef.current = true;
     };
@@ -603,6 +639,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       isPointerScrollActiveRef.current = false;
     };
     const handleTouchStart = (event: TouchEvent) => {
+      cancelToggleAnchor();
       cancelPendingHistoryAnchor();
       const touch = event.touches[0];
       if (!touch) {
@@ -627,6 +664,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       lastTouchClientYRef.current = null;
     };
     const handleKeyDown = (event: KeyboardEvent) => {
+      cancelToggleAnchor();
       const editingText =
         event.target instanceof HTMLElement &&
         event.target.closest("input, textarea, select, [contenteditable='true']") !== null;
@@ -664,6 +702,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     };
   }, [
     cancelPendingHistoryAnchor,
+    cancelToggleAnchor,
     cancelPendingStickToBottom,
     handleDomScroll,
     hasOlderHistory,
@@ -797,6 +836,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   });
   const scrollToItem = useCallback(
     (itemId: string) => {
+      cancelToggleAnchor();
       cancelPendingHistoryAnchor();
       setFollowOutput(false);
       cancelPendingStickToBottom();
@@ -861,11 +901,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       cancelPendingStickToBottom,
       rowVirtualizer,
       segments.historyVirtualized,
+      cancelToggleAnchor,
     ],
   );
   useEffect(() => {
     const handle: StreamViewportHandle = {
+      preserveScrollAnchor: preserveToggleAnchor,
       scrollToBottom: () => {
+        cancelToggleAnchor();
         cancelPendingHistoryAnchor();
         setFollowOutput(true);
         cancelPendingStickToBottom();
@@ -893,6 +936,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     scheduleStickToBottom,
     scrollToItem,
     viewportRef,
+    cancelToggleAnchor,
+    preserveToggleAnchor,
   ]);
   const historyStartSlot = useMemo(() => {
     if (!isLoadingOlderHistory) {

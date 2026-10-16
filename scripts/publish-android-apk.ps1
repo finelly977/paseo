@@ -1,15 +1,16 @@
 param(
     [Parameter(Mandatory = $true)][string]$ApkPath,
-    [Parameter(Mandatory = $true)][string]$NotesPath,
+    [string]$NotesPath,
     [string]$SdkRoot = $env:ANDROID_HOME,
-    [switch]$ResumeDraft
+    [switch]$ResumeDraft,
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = 'finelly977/paseo'
 $root = Split-Path -Parent $PSScriptRoot
 $apk = (Resolve-Path -LiteralPath $ApkPath).Path
-$notes = (Resolve-Path -LiteralPath $NotesPath).Path
+if (-not $ValidateOnly -and -not $NotesPath) { throw '发布时必须通过 -NotesPath 提供发布说明' }
 $version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
 if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw '安卓更新仅发布正式数字版本' }
 $code = [int]$Matches[1] * 1000000 + [int]$Matches[2] * 1000 + [int]$Matches[3]
@@ -26,11 +27,19 @@ if ($LASTEXITCODE -ne 0) { throw 'APK 签名校验失败' }
 if (($signatures -join "`n") -notmatch 'fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c') {
     throw '签名与当前已分发的二开 APK 不一致，不能覆盖升级'
 }
+& (Join-Path $buildTools.FullName 'zipalign.exe') -c -P 16 -v 4 $apk
+if ($LASTEXITCODE -ne 0) { throw 'APK 原生库未正确按 16 KB 对齐，拒绝分发' }
 $badging = (& $aapt dump badging $apk) -join "`n"
 if ($LASTEXITCODE -ne 0 -or $badging -notmatch "package: name='sh.paseo' versionCode='$code' versionName='$version'") {
     throw 'APK 包名或版本与源码不一致'
 }
+if ($ValidateOnly) {
+    Write-Output 'APK 包名、版本、签名及 16 KB 对齐校验通过；未上传或发布。'
+    return
+}
 if ((& git -C $root status --porcelain)) { throw '请先提交本次交付文件，确保发布源可追溯' }
+if ($LASTEXITCODE -ne 0) { throw '无法读取发布源码状态' }
+$notes = (Resolve-Path -LiteralPath $NotesPath).Path
 $commit = (& git -C $root rev-parse HEAD).Trim()
 $sha = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLowerInvariant()
 $hashFile = "$apk.sha256"

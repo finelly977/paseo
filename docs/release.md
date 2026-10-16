@@ -1,5 +1,39 @@
 # Release
 
+## 二开工作区安装包发布按钮
+
+本仓库日常分发使用下面的二开流程，不执行本文后续保留的原作者 npm、EAS、商店和网站发布流程。
+
+根目录 `paseo.json` 配置了“打包并发布 Windows”和“打包并发布 Android”两个普通任务，出现在桌面布局的工作区顶部运行脚本菜单。配置变化由工作区脚本列表读取，重新进入工作区可刷新；不需要重新安装桌面端或重启主守护进程。只有点击相应运行按钮才会开始构建和发布。任务在工作区所在的 Windows Host 上运行，不在远程查看界面的客户端编译。
+
+发布前提：
+
+- Windows 主机已安装 Node.js、npm、Git、GitHub CLI、PowerShell 7；项目依赖已安装，`gh auth login` 已完成且对 `finelly977/paseo` 有发布权限。
+- 发布源必须是干净的二开 `main`，当前提交已推送且与 `origin/main` 一致；版本、全部工作区、内部依赖与锁文件一致。脚本不会自动改版本、提交、切分支或推送。
+- 使用递增的 `X.Y.Z` 正式版本；同一平台已公开的版本不能覆盖或回退。Windows 和 Android 可使用相同源码版本分别发布。
+- 安卓还需要 JDK、Android SDK，以及保存在 `packages/app/.secrets/android-local.keystore` 的原侧载签名备份。使用 `JAVA_HOME`、`ANDROID_HOME` 指定工具目录；未设置时分别从当前 Java 和 Windows 用户标准 SDK 位置定位。没有原密钥会立即停止，不生成替代签名。
+
+点击后的流程：检查源码与 GitHub 状态 → 类型检查及 Lint → 完整本地构建 → 再次确认源码未变 → 创建 GitHub 草稿 → 逐项上传 → 校验服务器资产的 SHA256 和大小 → 正式发布。两平台共用本地发布锁，避免共享构建目录被并发覆盖；进度与错误留在对应工作区终端，菜单沿用运行状态和退出结果。
+
+| 按钮               | 标签                       | 分发内容                                                                                          |
+| ------------------ | -------------------------- | ------------------------------------------------------------------------------------------------- |
+| 打包并发布 Windows | `windows-installer-vX.Y.Z` | x64 NSIS `.exe`、`.blockmap`、`latest.yml`、安装包 SHA256；标记 GitHub latest，桌面更新即时可见   |
+| 打包并发布 Android | `android-apk-vX.Y.Z`       | Android 10+、ARM64 与 x86_64 Release APK、SHA256；保留原侧载签名、停用上游 OTA，不改变桌面 latest |
+
+产物、发布说明和续传记录在 `.output/releases/<标签>/`，不入 Git；不会上传密钥、日志或过程记录。发布说明包含平台、版本、源码提交与对应功能清单链接。标签不会命中现有上游式打包/商店工作流，不发布 npm。上传或网络中断后保留草稿与原产物，排除错误后重新点击同一按钮，校验并只上传缺失资产，不重新编译或覆盖已公开版本。续传期间不要清理该目录；源码或已有草稿资产不匹配时明确停止，需人工检查。构建包仍需按平台进行功能验收，自动检查不等于已经完成人工验收。
+
+也可以从仓库根目录运行：
+
+```powershell
+npm run publish:installer:windows
+npm run publish:installer:android
+# 只读检查，不构建、不上传、不创建标签或 Release：
+npm run publish:installer:windows -- --check
+npm run publish:installer:android -- --check
+```
+
+## 原作者发布流程参考
+
 All workspaces share one version and release together.
 
 ## Two steps

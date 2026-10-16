@@ -9,6 +9,12 @@
     ]
   },
   "scripts": {
+    "打包并发布 Windows": {
+      "command": "node ./scripts/publish-installers.mjs windows"
+    },
+    "打包并发布 Android": {
+      "command": "node ./scripts/publish-installers.mjs android"
+    },
     "daemon": {
       "type": "service",
       "command": "PASEO_DEV_MANAGED_HOME=1 PASEO_DEV_ROOT=\"${PASEO_WORKTREE_PATH:-$PWD}\" PASEO_HOME=\"${PASEO_WORKTREE_PATH:-$PWD}/.dev/paseo-home\" PASEO_SKIP_DEV_SERVER_BUILD=1 PASEO_LISTEN=0.0.0.0:${PASEO_PORT:-6768} ./scripts/dev-daemon.sh"

@@ -24,6 +24,7 @@ let root: Root | null = null;
 let host: HTMLDivElement;
 const ROW_STYLE = { height: 80, flexShrink: 0 };
 const LONG_ROW_STYLE = { padding: 8, fontSize: 16, lineHeight: "24px" };
+const EXPANDED_ROW_STYLE = { height: 900, flexShrink: 0 };
 
 afterEach(() => {
   root?.unmount();
@@ -93,6 +94,77 @@ function viewport(): HTMLElement {
   if (!(node instanceof HTMLElement)) throw new Error("未找到历史滚动视口");
   return node;
 }
+
+it("在底部展开长过程时保持入口，而不是继续跟随最终回复", async () => {
+  let expanded = false;
+  let view: ReturnType<typeof mountViewport>;
+  const toggle = vi.fn(() => {
+    const handle = view.viewportRef.current;
+    if (!handle) throw new Error("视口未就绪");
+    handle.preserveScrollAnchor({
+      itemId: "message-16",
+      measure: (callback) => {
+        const button = host.querySelector<HTMLButtonElement>("[data-process-toggle]");
+        callback(button ? button.getBoundingClientRect().top : null);
+      },
+      applyChange: () => {
+        expanded = !expanded;
+        const changedRow = (item: StreamItem) => renderRow(item);
+        view.render({
+          renderers: {
+            renderHistoryVirtualizedRow: changedRow,
+            renderHistoryMountedRow: changedRow,
+            renderLiveHeadRow: changedRow,
+            renderLiveAuxiliary: () => null,
+          },
+        });
+      },
+    });
+  });
+  const renderRow = (item: StreamItem) => (
+    <div
+      data-message-id={item.id}
+      style={item.id === "message-16" && expanded ? EXPANDED_ROW_STYLE : ROW_STYLE}
+    >
+      {item.id === "message-16" ? (
+        <button type="button" data-process-toggle onClick={toggle}>
+          已处理
+        </button>
+      ) : (
+        item.id
+      )}
+    </div>
+  );
+  view = mountViewport({
+    segments: { historyVirtualized: [], historyMounted: messages(0, 20), liveHead: [] },
+    boundary: { hasVirtualizedHistory: false, hasMountedHistory: true, hasLiveHead: false },
+    renderers: {
+      renderHistoryVirtualizedRow: renderRow,
+      renderHistoryMountedRow: renderRow,
+      renderLiveHeadRow: renderRow,
+      renderLiveAuxiliary: () => null,
+    },
+  });
+  await expect.poll(() => host.querySelector("[data-process-toggle]")).not.toBeNull();
+  await nextLayout();
+  await nextLayout();
+  const button = host.querySelector<HTMLButtonElement>("[data-process-toggle]");
+  if (!button) throw new Error("缺少过程入口");
+  const before = button.getBoundingClientRect().top;
+  button.click();
+  await expect
+    .poll(() => host.querySelector<HTMLElement>('[data-message-id="message-16"]')?.offsetHeight)
+    .toBe(900);
+  await nextLayout();
+  await nextLayout();
+  await expect.poll(() => Math.abs(button.getBoundingClientRect().top - before)).toBeLessThan(1);
+  button.click();
+  await expect
+    .poll(() => host.querySelector<HTMLElement>('[data-message-id="message-16"]')?.offsetHeight)
+    .toBe(80);
+  await nextLayout();
+  await expect.poll(() => Math.abs(button.getBoundingClientRect().top - before)).toBeLessThan(1);
+});
 
 function visibleAnchor(): { id: string; top: number } {
   const bounds = viewport().getBoundingClientRect();
