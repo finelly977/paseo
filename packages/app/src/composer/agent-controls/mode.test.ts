@@ -4,7 +4,26 @@ import {
   buildLiveAgentModeDefinitions,
   resolveAgentControlsMode,
   resolveNextAgentModeId,
+  resolveAgentModeIcon,
 } from "./mode";
+
+describe("Codex 权限模式图标", () => {
+  it("新旧会话都按权限语义显示手掌、终端盾牌、警示盾牌及齿轮", () => {
+    expect(
+      ["auto", "auto-review", "full-access", "custom"].map((id) =>
+        resolveAgentModeIcon("codex", id, "ShieldOff"),
+      ),
+    ).toEqual(["Hand", "ShieldTerminal", "ShieldAlert", "Settings"]);
+  });
+
+  it("不更改其他提供方和未知模式的图标", () => {
+    expect(resolveAgentModeIcon("claude", "auto", "ShieldCheck")).toBe("ShieldCheck");
+    expect(resolveAgentModeIcon("pi", "full", "ShieldOff")).toBe("ShieldOff");
+    expect(resolveAgentModeIcon("codex", "future-mode", "ShieldPlus")).toBe("ShieldPlus");
+    expect(resolveAgentModeIcon("codex", "custom", undefined)).toBe("Settings");
+    expect(resolveAgentModeIcon("other", "future-mode", undefined)).toBe("Bot");
+  });
+});
 
 describe("buildLiveAgentModeDefinitions", () => {
   const runtimeCodexModes = [

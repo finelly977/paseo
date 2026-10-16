@@ -220,8 +220,10 @@ Windows 原生打包需要 EXPO_NO_METRO_WORKSPACE_ROOT=1，使 Gradle 传入的
 $env:ANDROID_HOME = Join-Path $PWD '.output\android-sdk'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 $env:ANDROID_AVD_HOME = Join-Path $PWD '.output\android-startup-20261016\avd-home'
-& (Join-Path $env:ANDROID_HOME 'emulator\emulator.exe') -avd Paseo_Startup -no-snapshot
+& (Join-Path $env:ANDROID_HOME 'emulator\emulator.exe') -avd Paseo_Startup -no-snapshot -no-snapstorage -feature '-QuickbootFileBacked'
 ```
+
+本机项目 SDK 已关闭 `emulator/lib/advancedFeatures.ini` 中的 `QuickbootFileBacked` 与 `FastSnapshotV1`，AVD 配置强制冷启动、退出不保存快照。`-no-snapshot` 本身只禁止自动读取和保存，并不一定阻止文件映射内存预分配 `snapshots/default_boot/ram.img`，因此启动命令也显式禁用文件映射与快照存储。更新或替换 SDK 后须重新检查这些本地设置；关闭功能不等于删除已有快照文件。模拟器与系统镜像、`userdata-qemu.img` 及其增量用户磁盘继续保留。
 
 清理前确认没有构建或模拟器进程。可重建缓存是依赖内的 `android/build`、`android/.cxx` 和应用原生工程中的 `app/build`、`app/.cxx`、`.gradle`；不要删除整个 `node_modules`、SDK、AVD 用户数据或 `.secrets`。旧 APK 可清理，但应保留最新交付包以及 `.output/releases` 中尚需续传的草稿资产和记录。清理缓存后下次原生编译耗时会增加。
 

@@ -1,26 +1,10 @@
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentType,
-  type ReactElement,
-} from "react";
+import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import {
-  Bot,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  ShieldEllipsis,
-  ShieldOff,
-  ShieldPlus,
-  ShieldQuestionMark,
-} from "lucide-react-native";
+import { Bot } from "lucide-react-native";
 import { type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -37,28 +21,14 @@ import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispat
 import {
   buildLiveAgentModeDefinitions,
   resolveNextAgentModeId,
+  resolveAgentModeIcon,
 } from "@/composer/agent-controls/mode";
 import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
 import { AgentControlIconGlyph, AgentControlTrigger } from "@/composer/agent-controls/control";
 import type { AgentMode } from "@getpaseo/protocol/agent-types";
 import { getModeVisuals, type AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
-
-interface ModeIconProps {
-  size?: number;
-  color?: string;
-}
-
-const MODE_ICONS: Record<string, ComponentType<ModeIconProps>> = {
-  Bot,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  ShieldEllipsis,
-  ShieldOff,
-  ShieldPlus,
-  ShieldQuestionMark,
-};
+import { MODE_ICONS } from "./mode-icons";
 
 interface ModeComboboxOptionProps {
   option: ComboboxOption;
@@ -78,13 +48,15 @@ function ModeComboboxOption({
   providerDefinitions,
 }: ModeComboboxOptionProps) {
   const visuals = getModeVisuals(provider, option.id, providerDefinitions);
-  const IconComponent = visuals?.icon ? MODE_ICONS[visuals.icon] : undefined;
+  const iconName = resolveAgentModeIcon(provider, option.id, visuals?.icon);
+  const IconComponent = provider === "codex" || visuals?.icon ? MODE_ICONS[iconName] : undefined;
+  const iconTone = provider === "codex" && option.id === "full-access" ? "orange" : "foreground";
   const leadingSlot = useMemo(
     () =>
       IconComponent ? (
-        <AgentControlIconGlyph icon={IconComponent} size={16} tone="foreground" />
+        <AgentControlIconGlyph icon={IconComponent} size={16} tone={iconTone} />
       ) : null,
-    [IconComponent],
+    [IconComponent, iconTone],
   );
   return (
     <ComboboxItem
@@ -143,7 +115,11 @@ export function AgentModeControl({
   const visuals = selectedMode
     ? getModeVisuals(provider, selectedMode.id, providerDefinitions)
     : undefined;
-  const Icon = visuals?.icon ? (MODE_ICONS[visuals.icon] ?? Bot) : Bot;
+  const iconName = selectedMode
+    ? resolveAgentModeIcon(provider, selectedMode.id, visuals?.icon)
+    : "Bot";
+  const Icon = MODE_ICONS[iconName] ?? Bot;
+  const iconTone = provider === "codex" && selectedMode?.id === "full-access" ? "orange" : "muted";
   const selectedModeLabel = selectedMode ? formatAgentModeLabel(selectedMode) : "";
 
   const allOptions = useMemo<ComboboxOption[]>(
@@ -238,6 +214,7 @@ export function AgentModeControl({
           <AgentControlTrigger
             ref={anchorRef}
             icon={Icon}
+            iconTone={iconTone}
             surface={surface}
             label={t("agentControls.mode.title")}
             value={selectedModeLabel}

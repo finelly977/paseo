@@ -47,6 +47,7 @@ export const GitBranch = StubIcon;
 export const GitCommitHorizontal = StubIcon;
 export const GitMerge = StubIcon;
 export const GitPullRequest = StubIcon;
+export const Hand = StubIcon;
 export const GitPullRequestClosed = StubIcon;
 export const GitPullRequestDraft = StubIcon;
 export const Globe = StubIcon;

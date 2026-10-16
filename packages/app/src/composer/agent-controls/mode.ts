@@ -5,6 +5,24 @@ import type {
   AgentProviderModeDefinition,
 } from "@getpaseo/protocol/provider-manifest";
 
+const CODEX_MODE_ICONS: Readonly<Record<string, string>> = {
+  auto: "Hand",
+  "auto-review": "ShieldTerminal",
+  "full-access": "ShieldAlert",
+  custom: "Settings",
+};
+
+export function resolveAgentModeIcon(
+  provider: string,
+  modeId: string,
+  manifestIcon: string | undefined,
+): string {
+  if (provider === "codex" && Object.hasOwn(CODEX_MODE_ICONS, modeId)) {
+    return CODEX_MODE_ICONS[modeId];
+  }
+  return manifestIcon ?? "Bot";
+}
+
 // Live sessions report runtime modes without visuals, while the provider catalog
 // carries the manifest icon/colorTier. Borrow them by mode id so a running agent
 // shows the same per-mode icons as the draft composer.

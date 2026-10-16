@@ -12,7 +12,7 @@ export interface AgentControlIconProps {
 }
 
 export type AgentControlIcon = ComponentType<AgentControlIconProps>;
-export type AgentControlIconTone = "muted" | "foreground" | "blue" | "green" | "yellow";
+export type AgentControlIconTone = "muted" | "foreground" | "blue" | "green" | "yellow" | "orange";
 
 interface ThemedAgentControlIconProps extends AgentControlIconProps {
   icon: AgentControlIcon;
@@ -22,6 +22,7 @@ interface ThemedAgentControlIconProps extends AgentControlIconProps {
   blueColor: string;
   greenColor: string;
   yellowColor: string;
+  orangeColor: string;
 }
 
 function resolveAgentControlIconColor(props: ThemedAgentControlIconProps): string {
@@ -29,6 +30,7 @@ function resolveAgentControlIconColor(props: ThemedAgentControlIconProps): strin
   if (props.tone === "blue") return props.blueColor;
   if (props.tone === "green") return props.greenColor;
   if (props.tone === "yellow") return props.yellowColor;
+  if (props.tone === "orange") return props.orangeColor;
   return props.mutedColor;
 }
 
@@ -44,6 +46,10 @@ const agentControlIconColorMapping = (theme: Theme) => ({
   blueColor: theme.colors.palette.blue[400],
   greenColor: theme.colors.palette.green[400],
   yellowColor: theme.colors.palette.yellow[400],
+  orangeColor:
+    theme.colorScheme === "light"
+      ? theme.colors.palette.orange[600]
+      : theme.colors.palette.orange[500],
 });
 
 export function AgentControlIconGlyph({
