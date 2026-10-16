@@ -12,11 +12,12 @@ if (-not (Test-Path -LiteralPath $key -PathType Leaf)) {
     throw '缺少原侧载签名备份 packages/app/.secrets/android-local.keystore；不会生成新签名导致已有用户无法升级'
 }
 if (-not $env:ANDROID_HOME) {
-    $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+    $env:ANDROID_HOME = Join-Path $root '.output\android-sdk'
 }
+$env:ANDROID_HOME = [IO.Path]::GetFullPath($env:ANDROID_HOME)
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 if (-not (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -PathType Container)) {
-    throw '未找到 Android SDK build-tools，请设置 ANDROID_HOME 并安装 Android 构建工具'
+    throw '未找到 Android SDK build-tools，请在项目 .output/android-sdk 安装工具链，或显式设置 ANDROID_HOME'
 }
 if (-not $env:JAVA_HOME) {
     $java = (Get-Command 'java.exe' -ErrorAction Stop).Source
@@ -33,7 +34,7 @@ if (-not $fingerprint.Contains('fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b
 $npm = (Get-Command 'npm.cmd' -ErrorAction Stop).Source
 $npx = (Get-Command 'npx.cmd' -ErrorAction Stop).Source
 if ($CheckOnly) {
-    Write-Host '安卓 SDK、JDK、npm 和原侧载签名备份检查通过；未构建。'
+    Write-Host "安卓 SDK、JDK、npm 和原侧载签名备份检查通过；SDK：$env:ANDROID_HOME；未构建。"
     return
 }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $root '.output\deliverables' }
@@ -77,6 +78,19 @@ try {
         } finally { $resource.Generated = [IO.File]::ReadAllBytes($resource.Path) }
     }
     Invoke-BuildStep '生成安卓原生工程' $app $npx @('expo', 'prebuild', '--platform', 'android', '--no-install')
+    $properties = Join-Path $app 'android\local.properties'
+    $sdkProperty = "sdk.dir=$($env:ANDROID_HOME.Replace('\', '/'))"
+    if (Test-Path -LiteralPath $properties) {
+        $propertiesContent = [IO.File]::ReadAllText($properties)
+        if ($propertiesContent -match '(?m)^sdk\.dir=') {
+            $propertiesContent = [regex]::Replace($propertiesContent, '(?m)^sdk\.dir=[^\r\n]*', [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $sdkProperty })
+        } else {
+            $propertiesContent += "`n$sdkProperty`n"
+        }
+    } else {
+        $propertiesContent = "$sdkProperty`n"
+    }
+    [IO.File]::WriteAllText($properties, $propertiesContent, [Text.UTF8Encoding]::new($false))
     Copy-Item -LiteralPath $key -Destination (Join-Path $app 'android\app\debug.keystore') -Force
     $gradleBefore = [IO.File]::ReadAllBytes($gradle)
     $content = [Text.Encoding]::UTF8.GetString($gradleBefore)

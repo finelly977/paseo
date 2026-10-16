@@ -11,7 +11,7 @@
 - Windows 主机已安装 Node.js、npm、Git、GitHub CLI、PowerShell 7；项目依赖已安装，`gh auth login` 已完成且对 `finelly977/paseo` 有发布权限。
 - 发布源必须是干净的二开 `main`，当前提交已推送且与 `origin/main` 一致；版本、全部工作区、内部依赖与锁文件一致。脚本不会自动改版本、提交、切分支或推送。
 - 使用递增的 `X.Y.Z` 正式版本；同一平台已公开的版本不能覆盖或回退。Windows 和 Android 可使用相同源码版本分别发布。
-- 安卓还需要 JDK、Android SDK，以及保存在 `packages/app/.secrets/android-local.keystore` 的原侧载签名备份。使用 `JAVA_HOME`、`ANDROID_HOME` 指定工具目录；未设置时分别从当前 Java 和 Windows 用户标准 SDK 位置定位。没有原密钥会立即停止，不生成替代签名。
+- 安卓还需要 JDK、Android SDK，以及保存在 `packages/app/.secrets/android-local.keystore` 的原侧载签名备份。使用 `JAVA_HOME`、`ANDROID_HOME` 指定工具目录；未设置时分别从当前 Java 和项目 `.output/android-sdk` 定位，不再依赖 Android Studio 或 C 盘用户 SDK。生成原生工程后会同步 Gradle 的 SDK 路径，避免遗留 `local.properties` 指向另一套工具链。没有原密钥会立即停止，不生成替代签名。
 
 点击后的流程：检查源码与 GitHub 状态 → 类型检查及 Lint → 完整本地构建 → 再次确认源码未变 → 创建 GitHub 草稿 → 逐项上传 → 校验服务器资产的 SHA256 和大小 → 正式发布。两平台共用本地发布锁，避免共享构建目录被并发覆盖；进度与错误留在对应工作区终端，菜单沿用运行状态和退出结果。
 

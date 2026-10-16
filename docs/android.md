@@ -198,15 +198,32 @@ Windows 的仅构建入口使用已安装 JDK、Android SDK 和生成工程内�
 
 ```powershell
 $env:JAVA_HOME = '<JDK 绝对路径>'
-$env:ANDROID_HOME = '<Android SDK 绝对路径>'
+$env:ANDROID_HOME = Join-Path $PWD '.output\android-sdk'
 npm run build:android:apk
 # 仅检查本地工具与签名备份，不构建：
-npm run build:android:apk -- -CheckOnly
+npm run build:android:apk:check
 ```
 
 脚本依次重建应用依赖、终端与 Mermaid 资源、生成原生工程、复制原侧载密钥，再使用单 Gradle worker、双 Metro worker 构建 ARM64 与 x86_64 Release APK；不跳过前端编译。构建后恢复被生成器改写的受控资源源码和临时 Gradle 并行设置；若资源在构建期间被外部修改，保留该修改并停止，不覆盖用户编辑。产物复制到 `.output/deliverables/Paseo-X.Y.Z-android.apk`，并校验包名、版本、同签名及原生库 16 KB 对齐；不会自动上传或安装。`arm64-v8a` 适用于现代 64 位 Android 手机，当前最低 Android 10；`x86_64` 便于隔离模拟器验收。沿用持久备份的原侧载测试签名，不更换签名，也不冒充官方安装包。生成的 SDK、构建日志和交付副本保留在本地 `.output`，不提交构建产物或密钥。
 
 Windows 原生打包需要 EXPO_NO_METRO_WORKSPACE_ROOT=1，使 Gradle 传入的相对入口按应用目录解析。Metro 在此模式下显式监听 packages 与仓库根 node_modules，并保留两层依赖路径，避免共享包的链接被当作不存在；普通网页和开发服务器不启用该标记。
+
+本地构建与 APK 校验默认使用项目 `.output/android-sdk`，不再隐式查找 C 盘用户 SDK；显式设置 `ANDROID_HOME` 或校验脚本的 `-SdkRoot` 仍可选择其他目录。构建在 prebuild 后同步 `android/local.properties` 的 `sdk.dir`，保留其他属性，防止 Gradle 继续读取旧 SDK。
+
+### 本机模拟器与空间清理
+
+本机模拟器程序与系统镜像随 SDK 保存在 `.output/android-sdk/emulator`、`.output/android-sdk/system-images`。已配置的隔离 AVD 保存在 `.output/android-startup-20261016/avd-home`；`userdata-qemu.img.qcow2` 等用户磁盘包含应用和配对数据，不属于可随意清理的编译缓存。删除 `snapshots` 只会失去快速启动状态，下次冷启动；不要把整个 AVD 目录当成内存快照删除。
+
+无需 Android Studio，从仓库根目录启动已有设备：
+
+```powershell
+$env:ANDROID_HOME = Join-Path $PWD '.output\android-sdk'
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:ANDROID_AVD_HOME = Join-Path $PWD '.output\android-startup-20261016\avd-home'
+& (Join-Path $env:ANDROID_HOME 'emulator\emulator.exe') -avd Paseo_Startup -no-snapshot
+```
+
+清理前确认没有构建或模拟器进程。可重建缓存是依赖内的 `android/build`、`android/.cxx` 和应用原生工程中的 `app/build`、`app/.cxx`、`.gradle`；不要删除整个 `node_modules`、SDK、AVD 用户数据或 `.secrets`。旧 APK 可清理，但应保留最新交付包以及 `.output/releases` 中尚需续传的草稿资产和记录。清理缓存后下次原生编译耗时会增加。
 
 ### Android 冷启动验收
 

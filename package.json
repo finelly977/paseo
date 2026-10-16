@@ -90,6 +90,7 @@
     "build:desktop": "npm run build:app-deps:clean && cd packages/app && cross-env PASEO_WEB_PLATFORM=electron npx expo export --platform web && cd ../.. && npm run build --workspace=@getpaseo/desktop --",
     "build:desktop:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-desktop-windows.ps1",
     "build:android:apk": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-android-apk.ps1",
+    "build:android:apk:check": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-android-apk.ps1 -CheckOnly",
     "publish:installer:windows": "node ./scripts/publish-installers.mjs windows",
     "publish:installer:android": "node ./scripts/publish-installers.mjs android",
     "db:query": "npm run db:query --workspace=@getpaseo/server --",

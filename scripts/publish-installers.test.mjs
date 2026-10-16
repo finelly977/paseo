@@ -213,3 +213,11 @@ test("根配置暴露两个任务按钮，直接执行跨 shell 的 Node 入口"
   });
   assert.equal(config.scripts.desktop.type, "service");
 });
+
+test("安卓环境检查使用明确的独立命令，避免参数丢失后误触发完整构建", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(
+    pkg.scripts["build:android:apk:check"],
+    "pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-android-apk.ps1 -CheckOnly",
+  );
+});

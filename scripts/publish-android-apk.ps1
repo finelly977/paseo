@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = 'finelly977/paseo'
 $root = Split-Path -Parent $PSScriptRoot
+if (-not $SdkRoot) { $SdkRoot = Join-Path $root '.output\android-sdk' }
 $apk = (Resolve-Path -LiteralPath $ApkPath).Path
 if (-not $ValidateOnly -and -not $NotesPath) { throw '发布时必须通过 -NotesPath 提供发布说明' }
 $version = (Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
