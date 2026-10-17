@@ -42,12 +42,11 @@ export function resolveModelBrowserAllView({
   return { kind: "searchResults", rows };
 }
 
-/** 固定智能体的会话直接显示模型；仍可切换智能体的新会话保留根页配置档案。 */
+/** 已选择智能体就直达该智能体模型，根页仍可通过返回入口访问。 */
 export function resolveInitialModelBrowserView({
   providers,
   selectedProvider,
   hasProfiles,
-  providerLocked = false,
 }: {
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
@@ -55,11 +54,8 @@ export function resolveInitialModelBrowserView({
   hasProfiles: boolean;
   providerLocked?: boolean;
 }): ModelBrowserView {
-  if (providerLocked) {
-    const provider = providers.find((entry) => entry.id === selectedProvider);
-    if (provider)
-      return { kind: "provider", providerId: provider.id, providerLabel: provider.label };
-  }
+  const provider = providers.find((entry) => entry.id === selectedProvider);
+  if (provider) return { kind: "provider", providerId: provider.id, providerLabel: provider.label };
   if (hasProfiles) {
     return { kind: "all" };
   }

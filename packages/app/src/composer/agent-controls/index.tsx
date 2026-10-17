@@ -872,7 +872,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
                 disabled={props.disabled || !props.canSelectProvider}
                 testID="agent-provider-selector"
               >
-                {t("agentControls.provider.select")}
+                {findOptionLabel(props.providerOptions, props.selectedProviderId, "Agent")}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 {props.providerOptions.map((option) => (

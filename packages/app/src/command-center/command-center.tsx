@@ -22,6 +22,7 @@ import {
 import { AgentStatusDot } from "@/components/agent-status-dot";
 import { MaterialFileIcon } from "@/components/material-file-icon";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Button } from "@/components/ui/button";
 import { Shortcut } from "@/components/ui/shortcut";
 import {
   IsolatedBottomSheetModal,
@@ -73,6 +74,8 @@ import {
   type CommandCenterWorkspaceResult,
 } from "./results";
 import { useWorkspaceFileSearch } from "./workspace-file-search";
+import { useConversationSearch } from "./use-conversation-search";
+import { mergeConversationMatches } from "./conversation-search";
 
 const ThemedBottomSheetTextInput = withUnistyles(BottomSheetTextInput, (theme) => ({
   placeholderTextColor: theme.colors.foregroundMuted,
@@ -107,6 +110,36 @@ function SettingsIcon({ size }: CommandCenterIconProps) {
 
 function HomeIcon({ size }: CommandCenterIconProps) {
   return <ThemedHome size={size} strokeWidth={2.2} />;
+}
+
+function ConversationSearchStatus({
+  loading,
+  error,
+  retry,
+}: {
+  loading: boolean;
+  error: string | null;
+  retry(): void;
+}) {
+  const { t } = useTranslation();
+  if (!loading && !error) return null;
+  return (
+    <View
+      style={styles.conversationSearchStatus}
+      accessibilityLiveRegion="polite"
+      testID="conversation-search-status"
+    >
+      {loading ? <ThemedLoadingSpinner size={14} /> : null}
+      <Text style={styles.conversationSearchText}>
+        {error ? `会话正文：${error}` : "正在搜索会话正文…"}
+      </Text>
+      {error ? (
+        <Button variant="ghost" size="xs" onPress={retry}>
+          {t("common.actions.retry")}
+        </Button>
+      ) : null}
+    </View>
+  );
 }
 
 function resolveActionShortcutKeys(
@@ -294,11 +327,12 @@ function useBuiltInRows(open: boolean): {
   }, [agents, open, projects, showHost, t]);
 }
 
-function useBuiltInSections(open: boolean, query: string): CommandCenterResultSection[] {
+function useBuiltInSections(open: boolean, query: string) {
   const { t } = useTranslation();
   const rows = useBuiltInRows(open);
+  const search = useConversationSearch(open, query, rows.agents);
 
-  return useMemo(() => {
+  const sections = useMemo<CommandCenterResultSection[]>(() => {
     if (!open) return [];
     return [
       {
@@ -313,12 +347,17 @@ function useBuiltInSections(open: boolean, query: string): CommandCenterResultSe
         band: PINNED_SECTION_BAND,
         rank: 3,
         title: t("shell.commandCenter.agents"),
-        results: filterAndRankBuiltInResults(rows.agents, query, agentSearchFields, (left, right) =>
-          sortAgents(left.agent, right.agent),
+        results: mergeConversationMatches(
+          filterAndRankBuiltInResults(rows.agents, query, agentSearchFields, (left, right) =>
+            sortAgents(left.agent, right.agent),
+          ),
+          rows.agents,
+          search.snippets,
         ),
       },
     ];
-  }, [open, query, rows, t]);
+  }, [open, query, rows, t, search.snippets]);
+  return { sections, loading: search.loading, error: search.error, retry: search.retry };
 }
 
 interface CommandCenterState {
@@ -335,6 +374,9 @@ interface CommandCenterState {
   inputRef: React.RefObject<TextInput | null>;
   fileSearchLoading: boolean;
   fileSearchError: string | null;
+  conversationSearchLoading: boolean;
+  conversationSearchError: string | null;
+  retryConversationSearch(): void;
   close(): void;
   select(result: CommandCenterResult): void;
   key(key: string): boolean;
@@ -351,7 +393,8 @@ function useCommandCenterState(): CommandCenterState {
   const previousOpenRef = useRef(open);
   const [query, setQueryState] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
-  const builtInSections = useBuiltInSections(open, query);
+  const conversationSearch = useBuiltInSections(open && scope !== "files", query);
+  const builtInSections = conversationSearch.sections;
   const {
     entries: fileSearchEntries,
     loading: fileSearchLoading,
@@ -479,6 +522,9 @@ function useCommandCenterState(): CommandCenterState {
     inputRef,
     fileSearchLoading,
     fileSearchError,
+    conversationSearchLoading: conversationSearch.loading,
+    conversationSearchError: conversationSearch.error,
+    retryConversationSearch: conversationSearch.retry,
     close,
     select,
     key,
@@ -727,10 +773,19 @@ export function CommandCenter() {
   const keyExtractor = useCallback((row: CommandCenterListRow) => row.key, []);
   const empty = useMemo(
     () =>
-      state.fileSearchError || state.fileSearchLoading ? null : (
+      state.fileSearchError ||
+      state.fileSearchLoading ||
+      state.conversationSearchError ||
+      state.conversationSearchLoading ? null : (
         <Text style={styles.emptyText}>{t("shell.commandCenter.noMatches")}</Text>
       ),
-    [state.fileSearchError, state.fileSearchLoading, t],
+    [
+      state.fileSearchError,
+      state.fileSearchLoading,
+      state.conversationSearchError,
+      state.conversationSearchLoading,
+      t,
+    ],
   );
   const fileSearchError = useMemo(
     () =>
@@ -795,6 +850,7 @@ export function CommandCenter() {
           ) : null}
           <ThemedBottomSheetTextInput
             testID="command-center-input"
+            maxLength={500}
             ref={bottomSheetInputRef}
             value={state.query}
             onChangeText={state.setQuery}
@@ -816,6 +872,11 @@ export function CommandCenter() {
           />
         </View>
         {fileSearchError}
+        <ConversationSearchStatus
+          loading={state.conversationSearchLoading}
+          error={state.conversationSearchError}
+          retry={state.retryConversationSearch}
+        />
         <BottomSheetFlatList ref={bottomSheetListRef} {...commonListProps} />
       </IsolatedBottomSheetModal>
     );
@@ -832,6 +893,7 @@ export function CommandCenter() {
             ) : null}
             <ThemedTextInput
               testID="command-center-input"
+              maxLength={500}
               ref={state.inputRef}
               value={state.query}
               onChangeText={state.setQuery}
@@ -851,6 +913,11 @@ export function CommandCenter() {
             />
           </View>
           {fileSearchError}
+          <ConversationSearchStatus
+            loading={state.conversationSearchLoading}
+            error={state.conversationSearchError}
+            retry={state.retryConversationSearch}
+          />
           <FlatList ref={listRef} {...commonListProps} />
         </View>
       </View>
@@ -934,6 +1001,18 @@ const styles = StyleSheet.create((theme) => ({
   growingInput: { flex: 1, minWidth: 0 },
   searchRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   fileSearchStatus: { width: 14, height: 14, alignItems: "center", justifyContent: "center" },
+  conversationSearchStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[4],
+    paddingVertical: theme.spacing[2],
+  },
+  conversationSearchText: {
+    flex: 1,
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.foregroundMuted,
+  },
   scopeChip: {
     // Stretching to the row rather than setting a height keeps the chip exactly as tall as the
     // input's line box, so showing or dropping the scope can never resize the header.

@@ -70,6 +70,8 @@ export function CompactModelSheet({
   const usesBottomSheet = useIsCompactFormFactor();
   const [isOpen, setIsOpen] = useState(false);
   const browser = useModelBrowser({
+    onRefreshProvider: onRetryProvider,
+    isRefreshingProvider: isRetryingProvider,
     providerLocked,
     providers,
     selectedProvider,

@@ -16,15 +16,7 @@ import {
 import { BottomSheetFlatList, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import {
-  AlertTriangle,
-  Check,
-  ChevronRight,
-  Pencil,
-  Plus,
-  Search,
-  Settings,
-} from "lucide-react-native";
+import { AlertTriangle, Check, ChevronRight, Pencil, Plus, Search } from "lucide-react-native";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import {
   AgentProfileGlyph,
@@ -48,7 +40,7 @@ import {
   type ProviderSelectionModelRow,
   type ProviderSelectorProvider,
 } from "@/provider-selection/provider-selection";
-import { useProviderSettingsStore } from "@/stores/provider-settings-store";
+import { ModelBrowserHeaderActions } from "@/components/model-browser-actions";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import {
   resolveCompactModelMenuHeight,
@@ -69,37 +61,6 @@ const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedPlus = withUnistyles(Plus);
 const ThemedSearch = withUnistyles(Search);
-const ThemedSettings = withUnistyles(Settings);
-
-function ProviderSettingsAction({
-  accessibilityLabel,
-  provider,
-  serverId,
-}: {
-  accessibilityLabel: string;
-  provider: string;
-  serverId: string | null;
-}) {
-  const handlePress = useCallback(() => {
-    if (!serverId) return;
-    useProviderSettingsStore.getState().open({ serverId, provider });
-  }, [provider, serverId]);
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      disabled={!serverId}
-      hitSlop={8}
-      style={iconButtonStyle}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      testID={`selector-header-settings-${provider}`}
-    >
-      <HeaderSettingsIcon disabled={!serverId} />
-    </Pressable>
-  );
-}
-
 function AgentProfilesEditAction({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation();
   return (
@@ -135,11 +96,9 @@ const foregroundExtraMutedMapping = (theme: Theme) => ({
   color: theme.colors.foregroundExtraMuted,
 });
 
-const headerSettingsMapping = (disabled: boolean) => (theme: Theme) => ({
-  color: disabled ? theme.colors.border : theme.colors.foregroundMuted,
-});
-
 interface ModelBrowserInput {
+  onRefreshProvider?: (provider: AgentProvider) => void;
+  isRefreshingProvider?: boolean;
   compactMenu?: boolean;
   providerLocked?: boolean;
   providers: ProviderSelectorProvider[];
@@ -207,11 +166,6 @@ export function ModelProviderGlyph({
   return <Icon size={size} color={color} />;
 }
 
-function HeaderSettingsIcon({ disabled }: { disabled: boolean }) {
-  const uniProps = useMemo(() => headerSettingsMapping(disabled), [disabled]);
-  return <ThemedSettings size={ICON_SIZE.sm} uniProps={uniProps} />;
-}
-
 function iconButtonStyle({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) {
   return [
     styles.rowIconButton,
@@ -247,6 +201,8 @@ function resolveDesktopFixedHeight(
 }
 
 export function useModelBrowser({
+  onRefreshProvider,
+  isRefreshingProvider = false,
   compactMenu = false,
   providerLocked = false,
   providers,
@@ -322,15 +278,13 @@ export function useModelBrowser({
       ),
       back: singleProviderView ? undefined : { onPress: handleBackToAll },
       actions: (
-        <View style={styles.headerActionRow}>
-          <ProviderSettingsAction
-            serverId={serverId}
-            provider={view.providerId}
-            accessibilityLabel={t("modelSelector.openProviderSettings", {
-              provider: view.providerLabel,
-            })}
-          />
-        </View>
+        <ModelBrowserHeaderActions
+          provider={view.providerId}
+          providerLabel={view.providerLabel}
+          serverId={serverId}
+          onRefresh={onRefreshProvider}
+          pending={isRefreshingProvider}
+        />
       ),
       search: {
         onChange: handleSearchQueryChange,
@@ -348,6 +302,8 @@ export function useModelBrowser({
     singleProviderView,
     t,
     view,
+    onRefreshProvider,
+    isRefreshingProvider,
   ]);
 
   const selectedModelLabel = useMemo(
@@ -1232,11 +1188,6 @@ export function ModelBrowser({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  headerActionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[1],
-  },
   profilesContainer: {
     backgroundColor: "transparent",
     borderBottomWidth: 1,

@@ -53,7 +53,7 @@ describe("model browser initial view", () => {
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("新草稿已有默认模型时仍打开所有可选智能体", () => {
+  it("新草稿已选择智能体时直接打开该智能体模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [codex, pi],
@@ -62,10 +62,10 @@ describe("model browser initial view", () => {
         hasProfiles: false,
         providerLocked: false,
       }),
-    ).toEqual({ kind: "all" });
+    ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("opens the root so pinned profiles are reachable", () => {
+  it("已选择智能体时有配置档案也直接显示模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [codex, pi],
@@ -73,10 +73,10 @@ describe("model browser initial view", () => {
         selectedModel: "pi-pro",
         hasProfiles: true,
       }),
-    ).toEqual({ kind: "all" });
+    ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("keeps the root even when a single provider would otherwise be skipped", () => {
+  it("单智能体和档案同样直达模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [pi],
@@ -84,7 +84,7 @@ describe("model browser initial view", () => {
         selectedModel: "pi-pro",
         hasProfiles: true,
       }),
-    ).toEqual({ kind: "all" });
+    ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
   it("固定智能体的会话有配置档案时也直接进入该智能体模型", () => {
     expect(

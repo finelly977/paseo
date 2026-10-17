@@ -1284,6 +1284,15 @@ export class AgentManager {
     return this.timelineStore.getRows(id);
   }
 
+  /** 只读搜索允许读取尚未初始化的历史；调用方须先校验公开会话目录。 */
+  async getTimelineForSearch(id: string): Promise<AgentTimelineItem[]> {
+    const saved = this.durableTimelineStore
+      ? (await this.durableTimelineStore.getCommittedRows(id)).map((row) => row.item)
+      : [];
+    const current = this.agents.has(id) ? this.timelineStore.getItems(id) : [];
+    return [...saved, ...current];
+  }
+
   fetchTimeline(id: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
     this.requireAgent(id);
     return this.timelineStore.fetch(id, options);

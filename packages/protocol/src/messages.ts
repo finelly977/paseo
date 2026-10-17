@@ -1846,6 +1846,23 @@ export const AgentTimelineCursorSchema = z.object({
   seq: z.number().int().nonnegative(),
 });
 
+export const ConversationSearchHitSchema = z.object({ agentId: z.string(), snippet: z.string() });
+export const ConversationSearchRequestSchema = z.object({
+  type: z.literal("agent.conversations.search.request"),
+  requestId: z.string(),
+  query: z.string().min(1).max(500),
+  agentIds: z.array(z.string()).max(5000),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+export const ConversationSearchResponseSchema = z.object({
+  type: z.literal("agent.conversations.search.response"),
+  payload: z.object({
+    requestId: z.string(),
+    matches: z.array(ConversationSearchHitSchema),
+    error: z.string().nullable(),
+  }),
+});
+
 export const FetchAgentTimelineRequestMessageSchema = z.object({
   type: z.literal("fetch_agent_timeline_request"),
   agentId: z.string(),
@@ -3132,6 +3149,7 @@ export const HubExecutionAgentCreateRequestSchema = z.object({
 export type HubExecutionAgentCreateRequest = z.infer<typeof HubExecutionAgentCreateRequestSchema>;
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
+  ConversationSearchRequestSchema,
   AgentMessageScheduleRequestSchema,
   AgentMessageSchedulesListRequestSchema,
   AgentMessageScheduleCancelRequestSchema,
@@ -3493,6 +3511,8 @@ export const ServerInfoStatusPayloadSchema = z
     features: z
       .object({
         providersSnapshot: z.boolean().optional(),
+        // COMPAT(conversationSearch): v0.2.3 于 2026-10-18 新增，2027-04-18 后随最低主机版本移除门控。
+        conversationSearch: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.1.106, remove old
         // checkoutGithubSetAutoMerge fallback after 2026-12-28.
         checkoutForgeSetAutoMerge: z.boolean().optional(),
@@ -6326,6 +6346,7 @@ export const PluginRpcInvokeResponseSchema = z.object({
 });
 
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
+  ConversationSearchResponseSchema,
   AgentMessageScheduleResponseSchema,
   AgentMessageSchedulesListResponseSchema,
   AgentMessageScheduleCancelResponseSchema,

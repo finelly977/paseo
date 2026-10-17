@@ -1,4 +1,5 @@
 import equal from "fast-deep-equal";
+import { searchConversations } from "./agent/conversation-search.js";
 import { v4 as uuidv4 } from "uuid";
 import { lstat, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, resolve, sep } from "path";
@@ -642,6 +643,7 @@ export class Session {
   private readonly viewedTimelineAgentIdsBySource = new Map<object, Set<string>>();
   private readonly clientCapabilitiesBySource = new Map<object, ReadonlySet<ClientCapability>>();
   private readonly defaultTimelineSubscriptionSource = {};
+  private conversationSearchGeneration = 0;
   private readonly timelineReplacementInitiators = new Map<
     string,
     Map<object | undefined, number>
@@ -2197,6 +2199,8 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     switch (msg.type) {
+      case "agent.conversations.search.request":
+        return this.handleConversationSearch(msg);
       case "fetch_agent_timeline_request":
         return this.handleFetchAgentTimelineRequest(msg, source);
       case "agent.provider_subagents.list.request":
@@ -6427,6 +6431,49 @@ export class Session {
           workspaceId: request.workspaceId,
           scripts: [],
           error: error instanceof Error ? error.message : "Failed to list workspace scripts",
+        },
+      });
+    }
+  }
+
+  private async handleConversationSearch(
+    request: Extract<SessionInboundMessage, { type: "agent.conversations.search.request" }>,
+  ): Promise<void> {
+    const generation = ++this.conversationSearchGeneration;
+    try {
+      const stored = await this.agentStorage.list();
+      const archivedIds = new Set(
+        stored.filter((record) => record.archivedAt).map((record) => record.id),
+      );
+      const publicIds = new Set([
+        ...stored
+          .filter((record) => !record.internal && !record.archivedAt)
+          .map((record) => record.id),
+        ...this.agentManager
+          .listAgents()
+          .filter((agent) => !archivedIds.has(agent.id))
+          .map((agent) => agent.id),
+      ]);
+      const agentIds = [...new Set(request.agentIds)].filter((id) => publicIds.has(id));
+      const matches = await searchConversations({
+        agentIds,
+        query: request.query,
+        limit: request.limit ?? 100,
+        cancelled: () => generation !== this.conversationSearchGeneration,
+        readMessages: (id) => this.agentManager.getTimelineForSearch(id),
+      });
+      this.emit({
+        type: "agent.conversations.search.response",
+        payload: { requestId: request.requestId, matches, error: null },
+      });
+    } catch (error) {
+      this.sessionLogger.error({ err: error }, "Conversation content search failed");
+      this.emit({
+        type: "agent.conversations.search.response",
+        payload: {
+          requestId: request.requestId,
+          matches: [],
+          error: error instanceof Error ? error.message : String(error),
         },
       });
     }

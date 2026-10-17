@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useToast } from "@/contexts/toast-context";
+import { toErrorMessage } from "@/utils/error-messages";
 import type { AgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
 import type {
   AgentMode,
@@ -550,11 +552,15 @@ export function useAgentFormState(options: UseAgentFormStateOptions = {}): UseAg
     dispatch({ type: "SET_SERVER_ID", value });
   }, []);
 
+  const toast = useToast();
   const refreshProviderModels = useCallback(
     (provider?: AgentProvider) => {
-      void refreshSnapshot(provider ? [provider] : undefined);
+      void refreshSnapshot(provider ? [provider] : undefined).catch((error) => {
+        console.error("[模型目录] 手动刷新失败", error);
+        toast.error(toErrorMessage(error));
+      });
     },
-    [refreshSnapshot],
+    [refreshSnapshot, toast],
   );
 
   const refetchProviderModelsIfStale = useCallback(() => {

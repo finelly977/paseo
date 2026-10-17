@@ -1115,6 +1115,67 @@ test("preserves legacy fetchAgent id overload", async () => {
   await expect(responsePromise).rejects.toThrow("legacy fetch sentinel");
 });
 
+test("会话正文搜索发送独立 RPC 并返回相关请求的命中摘要", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "search-test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen();
+  await connected;
+  const pending = client.searchConversations("部署记录", ["old-session"]);
+  const request = parseSentFrame(mock.sent[0]);
+  const requestId = z.string().parse(request.requestId);
+  expect(request).toEqual({
+    type: "agent.conversations.search.request",
+    requestId,
+    query: "部署记录",
+    agentIds: ["old-session"],
+    limit: 100,
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.conversations.search.response",
+      payload: {
+        requestId,
+        matches: [{ agentId: "old-session", snippet: "之前的部署记录" }],
+        error: null,
+      },
+    }),
+  );
+  await expect(pending).resolves.toEqual([{ agentId: "old-session", snippet: "之前的部署记录" }]);
+});
+
+test("会话正文搜索错误不会伪装成空结果", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "search-error",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen();
+  await connected;
+  const pending = client.searchConversations("部署记录", ["old-session"]);
+  const requestId = z.string().parse(parseSentFrame(mock.sent[0]).requestId);
+  const assertion = expect(pending).rejects.toThrow("历史文件读取失败");
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "agent.conversations.search.response",
+      payload: { requestId, matches: [], error: "历史文件读取失败" },
+    }),
+  );
+  await assertion;
+});
+
 test("honors explicit fetchAgentTimeline timeout below the session RPC default", async () => {
   useHeartbeatClock();
   const logger = createMockLogger();

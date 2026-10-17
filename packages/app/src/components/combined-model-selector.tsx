@@ -99,6 +99,8 @@ export function CombinedModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [isContentReady, setIsContentReady] = useState(isWeb);
   const browser = useModelBrowser({
+    onRefreshProvider: onRetryProvider,
+    isRefreshingProvider: isRetryingProvider,
     compactMenu,
     providerLocked,
     providers,

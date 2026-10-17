@@ -3017,6 +3017,15 @@ export class DaemonClient {
     return payload;
   }
 
+  async searchConversations(query: string, agentIds: string[]) {
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "agent.conversations.search.request", query, agentIds, limit: 100 },
+      responseType: "agent.conversations.search.response",
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload.matches;
+  }
+
   async listProviderSubagents(
     parentAgentId: string,
     options: { requestId?: string; timeout?: number } = {},
