@@ -176,34 +176,14 @@ export interface UseSettingsReturn {
 }
 
 type SettingsSelector<TSelected> = (settings: Settings) => TSelected;
-type NumericAppSetting =
-  | "uiFontSize"
-  | "textBrightness"
-  | "codeFontSize"
-  | "messageParagraphSpacing"
-  | "conversationMessageSpacing"
-  | "conversationDividerSpacing"
-  | "conversationVerticalPadding"
-  | "conversationHorizontalPadding"
-  | "sidebarWorkspaceVisibleCount"
-  | "sidebarProjectSpacing"
-  | "sidebarSessionSpacing"
-  | "sidebarRowVerticalPadding"
-  | "sidebarHorizontalPadding"
-  | "conversationHistoryLoadCount"
-  | "totalConversationHistoryLimit";
-
-function copyDefinedNumericAppSetting(
+function copyDefinedAppSetting<TKey extends keyof AppSettings>(
   target: Partial<AppSettings>,
   source: Partial<Settings>,
-  key: NumericAppSetting,
+  key: TKey,
 ): void {
   const value = source[key];
-  if (value !== undefined) {
-    target[key] = value;
-  }
+  if (value !== undefined) target[key] = value;
 }
-
 export function useAppSettings(): UseAppSettingsReturn {
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery({
@@ -272,6 +252,8 @@ export function useSettings<TSelected>(
       if (updates.contextWindowProviderUsageEnabled !== undefined) {
         appUpdates.contextWindowProviderUsageEnabled = updates.contextWindowProviderUsageEnabled;
       }
+      copyDefinedAppSetting(appUpdates, updates, "dictationEnabled");
+      copyDefinedAppSetting(appUpdates, updates, "voiceModeEnabled");
       if (updates.terminalScrollbackLines !== undefined) {
         appUpdates.terminalScrollbackLines = updates.terminalScrollbackLines;
       }
@@ -281,21 +263,21 @@ export function useSettings<TSelected>(
       if (updates.monoFontFamily !== undefined) {
         appUpdates.monoFontFamily = updates.monoFontFamily;
       }
-      copyDefinedNumericAppSetting(appUpdates, updates, "uiFontSize");
-      copyDefinedNumericAppSetting(appUpdates, updates, "textBrightness");
-      copyDefinedNumericAppSetting(appUpdates, updates, "codeFontSize");
-      copyDefinedNumericAppSetting(appUpdates, updates, "messageParagraphSpacing");
-      copyDefinedNumericAppSetting(appUpdates, updates, "conversationMessageSpacing");
-      copyDefinedNumericAppSetting(appUpdates, updates, "conversationDividerSpacing");
-      copyDefinedNumericAppSetting(appUpdates, updates, "conversationVerticalPadding");
-      copyDefinedNumericAppSetting(appUpdates, updates, "conversationHorizontalPadding");
-      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarWorkspaceVisibleCount");
-      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarProjectSpacing");
-      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarSessionSpacing");
-      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarRowVerticalPadding");
-      copyDefinedNumericAppSetting(appUpdates, updates, "sidebarHorizontalPadding");
-      copyDefinedNumericAppSetting(appUpdates, updates, "conversationHistoryLoadCount");
-      copyDefinedNumericAppSetting(appUpdates, updates, "totalConversationHistoryLimit");
+      copyDefinedAppSetting(appUpdates, updates, "uiFontSize");
+      copyDefinedAppSetting(appUpdates, updates, "textBrightness");
+      copyDefinedAppSetting(appUpdates, updates, "codeFontSize");
+      copyDefinedAppSetting(appUpdates, updates, "messageParagraphSpacing");
+      copyDefinedAppSetting(appUpdates, updates, "conversationMessageSpacing");
+      copyDefinedAppSetting(appUpdates, updates, "conversationDividerSpacing");
+      copyDefinedAppSetting(appUpdates, updates, "conversationVerticalPadding");
+      copyDefinedAppSetting(appUpdates, updates, "conversationHorizontalPadding");
+      copyDefinedAppSetting(appUpdates, updates, "sidebarWorkspaceVisibleCount");
+      copyDefinedAppSetting(appUpdates, updates, "sidebarProjectSpacing");
+      copyDefinedAppSetting(appUpdates, updates, "sidebarSessionSpacing");
+      copyDefinedAppSetting(appUpdates, updates, "sidebarRowVerticalPadding");
+      copyDefinedAppSetting(appUpdates, updates, "sidebarHorizontalPadding");
+      copyDefinedAppSetting(appUpdates, updates, "conversationHistoryLoadCount");
+      copyDefinedAppSetting(appUpdates, updates, "totalConversationHistoryLimit");
       if (updates.syntaxTheme !== undefined) {
         appUpdates.syntaxTheme = updates.syntaxTheme;
       }

@@ -49,6 +49,25 @@ function makeDeps(
 }
 
 describe("loadAppSettingsFromStorage", () => {
+  it("听写和语音模式默认开启，可独立保存并在重新加载后保留关闭状态", async () => {
+    const deps = makeDeps();
+    const queryClient = new QueryClient();
+    expect(await loadAppSettingsFromStorage(deps)).toMatchObject({
+      dictationEnabled: true,
+      voiceModeEnabled: true,
+    });
+    await saveAppSettings({ queryClient, deps, updates: { dictationEnabled: false } });
+    expect(await loadAppSettingsFromStorage(deps)).toMatchObject({
+      dictationEnabled: false,
+      voiceModeEnabled: true,
+    });
+    await saveAppSettings({ queryClient, deps, updates: { voiceModeEnabled: false } });
+    expect(await loadAppSettingsFromStorage(deps)).toMatchObject({
+      dictationEnabled: false,
+      voiceModeEnabled: false,
+    });
+    queryClient.clear();
+  });
   it("preserves a persisted steer send behavior", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({
@@ -415,6 +434,42 @@ describe("loadSettingsFromStorage", () => {
 });
 
 describe("saveAppSettings", () => {
+  it("语音开关和其他设置同时保存时互不覆盖", async () => {
+    const deps = makeDeps();
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(APP_SETTINGS_QUERY_KEY, await loadAppSettingsFromStorage(deps));
+    await Promise.all([
+      saveAppSettings({ queryClient, deps, updates: { dictationEnabled: false } }),
+      saveAppSettings({ queryClient, deps, updates: { voiceModeEnabled: false, uiFontSize: 18 } }),
+    ]);
+    expect(await loadAppSettingsFromStorage(deps)).toMatchObject({
+      dictationEnabled: false,
+      voiceModeEnabled: false,
+      uiFontSize: 18,
+    });
+    queryClient.clear();
+  });
+  it("保存语音开关失败时保留原开关和缓存，允许重试", async () => {
+    const deps = makeDeps();
+    const original = await loadAppSettingsFromStorage(deps);
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(APP_SETTINGS_QUERY_KEY, original);
+    const setItem = deps.storage.setItem;
+    deps.storage.setItem = async () => {
+      throw new Error("磁盘已满");
+    };
+    await expect(
+      saveAppSettings({ queryClient, deps, updates: { voiceModeEnabled: false } }),
+    ).rejects.toThrow("磁盘已满");
+    expect(queryClient.getQueryData(APP_SETTINGS_QUERY_KEY)).toEqual(original);
+    expect(await loadAppSettingsFromStorage(deps)).toMatchObject({ voiceModeEnabled: true });
+    deps.storage.setItem = setItem;
+    await saveAppSettings({ queryClient, deps, updates: { voiceModeEnabled: false } });
+    expect(queryClient.getQueryData(APP_SETTINGS_QUERY_KEY)).toMatchObject({
+      voiceModeEnabled: false,
+    });
+    queryClient.clear();
+  });
   it("saves terminal scrollback through app settings persistence", async () => {
     const deps = makeDeps({
       storage: createInMemoryKeyValueStorage({

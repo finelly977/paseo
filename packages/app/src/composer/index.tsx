@@ -962,6 +962,7 @@ interface ComposerVoiceModeButtonProps {
 }
 
 interface ComposerRightControlsSlotProps extends ComposerVoiceModeButtonProps {
+  voiceModeEnabled: boolean;
   isVoiceModeForAgent: boolean;
   hasAgent: boolean;
   isAgentRunning: boolean;
@@ -972,6 +973,7 @@ interface ComposerRightControlsSlotProps extends ComposerVoiceModeButtonProps {
 }
 
 function ComposerRightControlsSlot({
+  voiceModeEnabled,
   isVoiceModeForAgent,
   hasAgent,
   isAgentRunning,
@@ -983,7 +985,11 @@ function ComposerRightControlsSlot({
 }: ComposerRightControlsSlotProps) {
   const hideVoiceForCompactInput = isCompact && hasSendableContent;
   const showVoiceModeButton =
-    !isVoiceModeForAgent && hasAgent && !isAgentRunning && !hideVoiceForCompactInput;
+    voiceModeEnabled &&
+    !isVoiceModeForAgent &&
+    hasAgent &&
+    !isAgentRunning &&
+    !hideVoiceForCompactInput;
   const shouldShowCancelButton = isAgentRunning && !hasSendableContent && !isProcessing;
   if (!showVoiceModeButton && !shouldShowCancelButton) return null;
   return (
@@ -1749,6 +1755,7 @@ export function Composer({
   const isVoiceModeForAgent = resolveIsVoiceModeForAgent(voice, serverId, agentId);
 
   const handleToggleRealtimeVoice = useCallback(() => {
+    if (!appSettings.voiceModeEnabled) return;
     attemptStartRealtimeVoice({
       voice,
       isConnected,
@@ -1757,7 +1764,7 @@ export function Composer({
       agentId,
       toastErrorRef,
     });
-  }, [agentId, hasAgent, isConnected, serverId, voice]);
+  }, [agentId, hasAgent, isConnected, serverId, voice, appSettings.voiceModeEnabled]);
 
   const handleEditQueuedMessage = useCallback(
     (id: string) => {
@@ -1861,6 +1868,7 @@ export function Composer({
   const rightContent = useMemo(
     () => (
       <ComposerRightControlsSlot
+        voiceModeEnabled={appSettings.voiceModeEnabled}
         isVoiceModeForAgent={isVoiceModeForAgent}
         hasAgent={hasAgent}
         isAgentRunning={isAgentRunning}
@@ -1880,6 +1888,7 @@ export function Composer({
     [
       buttonIconSize,
       cancelButton,
+      appSettings.voiceModeEnabled,
       handleToggleRealtimeVoice,
       hasAgent,
       hasSendableContent,

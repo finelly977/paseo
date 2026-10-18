@@ -3,6 +3,7 @@ import { i18n } from "@/i18n/i18next";
 export type DictationStatus = "idle" | "recording" | "uploading" | "failed";
 
 export interface UseDictationOptions {
+  enabled?: boolean;
   client: import("@getpaseo/client/internal/daemon-client").DaemonClient | null;
   onTranscript: (text: string, meta: { requestId: string }) => void;
   onPartialTranscript?: (text: string, meta: { requestId: string }) => void;

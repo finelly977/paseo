@@ -1,7 +1,9 @@
+import { audioInputSettings } from "./audio-input-settings";
 import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const ru: TranslationResources = {
+  audioInput: audioInputSettings["ru"],
   common: {
     relativeTime: {
       justNow: "только что",

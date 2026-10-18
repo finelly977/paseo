@@ -98,6 +98,7 @@ import { resolveAppVersion } from "@/utils/app-version";
 import { AndroidAppUpdateRow } from "@/updates/android-app-update-row";
 import { useAppDiagnosticStore } from "@/diagnostics/store";
 import { settingsStyles } from "@/styles/settings";
+import { AudioInputSettingsRows } from "@/screens/settings/audio-input-settings";
 import { THINKING_TONE_NATIVE_PCM_BASE64 } from "@/utils/thinking-tone.native-pcm";
 import { useVoiceAudioEngineOptional } from "@/contexts/voice-context";
 import {
@@ -527,6 +528,7 @@ function GeneralSection({
             accessibilityLabel={t("settings.general.contextWindowProviderUsage.label")}
           />
         </View>
+        <AudioInputSettingsRows />
         <IntegerSettingRow
           title={t("settings.general.terminalScrollback.label")}
           description={t("settings.general.terminalScrollback.description")}

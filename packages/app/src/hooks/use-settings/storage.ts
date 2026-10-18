@@ -97,6 +97,8 @@ export interface AppSettings {
   sendBehavior: SendBehavior;
   serviceUrlBehavior: ServiceUrlBehavior;
   contextWindowProviderUsageEnabled: boolean;
+  dictationEnabled: boolean;
+  voiceModeEnabled: boolean;
   terminalScrollbackLines: number;
   uiFontFamily: string; // "" = platform default UI stack
   monoFontFamily: string; // "" = platform default mono stack
@@ -134,6 +136,8 @@ const StoredAppSettingsSchema = z.looseObject({
   sendBehavior: z.unknown().optional(),
   serviceUrlBehavior: z.unknown().optional(),
   contextWindowProviderUsageEnabled: z.unknown().optional(),
+  dictationEnabled: z.unknown().optional(),
+  voiceModeEnabled: z.unknown().optional(),
   terminalScrollbackLines: z.unknown().optional(),
   uiFontFamily: z.unknown().optional(),
   monoFontFamily: z.unknown().optional(),
@@ -175,6 +179,8 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   sendBehavior: "steer",
   serviceUrlBehavior: "ask",
   contextWindowProviderUsageEnabled: true,
+  dictationEnabled: true,
+  voiceModeEnabled: true,
   terminalScrollbackLines: DEFAULT_TERMINAL_SCROLLBACK_LINES,
   uiFontFamily: "",
   monoFontFamily: "",
@@ -226,20 +232,38 @@ export interface SettingsDeps {
   desktop: DesktopSettingsBridge;
 }
 
+// 同一客户端的设置写入按顺序合并，持久化成功才发布缓存，失败不伪装成已保存。
+const pendingSettingsWrites = new WeakMap<QueryClient, Promise<void>>();
+
 export async function saveAppSettings(input: {
   queryClient: QueryClient;
   updates: Partial<AppSettings>;
   deps: SettingsDeps;
 }): Promise<void> {
-  const storedCurrent =
-    input.queryClient.getQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY) ??
-    (await loadAppSettingsFromStorage(input.deps));
-  const current = normalizeAppSettings(storedCurrent);
-  const next = { ...current, ...input.updates };
-  input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
-  const stored =
-    (await readValidatedJson(input.deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema)) ?? {};
-  await writeAppSettings(input.deps.storage, stored, next);
+  const save = async () => {
+    const storedCurrent =
+      input.queryClient.getQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY) ??
+      (await loadAppSettingsFromStorage(input.deps));
+    const current = normalizeAppSettings(storedCurrent);
+    const next = { ...current, ...input.updates };
+    const stored =
+      (await readValidatedJson(input.deps.storage, APP_SETTINGS_KEY, StoredAppSettingsSchema)) ??
+      {};
+    await writeAppSettings(input.deps.storage, stored, next);
+    input.queryClient.setQueryData<AppSettings>(APP_SETTINGS_QUERY_KEY, next);
+  };
+  const previous = pendingSettingsWrites.get(input.queryClient) ?? Promise.resolve();
+  const pending = previous.then(save, (error) => {
+    console.error("[AppSettings] Previous save failed; continuing the next explicit update", error);
+    return save();
+  });
+  pendingSettingsWrites.set(input.queryClient, pending);
+  try {
+    await pending;
+  } finally {
+    if (pendingSettingsWrites.get(input.queryClient) === pending)
+      pendingSettingsWrites.delete(input.queryClient);
+  }
 }
 
 export async function loadAppSettingsFromStorage(deps: SettingsDeps): Promise<AppSettings> {
@@ -359,6 +383,8 @@ type NumericAppSetting =
 type BooleanAppSetting =
   | "autoExpandReasoning"
   | "contextWindowProviderUsageEnabled"
+  | "dictationEnabled"
+  | "voiceModeEnabled"
   | "vimKeybindings";
 
 function copyBooleanAppSetting(
@@ -526,6 +552,8 @@ function pickAppSettings(stored: StoredAppSettings): Partial<AppSettings> {
     result.syntaxTheme = stored.syntaxTheme;
   }
   copyBooleanAppSetting(result, "vimKeybindings", stored.vimKeybindings);
+  copyBooleanAppSetting(result, "dictationEnabled", stored.dictationEnabled);
+  copyBooleanAppSetting(result, "voiceModeEnabled", stored.voiceModeEnabled);
   if (stored.workspaceTitleSource === "title" || stored.workspaceTitleSource === "branch") {
     result.workspaceTitleSource = stored.workspaceTitleSource;
   }

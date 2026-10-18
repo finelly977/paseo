@@ -1,7 +1,9 @@
+import { audioInputSettings } from "./audio-input-settings";
 import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const fr: TranslationResources = {
+  audioInput: audioInputSettings["fr"],
   common: {
     relativeTime: {
       justNow: "à l’instant",

@@ -104,6 +104,60 @@ describe("voice runtime", () => {
     });
   });
 
+  it("设置关闭后停止采集与播放，禁止直接调用重新开启；恢复开关不会自动录音", async () => {
+    const { runtime, engine } = createRuntime();
+    const adapter = createSessionAdapter();
+    runtime.registerSession(adapter);
+    await runtime.startVoice("server-1", "agent-1");
+    await runtime.setEnabled(false);
+    expect(runtime.getSnapshot().phase).toBe("disabled");
+    expect(engine.stopCapture).toHaveBeenCalled();
+    expect(engine.clearQueue).toHaveBeenCalled();
+    expect(adapter.setVoiceMode).toHaveBeenLastCalledWith(false);
+    await expect(runtime.startVoice("server-1", "agent-1")).rejects.toThrow(
+      "语音模式已在设置中关闭",
+    );
+    await runtime.setEnabled(true);
+    expect(engine.startCapture).toHaveBeenCalledTimes(1);
+    await runtime.startVoice("server-1", "agent-1");
+    expect(engine.startCapture).toHaveBeenCalledTimes(2);
+    await runtime.stopVoice();
+  });
+
+  it("关闭发生在开启主机语音的请求中时，迟到成功也不会再启动麦克风", async () => {
+    const { runtime, engine } = createRuntime();
+    const adapter = createSessionAdapter();
+    let resolveStart: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      resolveStart = resolve;
+    });
+    vi.mocked(adapter.setVoiceMode).mockImplementation((enabled) =>
+      enabled ? pending : Promise.resolve(),
+    );
+    runtime.registerSession(adapter);
+    const started = runtime.startVoice("server-1", "agent-1");
+    const rejected = expect(started).rejects.toThrow("启动已取消");
+    await vi.waitFor(() => expect(adapter.setVoiceMode).toHaveBeenCalledWith(true, "agent-1"));
+    await runtime.setEnabled(false);
+    if (!resolveStart) throw new Error("启动请求未建立");
+    resolveStart();
+    await rejected;
+    expect(engine.startCapture).not.toHaveBeenCalled();
+    expect(adapter.setVoiceMode).toHaveBeenLastCalledWith(false);
+    expect(runtime.getSnapshot().phase).toBe("disabled");
+  });
+
+  it("关闭主机语音请求失败时仍停止本地麦克风，并显式报告失败", async () => {
+    const { runtime, engine } = createRuntime();
+    const adapter = createSessionAdapter();
+    runtime.registerSession(adapter);
+    await runtime.startVoice("server-1", "agent-1");
+    vi.mocked(adapter.setVoiceMode).mockRejectedValue(new Error("主机断开"));
+    await expect(runtime.setEnabled(false)).rejects.toThrow("主机断开");
+    expect(engine.stopCapture).toHaveBeenCalled();
+    expect(runtime.getSnapshot().isVoiceMode).toBe(false);
+  });
+
   it("streams continuous PCM chunks and waits after receiving a transcript", async () => {
     const adapter = createSessionAdapter();
     const { runtime } = createRuntime();

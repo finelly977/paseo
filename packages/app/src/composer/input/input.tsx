@@ -34,6 +34,7 @@ import {
   ContextMenuItem,
 } from "@/components/ui/context-menu";
 import { useDictation } from "@/hooks/use-dictation";
+import { useAudioInputSettings } from "@/hooks/use-audio-input-settings";
 import { DictationOverlay } from "@/components/dictation-controls";
 import { RealtimeVoiceOverlay } from "@/components/realtime-voice-overlay";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -697,6 +698,7 @@ function FocusHint({
 }
 
 function VoiceButtonTooltip({
+  dictationEnabled,
   onVoicePress,
   isDictationStartEnabled,
   voiceButtonAccessibilityLabel,
@@ -707,6 +709,7 @@ function VoiceButtonTooltip({
   voiceMuteToggleKeys,
   dictationToggleKeys,
 }: {
+  dictationEnabled: boolean;
   onVoicePress: () => void;
   isDictationStartEnabled: boolean;
   voiceButtonAccessibilityLabel: string;
@@ -718,11 +721,12 @@ function VoiceButtonTooltip({
   dictationToggleKeys: ShortcutChord | null | undefined;
 }) {
   const shortcut = isRealtimeVoiceForCurrentAgent ? voiceMuteToggleKeys : dictationToggleKeys;
+  if (!dictationEnabled && !isRealtimeVoiceForCurrentAgent) return null;
   return (
     <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
       <TooltipTrigger
         onPress={onVoicePress}
-        disabled={!isDictationStartEnabled}
+        disabled={!isRealtimeVoiceForCurrentAgent && !isDictationStartEnabled}
         accessibilityRole="button"
         accessibilityLabel={voiceButtonAccessibilityLabel}
         style={voiceButtonStyle}
@@ -1225,6 +1229,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     const buttonIconSize = isWeb ? ICON_SIZE.md : ICON_SIZE.lg;
     const toast = useToast();
     const voice = useVoiceOptional();
+    const { dictationEnabled, voiceModeEnabled } = useAudioInputSettings();
     const voiceMuteToggleKeys = useShortcutKeys("voice-mute-toggle");
     const dictationToggleKeys = useShortcutKeys("dictation-toggle");
     const focusInputKeys = useShortcutKeys("focus-message-input");
@@ -1289,6 +1294,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const handleDictationTranscript = useCallback(
       (text: string, _meta: { requestId: string }) => {
+        if (!dictationEnabled) return;
         const autoSend = sendAfterTranscriptRef.current;
         sendAfterTranscriptRef.current = false;
         applyDictationTranscript(text, {
@@ -1303,7 +1309,16 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           autoSend,
         });
       },
-      [onChangeText, onSubmit, onQueue, attachments, cwd, isAgentRunning, defaultSendBehavior],
+      [
+        onChangeText,
+        onSubmit,
+        onQueue,
+        attachments,
+        cwd,
+        isAgentRunning,
+        defaultSendBehavior,
+        dictationEnabled,
+      ],
     );
 
     const handleDictationError = useCallback(
@@ -1321,13 +1336,14 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
 
     const canStartDictation = useCallback(
       () =>
+        dictationEnabled &&
         computeCanStartDictation({
           client,
           isReadyForDictation,
           disabled,
           dictationUnavailableMessage,
         }),
-      [client, disabled, dictationUnavailableMessage, isReadyForDictation],
+      [client, disabled, dictationUnavailableMessage, isReadyForDictation, dictationEnabled],
     );
 
     const canConfirmDictation = useCallback(() => client?.isConnected ?? false, [client]);
@@ -1353,6 +1369,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       retryFailedDictation,
       discardFailedDictation,
     } = useDictation({
+      enabled: dictationEnabled,
       client,
       onTranscript: handleDictationTranscript,
       onError: handleDictationError,
@@ -1382,16 +1399,15 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       sendAfterTranscriptRef.current = false;
     }, [dictationStatus, isDictating, isDictationProcessing]);
 
-    const startDictationIfAvailable = useCallback(
-      () =>
-        startDictationIfAvailableImpl({
-          dictationUnavailableMessage,
-          canStartDictation,
-          toast,
-          startDictation,
-        }),
-      [canStartDictation, dictationUnavailableMessage, startDictation, toast],
-    );
+    const startDictationIfAvailable = useCallback(async () => {
+      if (!dictationEnabled) return;
+      return startDictationIfAvailableImpl({
+        dictationUnavailableMessage,
+        canStartDictation,
+        toast,
+        startDictation,
+      });
+    }, [canStartDictation, dictationUnavailableMessage, startDictation, toast, dictationEnabled]);
 
     const handleVoicePress = useCallback(
       () =>
@@ -1452,6 +1468,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     }, [client, isAgentRunning, isRealtimeVoiceForCurrentAgent, toast, voice, voiceAgentId]);
 
     const handleToggleRealtimeVoiceShortcut = useCallback(() => {
+      if (!voiceModeEnabled) return;
       toggleRealtimeVoiceImpl({
         voice,
         voiceServerId,
@@ -1464,6 +1481,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         interruptBeforeVoiceMessage: t("composer.voice.interruptBeforeVoice"),
       });
     }, [
+      voiceModeEnabled,
       disabled,
       handleStopRealtimeVoice,
       isAgentRunning,
@@ -1847,6 +1865,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             <View style={styles.rightButtonGroup}>
               {beforeVoiceContent}
               <VoiceButtonTooltip
+                dictationEnabled={dictationEnabled}
                 onVoicePress={handleVoicePress}
                 isDictationStartEnabled={isDictationStartEnabled}
                 voiceButtonAccessibilityLabel={voiceButtonAccessibilityLabel}

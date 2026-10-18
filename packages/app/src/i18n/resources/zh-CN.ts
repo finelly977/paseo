@@ -1,7 +1,9 @@
+import { audioInputSettings } from "./audio-input-settings";
 import { pluginSettings } from "./plugin-settings";
 import type { TranslationResources } from "./en";
 
 export const zhCN: TranslationResources = {
+  audioInput: audioInputSettings["zh-CN"],
   common: {
     relativeTime: {
       justNow: "刚刚",

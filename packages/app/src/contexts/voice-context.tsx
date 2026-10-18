@@ -9,6 +9,8 @@ import {
 } from "react";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { useSessionStore } from "@/stores/session-store";
+import { useAudioInputSettings } from "@/hooks/use-audio-input-settings";
+import { useToast } from "@/contexts/toast-context";
 import { createAudioEngine } from "@/voice/audio-engine";
 import type { AudioEngine } from "@/voice/audio-engine-types";
 import {
@@ -113,6 +115,8 @@ interface VoiceProviderProps {
 }
 
 export function VoiceProvider({ children }: VoiceProviderProps) {
+  const { voiceModeEnabled } = useAudioInputSettings();
+  const toast = useToast();
   const engineRef = useRef<AudioEngine | null>(null);
   const runtimeRef = useRef<VoiceRuntime | null>(null);
 
@@ -153,6 +157,15 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
 
   const engine = engineRef.current;
   const runtime = runtimeRef.current!;
+
+  useEffect(() => {
+    void runtime.setEnabled(voiceModeEnabled).catch((stopError) => {
+      console.error("[VoiceProvider] Failed to apply voice setting", stopError);
+      toast.error(
+        `语音模式已关闭，但结束语音会话时发生错误：${stopError instanceof Error ? stopError.message : String(stopError)}`,
+      );
+    });
+  }, [runtime, voiceModeEnabled, toast]);
 
   useEffect(() => {
     return () => {

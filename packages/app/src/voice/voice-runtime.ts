@@ -167,6 +167,7 @@ export interface VoiceRuntime {
   handleCaptureVolume(level: number): void;
   handleAudioOutput(serverId: string, payload: AudioOutputPayload): void;
   startVoice(serverId: string, agentId: string): Promise<void>;
+  setEnabled(enabled: boolean): Promise<void>;
   stopVoice(): Promise<void>;
   destroy(): Promise<void>;
   toggleMute(): void;
@@ -180,6 +181,7 @@ export interface VoiceRuntime {
 }
 
 export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
+  let enabled = true;
   const instanceId = nextVoiceRuntimeInstanceId++;
   const listeners = new Set<() => void>();
   const telemetryListeners = new Set<() => void>();
@@ -554,8 +556,12 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
     resetPlaybackState();
     deps.engine.stop();
     deps.engine.clearQueue();
-    await deps.engine.stopCapture().catch(() => undefined);
-    await deps.deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
+    await deps.engine.stopCapture().catch((error) => {
+      console.error("[VoiceRuntime] Failed to stop local capture", error);
+    });
+    await deps.deactivateKeepAwake(KEEP_AWAKE_TAG).catch((error) => {
+      console.error("[VoiceRuntime] Failed to deactivate keep-awake", error);
+    });
     getActiveSession()?.adapter.setAssistantAudioPlaying(false);
     resetToDisabledState();
   }
@@ -709,7 +715,13 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
       void processPlaybackQueue(serverId);
     },
 
+    async setEnabled(nextEnabled) {
+      enabled = nextEnabled;
+      if (!enabled && state.snapshot.phase !== "disabled") await api.stopVoice();
+    },
+
     async startVoice(serverId, agentId) {
+      if (!enabled) throw new Error("语音模式已在设置中关闭");
       const session = sessions.get(serverId);
       if (!session) {
         throw new Error(`Voice runtime is not ready for host ${serverId}`);
@@ -759,11 +771,13 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
         });
 
         await deps.engine.initialize();
+        if (state.generation !== generation) throw new Error("语音模式启动已取消");
         await session.adapter.setVoiceMode(true, agentId);
         enabledCurrentVoiceMode = true;
+        if (state.generation !== generation) throw new Error("语音模式启动已取消");
         await deps.engine.startCapture();
         if (state.generation !== generation) {
-          return;
+          throw new Error("语音模式启动已取消");
         }
 
         state.transportReady = true;
@@ -779,7 +793,12 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
         }));
       } catch (error) {
         if (enabledCurrentVoiceMode) {
-          await session.adapter.setVoiceMode(false).catch(() => undefined);
+          await session.adapter.setVoiceMode(false).catch((rollbackError) => {
+            console.error(
+              "[VoiceRuntime] Failed to disable voice after startup failure",
+              rollbackError,
+            );
+          });
         }
         await performLocalStop();
         throw error;
@@ -794,6 +813,7 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
         ...prev,
         isVoiceSwitching: true,
         phase: "stopping",
+        isVoiceMode: false,
       }));
 
       try {
@@ -804,12 +824,16 @@ export function createVoiceRuntime(deps: VoiceRuntimeDeps): VoiceRuntime {
         deps.engine.stop();
         deps.engine.clearQueue();
         activeSession?.adapter.setAssistantAudioPlaying(false);
-        if (activeSession) {
-          await activeSession.adapter.setVoiceMode(false);
+        // 先释放本机麦克风，再等待主机；断线或超时不能让本机继续录音。
+        try {
+          await deps.engine.stopCapture();
+        } finally {
+          if (activeSession) await activeSession.adapter.setVoiceMode(false);
         }
-        await deps.engine.stopCapture();
-        await deps.deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
       } finally {
+        await deps.deactivateKeepAwake(KEEP_AWAKE_TAG).catch((error) => {
+          console.error("[VoiceRuntime] Failed to deactivate keep-awake", error);
+        });
         if (state.generation === generation) {
           resetToDisabledState();
         }
