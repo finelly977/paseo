@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext } from "react";
+import React, { createContext, type ReactNode, useContext } from "react";
 
 export type MarkdownTextSurface = "prose" | "table-cell";
 

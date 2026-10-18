@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useTranslation } from "react-i18next";
 import { MarkdownParagraphView, MarkdownTextSpan } from "@/components/markdown-text";
-import { MarkdownTableCellText } from "@/components/markdown-text-selection";
+import { createMarkdownTableRules } from "@/components/markdown/table";
 import * as React from "react";
 import {
   useState,
@@ -1873,6 +1873,7 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   const markdownRules = useMemo<RenderRules>(() => {
     return {
+      ...createMarkdownTableRules(),
       text: (
         node: ASTNode,
         _children: ReactNode[],
@@ -2120,16 +2121,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           </View>
         );
       },
-      th: (node: ASTNode, children: ReactNode[], _parent: ASTNode[], styles: MarkdownStyles) => (
-        <MarkdownTableCellText key={node.key}>
-          <View style={styles._VIEW_SAFE_th}>{children}</View>
-        </MarkdownTableCellText>
-      ),
-      td: (node: ASTNode, children: ReactNode[], _parent: ASTNode[], styles: MarkdownStyles) => (
-        <MarkdownTableCellText key={node.key}>
-          <View style={styles._VIEW_SAFE_td}>{children}</View>
-        </MarkdownTableCellText>
-      ),
       paragraph: (
         node: ASTNode,
         children: ReactNode[],

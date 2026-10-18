@@ -26,7 +26,7 @@ import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary"
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import { MarkdownParagraphView, MarkdownTextSpan } from "@/components/markdown-text";
-import { MarkdownTableCellText } from "@/components/markdown-text-selection";
+import { createMarkdownTableRules } from "./table";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { createMarkdownParser } from "@/utils/markdown-parser";
@@ -539,6 +539,7 @@ function getMarkdownLinkHref(node: ASTNode): string {
 
 export function createSharedMarkdownRules(): RenderRules {
   return {
+    ...createMarkdownTableRules(),
     text: (
       node: ASTNode,
       _children: ReactNode[],
@@ -718,16 +719,6 @@ export function createSharedMarkdownRules(): RenderRules {
         </View>
       );
     },
-    th: (node: ASTNode, children: ReactNode[], _parent: ASTNode[], styles: MarkdownStyles) => (
-      <MarkdownTableCellText key={node.key}>
-        <View style={styles._VIEW_SAFE_th}>{children}</View>
-      </MarkdownTableCellText>
-    ),
-    td: (node: ASTNode, children: ReactNode[], _parent: ASTNode[], styles: MarkdownStyles) => (
-      <MarkdownTableCellText key={node.key}>
-        <View style={styles._VIEW_SAFE_td}>{children}</View>
-      </MarkdownTableCellText>
-    ),
     paragraph: (
       node: ASTNode,
       children: ReactNode[],

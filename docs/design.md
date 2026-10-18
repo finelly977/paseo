@@ -46,6 +46,8 @@ Foreground is for the thing being acted on: row titles, section headings, the se
 
 Mermaid 的内容尺寸以 SVG `viewBox` 为准，不能把首次测量容器的缩放边界缓存为图表尺寸。网页与移动端预览最高 480 像素，SVG 在预览内保持比例适配；网页缩放由外层视口统一负责，移动端放大查看允许图表按宽度展开并滚动。
 
+Markdown 表格按整张表的可见内容估算各列需求，不均分列宽；短标签和数值列收窄，长说明列获取更多空间。表头和正文共用列宽，链接只计算可见文字，代码按可见内容计入；限制孤立超长地址对整列的影响。容器宽度及字号变化后重新分配；窄屏不足以保持可读列宽时仅表格横向滚动，不撑宽页面，不改变文本、代码、链接或复制内容。对话、文档预览和紧凑工具详情共用此规则。
+
 `foregroundExtraMuted` is reserved for passive chrome that must sit behind muted text, such as an always-visible window control. Use the solid token instead of lowering SVG opacity; per-path opacity makes overlapping icon strokes render unevenly. Interactive hover and pressed states return to `foreground`.
 
 Accent is the one CTA per surface. A `<Button variant="default">` filled with `accent` appears at most once on a page. Most pages have zero — settings is mostly toggles and text, the workspace pane is mostly content, the chat composer is the input itself.
