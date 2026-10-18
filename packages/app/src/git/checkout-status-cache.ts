@@ -55,6 +55,11 @@ export function applyCheckoutStatusUpdateFromEvent({
     ? normalizeCheckoutPrStatusPayload(payload.prStatus)
     : undefined;
   const cachePayload = prStatus ? { ...payload, prStatus } : payload;
+  // 推送代表主机最新状态；撤销旧读取的缓存写入资格，防止迟到响应恢复旧分支。
+  void queryClient.cancelQueries(
+    { queryKey: checkoutStatusQueryKey(serverId, cwd), exact: true },
+    { revert: false, silent: true },
+  );
   queryClient.setQueryData(checkoutStatusQueryKey(serverId, cwd), cachePayload);
   void queryClient.invalidateQueries({
     queryKey: checkoutCommitsQueryKey(serverId, cwd),

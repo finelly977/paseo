@@ -18,6 +18,8 @@ Git owns Git-ignore evaluation. The observer accepts absolute excluded roots and
 
 Workspace Git verifies each repository metadata subscription with a one-shot canary inside the Git directory. If the event does not round-trip through the subscription callback, treat the watcher as unavailable and enter degraded polling. Refresh working-tree Git-ignore exclusions from ignore-file events and watcher recovery, never from a healthy-watcher timer.
 
+首次建立 Workspace Git 观察器后额外读取一次所属 Git 目录的 `HEAD`，核对缓存分支身份。快照读取与监听就绪之间发生的外部分支切换必须补发本地状态；身份未变不再执行一遍完整 Git 状态扫描，也不增加健康监听器的常驻轮询。普通仓库读取公共 Git 目录，独立工作树读取自身 Git 目录，不能将两者的分支混用。客户端收到当前目录的新状态推送时撤销该查询尚未完成的旧读取，防止迟到响应把新分支和更改列表恢复成旧值；其他主机、目录的查询不受影响。
+
 The real-filesystem contracts and daemon auto-archive lifecycle run in the normal server test suite. Use the scripts only for manual performance and soak work: `npm run measure:file-observer --workspace=@getpaseo/server` measures burst and sustained-create behavior, and `npm run repro:file-observer-teardown --workspace=@getpaseo/server` runs the teardown soak.
 
 文件浏览器客户端为每条目录订阅单独持有一个串行刷新队列。刷新期间到达的新事件必须在队列

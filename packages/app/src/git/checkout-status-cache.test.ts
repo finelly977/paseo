@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { QueryClient } from "@tanstack/react-query";
+import { CancelledError, QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CheckoutStatusUpdate } from "@getpaseo/protocol/messages";
 import {
@@ -123,6 +123,44 @@ describe("fetchCheckoutStatus", () => {
 });
 
 describe("applyCheckoutStatusUpdateFromEvent", () => {
+  it("新状态只撤销相同主机和目录的旧读取，不中断其他工作区查询", async () => {
+    const queryClient = createQueryClient();
+    const { promise, resolve } = Promise.withResolvers<CheckoutStatusPayload>();
+    const other = checkoutStatus({ cwd: "/other", currentBranch: "other" });
+    const otherKey = checkoutStatusQueryKey(serverId, "/other");
+    const pending = queryClient.fetchQuery({ queryKey: otherKey, queryFn: () => promise });
+    applyCheckoutStatusUpdateFromEvent({
+      queryClient,
+      serverId,
+      message: checkoutStatusUpdate(checkoutStatus({ currentBranch: "main" })),
+    });
+    resolve(other);
+    await expect(pending).resolves.toEqual(other);
+    expect(queryClient.getQueryData(otherKey)).toEqual(other);
+    queryClient.clear();
+  });
+  it("本地分支更新到达后，尚未完成的旧查询不得把分支名恢复成旧值", async () => {
+    const queryClient = createQueryClient();
+    const key = checkoutStatusQueryKey(serverId, cwd);
+    const old = checkoutStatus({ currentBranch: "feature/old", requestId: "old-read" });
+    queryClient.setQueryData(key, old);
+    const { promise, resolve } = Promise.withResolvers<CheckoutStatusPayload>();
+    const pending = queryClient.fetchQuery({ queryKey: key, queryFn: () => promise });
+    const finished = pending.catch((error) => {
+      if (!(error instanceof CancelledError)) throw error;
+    });
+    const current = checkoutStatus({ currentBranch: "main", requestId: "new-push" });
+    applyCheckoutStatusUpdateFromEvent({
+      queryClient,
+      serverId,
+      message: checkoutStatusUpdate(current),
+    });
+    expect(queryClient.getQueryData(key)).toEqual(current);
+    resolve(old);
+    await finished;
+    expect(queryClient.getQueryData(key)).toEqual(current);
+    queryClient.clear();
+  });
   it("writes the checkout status to the cache using the cwd from the payload", () => {
     const queryClient = createQueryClient();
     const pushed = checkoutStatus({ requestId: "push-1", isDirty: true });

@@ -338,6 +338,7 @@ type WorkspaceGitRefreshState =
     };
 
 interface WorkspaceGitServiceDependencies {
+  readGitHead: (gitDir: string) => Promise<string>;
   subscribe: SubscribeToFileChanges;
   getCheckoutSnapshotFacts: typeof getCheckoutSnapshotFacts;
   getCheckoutRefDerivedState: typeof getCheckoutRefDerivedState;
@@ -495,6 +496,7 @@ function buildDefaultWorkspaceGitServiceDeps(
   subscribe: SubscribeToFileChanges,
 ): WorkspaceGitServiceDependencies {
   return {
+    readGitHead: (gitDir) => readFile(join(gitDir, "HEAD"), "utf8"),
     subscribe,
     getCheckoutSnapshotFacts,
     getCheckoutRefDerivedState,
@@ -1233,6 +1235,25 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         return;
       }
       await this.setupWorkspaceObservation(target);
+      if (target.observationSetupComplete && this.isActiveObservedWorkspaceTarget(target)) {
+        const facts = target.latestFacts;
+        if (facts?.isGit && facts.absoluteGitDir) {
+          // 快照可能早于 watcher 就绪。只校验一次 HEAD，分支没变不重复完整 Git 扫描。
+          const head = (await this.deps.readGitHead(facts.absoluteGitDir)).trim();
+          const branch = head.startsWith("ref: refs/heads/")
+            ? head.slice("ref: refs/heads/".length)
+            : "HEAD";
+          if (
+            branch !== (facts.currentBranch ?? "HEAD") &&
+            this.isActiveObservedWorkspaceTarget(target)
+          ) {
+            this.scheduleWorkspaceRefresh(target, {
+              reason: "observation-ready-head-changed",
+              queueIfBusy: true,
+            });
+          }
+        }
+      }
     })
       .catch((error) => {
         if (this.disposed || !this.isActiveObservedWorkspaceTarget(target)) {

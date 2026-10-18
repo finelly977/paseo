@@ -271,6 +271,7 @@ interface CreateServiceTestOptions {
 
 function buildDefaultTestServiceDeps() {
   return {
+    readGitHead: vi.fn(async () => "ref: refs/heads/main\n"),
     subscribe: vi.fn(async () => ({
       updateIgnore: vi.fn(async () => {}),
       unsubscribe: vi.fn(async () => {}),
