@@ -353,10 +353,13 @@
 
 - 工作区行的三点菜单通过全屏浮层渲染，浮层会遮住整行，行因此收不到指针离开事件；菜单关闭后该行会一直保持悬停高亮，直到用户重新移入再移出。
 - 菜单关闭时按指针的真实位置重新判定悬停状态，指针已不在行上时立即清除高亮。
+- 侧栏工作区悬停预览共用唯一显示槽，鼠标切换到其他行时立即撤下旧卡片，不再让各行的关闭宽限期与退场淡出叠成多张可见卡片；旧行的迟到计时器和卸载清理不能关闭当前预览。保留显示时的短淡入、跨卡片间隙的安全区域、100 毫秒离开宽限以及复制路径/分支等操作；拖动时立即收起，触控布局不新增悬停入口。
 - 该处理只作用于网页端；原生端没有该浮层遮挡问题，行为不变。
 
 主要涉及：
 
+- `packages/app/src/components/workspace-hover-card.tsx`
+- `packages/app/src/hooks/use-workspace-hover-card-visibility.ts`
 - `packages/app/src/components/sidebar/use-sidebar-row-hover.ts`
 - `packages/app/src/components/sidebar/sidebar-workspace-row-content.tsx`
 - `packages/app/src/components/sidebar/sidebar-workspace-row.tsx`

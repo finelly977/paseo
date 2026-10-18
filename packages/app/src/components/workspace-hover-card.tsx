@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Dimensions, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { FadeIn, FadeOut } from "react-native-reanimated";
+import { FadeIn } from "react-native-reanimated";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import {
   Check,
@@ -39,6 +39,7 @@ import { shortenPath } from "@/utils/shorten-path";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import { PrBadge } from "@/components/sidebar-workspace-list";
 import { useHoverSafeZone } from "@/hooks/use-hover-safe-zone";
+import { useWorkspaceHoverCardVisibility } from "@/hooks/use-workspace-hover-card-visibility";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
@@ -89,7 +90,6 @@ function computeHoverCardPosition({
   return { x, y };
 }
 
-const HOVER_GRACE_MS = 100;
 const HOVER_CARD_WIDTH = 260;
 
 interface WorkspaceHoverCardProps {
@@ -125,37 +125,8 @@ function WorkspaceHoverCardDesktop({
 }: PropsWithChildren<WorkspaceHoverCardProps>): ReactElement {
   const triggerRef = useRef<View>(null);
   const contentRef = useRef<View>(null);
-  const [open, setOpen] = useState(false);
-  const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const triggerHoveredRef = useRef(false);
-
-  const clearGraceTimer = useCallback(() => {
-    if (graceTimerRef.current) {
-      clearTimeout(graceTimerRef.current);
-      graceTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleClose = useCallback(() => {
-    if (graceTimerRef.current) return;
-    graceTimerRef.current = setTimeout(() => {
-      graceTimerRef.current = null;
-      setOpen(false);
-    }, HOVER_GRACE_MS);
-  }, []);
-
-  const handleTriggerEnter = useCallback(() => {
-    triggerHoveredRef.current = true;
-    clearGraceTimer();
-    if (!isDragging) {
-      setOpen(true);
-    }
-  }, [clearGraceTimer, isDragging]);
-
-  const handleTriggerLeave = useCallback(() => {
-    triggerHoveredRef.current = false;
-    scheduleClose();
-  }, [scheduleClose]);
+  const { open, openCard, scheduleClose, clearGraceTimer } =
+    useWorkspaceHoverCardVisibility(isDragging);
 
   // While open, the safe zone covers trigger + content + the bridge between
   // them. Close only fires when the pointer leaves the safe zone; re-entering
@@ -168,27 +139,12 @@ function WorkspaceHoverCardDesktop({
     onLeaveSafeZone: scheduleClose,
   });
 
-  // Close when drag starts
-  useEffect(() => {
-    if (isDragging) {
-      clearGraceTimer();
-      setOpen(false);
-    }
-  }, [isDragging, clearGraceTimer]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      clearGraceTimer();
-    };
-  }, [clearGraceTimer]);
-
   return (
     <View
       ref={triggerRef}
       collapsable={false}
-      onPointerEnter={handleTriggerEnter}
-      onPointerLeave={handleTriggerLeave}
+      onPointerEnter={openCard}
+      onPointerLeave={scheduleClose}
     >
       {children}
       {open ? (
@@ -274,7 +230,6 @@ function WorkspaceHoverCardContent({
         <FloatingSurface
           ref={contentRef}
           entering={FadeIn.duration(MOTION_DURATION.instant)}
-          exiting={FadeOut.duration(MOTION_DURATION.instant)}
           collapsable={false}
           onLayout={handleLayout}
           accessibilityRole="menu"

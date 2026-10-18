@@ -124,6 +124,12 @@ For this case, use `useHoverSafeZone` (`packages/app/src/hooks/use-hover-safe-zo
 
 Don't roll your own. The math is annoying, the edge cases (pointer leaves window, drag in progress, content unmounts) are subtle, and we already paid for the hook.
 
+## 侧栏预览的互斥显示
+
+工作区预览使用 `useWorkspaceHoverCardVisibility` 持有唯一的活动卡片身份。鼠标进入另一行时直接替换该身份，旧卡片不再等待离开宽限期；各行只订阅自己是否拥有当前显示槽。关闭、宽限计时和卸载清理必须按身份判断，旧行的迟到回调不能清掉新行。
+
+同一行移向浮层时仍使用 `useHoverSafeZone`，100 毫秒宽限供跨越间隙，不应为了消除叠帧而移除安全区域。工作区预览不使用退出淡出：Reanimated 会把卸载的退场节点暂留在 DOM 中，即使活动身份已经互斥，仍会与新卡片重叠。显示时的短淡入保留，原生及紧凑布局继续不挂载预览。
+
 ## Pre-PR checklist
 
 Before opening a PR that touches hover:
