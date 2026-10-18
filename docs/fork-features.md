@@ -207,9 +207,9 @@
 
 - 根目录提供 `npm run build:desktop:win`，固定生成 Windows x64 NSIS 安装包，并强制依次完成桌面界面依赖、Electron 专用 Expo 导出、服务端、CLI 和 Electron 主进程编译，不允许直接把遗留 `dist` 产物装入安装包。
 - Electron 主进程编译显式关闭 TypeScript 增量缓存；否则打包脚本删除 `dist` 后，残留的 `tsconfig.tsbuildinfo` 会让 tsc 跳过 emit 以成功状态退出，asar 中缺失入口文件导致安装包构建失败。
-- 构建开始和打包前都会检查根包、全部工作区及 `package-lock.json` 的版本和内部依赖范围；发现不一致时明确列出问题并停止，不在构建过程中自动改写版本。
+- 构建开始和打包前都会检查根包、全部工作区及 `package-lock.json` 的版本和内部依赖范围；发现不一致时明确列出问题并停止，不盲目修复已有非法版本。仅构建入口不改版本；打包发布入口在构建前按发布规划同步版本。
 - 二开桌面安装包只从 `finelly977/paseo` 检查应用更新，不再下载和安装 `getpaseo/paseo` 的原作者版本，避免二开功能被官方安装包覆盖并触发重复重启。
-- 工作区顶部脚本菜单提供“打包并发布 Windows”和“打包并发布 Android”，在对应 Windows 主机完整构建后发布到二开 GitHub。仅接受版本一致、已推送的干净 `main`，不自动改版本、提交或推送；同平台版本不能覆盖或回退。Windows 同时上传安装程序、差分与更新清单并推进桌面 latest；安卓保留原侧载签名及应用内更新格式，不改变桌面 latest，不发布上游 npm、EAS 或商店。上传先进入草稿，资产摘要与大小全部一致才公开；中断后重新点击校验并续传原草稿，不重复构建或覆盖公开资产；两入口串行占用本机构建目录。
+- 工作区顶部脚本菜单提供“打包并发布 Windows”和“打包并发布 Android”，在对应 Windows 主机完整构建后发布到二开 GitHub。产品源码先提交推送至干净 `main`；当前目标平台版本已公开时，入口自动在当前版本与二开两平台最高公开版本上递增补丁号，同步全部包、内部依赖与锁文件，只提交并普通推送生成的版本文件，不提交用户产品代码、不切分支或强推，也不参考上游 `v*` 标签。另一平台可共用已准备版本，构建失败及草稿重试不反复升版，版本推送中断后仅继续同一自动版本提交；`--check` 只读预览目标版本，不升版或执行 Git 写操作。同平台版本不能覆盖或回退。Windows 同时上传安装程序、差分与更新清单并推进桌面 latest；安卓保留原侧载签名及应用内更新格式，不改变桌面 latest，不发布上游 npm、EAS 或商店。上传先进入草稿，资产摘要与大小全部一致才公开；中断后重新点击校验并续传原草稿，不重复构建或覆盖公开资产；两入口从版本准备开始串行执行。
 - 安卓本地仅构建入口 `npm run build:android:apk` 重建依赖及嵌入资源、生成原生工程并复制原签名备份，输出 ARM64 与 x86_64 Release APK，校验包名、版本、同签名和 16 KB 对齐；不自动上传或安装，缺少原签名明确失败。构建与 APK 校验默认使用项目 `.output/android-sdk`，可显式指定其他 SDK；prebuild 后同步 Gradle 的 SDK 路径并保留其他本地属性，不依赖 Android Studio 或旧 C 盘 SDK。
 
 主要涉及：
@@ -218,6 +218,7 @@
 - `scripts/check-workspace-version-consistency.mjs`
 - `scripts/build-android-apk.ps1`
 - `scripts/publish-installers.mjs`
+- `scripts/installer-version.mjs`
 - `paseo.json`
 - `packages/desktop/electron-builder.yml`
 

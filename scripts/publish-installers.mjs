@@ -14,6 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dump, load } from "js-yaml";
 import { checkWorkspaceVersionConsistency } from "./check-workspace-version-consistency.mjs";
+import {
+  commitInstallerVersion,
+  planInstallerVersion,
+  pushPreparedInstallerVersion,
+} from "./installer-version.mjs";
 
 const repo = "finelly977/paseo";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,7 +67,9 @@ export function assertPublishSource({ origin, branch, changes, commit, remoteCom
     throw new Error("origin 必须指向二开 finelly977/paseo，拒绝向原作者或其他仓库发布");
   }
   if (changes)
-    throw new Error("请先提交本次交付并清空工作区改动，再点击发布；不会自动提交或丢弃文件");
+    throw new Error(
+      "请先提交产品改动并清空工作区，再点击发布；脚本只自动提交自己生成的版本文件，不提交或丢弃其他编辑",
+    );
   if (branch !== "main") throw new Error("请先把待发布改动合并到二开 main，再从 main 点击发布");
   if (commit !== remoteCommit)
     throw new Error("本地 main 与 origin/main 不一致，请先同步并推送待发布提交");
@@ -78,7 +85,7 @@ export function assertReleaseVersion(release, releases) {
     if (!/^\d+\.\d+\.\d+$/.test(version)) continue;
     if (numeric(version) >= numeric(release.version)) {
       throw new Error(
-        `${published.tagName} 已发布。请先递增版本并提交推送，不能覆盖或回退公开版本`,
+        `${published.tagName} 已发布，拒绝覆盖或回退。当前草稿或版本规划已过期，请先检查未完成发布`,
       );
     }
   }
@@ -98,21 +105,31 @@ function run(program, args, capture = false, environment = process.env) {
       `${program} 执行失败（退出代码 ${result.status}）${capture ? `\n${result.stderr}\n${result.stdout}` : ""}`,
     );
   }
-  return capture ? result.stdout.trim() : "";
+  return capture ? result.stdout.trimEnd() : "";
 }
 
 function gh(args, capture = false) {
   return run("gh", [...args, "--repo", repo], capture);
 }
 
-function inspectSource() {
+function git(args, capture = false) {
+  return run("git", args, capture);
+}
+
+function inspectSource({ resumeVersionPush = false } = {}) {
   const origin = run("git", ["remote", "get-url", "--push", "origin"], true);
   const branch = run("git", ["branch", "--show-current"], true);
   const changes = run("git", ["status", "--porcelain"], true);
   const commit = run("git", ["rev-parse", "HEAD"], true);
   assertPublishSource({ origin, branch, changes, commit, remoteCommit: commit });
-  const remote = run("git", ["ls-remote", "origin", "refs/heads/main"], true);
-  const remoteCommit = remote.split(/\s/)[0];
+  let remote = run("git", ["ls-remote", "origin", "refs/heads/main"], true);
+  let remoteCommit = remote.split(/\s/)[0];
+  if (commit !== remoteCommit && resumeVersionPush) {
+    console.log("检测到待推送的本次自动版本提交，校验后继续推送，不重复升版。");
+    pushPreparedInstallerVersion({ rootDir: root, commit, remoteCommit, git });
+    remote = run("git", ["ls-remote", "origin", "refs/heads/main"], true);
+    remoteCommit = remote.split(/\s/)[0];
+  }
   assertPublishSource({ origin, branch, changes, commit, remoteCommit });
   return commit;
 }
@@ -185,7 +202,8 @@ function readDraft(release, commit) {
   const draft = JSON.parse(
     gh(["release", "view", release.tag, "--json", "tagName,targetCommitish,isDraft,assets"], true),
   );
-  if (!draft.isDraft) throw new Error("该版本已正式发布，禁止覆盖；发布新内容请先递增版本");
+  if (!draft.isDraft)
+    throw new Error("该版本已正式发布，不能继续作为草稿覆盖，请重新运行以规划下一版本");
   if (draft.tagName !== release.tag || draft.targetCommitish !== commit) {
     throw new Error("同名草稿不属于当前发布提交，请检查 GitHub 草稿，不会覆盖其他源码的安装包");
   }
@@ -275,20 +293,12 @@ export function publishDraft({ release, commit, directory, expected, command }) 
   ]);
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  if (args.length < 1 || args.length > 2 || (args.length === 2 && args[1] !== "--check")) {
-    throw new Error(
-      "用法：node scripts/publish-installers.mjs windows|android [--check]；--check 只读检查，不构建或发布",
-    );
-  }
-  if (process.platform !== "win32")
-    throw new Error("这两个本地打包入口需要在已配置构建环境的 Windows 主机运行");
+function executeRelease(platform, checkOnly) {
   const consistency = checkWorkspaceVersionConsistency(root);
   if (consistency.errors.length) throw new Error(consistency.errors.join("\n"));
-  const release = getInstallerRelease(args[0], consistency.rootVersion);
+  getInstallerRelease(platform, consistency.rootVersion);
   run("pwsh.exe", ["-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"], true);
-  const commit = inspectSource();
+  let commit = inspectSource({ resumeVersionPush: !checkOnly });
   run("gh", ["auth", "status"]);
   const repository = JSON.parse(run("gh", ["repo", "view", repo, "--json", "isPrivate"], true));
   if (repository.isPrivate)
@@ -296,58 +306,95 @@ function main() {
   const releases = JSON.parse(
     gh(["release", "list", "--limit", "1000", "--json", "tagName,isDraft"], true),
   );
+  const version = planInstallerVersion({ platform, version: consistency.rootVersion, releases });
+  const release = getInstallerRelease(platform, version);
   assertReleaseVersion(release, releases);
   const existing = releases.find((item) => item.tagName === release.tag);
   if (existing) readDraft(release, commit);
   if (release.platform === "android") powershell("build-android-apk.ps1", ["-CheckOnly"]);
+  if (checkOnly) {
+    console.log(`检查通过：将发布 ${release.title}，当前源码 ${commit}。`);
+    if (version !== consistency.rootVersion)
+      console.log(
+        `正式运行时将自动升版 ${consistency.rootVersion} → ${version}，仅提交并推送版本文件。`,
+      );
+    console.log("本次仅检查：未改版本、未提交推送、未构建、未发布。");
+    return;
+  }
+  if (!existing) {
+    for (const check of ["typecheck", "lint"]) {
+      run("pwsh.exe", ["-NoProfile", "-Command", `& npm.cmd run ${check}; exit $LASTEXITCODE`]);
+    }
+  }
+  if (version !== consistency.rootVersion) {
+    if (inspectSource() !== commit) throw new Error("准备升版前源码已变化，停止发布");
+    console.log(`自动升版 ${consistency.rootVersion} → ${version}，仅同步、提交和推送版本文件。`);
+    const prepared = commitInstallerVersion({ rootDir: root, version, baseCommit: commit, git });
+    pushPreparedInstallerVersion({
+      rootDir: root,
+      commit: prepared.commit,
+      remoteCommit: commit,
+      git,
+    });
+    commit = prepared.commit;
+    if (inspectSource() !== commit) throw new Error("版本提交未正确同步到 origin/main，停止发布");
+  }
+  const directory = path.join(root, ".output", "releases", release.tag);
+  mkdirSync(directory, { recursive: true });
+  const recordPath = path.join(directory, "artifacts.json");
+  let expected;
+  if (existing) {
+    const record = JSON.parse(readFileSync(recordPath, "utf8"));
+    if (record.commit !== commit) throw new Error("本地续传记录与当前提交不一致，不会复用旧安装包");
+    expected = record.assets;
+    const local = expected.map((asset) => describeAsset(path.join(directory, asset.name)));
+    verifyReleaseAssets({ assets: local, expected });
+    console.log("继续校验并上传原草稿，复用上次成功构建的安装包。 ");
+  } else {
+    console.log(`开始构建：${release.title}。完成后将发布到 https://github.com/${repo}/releases`);
+    expected = build(release, directory);
+    writeFileSync(recordPath, `${JSON.stringify({ commit, assets: expected }, null, 2)}\n`);
+  }
+  if (inspectSource() !== commit) throw new Error("构建期间源码提交已变化，拒绝发布，请重新构建");
+  if (!existing) {
+    const notes = `${release.title}\n\n源码：[${commit.slice(0, 10)}](https://github.com/${repo}/commit/${commit})\n\n${release.platform === "android" ? "安卓 10 及以上，ARM64 手机与 x86_64 模拟器；沿用已分发侧载测试签名，停用上游 OTA。" : "Windows x64 NSIS 安装包，包含自动更新清单和差分文件。"}\n\n当前二开功能见 [功能清单](https://github.com/${repo}/blob/${commit}/docs/fork-features.md)。\n`;
+    const notesPath = path.join(directory, "notes.md");
+    writeFileSync(notesPath, notes);
+    gh([
+      "release",
+      "create",
+      release.tag,
+      "--target",
+      commit,
+      "--draft",
+      "--title",
+      release.title,
+      "--notes-file",
+      notesPath,
+    ]);
+  }
+  publishDraft({ release, commit, directory, expected, command: gh });
+  console.log(
+    `已发布：https://github.com/${repo}/releases/tag/${release.tag}\n本地产物：${directory}`,
+  );
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  if (args.length < 1 || args.length > 2 || (args.length === 2 && args[1] !== "--check")) {
+    throw new Error(
+      "用法：node scripts/publish-installers.mjs windows|android [--check]；--check 只读检查，不改版本、不提交推送、不构建或发布",
+    );
+  }
+  if (process.platform !== "win32")
+    throw new Error("这两个本地打包入口需要在已配置构建环境的 Windows 主机运行");
   if (args[1] === "--check") {
-    console.log(`检查通过：${release.title}，源码 ${commit}；未构建、未发布。`);
+    executeRelease(args[0], true);
     return;
   }
   const unlock = acquireLock();
   try {
-    const directory = path.join(root, ".output", "releases", release.tag);
-    mkdirSync(directory, { recursive: true });
-    const recordPath = path.join(directory, "artifacts.json");
-    let expected;
-    if (existing) {
-      const record = JSON.parse(readFileSync(recordPath, "utf8"));
-      if (record.commit !== commit)
-        throw new Error("本地续传记录与当前提交不一致，不会复用旧安装包");
-      expected = record.assets;
-      const local = expected.map((asset) => describeAsset(path.join(directory, asset.name)));
-      verifyReleaseAssets({ assets: local, expected });
-      console.log("继续校验并上传原草稿，复用上次成功构建的安装包。 ");
-    } else {
-      console.log(`开始构建：${release.title}。完成后将发布到 https://github.com/${repo}/releases`);
-      for (const check of ["typecheck", "lint"]) {
-        run("pwsh.exe", ["-NoProfile", "-Command", `& npm.cmd run ${check}; exit $LASTEXITCODE`]);
-      }
-      expected = build(release, directory);
-      writeFileSync(recordPath, `${JSON.stringify({ commit, assets: expected }, null, 2)}\n`);
-    }
-    if (inspectSource() !== commit) throw new Error("构建期间源码提交已变化，拒绝发布，请重新构建");
-    if (!existing) {
-      const notes = `${release.title}\n\n源码：[${commit.slice(0, 10)}](https://github.com/${repo}/commit/${commit})\n\n${release.platform === "android" ? "安卓 10 及以上，ARM64 手机与 x86_64 模拟器；沿用已分发侧载测试签名，停用上游 OTA。" : "Windows x64 NSIS 安装包，包含自动更新清单和差分文件。"}\n\n当前二开功能见 [功能清单](https://github.com/${repo}/blob/${commit}/docs/fork-features.md)。\n`;
-      const notesPath = path.join(directory, "notes.md");
-      writeFileSync(notesPath, notes);
-      gh([
-        "release",
-        "create",
-        release.tag,
-        "--target",
-        commit,
-        "--draft",
-        "--title",
-        release.title,
-        "--notes-file",
-        notesPath,
-      ]);
-    }
-    publishDraft({ release, commit, directory, expected, command: gh });
-    console.log(
-      `已发布：https://github.com/${repo}/releases/tag/${release.tag}\n本地产物：${directory}`,
-    );
+    executeRelease(args[0], false);
   } finally {
     unlock();
   }
@@ -359,7 +406,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } catch (error) {
     console.error(error.stack);
     console.error(
-      "发布未完成。若已生成草稿，保留 .output/releases 中的原产物，排除错误后重新点击同一入口即可续传；已公开版本不会被覆盖。",
+      "发布未完成。已准备但未发布的版本会继续使用，不因失败重复升版；若已生成草稿，请保留 .output/releases 中的原产物并重试。仅本流程创建的版本提交会自动继续推送，产品源码仍需先提交并同步；已公开版本不会被覆盖。",
     );
     process.exitCode = 1;
   }

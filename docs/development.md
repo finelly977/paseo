@@ -39,7 +39,7 @@ npm run version:check
 
 检查失败时只报告具体差异，不会自动改写版本。需要同步版本时仍使用既有发布流程。
 
-需要构建后同时发布到二开 GitHub 时，使用顶部工作区脚本菜单的“打包并发布 Windows”或“打包并发布 Android”。它们复用本地完整构建，并检查干净、已推送的二开 `main`；不会自动提交、改版本或推送。前提、只读检查、草稿续传与资产规则见 [release.md](release.md#二开工作区安装包发布按钮)。仅构建安卓 APK、不上传时使用 `npm run build:android:apk`，环境和签名要求见 [android.md](android.md#二开本地-apk)。
+需要构建后同时发布到二开 GitHub 时，使用顶部工作区脚本菜单的“打包并发布 Windows”或“打包并发布 Android”。产品源码需先提交推送到干净的二开 `main`；发布入口会在当前版本已公开时自动升补丁号，同步全部包与锁文件，并只提交推送它生成的版本文件。另一平台可复用已准备版本，构建或上传重试不反复升版，`--check` 只读预览。前提、草稿续传与资产规则见 [release.md](release.md#二开工作区安装包发布按钮)。仅构建、不上传的命令继续使用当前版本；安卓使用 `npm run build:android:apk`，环境和签名要求见 [android.md](android.md#二开本地-apk)。
 
 Root checkout dev is intentionally split across terminals:
 

@@ -186,7 +186,7 @@ See [docs/release.md](release.md) for the full mobile-build babysitting flow.
 
 当前侧载系列继续沿用原已分发测试签名以支持覆盖安装，不冒充官方商店签名。密钥备份在被 Git 忽略的 `packages/app/.secrets/android-local.keystore`，生成原生工程后、执行 Gradle 前复制到 `android/app/debug.keystore`；保管备份，不上传仓库。未来不能直接更换签名，否则已安装用户无法覆盖更新。需改用独立正式密钥时，必须另行设计迁移。
 
-后续发布可在同步、递增版本并提交推送二开 `main` 后，点击工作区运行菜单的“打包并发布 Android”，自动完整构建、校验并发布；中断后重新点击可继续同一草稿。具体前提见 [release.md](release.md#二开工作区安装包发布按钮)。也保留已经构建及验收 APK 的手动发布方式：
+后续发布可在产品源码提交推送到干净的二开 `main` 后，点击工作区运行菜单的“打包并发布 Android”。入口会在必要时自动增加补丁版本，同步全部包和锁文件，仅提交推送版本文件，再完整构建、校验并发布；另一平台尚未分发时共用已准备版本，构建失败不反复升版，中断后重新点击可继续同一草稿。具体前提见 [release.md](release.md#二开工作区安装包发布按钮)。也保留已经构建及验收 APK 的手动发布方式；手动校验发布脚本本身不自动升版，APK 版本必须已与源码一致：
 
 ```powershell
 .\scripts\publish-android-apk.ps1 -ApkPath '.output\deliverables\Paseo-0.2.3-android.apk' -NotesPath '.output\android-release-notes.md' -SdkRoot $env:ANDROID_HOME

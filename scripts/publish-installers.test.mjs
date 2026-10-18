@@ -33,7 +33,7 @@ test("两个菜单入口使用独立标签，只有 Windows 推进桌面更新",
   });
 });
 
-test("发布不替用户提交、推送或切分支，源码不符合条件立即失败", () => {
+test("发布不替用户提交推送产品代码或切分支，源码不符合条件立即失败", () => {
   const source = {
     origin: "https://github.com/finelly977/paseo.git",
     branch: "main",
