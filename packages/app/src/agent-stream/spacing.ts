@@ -1,5 +1,9 @@
 import type { StreamItem } from "@/types/stream";
 import { SPACING } from "@/styles/theme";
+import {
+  isStandaloneMarkdownHorizontalRule,
+  splitMarkdownBlocks,
+} from "@/utils/split-markdown-blocks";
 
 export function isSameAssistantBlockGroup(params: {
   item: StreamItem | null | undefined;
@@ -33,12 +37,24 @@ const isUserMessageItem = (item?: StreamItem | null) => item?.kind === "user_mes
 const isToolSequenceItem = (item?: StreamItem | null) =>
   item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 
+function hasAssistantDividerAtEdge(item: StreamItem, edge: "first" | "last"): boolean {
+  if (item.kind !== "assistant_message") return false;
+  const blocks = splitMarkdownBlocks(item.text);
+  const block = edge === "first" ? blocks[0] : blocks.at(-1);
+  return block !== undefined && isStandaloneMarkdownHorizontalRule(block);
+}
+
 export function getGapBetweenStreamItems(
   item: StreamItem | null,
   belowItem: StreamItem | null,
   messageSpacing: number = SPACING[3],
 ): number {
   if (!item || !belowItem) {
+    return 0;
+  }
+
+  // 横线可能独占一个流条目，也可能位于下一段正文开头；两侧都只保留横线自身留白。
+  if (hasAssistantDividerAtEdge(item, "last") || hasAssistantDividerAtEdge(belowItem, "first")) {
     return 0;
   }
 

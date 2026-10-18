@@ -135,6 +135,7 @@ export default {
       ...(isLocalApkBuild ? { enabled: false } : {}),
     },
     ios: {
+      icon: "./assets/images/ios-icon.png",
       supportsTablet: true,
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
@@ -148,7 +149,7 @@ export default {
     },
     android: {
       adaptiveIcon: {
-        backgroundColor: "#000000",
+        backgroundColor: "#E8EDF2",
         foregroundImage: "./assets/images/android-icon-foreground.png",
       },
       edgeToEdgeEnabled: true,

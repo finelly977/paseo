@@ -3,12 +3,12 @@ import { isWeb } from "@/constants/platform";
 
 export const FOOTER_HEIGHT = 75;
 
-// Shared header inner height (excluding safe area insets and border)
-// Used by both agent header (ScreenHeader) and explorer sidebar header
-// This ensures both headers have the same visual height
-export const HEADER_INNER_HEIGHT = 48;
+// 主工具栏与两侧栏顶部共用紧凑高度，保留原有按钮和图标大小。
+export const HEADER_INNER_HEIGHT = 40;
 export const HEADER_INNER_HEIGHT_MOBILE = 56;
 export const WORKSPACE_SECONDARY_HEADER_HEIGHT = 36;
+// 桌面标签栏单独收紧，不改变文件面板等次级工具栏的高度。
+export const WORKSPACE_TAB_BAR_HEIGHT = 32;
 export const HEADER_TOP_PADDING_MOBILE = 8;
 
 // 表单与文件预览的宽屏上限。
@@ -27,7 +27,7 @@ export const DESKTOP_TRAFFIC_LIGHT_WIDTH = 78;
 export const DESKTOP_TRAFFIC_LIGHT_HEIGHT = 45;
 
 // Windows/Linux 自绘窗口控件（最小化、最大化、关闭）位于右上角。
-export const DESKTOP_WINDOW_CONTROLS_HEIGHT = 48;
+export const DESKTOP_WINDOW_CONTROLS_HEIGHT = HEADER_INNER_HEIGHT;
 
 export {
   getIsElectron as getIsElectronRuntime,

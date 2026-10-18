@@ -167,6 +167,31 @@ function findLayoutItem(layout: StreamLayout, id: string): StreamLayoutItem {
 }
 
 describe("layoutStream", () => {
+  it.each(["web", "android"] as const)(
+    "%s 实时消息开头出现横线时同步重算历史边界间距",
+    (platform) => {
+      const strategy = strategyFor(platform);
+      const history = orderTailForStreamRenderStrategy({
+        strategy,
+        streamItems: [toolCall("tool", 1, "turn-1")],
+      });
+      const render = (text: string) =>
+        layoutStream({
+          strategy,
+          agentStatus: "running",
+          isTurnActive: true,
+          history,
+          liveHead: [{ ...assistantMessage("answer", 2, undefined, "turn-1"), text }],
+          timingByAssistantId: new Map(),
+          messageSpacing: 12,
+        });
+
+      expect(findLayoutItem(render(""), "tool").gapBelow).toBe(4);
+      expect(findLayoutItem(render("\n\n---\n\n说明"), "tool").gapBelow).toBe(0);
+      expect(findLayoutItem(render("普通说明"), "tool").gapBelow).toBe(4);
+    },
+  );
+
   it("does not borrow an assistant footer across adjacent tagged tool-only turns", () => {
     const priorAssistant = assistantMessage("prior", 1, undefined, "turn-1");
     const nextTool = toolCall("next-tool", 2, "turn-2");

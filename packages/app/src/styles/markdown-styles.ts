@@ -360,6 +360,7 @@ export function createConversationMarkdownStyles(theme: Theme) {
 
   return {
     ...baseStyles,
+    hr: { ...baseStyles.hr, marginVertical: theme.spacing[1] },
     heading1: { ...baseStyles.heading1, ...headingStyle },
     heading2: { ...baseStyles.heading2, ...headingStyle },
     heading3: { ...baseStyles.heading3, ...headingStyle },

@@ -127,6 +127,54 @@ describe("getAssistantBlockSpacing", () => {
 });
 
 describe("getGapBetweenStreamItems", () => {
+  it("独立横线两侧由横线自身留白，不再叠加消息间距", () => {
+    const divider = assistantBlock({
+      id: "divider",
+      blockGroupId: "answer",
+      blockIndex: 0,
+      text: "---",
+    });
+    const answer = assistantBlock({
+      id: "answer",
+      blockGroupId: "answer",
+      blockIndex: 1,
+      text: "正文",
+    });
+
+    expect(getGapBetweenStreamItems(toolCallBlock("tool"), divider, 24)).toBe(0);
+    expect(getGapBetweenStreamItems(divider, answer, 24)).toBe(0);
+  });
+
+  it("横线与正文合在同一条消息时仍去掉边界重复间距", () => {
+    const startsWithDivider = assistantBlock({
+      id: "start",
+      blockGroupId: "start",
+      blockIndex: 0,
+      text: "\n\n---\n\n接着说明",
+    });
+    const endsWithDivider = assistantBlock({
+      id: "end",
+      blockGroupId: "end",
+      blockIndex: 0,
+      text: "前面说明\n\n* * *\n\n",
+    });
+    const tool = toolCallBlock("tool");
+
+    expect(getGapBetweenStreamItems(tool, startsWithDivider, 24)).toBe(0);
+    expect(getGapBetweenStreamItems(endsWithDivider, tool, 24)).toBe(0);
+    expect(getGapBetweenStreamItems(startsWithDivider, tool, 24)).toBe(8);
+    expect(getGapBetweenStreamItems(tool, endsWithDivider, 24)).toBe(8);
+  });
+
+  it("代码里的横线、缩进代码和标题下划线不改变消息间距", () => {
+    const tool = toolCallBlock("tool");
+    for (const text of ["```\n---\n```", "    ---", "标题\n---"]) {
+      const message = assistantBlock({ id: text, blockGroupId: "answer", blockIndex: 0, text });
+      expect(getGapBetweenStreamItems(tool, message, 24)).toBe(8);
+      expect(getGapBetweenStreamItems(message, tool, 24)).toBe(8);
+    }
+  });
+
   it("uses one compact turn gap without component-level spacing duplication", () => {
     expect(
       getGapBetweenStreamItems(

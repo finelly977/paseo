@@ -5,6 +5,7 @@ import {
   resolveWindowChromeObstruction,
   resolveWindowChromeSafeArea,
 } from "@/utils/desktop-window";
+import { getDesktopWindowControlsPresentation } from "@/desktop/window-chrome-presentation";
 
 describe("window chrome", () => {
   it("has no corner obstruction outside Electron or in fullscreen", () => {
@@ -24,11 +25,30 @@ describe("window chrome", () => {
       topRight: null,
     });
     expect(resolveWindowChromeObstruction({ mode: "custom-windows", isFullscreen: false })).toEqual(
-      { topLeft: null, topRight: { width: 138, height: 48 } },
+      { topLeft: null, topRight: { width: 138, height: 40 } },
     );
     expect(resolveWindowChromeObstruction({ mode: "custom-linux", isFullscreen: false })).toEqual({
       topLeft: null,
-      topRight: { width: 108, height: 48 },
+      topRight: { width: 108, height: 40 },
+    });
+  });
+
+  it("窗口控件随 40 像素主工具栏收紧，保留按钮宽度和图标尺寸", () => {
+    expect(getDesktopWindowControlsPresentation("custom-windows")).toEqual({
+      controlWidth: 46,
+      railHeight: 40,
+      controlHeight: 39,
+      glyphSize: 16,
+      glyphStrokeWidth: 1,
+      hoverShape: "control",
+    });
+    expect(getDesktopWindowControlsPresentation("custom-linux")).toEqual({
+      controlWidth: 36,
+      railHeight: 40,
+      controlHeight: 39,
+      glyphSize: 14,
+      glyphStrokeWidth: 1.5,
+      hoverShape: "circle",
     });
   });
 

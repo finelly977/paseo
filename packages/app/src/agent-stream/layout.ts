@@ -521,6 +521,8 @@ export function layoutStream(input: StreamLayoutInput): StreamLayout {
       liveHeadBoundaryItem?.id ?? "null",
       liveHeadBoundaryItem?.kind ?? "null",
       liveHeadBoundaryItem?.turnId ?? "null",
+      // 实时消息开头的横线会改变历史末行留白，但普通正文增长不应持续废弃缓存。
+      getGapBetweenStreamItems(historyBoundaryItem, liveHeadBoundaryItem, input.messageSpacing),
       auxiliaryTurnFooter?.itemId ?? "null",
       activeTurnId ?? "null",
       input.messageSpacing,

@@ -22,6 +22,8 @@ asarUnpack:
   - node_modules/@getpaseo/server/dist/server/server/agent/providers/codex/desktop-tools-host.bundle.mjs
   - node_modules/@getpaseo/server/dist/server/terminal/shell-integration/**/*
 extraResources:
+  - from: assets/icon.png
+    to: icon.png
   - from: ../app/dist
     to: app-dist
   - from: ../../skills
@@ -71,6 +73,8 @@ win:
   artifactName: "Paseo-Setup-${version}-${arch}.${ext}"
   icon: assets/icon.ico
   extraResources:
+    - from: assets/icon.ico
+      to: icon.ico
     - from: bin/paseo.cmd
       to: bin/paseo.cmd
   target:

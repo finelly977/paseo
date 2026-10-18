@@ -7,6 +7,15 @@ import {
 import { darkTheme } from "./theme";
 
 describe("createMarkdownStyles", () => {
+  it("对话横线仅保留上下各 4 像素，文档预览间距保持不变", () => {
+    expect(createConversationMarkdownStyles(darkTheme).hr).toEqual({
+      backgroundColor: darkTheme.colors.border,
+      height: 1,
+      marginVertical: 4,
+    });
+    expect(createMarkdownStyles(darkTheme).hr.marginVertical).toBe(6);
+  });
+
   it("引用块采用细边框与紧凑留白，不再显示粗亮侧边条", () => {
     const styles = createMarkdownStyles(darkTheme);
     expect(styles.blockquote).toEqual({
