@@ -314,6 +314,8 @@ export const ja: TranslationResources = {
       dismissImage: "画像を閉じる",
       closeImage: "画像を閉じる",
       imageLoadFailed: "画像を読み込めませんでした",
+      imageWaitingForHost: "ホスト接続後に画像を読み込みます",
+      imageSourceMissing: "元の画像は移動または削除されました",
       imageUnavailable: "画像が利用できません",
       imagePreviewUnavailable: "画像プレビューは利用できません。",
       imagePreviewLoadFailed: "画像プレビューを読み込めません。",

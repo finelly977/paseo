@@ -134,7 +134,6 @@
     {
       "files": [
         "packages/app/src/assistant-file-links/use-file-link.ts",
-        "packages/app/src/components/message.tsx",
         "packages/app/src/components/worktree-setup-callout-source.tsx",
         "packages/app/src/desktop/hooks/use-daemon-status.ts",
         "packages/app/src/desktop/hooks/use-install-status.ts",

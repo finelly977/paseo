@@ -5,9 +5,9 @@ import { releaseAttachmentPreviewUrl, resolveAttachmentPreviewUrl } from "@/atta
 export function useAttachmentPreviewUrl(
   attachment: AttachmentMetadata | null | undefined,
   onError?: (error: unknown) => void,
+  retryVersion = 0,
 ): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  const activeAttachmentRef = useRef<AttachmentMetadata | null>(null);
+  const [preview, setPreview] = useState<{ key: string; url: string } | null>(null);
   const attachmentRef = useRef(attachment);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
@@ -18,15 +18,22 @@ export function useAttachmentPreviewUrl(
   const storageKey = attachment?.storageKey;
   const mimeType = attachment?.mimeType;
   const createdAt = attachment?.createdAt;
+  const previewKey = JSON.stringify([
+    id,
+    storageType,
+    storageKey,
+    mimeType,
+    createdAt,
+    retryVersion,
+  ]);
 
   useEffect(() => {
     let disposed = false;
     let currentUrl: string | null = null;
     const current = attachmentRef.current;
 
-    activeAttachmentRef.current = current ?? null;
     if (!current) {
-      setUrl(null);
+      setPreview(null);
       return;
     }
 
@@ -38,14 +45,14 @@ export function useAttachmentPreviewUrl(
           return;
         }
         currentUrl = resolved;
-        setUrl(resolved);
+        setPreview({ key: previewKey, url: resolved });
       } catch (error) {
         console.error("[attachments] Failed to resolve preview URL", {
           attachmentId: current.id,
           error,
         });
         if (!disposed) {
-          setUrl(null);
+          setPreview(null);
           onErrorRef.current?.(error);
         }
       }
@@ -53,16 +60,18 @@ export function useAttachmentPreviewUrl(
 
     return () => {
       disposed = true;
-      const activeAttachment = activeAttachmentRef.current;
-      if (!currentUrl || !activeAttachment) {
+      if (!currentUrl) {
         return;
       }
       void releaseAttachmentPreviewUrl({
-        attachment: activeAttachment,
+        attachment: current,
         url: currentUrl,
+      }).catch((error) => {
+        console.error("[附件] 释放图片预览失败", { attachmentId: current.id, error });
       });
     };
-  }, [id, storageType, storageKey, mimeType, createdAt]);
+  }, [previewKey]);
 
-  return url;
+  // 元数据切换后绝不向新图片返回上一张已释放的 Blob URL。
+  return preview?.key === previewKey ? preview.url : null;
 }

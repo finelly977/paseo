@@ -11,6 +11,8 @@ import {
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { useSessionStore, type SessionState } from "@/stores/session-store";
 import { useWorkspaceAttachmentsStore } from "@/attachments/workspace-attachments-store";
+import { collectAssistantImageAttachmentIds } from "@/attachments/assistant-image-query";
+import { queryClient } from "@/data/query-client";
 import {
   applyClearDraftRecord,
   collectReferencedAttachmentIdsFromState,
@@ -142,6 +144,7 @@ async function runAttachmentGc(): Promise<void> {
   });
 
   const referencedIds = new Set<string>();
+  collectAssistantImageAttachmentIds(queryClient, referencedIds);
   for (const id of useDraftStore.getState().collectActiveAttachmentIds()) {
     referencedIds.add(id);
   }

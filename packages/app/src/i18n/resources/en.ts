@@ -310,6 +310,8 @@ export const en = {
       dismissImage: "Dismiss image",
       closeImage: "Close image",
       imageLoadFailed: "Couldn't load image",
+      imageWaitingForHost: "Waiting for the host to load this image",
+      imageSourceMissing: "The original image was moved or deleted",
       imageUnavailable: "Image unavailable",
       imagePreviewUnavailable: "Image preview unavailable.",
       imagePreviewLoadFailed: "Unable to load image preview.",

@@ -180,6 +180,8 @@ limited to the dated compatibility path for daemon timelines created before that
 
 无提供方消息标识的独立图片结果不能与相邻助手正文拼接。实时头部切换、尾部续接和历史重建遵循相同的图片边界；同一消息标识下的普通流式 Markdown 仍正常拼接。纯图片消息包含多张图片时，客户端逐张显示可折叠缩略图，不回退为铺满正文的普通图片。
 
+助手图片的本地副本由预览查询持有引用，附件清理同时收集正在读取和已经缓存的预览标识；查询释放后副本可正常回收。重新挂载或主机重新连接时重新读取历史源文件，系统清理缓存不会使旧查询永久指向失效副本。预览 URL 按附件版本隔离，切换元数据时不向新图片返回已撤销的旧 Blob URL。原图确已删除时显示读取失败并允许重试，不伪造图片或吞掉错误。
+
 ## Relevant code
 
 - Server live stream forwarding: `packages/server/src/server/session.ts`

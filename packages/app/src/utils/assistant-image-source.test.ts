@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAssistantImageSource } from "./assistant-image-source";
+import {
+  resolveAssistantImageSource,
+  resolveAssistantImageErrorText,
+} from "./assistant-image-source";
+
+describe("图片失败原因", () => {
+  const labels = { fallbackText: "无法加载图片", missingSourceText: "原始图片已被移动或删除" };
+  it("明确区分原图丢失与其他读取错误", () => {
+    expect(
+      resolveAssistantImageErrorText(new Error("ENOENT: no such file or directory"), labels),
+    ).toBe(labels.missingSourceText);
+    expect(resolveAssistantImageErrorText(new Error("访问被拒绝"), labels)).toBe("访问被拒绝");
+    expect(resolveAssistantImageErrorText(null, labels)).toBe(labels.fallbackText);
+  });
+});
 
 describe("resolveAssistantImageSource", () => {
   it("passes through direct image URIs", () => {

@@ -314,6 +314,8 @@ export const es: TranslationResources = {
       dismissImage: "Descartar imagen",
       closeImage: "Cerrar imagen",
       imageLoadFailed: "No se pudo cargar la imagen",
+      imageWaitingForHost: "Esperando al host para cargar la imagen",
+      imageSourceMissing: "La imagen original se movió o eliminó",
       imageUnavailable: "Imagen no disponible",
       imagePreviewUnavailable: "Vista previa de la imagen no disponible.",
       imagePreviewLoadFailed: "No se puede cargar la vista previa de la imagen.",

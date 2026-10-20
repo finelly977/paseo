@@ -315,6 +315,8 @@ export const fr: TranslationResources = {
       dismissImage: "Ignorer l'image",
       closeImage: "Fermer l'image",
       imageLoadFailed: "Impossible de charger l'image",
+      imageWaitingForHost: "En attente de la connexion de l’hôte pour charger l’image",
+      imageSourceMissing: "L’image d’origine a été déplacée ou supprimée",
       imageUnavailable: "Image indisponible",
       imagePreviewUnavailable: "Aperçu de l'image indisponible.",
       imagePreviewLoadFailed: "Impossible de charger l'aperçu de l'image.",

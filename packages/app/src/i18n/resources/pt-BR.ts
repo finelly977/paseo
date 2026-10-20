@@ -314,6 +314,8 @@ export const ptBR: TranslationResources = {
       dismissImage: "Dispensar imagem",
       closeImage: "Fechar imagem",
       imageLoadFailed: "Não foi possível carregar a imagem",
+      imageWaitingForHost: "Aguardando a conexão do host para carregar a imagem",
+      imageSourceMissing: "A imagem original foi movida ou excluída",
       imageUnavailable: "Imagem indisponível",
       imagePreviewUnavailable: "Prévia da imagem indisponível.",
       imagePreviewLoadFailed: "Não foi possível carregar a prévia da imagem.",

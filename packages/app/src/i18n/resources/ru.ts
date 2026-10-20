@@ -313,6 +313,8 @@ export const ru: TranslationResources = {
       dismissImage: "Закрыть изображение",
       closeImage: "Закрыть изображение",
       imageLoadFailed: "Не удалось загрузить изображение",
+      imageWaitingForHost: "Ожидание подключения хоста для загрузки изображения",
+      imageSourceMissing: "Исходное изображение перемещено или удалено",
       imageUnavailable: "Изображение недоступно",
       imagePreviewUnavailable: "Предварительный просмотр изображения недоступен.",
       imagePreviewLoadFailed: "Невозможно загрузить предварительный просмотр изображения.",

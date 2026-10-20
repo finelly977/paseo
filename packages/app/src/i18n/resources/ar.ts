@@ -311,6 +311,8 @@ export const ar: TranslationResources = {
       dismissImage: "تجاهل الصورة",
       closeImage: "إغلاق الصورة",
       imageLoadFailed: "تعذر تحميل الصورة",
+      imageWaitingForHost: "بانتظار اتصال المضيف لتحميل الصورة",
+      imageSourceMissing: "تم نقل الصورة الأصلية أو حذفها",
       imageUnavailable: "الصورة غير متاحة",
       imagePreviewUnavailable: "معاينة الصورة غير متاحة.",
       imagePreviewLoadFailed: "غير قادر على تحميل معاينة الصورة.",

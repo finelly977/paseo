@@ -27,7 +27,6 @@ import {
 } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { MarkdownIt, type ASTNode, type RenderRules } from "react-native-markdown-display";
-import { useQuery } from "@tanstack/react-query";
 import MaskedView from "@react-native-masked-view/masked-view";
 import {
   Circle,
@@ -94,12 +93,8 @@ import {
   type AssistantImageLoadState,
 } from "@/utils/assistant-image-metadata";
 import { setAssistantMarkdownBlockHeight } from "@/utils/assistant-message-height-estimate";
-import { resolveAssistantImageSource } from "@/utils/assistant-image-source";
-import {
-  createPreviewAttachmentId,
-  getFileNameFromPath,
-  parseImageDataUrl,
-} from "@/attachments/utils";
+import { useAssistantImageResource } from "@/attachments/use-assistant-image-resource";
+import { resolveAssistantImageErrorText } from "@/utils/assistant-image-source";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { PlanCard } from "./plan-card";
 import { useToolCallSheet } from "./tool-call-sheet";
@@ -114,8 +109,7 @@ import {
   useAssistantLinkPress,
 } from "@/assistant-file-links";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
-import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
-import { persistAttachmentFromBytes, persistAttachmentFromDataUrl } from "@/attachments/service";
+import { Button } from "@/components/ui/button";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -1006,6 +1000,11 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     textAlign: "center",
   },
+  imageErrorDetail: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    textAlign: "center",
+  },
 }));
 
 const ASSISTANT_IMAGE_MIN_HEIGHT = 160;
@@ -1019,6 +1018,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   workspaceRoot,
   serverId,
   display,
+  onRetry,
 }: {
   uri: string;
   alt?: string;
@@ -1027,6 +1027,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   workspaceRoot?: string;
   serverId?: string;
   display: AssistantImageDisplay;
+  onRetry: () => void;
 }) {
   const cachedMetadata = useMemo(
     () => getAssistantImageMetadata({ source, workspaceRoot, serverId }),
@@ -1060,12 +1061,16 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
             status: "ready",
             aspectRatio: metadata?.aspectRatio ?? width / height,
           });
+        } else {
+          console.error("[图片预览] 图片尺寸无效", { source, width, height });
+          setLoadState({ status: "error" });
         }
       },
-      () => {
+      (error) => {
         if (cancelled) {
           return;
         }
+        console.error("[图片预览] 读取图片尺寸失败", { source, error });
         setLoadState({ status: "error" });
       },
     );
@@ -1075,9 +1080,13 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
     };
   }, [cachedMetadata, serverId, source, uri, workspaceRoot]);
 
-  const handleImageError = useCallback(() => {
-    setLoadState({ status: "error" });
-  }, []);
+  const handleImageError = useCallback(
+    (event: { nativeEvent: { error: string } }) => {
+      console.error("[图片预览] 解码图片失败", { source, error: event.nativeEvent.error });
+      setLoadState({ status: "error" });
+    },
+    [source],
+  );
   const { t } = useTranslation();
   const [viewerOpen, setViewerOpen] = useState(false);
   const openViewer = useCallback(() => setViewerOpen(true), []);
@@ -1127,9 +1136,14 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
             <ThemedImageLoadingIndicator size="small" uniProps={foregroundMutedColorMapping} />
           ) : null}
           {loadState.status === "error" ? (
-            <Text style={assistantMessageStylesheet.imageErrorText}>
-              {t("message.attachments.imageUnavailable")}
-            </Text>
+            <>
+              <Text style={assistantMessageStylesheet.imageErrorText}>
+                {t("message.attachments.imageUnavailable")}
+              </Text>
+              <Button size="xs" variant="ghost" onPress={onRetry}>
+                {t("common.actions.retry")}
+              </Button>
+            </>
           ) : null}
         </View>
       </View>
@@ -1137,7 +1151,7 @@ const AssistantMarkdownResolvedImage = memo(function AssistantMarkdownResolvedIm
   }
 
   return (
-    <View style={frameStyle}>
+    <View style={frameStyle} testID="assistant-image-preview">
       <Pressable
         accessibilityLabel={t("composer.attachments.openImage")}
         accessibilityRole="button"
@@ -1175,11 +1189,12 @@ export function AssistantMarkdownImage({
   display: AssistantImageDisplay;
 }) {
   const { t } = useTranslation();
-  const resolution = useMemo(
-    () => resolveAssistantImageSource({ source, workspaceRoot }),
-    [source, workspaceRoot],
-  );
-  const dataImage = useMemo(() => parseImageDataUrl(source), [source]);
+  const { state, retryVersion, retry } = useAssistantImageResource({
+    source,
+    workspaceRoot,
+    serverId,
+    client,
+  });
   const containerStyle = useMemo<StyleProp<ViewStyle>>(
     () => ({
       marginTop: hasLeadingContent ? 16 : 0,
@@ -1187,64 +1202,6 @@ export function AssistantMarkdownImage({
     }),
     [hasLeadingContent],
   );
-
-  const query = useQuery({
-    queryKey: [
-      "assistantMarkdownImage",
-      serverId ?? "unknown-server",
-      resolution?.kind === "file_rpc" ? resolution.cwd : null,
-      resolution?.kind === "file_rpc" ? resolution.path : null,
-    ],
-    enabled: Boolean(client && resolution?.kind === "file_rpc"),
-    staleTime: 30_000,
-    queryFn: async () => {
-      if (!client || !resolution || resolution.kind !== "file_rpc") {
-        return null;
-      }
-
-      const file = await client.readFile(resolution.cwd, resolution.path);
-      if (file.kind !== "image") {
-        throw new Error(t("message.attachments.imagePreviewUnavailable"));
-      }
-
-      return await persistAttachmentFromBytes({
-        id: createPreviewAttachmentId({
-          mimeType: file.mime,
-          path: file.path || resolution.path,
-          size: file.size,
-          modifiedAt: file.modifiedAt,
-          contentLength: file.bytes.byteLength,
-        }),
-        bytes: file.bytes,
-        mimeType: file.mime,
-        fileName: getFileNameFromPath(file.path || resolution.path),
-      });
-    },
-  });
-  const dataImageQuery = useQuery({
-    queryKey: ["assistantMarkdownDataImage", dataImage?.cacheKey ?? null],
-    enabled: dataImage !== null,
-    staleTime: 30_000,
-    queryFn: async () => {
-      if (!dataImage) {
-        return null;
-      }
-
-      return await persistAttachmentFromDataUrl({
-        id: createPreviewAttachmentId({
-          mimeType: dataImage.mimeType,
-          contentLength: dataImage.base64.length,
-        }),
-        dataUrl: source,
-        mimeType: dataImage.mimeType,
-      });
-    },
-  });
-
-  const fileAssetUri = useAttachmentPreviewUrl(query.data);
-  const dataImageAssetUri = useAttachmentPreviewUrl(dataImageQuery.data);
-  const directUri = resolution?.kind === "direct" && !dataImage ? resolution.uri : null;
-  const resolvedUri = directUri ?? dataImageAssetUri ?? fileAssetUri ?? null;
 
   const stateFrameStyle = useMemo<StyleProp<ViewStyle>>(
     () => [
@@ -1259,51 +1216,56 @@ export function AssistantMarkdownImage({
     [containerStyle, display],
   );
 
-  if (resolvedUri) {
+  if (state.status === "ready") {
     return (
       <AssistantMarkdownResolvedImage
-        uri={resolvedUri}
+        key={retryVersion}
+        uri={state.uri}
         alt={alt}
         containerStyle={containerStyle}
         source={source}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
         display={display}
+        onRetry={retry}
       />
     );
   }
 
-  if (query.isLoading || dataImageQuery.isLoading) {
+  if (state.status === "waiting" || state.status === "loading") {
     return (
       <View style={stateFrameStyle}>
-        <ThemedImageLoadingIndicator size="small" uniProps={foregroundMutedColorMapping} />
+        {state.status === "waiting" ? (
+          <Text style={assistantMessageStylesheet.imageErrorText}>
+            {t("message.attachments.imageWaitingForHost")}
+          </Text>
+        ) : (
+          <ThemedImageLoadingIndicator size="small" uniProps={foregroundMutedColorMapping} />
+        )}
       </View>
     );
   }
 
-  const errorText = resolveAssistantImageErrorText(
-    query.error,
-    dataImageQuery.error,
-    t("message.attachments.imagePreviewLoadFailed"),
-  );
+  const errorText = resolveAssistantImageErrorText(state.error, {
+    fallbackText: t("message.attachments.imagePreviewLoadFailed"),
+    missingSourceText: t("message.attachments.imageSourceMissing"),
+  });
 
   return (
-    <View style={stateFrameStyle}>
+    <View style={stateFrameStyle} testID="assistant-image-error">
       <Text style={assistantMessageStylesheet.imageErrorText}>
         {display === "thumbnail" ? t("message.attachments.imageLoadFailed") : errorText}
       </Text>
+      {display === "thumbnail" ? (
+        <Text numberOfLines={2} style={assistantMessageStylesheet.imageErrorDetail}>
+          {errorText}
+        </Text>
+      ) : null}
+      <Button size="xs" variant="ghost" onPress={retry}>
+        {t("common.actions.retry")}
+      </Button>
     </View>
   );
-}
-
-function resolveAssistantImageErrorText(
-  fileError: unknown,
-  dataError: unknown,
-  fallbackText: string,
-): string {
-  if (fileError instanceof Error) return fileError.message;
-  if (dataError instanceof Error) return dataError.message;
-  return fallbackText;
 }
 
 function getInlineCodeAutoLinkUrl(

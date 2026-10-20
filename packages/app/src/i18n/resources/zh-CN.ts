@@ -311,6 +311,8 @@ export const zhCN: TranslationResources = {
       dismissImage: "关闭图片",
       closeImage: "关闭图片",
       imageLoadFailed: "无法加载图片",
+      imageWaitingForHost: "等待主机连接后加载图片",
+      imageSourceMissing: "原始图片已被移动或删除",
       imageUnavailable: "图片不可用",
       imagePreviewUnavailable: "图片预览不可用。",
       imagePreviewLoadFailed: "无法加载图片预览。",
