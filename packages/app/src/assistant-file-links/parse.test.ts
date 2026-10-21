@@ -5,6 +5,7 @@ import {
   parseAssistantFileLink,
   parseFileProtocolUrl,
   parseInlinePathToken,
+  formatInlinePathTargetForTooltip,
 } from "./parse";
 
 describe("parseInlinePathToken", () => {
@@ -214,6 +215,28 @@ describe("classifyAssistantFileLink", () => {
 });
 
 describe("parseAssistantFileLink", () => {
+  it.each([
+    ["E:/项目/doc/%E8%84%9A%E6%9C%AC%20v2.md:12-20", "E:/项目/doc/脚本 v2.md", 12, 20],
+    ["doc/%E8%84%9A%E6%9C%AC%20v2.md#L8", "E:/项目/doc/脚本 v2.md", 8, undefined],
+    ["E:/项目/doc/%2520.md", "E:/项目/doc/%20.md", undefined, undefined],
+    ["E:/项目/doc/100%25%E5%AE%8C%E6%88%90.md", "E:/项目/doc/100%完成.md", undefined, undefined],
+  ])("解码路径一次且不改变行号：%s", (href, path, lineStart, lineEnd) => {
+    expect(parseAssistantFileLink(href, { workspaceRoot: "E:/项目" })).toEqual({
+      raw: href,
+      path,
+      lineStart,
+      lineEnd,
+    });
+  });
+  it("解码 Markdown 编码后的 Windows 中文文件路径，并保留行号", () => {
+    const href = `E:/穗智青锋/doc/${encodeURIComponent("完整分镜与演示脚本")}.md#L12-L20`;
+    expect(parseAssistantFileLink(href, { workspaceRoot: "E:\\穗智青锋" })).toEqual({
+      raw: href,
+      path: "E:/穗智青锋/doc/完整分镜与演示脚本.md",
+      lineStart: 12,
+      lineEnd: 20,
+    });
+  });
   it("resolves bare markdown filenames against the active workspace", () => {
     expect(
       parseAssistantFileLink("dumm.md", {
@@ -416,6 +439,23 @@ describe("parseAssistantFileLink", () => {
       ).not.toThrow();
     }
     expect(() => parseFileProtocolUrl("file:///tmp/100% packet loss")).not.toThrow();
+  });
+});
+
+describe("文件链接悬停路径", () => {
+  it("按 Windows 路径分隔符和盘符大小写识别工作区，显示中文相对路径与行号", () => {
+    expect(
+      formatInlinePathTargetForTooltip(
+        { path: "E:/项目/doc/完整脚本.md", lineStart: 12, lineEnd: 20 },
+        "e:\\项目\\",
+      ),
+    ).toBe("doc/完整脚本.md:12-20");
+    expect(
+      formatInlinePathTargetForTooltip({ path: "D:/其他项目/脚本.md", lineStart: 3 }, "E:\\项目"),
+    ).toBe("D:/其他项目/脚本.md:3");
+    expect(formatInlinePathTargetForTooltip({ path: "E:/项目/doc/%20.md" }, "E:/项目")).toBe(
+      "doc/%20.md",
+    );
   });
 });
 

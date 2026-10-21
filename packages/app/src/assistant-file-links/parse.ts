@@ -1,9 +1,12 @@
 import { isAbsolutePath } from "@/utils/path";
 
 function safeDecodeURIComponent(value: string): string {
+  if (!value.includes("%")) return value;
   try {
-    return decodeURIComponent(value);
-  } catch {
+    // 文件名允许包含普通百分号，只解码实际的 URI 转义，且只处理一层。
+    return decodeURIComponent(value.replace(/%(?![0-9a-f]{2})/gi, "%25"));
+  } catch (error) {
+    console.warn("[文件链接] 路径包含无效的 URI 编码，保留原始文件名", { value, error });
     return value;
   }
 }
@@ -13,6 +16,19 @@ export interface InlinePathTarget {
   path: string;
   lineStart?: number;
   lineEnd?: number;
+}
+
+export function formatInlinePathTargetForTooltip(
+  target: Pick<InlinePathTarget, "path" | "lineStart" | "lineEnd">,
+  workspaceRoot: string | undefined,
+): string {
+  const normalizedPath = target.path.replace(/\\/g, "/");
+  let result = resolvePathAgainstCwd(normalizedPath, workspaceRoot) ?? normalizedPath;
+  if (target.lineStart) {
+    result += `:${target.lineStart}`;
+    if (target.lineEnd && target.lineEnd !== target.lineStart) result += `-${target.lineEnd}`;
+  }
+  return result;
 }
 
 const FILE_PROTOCOL = "file:";
@@ -247,7 +263,7 @@ function parseAssistantInlinePathLink(value: string): InlinePathTarget | null {
 
   return {
     ...inlinePathTarget,
-    path: normalizedPath,
+    path: safeDecodeURIComponent(normalizedPath),
   };
 }
 
@@ -315,7 +331,7 @@ export function parseAssistantFileLink(
 
   const windowsPathMatch = trimmed.match(/^([A-Za-z]:[\\/][^?#]*)(#[^?]+)?$/);
   if (windowsPathMatch) {
-    const normalizedPath = normalizePathToken(windowsPathMatch[1] ?? "");
+    const normalizedPath = normalizePathToken(safeDecodeURIComponent(windowsPathMatch[1] ?? ""));
     if (!normalizedPath) {
       return null;
     }
@@ -391,14 +407,16 @@ function parseWorkspaceRelativeFileLink(
   options: AssistantHrefParseOptions,
 ): InlinePathTarget | null {
   const parsed = parseLocalPathParts(value);
-  if (!parsed || isAbsolutePath(parsed.path)) {
+  if (!parsed) return null;
+  const decodedPath = safeDecodeURIComponent(parsed.path);
+  if (isAbsolutePath(decodedPath)) {
     return null;
   }
 
-  if (isHomeRelativePath(parsed.path)) {
+  if (isHomeRelativePath(decodedPath)) {
     return {
       raw: value,
-      path: parsed.path,
+      path: decodedPath,
       ...parsed.lines,
     };
   }
@@ -408,7 +426,7 @@ function parseWorkspaceRelativeFileLink(
     return null;
   }
 
-  const normalizedPath = resolveRelativePathUnderRoot(parsed.path, workspaceRoot);
+  const normalizedPath = resolveRelativePathUnderRoot(decodedPath, workspaceRoot);
   if (!normalizedPath) {
     return null;
   }
