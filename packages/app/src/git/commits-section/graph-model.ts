@@ -24,6 +24,7 @@ export interface CommitGraphLane {
 
 export interface CommitGraphViewModel {
   commit: ClassifiedCheckoutCommit;
+  inlineReferences: CheckoutCommitReference[];
   inputLanes: CommitGraphLane[];
   outputLanes: CommitGraphLane[];
   kind: "head" | "node";
@@ -167,6 +168,15 @@ export function buildCommitGraphViewModels({
 
     viewModels.push({
       commit,
+      // 正文优先留给提交说明；完整引用继续由悬停预览读取。
+      inlineReferences: [
+        ...commit.references.filter(
+          (reference) => reference.id === currentRef || reference.kind === "head",
+        ),
+        ...commit.references.filter(
+          (reference) => reference.kind === "remote" && reference.id === upstreamRef,
+        ),
+      ],
       inputLanes,
       outputLanes,
       kind: commit.sha === headSha ? "head" : "node",

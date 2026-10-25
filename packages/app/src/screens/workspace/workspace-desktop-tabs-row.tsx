@@ -486,18 +486,49 @@ function useMiddleClickClose(onClose: () => void) {
   return ref;
 }
 
+function TabLabel({
+  label,
+  color,
+  isFocused,
+  showTrailingAffordance,
+}: {
+  label: string;
+  color: string;
+  isFocused: boolean;
+  showTrailingAffordance: boolean;
+}) {
+  const colorStyle = useMemo(() => ({ color }), [color]);
+  return (
+    <Text
+      style={[
+        styles.tabLabel,
+        isFocused && styles.tabLabelFocused,
+        showTrailingAffordance && styles.tabLabelWithCloseButton,
+        colorStyle,
+      ]}
+      selectable={false}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {label}
+    </Text>
+  );
+}
+// 标签由菜单触发器保留，颜色通过叶子属性更新，不依赖祖先重新渲染。
+const ThemedTabLabel = withUnistyles(TabLabel);
+
 function TabHandleContent({
   presentation,
   isHighlighted,
   showLabel,
-  tabLabelSkeletonStyle,
-  tabLabelStyle,
+  isFocused,
+  showTrailingAffordance,
 }: {
   presentation: WorkspaceTabPresentation;
   isHighlighted: boolean;
   showLabel: boolean;
-  tabLabelSkeletonStyle: React.ComponentProps<typeof View>["style"];
-  tabLabelStyle: React.ComponentProps<typeof Text>["style"];
+  isFocused: boolean;
+  showTrailingAffordance: boolean;
 }) {
   const tabHandleDataSet = useMemo(
     () => ({ statusBucket: presentation.statusBucket ?? "none" }),
@@ -510,12 +541,20 @@ function TabHandleContent({
         <WorkspaceTabIcon presentation={presentation} active={isHighlighted} />
       </View>
       {showLabel && presentation.titleState === "loading" ? (
-        <View style={tabLabelSkeletonStyle} />
+        <View
+          style={[
+            styles.tabLabelSkeleton,
+            showTrailingAffordance && styles.tabLabelSkeletonWithCloseButton,
+          ]}
+        />
       ) : null}
       {showLabel && presentation.titleState !== "loading" ? (
-        <Text style={tabLabelStyle} selectable={false} numberOfLines={1} ellipsizeMode="tail">
-          {presentation.label}
-        </Text>
+        <ThemedTabLabel
+          label={presentation.label}
+          isFocused={isFocused}
+          showTrailingAffordance={showTrailingAffordance}
+          uniProps={isHighlighted ? foregroundColorMapping : mutedColorMapping}
+        />
       ) : null}
     </View>
   );
@@ -578,8 +617,6 @@ function TabChip({
   const tabChipStyle = useCallback(
     () => [
       styles.tab,
-      isActive && styles.tabActive,
-      hovered && !isActive && styles.tabHovered,
       isWeb && isDragging && ({ cursor: "grabbing" } as object),
       {
         minWidth: resolvedTabWidth,
@@ -587,7 +624,7 @@ function TabChip({
         maxWidth: resolvedTabWidth,
       },
     ],
-    [hovered, isActive, isDragging, resolvedTabWidth],
+    [isDragging, resolvedTabWidth],
   );
 
   const handleTabHoverIn = useCallback(() => {
@@ -632,25 +669,13 @@ function TabChip({
   );
 
   const tabAccessibilityState = useMemo(() => ({ selected: isActive }), [isActive]);
-  const tabLabelSkeletonStyle = useMemo(
-    () => [
-      styles.tabLabelSkeleton,
-      showTrailingAffordance && styles.tabLabelSkeletonWithCloseButton,
-    ],
-    [showTrailingAffordance],
-  );
-  const tabLabelStyle = useMemo(
-    () => [
-      styles.tabLabel,
-      isHighlighted && styles.tabLabelActive,
-      isActive && isFocused && styles.tabLabelFocused,
-      showTrailingAffordance && styles.tabLabelWithCloseButton,
-    ],
-    [isActive, isFocused, isHighlighted, showTrailingAffordance],
-  );
 
   return (
-    <View ref={middleClickRef}>
+    <View
+      ref={middleClickRef}
+      testID="workspace-tab-surface"
+      style={[isActive && styles.tabActive, hovered && !isActive && styles.tabHovered]}
+    >
       <ContextMenu key={tab.key}>
         <Tooltip delayDuration={400} enabledOnDesktop enabledOnMobile={false}>
           <TooltipTrigger asChild triggerRefProp="triggerRef">
@@ -675,8 +700,8 @@ function TabChip({
                 presentation={presentation}
                 isHighlighted={isHighlighted}
                 showLabel={showLabel}
-                tabLabelSkeletonStyle={tabLabelSkeletonStyle}
-                tabLabelStyle={tabLabelStyle}
+                isFocused={isActive && isFocused}
+                showTrailingAffordance={showTrailingAffordance}
               />
 
               {showTrailingAffordance ? (
@@ -1225,7 +1250,7 @@ const styles = StyleSheet.create((theme) => ({
     height: WORKSPACE_TAB_BAR_HEIGHT,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSidebar,
+    backgroundColor: theme.colors.surfaceWorkspace,
     flexDirection: "row",
     alignItems: "center",
     overflow: "visible",
@@ -1276,7 +1301,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
   tabActive: {
-    backgroundColor: theme.colors.surfaceWorkspace,
+    backgroundColor: theme.colors.surfaceSidebar,
   },
   tabSlot: {
     position: "relative",
@@ -1299,7 +1324,7 @@ const styles = StyleSheet.create((theme) => ({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: theme.colors.surfaceWorkspace,
+    backgroundColor: theme.colors.surfaceSidebar,
     zIndex: 1,
   },
   tabDropIndicator: {
@@ -1342,11 +1367,9 @@ const styles = StyleSheet.create((theme) => ({
   tabLabelWithCloseButton: {
     paddingRight: 0,
   },
-  tabLabelActive: {
-    color: theme.colors.foreground,
-  },
   tabLabelFocused: {
     fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foreground,
   },
   tabCloseButton: {
     width: 18,

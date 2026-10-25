@@ -10,12 +10,12 @@ import type { CheckoutCommitFile } from "@getpaseo/protocol/messages";
 import * as Clipboard from "expo-clipboard";
 import {
   Cloud,
+  CircleDot,
   Copy,
   FileDiff,
   GitBranch,
   GitCommitHorizontal,
   History,
-  LocateFixed,
   Tag,
   UserRound,
 } from "lucide-react-native";
@@ -64,7 +64,7 @@ const ThemedFileDiff = withUnistyles(FileDiff);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedGitCommitHorizontal = withUnistyles(GitCommitHorizontal);
 const ThemedHistory = withUnistyles(History);
-const ThemedLocateFixed = withUnistyles(LocateFixed);
+const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedTag = withUnistyles(Tag);
 const ThemedUserRound = withUnistyles(UserRound);
 
@@ -117,24 +117,26 @@ function ReferenceIcon({
 }) {
   switch (kind) {
     case "head":
-      return <ThemedLocateFixed size={10} uniProps={badgeIconMapping} />;
+      return (
+        <ThemedCircleDot size={14} strokeWidth={1.75} uniProps={currentReferenceIconMapping} />
+      );
     case "branch":
       return (
         <ThemedGitBranch
-          size={10}
+          size={12}
+          strokeWidth={1.75}
           uniProps={inTooltip ? currentReferenceIconMapping : branchBadgeIconMapping}
         />
       );
     case "remote":
-      return <ThemedCloud size={inTooltip ? 14 : 10} uniProps={badgeIconMapping} />;
+      return <ThemedCloud size={14} strokeWidth={1.75} uniProps={badgeIconMapping} />;
     case "tag":
       return <ThemedTag size={inTooltip ? 14 : 10} uniProps={tagBadgeIconMapping} />;
   }
 }
 
 function CommitReferences({ viewModel }: { viewModel: CommitGraphViewModel }) {
-  const references = viewModel.commit.references.slice(0, 3);
-  const hiddenCount = viewModel.commit.references.length - references.length;
+  const references = viewModel.inlineReferences;
   if (references.length === 0) {
     return null;
   }
@@ -143,31 +145,28 @@ function CommitReferences({ viewModel }: { viewModel: CommitGraphViewModel }) {
       {references.map((reference) => (
         <View
           key={reference.id}
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={reference.name}
+          testID={
+            reference.kind === "remote"
+              ? "commit-inline-remote-reference"
+              : "commit-inline-current-reference"
+          }
           style={[
             styles.reference,
-            reference.kind === "branch" && styles.referenceBranch,
             reference.kind === "remote" && styles.referenceRemote,
-            reference.kind === "tag" && styles.referenceTag,
+            reference.kind === "remote" && styles.referenceRemoteIconOnly,
           ]}
         >
-          <ReferenceIcon kind={reference.kind} />
-          <Text
-            style={[
-              styles.referenceText,
-              reference.kind === "branch" && styles.referenceTextBranch,
-              reference.kind === "tag" && styles.referenceTextTag,
-            ]}
-            numberOfLines={1}
-          >
-            {reference.name}
-          </Text>
+          <ReferenceIcon kind={reference.kind === "remote" ? "remote" : "head"} />
+          {reference.kind !== "remote" ? (
+            <Text style={styles.referenceText} numberOfLines={1}>
+              {reference.name}
+            </Text>
+          ) : null}
         </View>
       ))}
-      {hiddenCount > 0 ? (
-        <View style={[styles.reference, styles.referenceOverflow]}>
-          <Text style={[styles.referenceText, styles.referenceOverflowText]}>+{hiddenCount}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -596,12 +595,14 @@ const styles = StyleSheet.create((theme) => ({
   },
   subjectCurrent: {
     fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundSidebar,
   },
   author: {
     color: theme.colors.foregroundMuted,
   },
   authorCurrent: {
     fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundMuted,
   },
   references: {
     maxWidth: "48%",
@@ -614,16 +615,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   reference: {
     maxWidth: 132,
-    height: 16,
+    height: 18,
     paddingHorizontal: 4,
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.colors.accent,
-  },
-  referenceBranch: {
-    backgroundColor: theme.colors.surface3,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   referenceRemote: {
     backgroundColor: theme.colors.statusMerged,
@@ -631,20 +629,16 @@ const styles = StyleSheet.create((theme) => ({
   referenceTag: {
     backgroundColor: theme.colors.statusWarning,
   },
-  referenceOverflow: {
-    backgroundColor: theme.colors.surface3,
+  referenceRemoteIconOnly: {
+    width: 18,
+    paddingHorizontal: 0,
+    justifyContent: "center",
   },
   referenceText: {
     flexShrink: 1,
     fontSize: 11,
     lineHeight: 13,
-    color: theme.colors.accentForeground,
-  },
-  referenceOverflowText: {
-    color: theme.colors.foregroundSidebar,
-  },
-  referenceTextBranch: {
-    color: theme.colors.foregroundSidebar,
+    color: theme.colors.scmGraphCurrentRefForeground,
   },
   referenceTextTag: {
     color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
@@ -766,6 +760,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   tooltipReferences: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 4,
   },
   tooltipReference: {
@@ -775,7 +770,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: 4,
     borderRadius: 10,
-    backgroundColor: theme.colors.accent,
+    backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   tooltipReferenceBranch: {
     backgroundColor: theme.colors.scmGraphCurrentRefBackground,
