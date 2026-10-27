@@ -8,6 +8,7 @@ import {
 } from "./strategy";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { layoutStream, type StreamLayout, type StreamLayoutItem } from "./layout";
+import { buildCompletedTurnProcessModel } from "./completed-turn-process";
 
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
@@ -100,6 +101,25 @@ function strategyFor(platform: "web" | "android"): StreamStrategy {
     isMobileBreakpoint: false,
   });
 }
+
+it.each(["web", "android"] as const)(
+  "%s 最后一段正文先于收尾工具时，已处理入口仍在正文之前",
+  (platform) => {
+    const tail: StreamItem[] = [
+      userMessage("user", 1),
+      assistantMessage("answer", 2),
+      toolCall("last-tool", 3),
+    ];
+    const layout = layoutFor({ platform, tail });
+    if (!layout.auxiliaryTurnFooter) throw new Error("未生成已完成回合");
+    const model = buildCompletedTurnProcessModel({
+      hosts: [layout.auxiliaryTurnFooter],
+      chronologicalItems: tail,
+    });
+    expect([...model.toggleByItemId.keys()]).toEqual(["answer"]);
+    expect([...model.turnIdByProcessItemId.keys()]).toEqual(["last-tool"]);
+  },
+);
 
 function layoutFor(input: {
   platform: "web" | "android";

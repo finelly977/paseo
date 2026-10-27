@@ -28,6 +28,8 @@ Before adding a new component, read `components/ui/`. The primitive usually exis
 
 ## 3. Hierarchy
 
+浅色主题使用白色正文画布、灰白侧栏与浅灰输入面，文字以深中性色分级，默认字号下普通与辅助文字保持至少 4.5:1 对比。蓝色统一用于链接、主要操作和 Git 定位，绿色仅用于成功状态；Git 远端与标签使用柔和底色和深色文字。浅色与深色分别持有语义色，不以整行透明度表示未选中会话。
+
 Hierarchy is conveyed through weight and color, not size. Most labels, titles, and hints across the app are `fontSize.base` or `fontSize.xs`. 设置项、设置分类及主机名称统一使用 `fontSize.sm`，默认 14 像素，与常驻工具界面的标签一致。 The distinction between a row's primary line and its secondary line is `foreground` versus `foregroundMuted`.
 
 二开使用一套统一的界面与对话字号，默认值为 16 像素；“外观”设置中的界面字号会同步缩放标题、消息正文、输入框和常驻面板，不另设只对移动端生效的正文字号。用户显式选择的字号始终优先，代码字号继续独立配置。对话正文的一至六级 Markdown 标题统一使用 `fontSize.lg`（默认 18 像素）与半粗字重，行高为字号的 1.4 倍；段前后间距与分隔线保留层级，文件预览和紧凑工具详情继续沿用各自标题样式。
@@ -47,6 +49,10 @@ Foreground is for the thing being acted on: row titles, section headings, the se
 Mermaid 的内容尺寸以 SVG `viewBox` 为准，不能把首次测量容器的缩放边界缓存为图表尺寸。网页与移动端预览最高 480 像素，SVG 在预览内保持比例适配；网页缩放由外层视口统一负责，移动端放大查看允许图表按宽度展开并滚动。
 
 Markdown 表格按整张表的可见内容估算各列需求，不均分列宽；短标签和数值列收窄，长说明列获取更多空间。表头和正文共用列宽，链接只计算可见文字，代码按可见内容计入；限制孤立超长地址对整列的影响。容器宽度及字号变化后重新分配；窄屏不足以保持可读列宽时仅表格横向滚动，不撑宽页面，不改变文本、代码、链接或复制内容。对话、文档预览和紧凑工具详情共用此规则。
+
+Markdown 共享等值主题样式的编译结果，缓存按完整颜色、字体、字号和样式合并选项区分，并以 32 组为上限淘汰；不缓存渲染器实例、正文、链接回调或会话状态，主题和外观更新仍实时生效。披露组件保留期间复用正文元素，避免开始展开时因内部保留状态更新再次构建整组命令；关闭完成后仍卸载正文。
+
+命令概览中的自动追尾只由新增调用触发，并以读者仍接近列表底部为前提；不能在 `onContentSizeChange` 中无条件滚到末尾。展开详情、动画结束和既有输出的尺寸修正不代表新的阅读意图，桌面内联概览与移动底部面板遵循同一规则。
 
 `foregroundExtraMuted` is reserved for passive chrome that must sit behind muted text, such as an always-visible window control. Use the solid token instead of lowering SVG opacity; per-path opacity makes overlapping icon strokes render unevenly. Interactive hover and pressed states return to `foreground`.
 
@@ -275,6 +281,8 @@ Durations: `instant` 60ms (exit, micro feedback), `fast` 120ms (menus and toasts
 Press feedback is a scale, not an opacity dip: `MOTION_PRESS_SCALE.button` (0.95) for text buttons, `MOTION_PRESS_SCALE.iconButton` (0.92) for small circular icon buttons. Disabled stays opacity-only (§10); never combine a large opacity change with the scale.
 
 Stream entrance animations play only when an item arrives live. History restore, pagination, reconnect snapshots, and virtualization remounts never replay them, and every new animation carries a `useReducedMotion`/`AccessibilityInfo` fallback. The installed Reanimated `Keyframe` has no custom easing, so menu enter/exit keeps its default easing and only tokenized durations.
+
+展开/收起共用 `components/ui/disclosure`：内容展开 200 毫秒、收起 120 毫秒，使用 standard 减速曲线，不弹跳；箭头连续旋转，快速反向操作从当前进度接续。网页使用 CSS Grid 自然尺寸过渡，原生使用 UI 线程的高度与透明度过渡；收起结束后卸载正文，过渡中禁用收起内容的交互与无障碍访问。系统减少动态效果时直接切换，初次挂载、历史恢复和流式正文更新不重播展开入场。适用于工具详情、任务列表、图片与侧栏分组；虚拟对话中的“已处理”以及虚拟文件列表仅转动箭头，不给整段历史或整棵文件树逐帧改变高度，保留原有滚动锚定和按需渲染。
 
 ---
 

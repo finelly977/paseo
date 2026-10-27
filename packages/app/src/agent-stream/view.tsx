@@ -12,6 +12,7 @@ import React, {
 } from "react";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import {
   View,
   Text,
@@ -324,10 +325,6 @@ function CompletedTurnProcessToggle({
     },
     [model.turnId, registerAnchor],
   );
-  const iconStyle = useMemo(
-    () => [stylesheet.completedTurnProcessToggleIcon, expanded && stylesheet.processToggleExpanded],
-    [expanded],
-  );
   const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
   const accessibilityLabel = expanded
     ? t("agentStream.completedTurn.collapse")
@@ -364,9 +361,14 @@ function CompletedTurnProcessToggle({
         style={stylesheet.completedTurnProcessToggle}
       >
         <Text style={stylesheet.completedTurnProcessToggleText}>{label}</Text>
-        <View style={iconStyle}>
+        <DisclosureChevron
+          expanded={expanded}
+          collapsedRotation={-90}
+          expandedRotation={0}
+          style={stylesheet.completedTurnProcessToggleIcon}
+        >
           <ThemedProcessToggleChevron size={12} uniProps={processToggleIconColorMapping} />
-        </View>
+        </DisclosureChevron>
       </Pressable>
     </View>
   );
@@ -782,14 +784,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ];
       return buildCompletedTurnProcessModel({
         hosts,
-        visibleItems: [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+        chronologicalItems: [...projectedToolCalls.tail, ...projectedToolCalls.head],
       });
     }, [
-      baseRenderModel.history,
-      baseRenderModel.segments.liveHead,
       streamLayout.auxiliaryTurnFooter,
       streamLayout.history,
       streamLayout.liveHead,
+      projectedToolCalls.tail,
+      projectedToolCalls.head,
     ]);
 
     const completedProcessAnchors = useRef(new Map<string, View>());
@@ -1146,17 +1148,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             isLastInSequence={layoutItem.isLastInToolSequence}
             onExpandedChange={setToolCallGroupExpanded}
           >
-            {expanded
-              ? group.run.calls.map((call, index) => (
-                  <React.Fragment key={call.id}>
-                    {renderSingleToolCallItem(
-                      call,
-                      index === group.run.calls.length - 1,
-                      GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
-                    )}
-                  </React.Fragment>
-                ))
-              : null}
+            {() =>
+              group.run.calls.map((call, index) => (
+                <React.Fragment key={call.id}>
+                  {renderSingleToolCallItem(
+                    call,
+                    index === group.run.calls.length - 1,
+                    GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
+                  )}
+                </React.Fragment>
+              ))
+            }
           </OverviewToolCallGroupView>
         );
       },
@@ -1433,8 +1435,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       for (const [itemId, turnId] of processMembershipRef.current) {
         if (expandedCompletedTurnIds.has(turnId)) ids.add(itemId);
       }
+      for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
+        if (expandedCompletedTurnIds.has(toggle.turnId)) ids.add(itemId);
+      }
       return ids;
-    }, [expandedCompletedTurnIds, expandedToolCallGroupIds]);
+    }, [completedTurnProcess.toggleByItemId, expandedCompletedTurnIds, expandedToolCallGroupIds]);
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
@@ -1443,6 +1448,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
       }
       for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
+        // 入口也可能承载最终正文，不能把整条正文的高度误估为单独一个按钮。
+        if (!completedTurnProcess.turnIdByProcessItemId.has(itemId)) continue;
         if (!expandedCompletedTurnIds.has(toggle.turnId)) {
           heights.set(
             itemId,
@@ -2063,10 +2070,6 @@ const stylesheet = StyleSheet.create((theme) => ({
     height: 12,
     alignItems: "center",
     justifyContent: "center",
-    transform: [{ rotate: "-90deg" }],
-  },
-  processToggleExpanded: {
-    transform: [{ rotate: "0deg" }],
   },
   completedTurnProcessToggleText: {
     color: theme.colors.foregroundMuted,

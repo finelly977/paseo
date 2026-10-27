@@ -32,13 +32,15 @@ function findFirstFinalAssistantBlock(input: {
 
 export function buildCompletedTurnProcessModel(input: {
   hosts: readonly TurnFooterHost[];
-  visibleItems: readonly StreamItem[];
+  chronologicalItems: readonly StreamItem[];
 }): CompletedTurnProcessModel {
   const turnIdByProcessItemId = new Map<string, string>();
   const toggleByItemId = new Map<string, CompletedTurnProcessToggleModel>();
   const assistantById = new Map<string, AssistantMessageItem>();
   const firstAssistantByBlockGroupId = new Map<string, AssistantMessageItem>();
-  for (const item of input.visibleItems) {
+  const indexByItemId = new Map<string, number>();
+  for (const [index, item] of input.chronologicalItems.entries()) {
+    indexByItemId.set(item.id, index);
     if (item.kind !== "assistant_message") continue;
     assistantById.set(item.id, item);
     if (!item.blockGroupId) continue;
@@ -55,8 +57,8 @@ export function buildCompletedTurnProcessModel(input: {
     for (const itemId of host.processItemIds) {
       turnIdByProcessItemId.set(itemId, host.itemId);
     }
-    const toggleItemId = host.processItemIds.at(-1);
-    if (!toggleItemId) {
+    const firstProcessItemId = host.processItemIds.at(-1);
+    if (!firstProcessItemId) {
       continue;
     }
 
@@ -65,6 +67,16 @@ export function buildCompletedTurnProcessModel(input: {
       assistantById,
       firstAssistantByBlockGroupId,
     });
+    const firstFinalIndex = firstFinalBlock ? indexByItemId.get(firstFinalBlock.id) : undefined;
+    const firstProcessIndex = indexByItemId.get(firstProcessItemId);
+    // 有些回合先给出正文，再执行收尾工具；入口必须位于两者中较早的一行。
+    const toggleItemId =
+      firstFinalBlock &&
+      firstFinalIndex !== undefined &&
+      firstProcessIndex !== undefined &&
+      firstFinalIndex < firstProcessIndex
+        ? firstFinalBlock.id
+        : firstProcessItemId;
     const firstMarkdownBlock = firstFinalBlock
       ? splitMarkdownBlocks(firstFinalBlock.text)[0]
       : undefined;

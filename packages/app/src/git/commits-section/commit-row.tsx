@@ -77,17 +77,14 @@ const graphLinkIconMapping = (theme: { colors: { scmGraphLinkForeground: string 
 const currentReferenceIconMapping = (theme: {
   colors: { scmGraphCurrentRefForeground: string };
 }) => ({ color: theme.colors.scmGraphCurrentRefForeground });
-const badgeIconMapping = (theme: { colors: { accentForeground: string } }) => ({
-  color: theme.colors.accentForeground,
-});
 const branchBadgeIconMapping = (theme: { colors: { foregroundSidebar: string } }) => ({
   color: theme.colors.foregroundSidebar,
 });
-const tagBadgeIconMapping = (theme: {
-  colorScheme: "light" | "dark";
-  colors: { surface0: string };
-}) => ({
-  color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
+const remoteBadgeIconMapping = (theme: { colors: { scmGraphRemoteForeground: string } }) => ({
+  color: theme.colors.scmGraphRemoteForeground,
+});
+const tagBadgeIconMapping = (theme: { colors: { scmGraphTagForeground: string } }) => ({
+  color: theme.colors.scmGraphTagForeground,
 });
 
 function commitRowPressableStyle({
@@ -129,7 +126,7 @@ function ReferenceIcon({
         />
       );
     case "remote":
-      return <ThemedCloud size={14} strokeWidth={1.75} uniProps={badgeIconMapping} />;
+      return <ThemedCloud size={14} strokeWidth={1.75} uniProps={remoteBadgeIconMapping} />;
     case "tag":
       return <ThemedTag size={inTooltip ? 14 : 10} uniProps={tagBadgeIconMapping} />;
   }
@@ -276,6 +273,7 @@ function CommitTooltip({
                         styles.referenceText,
                         styles.tooltipReferenceText,
                         reference.kind === "branch" && styles.tooltipReferenceTextBranch,
+                        reference.kind === "remote" && styles.referenceTextRemote,
                         reference.kind === "tag" && styles.referenceTextTag,
                       ]}
                       numberOfLines={1}
@@ -624,10 +622,10 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   referenceRemote: {
-    backgroundColor: theme.colors.statusMerged,
+    backgroundColor: theme.colors.scmGraphRemoteBackground,
   },
   referenceTag: {
-    backgroundColor: theme.colors.statusWarning,
+    backgroundColor: theme.colors.scmGraphTagBackground,
   },
   referenceRemoteIconOnly: {
     width: 18,
@@ -641,7 +639,10 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.scmGraphCurrentRefForeground,
   },
   referenceTextTag: {
-    color: theme.colorScheme === "dark" ? theme.colors.surface0 : "#ffffff",
+    color: theme.colors.scmGraphTagForeground,
+  },
+  referenceTextRemote: {
+    color: theme.colors.scmGraphRemoteForeground,
   },
   inlineButton: {
     width: 20,

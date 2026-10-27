@@ -30,12 +30,12 @@ import {
   type ActiveWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
 import { type GestureType } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
 import {
   CircleAlert,
-  ChevronDown,
   ChevronRight,
   ExternalLink,
   GitPullRequest,
@@ -865,10 +865,11 @@ function ProjectInlineChevron({ chevron }: { chevron: "expand" | "collapse" | nu
   if (chevron === null) {
     return null;
   }
-  if (chevron === "collapse") {
-    return <ChevronDown size={14} color="#9ca3af" />;
-  }
-  return <ChevronRight size={14} color="#9ca3af" />;
+  return (
+    <DisclosureChevron expanded={chevron === "collapse"}>
+      <ChevronRight size={14} color="#9ca3af" />
+    </DisclosureChevron>
+  );
 }
 
 function NewWorktreeButton({
@@ -2138,42 +2139,40 @@ function ProjectBlock({
   }, [onToggleCollapsed, project.projectKey]);
 
   let projectChildren = null;
-  if (!collapsed) {
-    if (project.workspaces.length > 0) {
-      projectChildren = (
-        <>
-          <DraggableList
-            testID={`sidebar-workspace-list-${project.projectKey}`}
-            data={visibleWorkspaces}
-            keyExtractor={workspaceKeyExtractor}
-            renderItem={renderWorkspace}
-            onDragEnd={handleWorkspaceDragEnd}
-            extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-            scrollEnabled={false}
-            useDragHandle
-            nestable={useNestable}
-            simultaneousGestureRef={parentGestureRef}
-            containerStyle={styles.workspaceListContainer}
-          />
-          {canToggleWorkspaces ? (
-            <SidebarGroupToggleRow
-              expanded={workspacesExpanded}
-              onPress={toggleWorkspacesExpanded}
-              testID={`sidebar-project-show-more-${project.projectKey}`}
-            />
-          ) : null}
-        </>
-      );
-    } else if (rowModel.trailingAction.kind === "new_workspace") {
-      projectChildren = (
-        <NewWorkspaceGhostRow
-          project={project}
-          displayName={displayName}
-          worktreeTarget={rowModel.trailingAction.target}
-          onWorkspacePress={onWorkspacePress}
+  if (project.workspaces.length > 0) {
+    projectChildren = (
+      <>
+        <DraggableList
+          testID={`sidebar-workspace-list-${project.projectKey}`}
+          data={visibleWorkspaces}
+          keyExtractor={workspaceKeyExtractor}
+          renderItem={renderWorkspace}
+          onDragEnd={handleWorkspaceDragEnd}
+          extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+          scrollEnabled={false}
+          useDragHandle
+          nestable={useNestable}
+          simultaneousGestureRef={parentGestureRef}
+          containerStyle={styles.workspaceListContainer}
         />
-      );
-    }
+        {canToggleWorkspaces ? (
+          <SidebarGroupToggleRow
+            expanded={workspacesExpanded}
+            onPress={toggleWorkspacesExpanded}
+            testID={`sidebar-project-show-more-${project.projectKey}`}
+          />
+        ) : null}
+      </>
+    );
+  } else if (rowModel.trailingAction.kind === "new_workspace") {
+    projectChildren = (
+      <NewWorkspaceGhostRow
+        project={project}
+        displayName={displayName}
+        worktreeTarget={rowModel.trailingAction.target}
+        onWorkspacePress={onWorkspacePress}
+      />
+    );
   }
 
   return (
@@ -2201,7 +2200,7 @@ function ProjectBlock({
         dragHandleProps={dragHandleProps}
       />
 
-      {projectChildren}
+      <DisclosureContent expanded={!collapsed}>{() => projectChildren}</DisclosureContent>
     </View>
   );
 }
@@ -2826,18 +2825,20 @@ function ProjectModeList({
       {pinnedChats.length > 0 ? (
         <View style={styles.pinnedSection} testID="sidebar-pinned-section">
           <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
-          {pinnedCollapsed ? null : (
-            <>
-              {visiblePinnedChats.map(renderPinnedChat)}
-              {canTogglePinnedChats ? (
-                <SidebarGroupToggleRow
-                  expanded={pinnedChatsExpanded}
-                  onPress={togglePinnedChatsExpanded}
-                  testID="sidebar-pinned-show-more"
-                />
-              ) : null}
-            </>
-          )}
+          <DisclosureContent expanded={!pinnedCollapsed}>
+            {() => (
+              <>
+                {visiblePinnedChats.map(renderPinnedChat)}
+                {canTogglePinnedChats ? (
+                  <SidebarGroupToggleRow
+                    expanded={pinnedChatsExpanded}
+                    onPress={togglePinnedChatsExpanded}
+                    testID="sidebar-pinned-show-more"
+                  />
+                ) : null}
+              </>
+            )}
+          </DisclosureContent>
         </View>
       ) : null}
       {projects.length > 0 || hasActiveHostFilter ? listHeaderComponent : null}

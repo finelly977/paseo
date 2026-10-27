@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
+import {
+  Pressable,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
@@ -15,6 +21,7 @@ import type { Theme } from "@/styles/theme";
 interface OverviewToolCallGroupSheetProps {
   visible: boolean;
   summary: string;
+  itemCount: number;
   children: ReactNode;
   onClose: () => void;
 }
@@ -28,11 +35,13 @@ const foregroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregrou
 export function OverviewToolCallGroupSheet({
   visible,
   summary,
+  itemCount,
   children,
   onClose,
 }: OverviewToolCallGroupSheetProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
+  const followLatest = useRef(true);
   const contextBridge = useToolCallSheetContextBridge();
   const { sheetRef, handleSheetChange, handleSheetDismiss } = useIsolatedBottomSheetVisibility({
     visible,
@@ -47,13 +56,19 @@ export function OverviewToolCallGroupSheet({
   const scrollToLatest = useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: false });
   }, []);
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentSize, layoutMeasurement, contentOffset } = event.nativeEvent;
+    followLatest.current = contentSize.height - layoutMeasurement.height - contentOffset.y <= 16;
+  }, []);
   useEffect(() => {
     if (!visible) {
+      followLatest.current = true;
       return;
     }
+    if (!followLatest.current) return;
     const frame = requestAnimationFrame(scrollToLatest);
     return () => cancelAnimationFrame(frame);
-  }, [children, scrollToLatest, visible]);
+  }, [itemCount, scrollToLatest, visible]);
 
   return (
     <ToolCallSheetModal
@@ -89,7 +104,7 @@ export function OverviewToolCallGroupSheet({
             <ThemedX size={20} uniProps={foregroundMutedMapping} />
           </Pressable>
         </View>
-        <BottomSheetScrollView ref={scrollRef} style={styles.content}>
+        <BottomSheetScrollView ref={scrollRef} style={styles.content} onScroll={handleScroll}>
           <View style={styles.contentContainer}>{children}</View>
         </BottomSheetScrollView>
       </View>

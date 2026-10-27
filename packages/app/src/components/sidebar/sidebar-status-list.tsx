@@ -10,15 +10,9 @@ import { type SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list"
 import type { StatusGroup } from "@/hooks/sidebar-status-view-model";
 import { isWeb as platformIsWeb, isNative as platformIsNative } from "@/constants/platform";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
-import {
-  ChevronDown,
-  ChevronRight,
-  CircleAlert,
-  CircleCheck,
-  CircleDot,
-  CircleX,
-} from "lucide-react-native";
+import { ChevronRight, CircleAlert, CircleCheck, CircleDot, CircleX } from "lucide-react-native";
 import { useToast } from "@/contexts/toast-context";
 import { useMutation } from "@tanstack/react-query";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
@@ -74,7 +68,6 @@ const greenColorMapping = (theme: Theme) => ({
   color: theme.colors.palette.green[500],
 });
 
-const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronRight = withUnistyles(ChevronRight);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedCircleCheck = withUnistyles(CircleCheck);
@@ -133,37 +126,39 @@ export function SidebarStatusWorkspaceList({
       {pinnedWorkspaces.length > 0 ? (
         <View style={styles.pinnedSection} testID="sidebar-pinned-section">
           <PinnedSectionHeader collapsed={pinnedCollapsed} onToggle={togglePinnedCollapsed} />
-          {pinnedCollapsed ? null : (
-            <>
-              {visiblePinnedWorkspaces.map((workspace) => (
-                <StatusWorkspaceRow
-                  key={workspace.workspaceKey}
-                  workspace={workspace}
-                  subtitle={buildStatusRowSubtitle({
-                    projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                    hostLabel: resolveSidebarHostLabel({
-                      serverId: workspace.serverId,
-                      localDaemonServerId,
-                      showHostLabels,
-                      hostLabelByServerId,
-                    }),
-                  })}
-                  shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
-                  showShortcutBadge={showShortcutBadges}
-                  canPin={supportsPinningByServerId.get(workspace.serverId) === true}
-                  onToggleWorkspacePin={onToggleWorkspacePin}
-                  onWorkspacePress={onWorkspacePress}
-                />
-              ))}
-              {canTogglePinnedWorkspaces ? (
-                <SidebarGroupToggleRow
-                  expanded={pinnedWorkspacesExpanded}
-                  onPress={togglePinnedWorkspacesExpanded}
-                  testID="sidebar-pinned-show-more"
-                />
-              ) : null}
-            </>
-          )}
+          <DisclosureContent expanded={!pinnedCollapsed}>
+            {() => (
+              <>
+                {visiblePinnedWorkspaces.map((workspace) => (
+                  <StatusWorkspaceRow
+                    key={workspace.workspaceKey}
+                    workspace={workspace}
+                    subtitle={buildStatusRowSubtitle({
+                      projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
+                      hostLabel: resolveSidebarHostLabel({
+                        serverId: workspace.serverId,
+                        localDaemonServerId,
+                        showHostLabels,
+                        hostLabelByServerId,
+                      }),
+                    })}
+                    shortcutNumber={statusShortcutIndex.get(workspace.workspaceKey) ?? null}
+                    showShortcutBadge={showShortcutBadges}
+                    canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+                    onToggleWorkspacePin={onToggleWorkspacePin}
+                    onWorkspacePress={onWorkspacePress}
+                  />
+                ))}
+                {canTogglePinnedWorkspaces ? (
+                  <SidebarGroupToggleRow
+                    expanded={pinnedWorkspacesExpanded}
+                    onPress={togglePinnedWorkspacesExpanded}
+                    testID="sidebar-pinned-show-more"
+                  />
+                ) : null}
+              </>
+            )}
+          </DisclosureContent>
         </View>
       ) : null}
       {listHeaderComponent}
@@ -295,40 +290,42 @@ function StatusGroupRows({
   return (
     <View style={statusGroupBlockStyle}>
       <StatusGroupHeader group={group} collapsed={collapsed} />
-      {!collapsed ? (
-        <View
-          style={styles.statusWorkspaceListContainer}
-          testID={`sidebar-status-group-rows-${group.bucket}`}
-        >
-          {visibleWorkspaces.map((workspace) => (
-            <StatusWorkspaceRow
-              key={workspace.workspaceKey}
-              workspace={workspace}
-              subtitle={buildStatusRowSubtitle({
-                projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
-                hostLabel: resolveSidebarHostLabel({
-                  serverId: workspace.serverId,
-                  localDaemonServerId,
-                  showHostLabels,
-                  hostLabelByServerId,
-                }),
-              })}
-              shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
-              showShortcutBadge={showShortcutBadges}
-              canPin={supportsPinningByServerId.get(workspace.serverId) === true}
-              onToggleWorkspacePin={onToggleWorkspacePin}
-              onWorkspacePress={onWorkspacePress}
-            />
-          ))}
-          {canToggleWorkspaces ? (
-            <SidebarGroupToggleRow
-              expanded={workspacesExpanded}
-              onPress={toggleWorkspacesExpanded}
-              testID={`sidebar-status-show-more-${group.bucket}`}
-            />
-          ) : null}
-        </View>
-      ) : null}
+      <DisclosureContent expanded={!collapsed}>
+        {() => (
+          <View
+            style={styles.statusWorkspaceListContainer}
+            testID={`sidebar-status-group-rows-${group.bucket}`}
+          >
+            {visibleWorkspaces.map((workspace) => (
+              <StatusWorkspaceRow
+                key={workspace.workspaceKey}
+                workspace={workspace}
+                subtitle={buildStatusRowSubtitle({
+                  projectName: projectNamesByKey.get(workspace.projectKey) ?? "",
+                  hostLabel: resolveSidebarHostLabel({
+                    serverId: workspace.serverId,
+                    localDaemonServerId,
+                    showHostLabels,
+                    hostLabelByServerId,
+                  }),
+                })}
+                shortcutNumber={shortcutIndex.get(workspace.workspaceKey) ?? null}
+                showShortcutBadge={showShortcutBadges}
+                canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+                onToggleWorkspacePin={onToggleWorkspacePin}
+                onWorkspacePress={onWorkspacePress}
+              />
+            ))}
+            {canToggleWorkspaces ? (
+              <SidebarGroupToggleRow
+                expanded={workspacesExpanded}
+                onPress={toggleWorkspacesExpanded}
+                testID={`sidebar-status-show-more-${group.bucket}`}
+              />
+            ) : null}
+          </View>
+        )}
+      </DisclosureContent>
     </View>
   );
 }
@@ -417,10 +414,11 @@ function StatusGroupLeadingVisual({
   if (!showChevron) {
     return <StatusGroupIcon bucket={bucket} />;
   }
-  if (collapsed) {
-    return <ThemedChevronRight size={14} uniProps={foregroundMutedColorMapping} />;
-  }
-  return <ThemedChevronDown size={14} uniProps={foregroundMutedColorMapping} />;
+  return (
+    <DisclosureChevron expanded={!collapsed}>
+      <ThemedChevronRight size={14} uniProps={foregroundMutedColorMapping} />
+    </DisclosureChevron>
+  );
 }
 
 function StatusGroupIcon({ bucket }: { bucket: StatusGroup["bucket"] }) {

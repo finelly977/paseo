@@ -2,8 +2,8 @@ import type { StreamItem } from "@/types/stream";
 import { estimateAssistantMessageHeightFromCache } from "@/utils/assistant-message-height-estimate";
 import { shouldCollapseUserMessage } from "@/components/user-message-collapse";
 
-export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 100;
-export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 50;
+export const DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD = 32;
+export const DEFAULT_WEB_MOUNTED_RECENT_STREAM_ITEMS = 12;
 const COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE = 40;
 const COLLAPSED_LONG_USER_MESSAGE_ROW_HEIGHT_ESTIMATE = 280;
 const COLLAPSED_LONG_USER_MESSAGE_WITH_IMAGES_HEIGHT_ESTIMATE = 420;
@@ -115,10 +115,21 @@ export function findMountedWindowStart(input: {
   }
 
   let startIndex = Math.max(items.length - minMountedCount, 0);
-  while (startIndex > 0 && items[startIndex]?.kind !== "user_message") {
+  const cutoff = startIndex;
+  const earliestBoundary = Math.max(0, cutoff - minMountedCount);
+  while (startIndex > earliestBoundary && items[startIndex]?.kind !== "user_message") {
     startIndex -= 1;
   }
-  return startIndex;
+  // 短回合尽量完整保留；超长过程不能让整轮上千条内容绕过虚拟化。
+  return items[startIndex]?.kind === "user_message" ? startIndex : cutoff;
+}
+
+export function visibleWebHistoryItems(
+  items: StreamItem[],
+  heights: ReadonlyMap<string, number> | undefined,
+): StreamItem[] {
+  if (!heights || heights.size === 0) return items;
+  return items.filter((item) => heights.get(item.id) !== 0);
 }
 
 export function splitWebVirtualizedHistory(input: {

@@ -4,6 +4,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ChevronRight } from "lucide-react-native";
 import { SPACING, type Theme } from "@/styles/theme";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 
 // Shared presentation primitives for the app's directory trees. Both the Files
 // explorer (server-loaded listings) and the Changes view (client-built from diff
@@ -52,9 +53,9 @@ export function TreeIndentGuides({ depth }: { depth: number }) {
 /** Rotating disclosure chevron for a directory row (points right; rotates down when expanded). */
 export function TreeChevron({ expanded }: { expanded: boolean }) {
   return (
-    <View style={expanded ? [styles.chevron, styles.chevronExpanded] : styles.chevron}>
+    <DisclosureChevron expanded={expanded} style={styles.chevron}>
       <ThemedChevronRight size={16} uniProps={foregroundMutedIconColorMapping} />
-    </View>
+    </DisclosureChevron>
   );
 }
 
@@ -72,8 +73,5 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-  },
-  chevronExpanded: {
-    transform: [{ rotate: "90deg" }],
   },
 }));

@@ -13,6 +13,7 @@ import {
   getWebPartialVirtualizationThreshold,
   shouldAutoLoadOlderHistory,
   splitWebVirtualizedHistory,
+  visibleWebHistoryItems,
   type IndexedStreamItem,
 } from "./web-virtualization";
 
@@ -70,6 +71,26 @@ function indexEntries(items: StreamItem[]): IndexedStreamItem[] {
 }
 
 describe("findMountedWindowStart", () => {
+  it("折叠的零高度过程不占用网页虚拟窗口，保留入口与正文", () => {
+    const items = [toolCall("hidden", 1), toolCall("toggle", 2), assistantMessage("answer", 3)];
+    expect(
+      visibleWebHistoryItems(
+        items,
+        new Map([
+          ["hidden", 0],
+          ["toggle", 26],
+        ]),
+      ).map((item) => item.id),
+    ).toEqual(["toggle", "answer"]);
+  });
+  it("超长单轮过程不绕过最近窗口上限", () => {
+    const items: StreamItem[] = [
+      userMessage("start", 1),
+      ...Array.from({ length: 2000 }, (_, index) => toolCall(`tool-${index}`, 2)),
+      assistantMessage("answer", 3),
+    ];
+    expect(findMountedWindowStart({ items, minMountedCount: 12 })).toBe(items.length - 12);
+  });
   it("keeps all items mounted when the chat is below the threshold", () => {
     const items = [userMessage("u1", 1), assistantMessage("a1", 2)];
 

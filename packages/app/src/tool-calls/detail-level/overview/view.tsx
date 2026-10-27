@@ -1,5 +1,5 @@
-import React, { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
-import { ScrollView } from "react-native";
+import React, { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { ScrollView, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -14,7 +14,7 @@ interface OverviewGroupProps {
   expanded: boolean;
   isLastInSequence: boolean;
   onExpandedChange: (groupId: string, expanded: boolean) => void;
-  children: ReactNode;
+  children: () => ReactNode;
 }
 
 const TOOL_CALL_GROUP_MAX_HEIGHT = 400;
@@ -63,11 +63,26 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
   children,
 }: OverviewGroupProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const followLatest = useRef(true);
   const isCompact = useIsCompactFormFactor();
   const aggregateSummary = useOverviewSummary(group.summary);
   const scrollToLatest = useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: false });
   }, []);
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentSize, layoutMeasurement, contentOffset } = event.nativeEvent;
+    followLatest.current = contentSize.height - layoutMeasurement.height - contentOffset.y <= 16;
+  }, []);
+  useEffect(() => {
+    if (!expanded) {
+      followLatest.current = true;
+      return;
+    }
+    if (!followLatest.current) return;
+    // 只在追加调用时追尾，展开详情产生的尺寸变化不能把读者拉到末尾。
+    const frame = requestAnimationFrame(scrollToLatest);
+    return () => cancelAnimationFrame(frame);
+  }, [expanded, group.run.calls.length, scrollToLatest]);
   const toggle = useCallback(() => {
     onExpandedChange(group.run.id, !expanded);
   }, [expanded, group.run.id, onExpandedChange]);
@@ -78,16 +93,17 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
     () => (
       <ScrollView
         ref={scrollRef}
+        testID="tool-call-group-scroll"
         style={styles.scroll}
         contentContainerStyle={styles.content}
         nestedScrollEnabled
         showsVerticalScrollIndicator
-        onContentSizeChange={scrollToLatest}
+        onScroll={handleScroll}
       >
-        {children}
+        {children()}
       </ScrollView>
     ),
-    [children, scrollToLatest],
+    [children, handleScroll],
   );
 
   if (isCompact) {
@@ -102,8 +118,13 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
           isLastInSequence={isLastInSequence}
           onToggle={toggle}
         />
-        <OverviewToolCallGroupSheet visible={expanded} summary={aggregateSummary} onClose={close}>
-          {children}
+        <OverviewToolCallGroupSheet
+          visible={expanded}
+          summary={aggregateSummary}
+          itemCount={group.run.calls.length}
+          onClose={close}
+        >
+          {expanded ? children() : null}
         </OverviewToolCallGroupSheet>
       </>
     );

@@ -146,83 +146,87 @@ const darkStatusColors = {
 
 // Semantic color tokens - Layer-based system
 const lightSemanticColors = {
-  // Surfaces (layers) - shifted one step lighter
+  // 浅色工作面采用中性灰白层级，主要操作统一蓝色，语义色单独保留。
   surface0: "#ffffff", // App background
-  surface1: "#fafafa", // Subtle hover (was zinc-100, now zinc-50)
-  surface2: "#f4f4f5", // Elevated: badges, inputs, sheets (was zinc-200, now zinc-100)
-  surface3: "#e4e4e7", // Highest elevation (was zinc-300, now zinc-200)
-  surface4: "#d4d4d8", // Extra emphasis (was zinc-400, now zinc-300)
+  surface1: "#fbfcfd",
+  surface2: "#eef1f5",
+  surface3: "#e3e8ef",
+  surface4: "#ccd5e1",
   surfaceDiffEmpty: "#f6f6f6", // Empty side of split diff rows, between surface1 and surface2 and biased toward surface2
-  surfaceSidebar: "#f4f4f5", // Sidebar background (darker than main)
-  surfaceSidebarHover: "#e9e9ec", // Sidebar hover (darker in light mode)
-  surfaceSidebarSelected: "#e4e4e7", // 选中工作区，与 surface3 保持一致
+  surfaceSidebar: "#f6f7f9", // Sidebar background (darker than main)
+  surfaceSidebarHover: "#eef1f5", // Sidebar hover (darker in light mode)
+  surfaceSidebarSelected: "#e3e8ef", // 选中工作区，与 surface3 保持一致
   surfaceWorkspace: "#ffffff", // Workspace main background
   userMessageBackground: "#00000007",
 
   // Text
-  foreground: "#1a1a1e",
-  foregroundSidebar: "#2b2b2f",
-  foregroundMuted: "#71717a",
-  foregroundExtraMuted: "#a1a1aa",
+  foreground: "#20242b",
+  foregroundSidebar: "#343b46",
+  foregroundMuted: "#596474",
+  foregroundExtraMuted: "#646e7c",
 
   // Controls
   scrollbarHandle: "#a8a8b0",
 
   // Borders - shifted one step lighter
-  border: "#e4e4e7", // (was zinc-200, now zinc-200 - keep for contrast)
-  borderAccent: "#ececf1", // Softer accent border for low-emphasis outlines
+  border: "#dde2e9", // (was zinc-200, now zinc-200 - keep for contrast)
+  borderAccent: "#ccd5e1", // Softer accent border for low-emphasis outlines
 
   // Brand
-  accent: "#20744A",
-  accentBright: "#239956",
+  accent: "#2563eb",
+  accentBright: "#1d4ed8",
   accentForeground: "#ffffff",
 
   // Semantic
   destructive: "#b04138", // dark warm red on white — calm but unambiguously red
   destructiveForeground: "#ffffff",
-  success: "#20744A",
+  success: "#15803d",
   successForeground: "#ffffff",
 
   // Legacy aliases (for gradual migration)
   background: "#ffffff",
   popover: "#ffffff",
-  popoverForeground: "#1a1a1e",
+  popoverForeground: "#20242b",
   primary: "#18181b",
   primaryForeground: "#fafafa",
-  secondary: "#f4f4f5",
-  secondaryForeground: "#1a1a1e",
-  muted: "#f4f4f5",
-  mutedForeground: "#71717a",
-  accentBorder: "#ececf1",
-  input: "#f4f4f5",
+  secondary: "#eef1f5",
+  secondaryForeground: "#20242b",
+  muted: "#eef1f5",
+  mutedForeground: "#596474",
+  accentBorder: "#ccd5e1",
+  input: "#eef1f5",
   ring: "#18181b",
 
   ...lightDiffColors,
   ...lightStatusColors,
 
-  // VS Code Source Control palette — pixel-matched to VS Code Light+ theme
+  // Git 状态保留语义颜色，按钮与链接沿用浅色主题的统一强调色。
   scmBadgeBackground: "#c4c4c4",
   scmBadgeForeground: "#333333",
   scmInputBackground: "#ffffff",
   scmInputForeground: "#333333",
   scmInputPlaceholder: "#767676",
-  scmFocusBorder: "#0074e8",
+  scmFocusBorder: "#2563eb",
   scmListHoverBackground: "#f0f0f0",
-  scmButtonBackground: "#0e639c",
-  scmButtonHoverBackground: "#1177bb",
+  scmButtonBackground: "#2563eb",
+  scmButtonHoverBackground: "#1d4ed8",
   scmButtonForeground: "#ffffff",
   scmStatusModified: "#895503",
   scmStatusAdded: "#587c0c",
   scmStatusDeleted: "#ad0707",
   scmStatusUntracked: "#007100",
   scmStatusConflict: "#ad0707",
-  scmGraphLinkForeground: "#006ab1",
-  scmGraphCurrentRefBackground: "#007acc",
+  scmGraphLinkForeground: "#2563eb",
+  scmGraphCurrentRefBackground: "#2563eb",
   scmGraphCurrentRefForeground: "#ffffff",
+  scmGraphRemoteBackground: "#edf0ff",
+  scmGraphRemoteForeground: "#4b4c88",
+  scmGraphTagBackground: "#fff2d4",
+  scmGraphTagForeground: "#845500",
 
   terminal: {
     background: "#ffffff",
-    foreground: "#1a1a1e",
+    foreground: "#20242b",
     cursor: "#1a1a1e",
     cursorAccent: "#ffffff",
     selectionBackground: "rgba(0, 0, 0, 0.15)",
@@ -285,7 +289,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surface4: tint.surface4,
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
     surfaceSidebar: tint.surfaceSidebar,
-    surfaceSidebarHover: tint.surface1,
+    surfaceSidebarHover: tint.surface2,
     surfaceSidebarSelected: tint.surface3,
     surfaceWorkspace: tint.surface0,
     foregroundSidebar: resolveTextBrightness({
@@ -305,7 +309,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     accentForeground: tint.accentForeground ?? tint.surface0,
     destructive: tint.destructive,
     destructiveForeground: tint.surface0,
-    success: tint.accent,
+    success: lightSemanticColors.success,
     successForeground: tint.surface0,
     background: tint.surface0,
     popover: tint.surface0,
@@ -453,6 +457,10 @@ export function buildDarkSemanticColors(tint: DarkThemeConfig) {
     scmGraphLinkForeground: "#4daafc",
     scmGraphCurrentRefBackground: "#3794ff",
     scmGraphCurrentRefForeground: "#1f1f1f",
+    scmGraphRemoteBackground: darkStatusColors.statusMerged,
+    scmGraphRemoteForeground: tint.accentForeground ?? "#ffffff",
+    scmGraphTagBackground: darkStatusColors.statusWarning,
+    scmGraphTagForeground: tint.surface0,
 
     terminal: {
       background: tint.surface0,

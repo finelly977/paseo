@@ -20,6 +20,7 @@ import {
   Sparkles,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { CheckoutGitActionStatus } from "@/git/actions-store";
@@ -154,13 +155,9 @@ export function SourceControlSectionHeader({
         testID={testID ? `${testID}-toggle` : undefined}
       >
         {collapsible ? (
-          <View style={styles.headingTwistie}>
-            {collapsed ? (
-              <ThemedChevronRight size={14} uniProps={mutedIconColorMapping} />
-            ) : (
-              <ThemedChevronDown size={14} uniProps={mutedIconColorMapping} />
-            )}
-          </View>
+          <DisclosureChevron expanded={!collapsed} style={styles.headingTwistie}>
+            <ThemedChevronRight size={14} uniProps={mutedIconColorMapping} />
+          </DisclosureChevron>
         ) : null}
         <Text style={styles.sectionTitle} numberOfLines={1}>
           {title}

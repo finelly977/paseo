@@ -1,13 +1,13 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight } from "lucide-react-native";
+import { ChevronRight } from "lucide-react-native";
 import { Pressable, Text } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
 
-const ThemedChevronDown = withUnistyles(ChevronDown);
 const ThemedChevronRight = withUnistyles(ChevronRight);
 const foregroundMutedColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
@@ -23,7 +23,6 @@ export function PinnedSectionHeader({
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
   const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
-  const Chevron = collapsed ? ThemedChevronRight : ThemedChevronDown;
 
   return (
     <Pressable
@@ -37,7 +36,9 @@ export function PinnedSectionHeader({
         <>
           <Text style={styles.title}>{t("sidebar.pinned.title")}</Text>
           {hovered || isNative || isCompact ? (
-            <Chevron size={12} uniProps={foregroundMutedColorMapping} />
+            <DisclosureChevron expanded={!collapsed}>
+              <ThemedChevronRight size={12} uniProps={foregroundMutedColorMapping} />
+            </DisclosureChevron>
           ) : null}
         </>
       )}

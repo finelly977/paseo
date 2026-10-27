@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 
 import { AssistantMarkdownImage } from "@/components/message";
+import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
 
 const ThemedImageIcon = withUnistyles(Images);
@@ -61,15 +62,20 @@ export const ProviderImageMessage = memo(function ProviderImageMessage(
           />
         </View>
         <Text style={[styles.label, isHovered && styles.labelActive]}>{label}</Text>
-        <ThemedChevronDown
-          size={12}
-          uniProps={isHovered ? foregroundColorMapping : mutedColorMapping}
-          style={isExpanded ? undefined : styles.collapsedIcon}
-        />
+        <DisclosureChevron expanded={isExpanded} collapsedRotation={-90} expandedRotation={0}>
+          <ThemedChevronDown
+            size={12}
+            uniProps={isHovered ? foregroundColorMapping : mutedColorMapping}
+          />
+        </DisclosureChevron>
       </Pressable>
-      {isExpanded ? (
-        <AssistantMarkdownImage {...imageProps} hasLeadingContent={false} display="thumbnail" />
-      ) : null}
+      <DisclosureContent expanded={isExpanded} testID="provider-image-collapse-content">
+        {() => (
+          <View style={styles.imageContent}>
+            <AssistantMarkdownImage {...imageProps} hasLeadingContent={false} display="thumbnail" />
+          </View>
+        )}
+      </DisclosureContent>
     </View>
   );
 });
@@ -77,7 +83,9 @@ export const ProviderImageMessage = memo(function ProviderImageMessage(
 const styles = StyleSheet.create((theme) => ({
   container: {
     width: "100%",
-    gap: theme.spacing[1],
+  },
+  imageContent: {
+    paddingTop: theme.spacing[1],
   },
   toggle: {
     minHeight: 32,
@@ -112,8 +120,5 @@ const styles = StyleSheet.create((theme) => ({
   },
   labelActive: {
     color: theme.colors.foreground,
-  },
-  collapsedIcon: {
-    transform: [{ rotate: "-90deg" }],
   },
 }));

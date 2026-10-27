@@ -12,6 +12,7 @@ import { Gesture } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { GitActions } from "@/git/policy";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
@@ -344,10 +345,6 @@ export function CommitsSection({
     setSelectedState({ identity: filterIdentity, sha: viewModels[headIndex].commit.sha });
     listRef.current?.scrollToIndex({ index: headIndex, animated: true, viewPosition: 0.35 });
   }, [filterIdentity, headIndex, viewModels]);
-  const headerChevronStyle = useMemo(
-    () => [styles.headerChevron, !collapsed && styles.headerChevronExpanded],
-    [collapsed],
-  );
 
   if (query.status === "unsupported") {
     return (
@@ -380,9 +377,9 @@ export function CommitsSection({
             onPress={handleToggleSection}
             style={styles.headerToggle}
           >
-            <View style={headerChevronStyle}>
+            <DisclosureChevron expanded={!collapsed} style={styles.headerChevron}>
               <ThemedChevron size={14} uniProps={chevronColorMapping} />
-            </View>
+            </DisclosureChevron>
             <Text style={styles.title}>{t("workspace.git.diff.commits.title")}</Text>
             {commitCount === null ? null : (
               <Text
@@ -471,9 +468,6 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-  },
-  headerChevronExpanded: {
-    transform: [{ rotate: "90deg" }],
   },
   title: {
     fontSize: 13,

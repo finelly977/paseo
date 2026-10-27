@@ -48,6 +48,7 @@ import {
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MOTION_PRESS_SCALE } from "@/styles/motion";
+import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import Animated, {
@@ -406,9 +407,6 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
   },
-  expandIconExpanded: {
-    transform: [{ rotate: "180deg" }],
-  },
   imagePreviewContainer: {
     flexDirection: "row",
     gap: theme.spacing[2],
@@ -559,11 +557,9 @@ const UserMessageCollapseToggle = memo(function UserMessageCollapseToggle({
       <Text style={userMessageStylesheet.expandToggleText}>
         {t(isExpanded ? "message.actions.collapseMessage" : "message.actions.expandMessage")}
       </Text>
-      <ThemedChevronDownIcon
-        size={14}
-        uniProps={foregroundMutedColorMapping}
-        style={isExpanded ? userMessageStylesheet.expandIconExpanded : undefined}
-      />
+      <DisclosureChevron expanded={isExpanded} expandedRotation={180}>
+        <ThemedChevronDownIcon size={14} uniProps={foregroundMutedColorMapping} />
+      </DisclosureChevron>
     </Pressable>
   );
 });
@@ -2891,16 +2887,18 @@ function renderExpandableBadgeIconSlot({
   showChevron,
   chevronStyle,
   iconNode,
+  expanded,
 }: {
   showChevron: boolean;
   chevronStyle: StyleProp<ViewStyle>;
   iconNode: ReactNode;
+  expanded: boolean;
 }): ReactNode {
   if (showChevron) {
     return (
-      <View style={chevronStyle}>
+      <DisclosureChevron expanded={expanded} style={chevronStyle}>
         <ThemedChevronRightIcon size={12} uniProps={foregroundColorMapping} />
-      </View>
+      </DisclosureChevron>
     );
   }
   return iconNode;
@@ -3031,7 +3029,6 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const [isPressed, setIsPressed] = useState(false);
   const isInteractive = Boolean(onToggle);
   const hasDetailContent = Boolean(renderDetails);
-  const detailContent = hasDetailContent && isExpanded ? renderDetails?.() : null;
   const detailWrapperRef = useRef<View | null>(null);
 
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
@@ -3254,15 +3251,16 @@ export const ExpandableBadge = memo(function ExpandableBadge({
       expandableBadgeStylesheet.chevron,
       LUCIDE_CHEVRON_NUDGE_LEFT,
       inlineUnistylesStyle({
-        transform: isExpanded ? [{ scale: 1.3 }, { rotate: "90deg" }] : [{ scale: 1.3 }],
+        transform: [{ scale: 1.3 }],
       }),
     ],
-    [isExpanded],
+    [],
   );
 
   const ThemedIcon = useMemo(() => (icon ? withUnistyles(icon) : null), [icon]);
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
+    expanded: isExpanded,
     showChevron: isInteractive && (isHovered || isExpanded),
     chevronStyle,
     iconNode,
@@ -3319,16 +3317,21 @@ export const ExpandableBadge = memo(function ExpandableBadge({
           />
         </View>
       </Pressable>
-      {detailContent ? (
-        <Pressable
-          ref={detailWrapperRef}
-          style={detailWrapperStyle}
-          onHoverIn={handleDetailHoverIn}
-          onHoverOut={handleDetailHoverOut}
-        >
-          {detailContent}
-        </Pressable>
-      ) : null}
+      <DisclosureContent
+        expanded={hasDetailContent && isExpanded}
+        testID="expandable-badge-content"
+      >
+        {() => (
+          <Pressable
+            ref={detailWrapperRef}
+            style={detailWrapperStyle}
+            onHoverIn={handleDetailHoverIn}
+            onHoverOut={handleDetailHoverOut}
+          >
+            {renderDetails?.()}
+          </Pressable>
+        )}
+      </DisclosureContent>
     </View>
   );
 }, areExpandableBadgePropsEqual);

@@ -1,9 +1,10 @@
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
-import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { ChevronDown } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { isWeb } from "@/constants/platform";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
 
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -13,7 +14,6 @@ const foregroundColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundSidebar,
 });
 const ThemedChevronDown = withUnistyles(ChevronDown);
-const ThemedChevronUp = withUnistyles(ChevronUp);
 
 export function SidebarGroupToggleRow({
   expanded,
@@ -47,17 +47,12 @@ export function SidebarGroupToggleRow({
       {({ hovered, pressed }) => (
         <>
           <View style={styles.iconSlot}>
-            {expanded ? (
-              <ThemedChevronUp
-                size={14}
-                uniProps={hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping}
-              />
-            ) : (
+            <DisclosureChevron expanded={expanded} expandedRotation={180}>
               <ThemedChevronDown
                 size={14}
                 uniProps={hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping}
               />
-            )}
+            </DisclosureChevron>
           </View>
           <Text style={hovered || pressed ? styles.textHovered : styles.text} numberOfLines={1}>
             {label}

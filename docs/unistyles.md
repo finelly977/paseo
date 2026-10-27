@@ -348,6 +348,14 @@ Gotchas:
 - **Mounted parsed content uses `AppearanceStyleBoundary`.** Markdown, syntax-highlighted code, and tool-call detail bodies can contain memoized/custom renderer trees that do not naturally re-run when runtime-patched appearance tokens change. Wrap the parsed surface once with `packages/app/src/components/appearance-style-boundary.tsx`; do not add local "appearance key" props at each callsite.
 - **Dynamic font tokens stay widened.** `fontFamily`, `fontSize`, and `lineHeight` on `commonTheme` are annotated `string`/`number` (not narrowed by `as const`) so the updater's return assigns; the platform default stacks live in `DEFAULT_UI_FONT_STACK` / `DEFAULT_MONO_FONT_STACK`.
 
+### 多组样式合并不能丢失主题依赖
+
+Unistyles 3.2.4 的网页样式合并器会把两组 `uni__dependencies` 数组递归合并成数字键对象。后续订阅提取只接受数组，因而把这组样式视为没有依赖。典型症状是切换主题后，选中的 Git 标签、主机筛选背景、提交按钮或远端标记保留旧配色；悬停触发重新生成样式或重新打开页面后才恢复。
+
+`patches/react-native-unistyles+3.2.4.patch` 将这一内部字段按集合合并并去重，其余样式仍保持原有覆盖顺序。补丁覆盖源码、ESM 与 CommonJS 入口，通过 `scripts/postinstall-patches.mjs` 在安装依赖时应用；不能仅修改本机 `node_modules`，也不要为每个组件添加主题 Hook、强制重挂载或悬停补刷。
+
+回归使用 `node --test scripts/unistyles-theme-dependencies.test.mjs` 验证真实依赖实现。界面验证需在鼠标停留于空白处时反复切换主题，对比同一主题下热切换与全新页面的控件颜色、文字和字号，不能只验证冷启动截图。
+
 ## Debugging
 
 To inspect what the Babel plugin sees, temporarily enable [`debug: true`](https://www.unistyl.es/v3/other/babel-plugin#debug) in `packages/app/babel.config.js`:

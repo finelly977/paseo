@@ -73,7 +73,7 @@ describe("完成回合过程收起展示", () => {
 
     const model = buildCompletedTurnProcessModel({
       hosts: [host],
-      visibleItems: [conclusion, divider, process],
+      chronologicalItems: [process, divider, conclusion],
     });
 
     expect(model.toggleByItemId.get(process.id)).toEqual({
@@ -103,7 +103,7 @@ describe("完成回合过程收起展示", () => {
 
     const model = buildCompletedTurnProcessModel({
       hosts: [host],
-      visibleItems: [process, conclusion],
+      chronologicalItems: [process, conclusion],
     });
 
     expect(model.toggleByItemId.get(process.id)).toEqual({
@@ -111,5 +111,36 @@ describe("完成回合过程收起展示", () => {
       durationMs: undefined,
       isFollowedByDivider: false,
     });
+  });
+
+  it("同一最终回复分块横跨工具记录时，入口挂在最早的正文块且不隐藏正文", () => {
+    const introduction = assistantBlock({
+      id: "intro",
+      text: "我会完成这项修改。",
+      blockGroupId: "answer",
+      blockIndex: 0,
+      seconds: 1,
+    });
+    const tool = processItem("tool");
+    const answer = assistantBlock({
+      id: "final",
+      text: "修改已完成。",
+      blockGroupId: "answer",
+      blockIndex: 1,
+      seconds: 3,
+    });
+    const host: TurnFooterHost = {
+      kind: "assistant",
+      itemId: answer.id,
+      items: [introduction, tool, answer],
+      startIndex: 2,
+      processItemIds: [tool.id],
+    };
+    const model = buildCompletedTurnProcessModel({
+      hosts: [host],
+      chronologicalItems: [introduction, tool, answer],
+    });
+    expect([...model.toggleByItemId.keys()]).toEqual([introduction.id]);
+    expect([...model.turnIdByProcessItemId.keys()]).toEqual([tool.id]);
   });
 });

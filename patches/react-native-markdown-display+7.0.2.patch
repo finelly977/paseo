@@ -72,3 +72,39 @@ index b0ed265..68e2150 100644
  
      if (
        !(
+diff --git a/node_modules/react-native-markdown-display/src/index.js b/node_modules/react-native-markdown-display/src/index.js
+--- a/node_modules/react-native-markdown-display/src/index.js
++++ b/node_modules/react-native-markdown-display/src/index.js
+@@ -21,1 +21,2 @@
+ import textStyleProps from './lib/data/textStyleProps';
++import {cachedMarkdownStyle} from './lib/styleCache';
+@@ -41,1 +42,2 @@
+ const getStyle = (mergeStyle, style) => {
++  return cachedMarkdownStyle(mergeStyle, style, () => {
+@@ -77,1 +79,2 @@
+   return StyleSheet.create(useStyles);
++  });
+diff --git a/node_modules/react-native-markdown-display/src/lib/styleCache.js b/node_modules/react-native-markdown-display/src/lib/styleCache.js
+new file mode 100644
+--- /dev/null
++++ b/node_modules/react-native-markdown-display/src/lib/styleCache.js
+@@ -0,0 +1,19 @@
++const compiledStyles = new Map();
++const CACHE_LIMIT = 32;
++
++export function cachedMarkdownStyle(mergeStyle, style, compile) {
++  // 同一主题的不同正文共用编译样式；颜色、字体或字号变化会自然产生新键。
++  const key = JSON.stringify([mergeStyle, style]);
++  if (compiledStyles.has(key)) {
++    const value = compiledStyles.get(key);
++    compiledStyles.delete(key);
++    compiledStyles.set(key, value);
++    return value;
++  }
++  const value = compile();
++  compiledStyles.set(key, value);
++  if (compiledStyles.size > CACHE_LIMIT) {
++    compiledStyles.delete(compiledStyles.keys().next().value);
++  }
++  return value;
++}
