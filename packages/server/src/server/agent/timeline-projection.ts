@@ -160,7 +160,13 @@ function collapseToolLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[]
     }
 
     const existing = output[existingIndex];
-    if (!existing || existing.item.type !== "tool_call" || existing.turnId !== entry.turnId) {
+    const differentKnownTurns =
+      existing &&
+      existing.turnId !== undefined &&
+      entry.turnId !== undefined &&
+      existing.turnId !== entry.turnId;
+    if (!existing || existing.item.type !== "tool_call" || differentKnownTurns) {
+      toolIndexByCallId.set(entry.item.callId, output.length);
       output.push(entry);
       continue;
     }
@@ -173,6 +179,7 @@ function collapseToolLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[]
 
     output[existingIndex] = {
       ...existing,
+      ...(entry.turnId ? { turnId: entry.turnId } : {}),
       item: mergedItem,
       timestamp: entry.timestamp,
       seqEnd: Math.max(existing.seqEnd, entry.seqEnd),
@@ -181,6 +188,37 @@ function collapseToolLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[]
     };
   }
 
+  return output;
+}
+
+function collapseCompactionLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[] {
+  const output: WorkingEntry[] = [];
+  const pendingByTurn = new Map<string | undefined, number[]>();
+  for (const entry of entries) {
+    if (entry.item.type !== "compaction") {
+      output.push(entry);
+      continue;
+    }
+    const pending = pendingByTurn.get(entry.turnId) ?? [];
+    if (entry.item.status === "loading") {
+      pending.push(output.length);
+      pendingByTurn.set(entry.turnId, pending);
+      output.push(entry);
+      continue;
+    }
+    const index = pending.shift();
+    const existing = index === undefined ? undefined : output[index];
+    if (index === undefined || !existing || existing.item.type !== "compaction") {
+      output.push(entry);
+      continue;
+    }
+    output[index] = {
+      ...existing,
+      item: { ...existing.item, ...entry.item },
+      seqEnd: entry.seqEnd,
+      sourceSeqRanges: mergeSeqRanges(existing.sourceSeqRanges, entry.sourceSeqRanges),
+    };
+  }
   return output;
 }
 
@@ -295,7 +333,7 @@ export function projectTimelineRows(input: {
   }
 
   const toolCollapsed = collapseToolLifecycle(canonical);
-  const assistantMerged = mergeAssistantChunks(toolCollapsed);
+  const assistantMerged = mergeAssistantChunks(collapseCompactionLifecycle(toolCollapsed));
   return mergeReasoningChunks(assistantMerged);
 }
 
@@ -311,8 +349,7 @@ export function selectTimelineWindowByProjectedLimit(input: {
 }): ProjectedWindowSelection {
   const { rows, direction } = input;
   const limit = Math.max(0, Math.floor(input.limit));
-  const canonical = makeCanonicalEntries(rows);
-  const projectedAll = mergeReasoningChunks(mergeAssistantChunks(collapseToolLifecycle(canonical)));
+  const projectedAll = projectTimelineRows({ rows, mode: "projected" });
 
   if (projectedAll.length === 0) {
     return {

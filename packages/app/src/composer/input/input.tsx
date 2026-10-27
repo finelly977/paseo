@@ -24,7 +24,7 @@ import {
 } from "react";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
-import { MOTION_DURATION, MOTION_EASING_CSS, MOTION_PRESS_SCALE } from "@/styles/motion";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { ArrowUp, Mic, MicOff, CornerDownLeft, Plus, Square } from "lucide-react-native";
 import {
@@ -1725,10 +1725,9 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       () => [
         styles.inputWrapper,
         inputWrapperStyle,
-        isInputFocused ? styles.inputWrapperFocused : null,
         { opacity: surfacePresentation.input.opacity },
       ],
-      [inputWrapperStyle, isInputFocused, surfacePresentation.input.opacity],
+      [inputWrapperStyle, surfacePresentation.input.opacity],
     );
     const textInputStyle = useMemo(
       () => [
@@ -1952,17 +1951,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
     ...(isWeb
       ? {
           boxShadow: "0 4px 20px rgba(0, 0, 0, 0.035)",
-          transitionProperty: "border-color, box-shadow",
-          transitionDuration: `${MOTION_DURATION.base}ms`,
-          transitionTimingFunction: MOTION_EASING_CSS.standard,
-        }
-      : {}),
-  },
-  inputWrapperFocused: {
-    borderColor: theme.colors.foregroundExtraMuted,
-    ...(isWeb
-      ? {
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.075)",
         }
       : {}),
   },

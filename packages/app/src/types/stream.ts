@@ -1451,6 +1451,8 @@ function appendAgentToolCall(
   state: StreamItem[],
   data: AgentToolCallData,
   timestamp: Date,
+  timelineCursor?: TimelinePosition,
+  turnId?: string,
 ): StreamItem[] {
   const existingIndex = findExistingAgentToolCallIndex(state, data.callId);
 
@@ -1459,7 +1461,8 @@ function appendAgentToolCall(
     if (!existing || !isAgentToolCallItem(existing)) {
       return state;
     }
-    const merged = mergeAgentToolCallItem(existing, data, timestamp);
+    const merged = mergeAgentToolCallItem(existing, data, timestamp, timelineCursor);
+    if (turnId) merged.turnId = turnId;
 
     if (
       merged.payload.data.provider === existing.payload.data.provider &&
@@ -1468,7 +1471,9 @@ function appendAgentToolCall(
       merged.payload.data.status === existing.payload.data.status &&
       merged.payload.data.error === existing.payload.data.error &&
       merged.payload.data.detail === existing.payload.data.detail &&
-      merged.payload.data.metadata === existing.payload.data.metadata
+      merged.payload.data.metadata === existing.payload.data.metadata &&
+      merged.timelineCursor === existing.timelineCursor &&
+      merged.turnId === existing.turnId
     ) {
       return state;
     }
@@ -1482,6 +1487,8 @@ function appendAgentToolCall(
     kind: "tool_call",
     id: `agent_tool_${data.callId}`,
     timestamp,
+    ...(timelineCursor ? { timelineCursor } : {}),
+    ...(turnId ? { turnId } : {}),
     payload: {
       source: "agent",
       data: {
@@ -1510,7 +1517,9 @@ function appendTodoList(
   items: TodoEntry[],
   timestamp: Date,
   timelineCursor?: TimelinePosition,
+  turnId?: string,
 ): StreamItem[] {
+  const turnMembership = turnId ? { turnId } : {};
   const normalizedItems = items.map((item) => ({
     text: item.text,
     completed: item.completed,
@@ -1531,6 +1540,7 @@ function appendTodoList(
     const next = [...state];
     next[previousIndex] = {
       ...previous,
+      ...turnMembership,
       ...(timelineCursor ? { timelineCursor } : {}),
       items: normalizedItems,
       timestamp,
@@ -1550,6 +1560,7 @@ function appendTodoList(
     const next = [...state];
     next[next.length - 1] = {
       ...lastItem,
+      ...turnMembership,
       ...(timelineCursor ? { timelineCursor } : {}),
       items: normalizedItems,
       activity: { type: "created", count: normalizedItems.length },
@@ -1563,6 +1574,7 @@ function appendTodoList(
     const idSeed = `${provider}:${JSON.stringify(activity)}:${JSON.stringify(normalizedItems)}`;
     next.push({
       kind: "todo_list",
+      ...turnMembership,
       id: createUniqueTimelineId(next, "todo", idSeed, timestamp),
       ...(timelineCursor ? { timelineCursor } : {}),
       timestamp,
@@ -1643,6 +1655,7 @@ function reduceTimelineToolCall(
       tasks.map((entry) => ({ text: entry.text, completed: entry.completed })),
       timestamp,
       timelineCursor,
+      event.turnId,
     );
   }
 
@@ -1663,6 +1676,7 @@ function reduceTimelineToolCall(
       tasks.map((entry) => ({ text: entry.text, completed: entry.completed })),
       timestamp,
       timelineCursor,
+      event.turnId,
     );
   }
 
@@ -1678,6 +1692,8 @@ function reduceTimelineToolCall(
       metadata: item.metadata,
     },
     timestamp,
+    timelineCursor,
+    event.turnId,
   );
 }
 
@@ -1688,13 +1704,22 @@ function reduceTimelineCompaction(
     { type: "compaction" }
   >,
   timestamp: Date,
+  timelineCursor?: TimelinePosition,
+  turnId?: string,
 ): StreamItem[] {
   if (item.status === "completed") {
-    const loadingIdx = state.findIndex((s) => s.kind === "compaction" && s.status === "loading");
+    const loadingIdx = state.findIndex(
+      (s) =>
+        s.kind === "compaction" &&
+        s.status === "loading" &&
+        (turnId === undefined || s.turnId === undefined || s.turnId === turnId),
+    );
     const existing = loadingIdx >= 0 ? state[loadingIdx] : undefined;
     if (loadingIdx >= 0 && existing && existing.kind === "compaction") {
       const updated: CompactionItem = {
         ...existing,
+        ...(timelineCursor ? { timelineCursor } : {}),
+        ...(turnId ? { turnId } : {}),
         status: "completed",
         trigger: item.trigger ?? existing.trigger,
         preTokens: item.preTokens ?? existing.preTokens,
@@ -1709,6 +1734,8 @@ function reduceTimelineCompaction(
     kind: "compaction",
     id: createTimelineId("compaction", item.status, timestamp),
     timestamp,
+    ...(timelineCursor ? { timelineCursor } : {}),
+    ...(turnId ? { turnId } : {}),
     status: item.status,
     trigger: item.trigger,
     preTokens: item.preTokens,
@@ -1811,7 +1838,9 @@ function reduceTimelineEvent(
       return finalizeActiveThoughts(appendActivityLog(state, activity));
     }
     case "compaction":
-      return finalizeActiveThoughts(reduceTimelineCompaction(state, item, timestamp));
+      return finalizeActiveThoughts(
+        reduceTimelineCompaction(state, item, timestamp, timelineCursor, event.turnId),
+      );
     default:
       return state;
   }
@@ -1860,6 +1889,8 @@ function applyTimelineTurnId(
   items: StreamItem[],
   event: Extract<AgentStreamEventPayload, { type: "timeline" }>,
 ): StreamItem[] {
+  // 生命周期更新可能落在任意旧行，回合身份由各自的归并器更新。
+  if (event.item.type === "tool_call" || event.item.type === "compaction") return items;
   const clientMessageId =
     event.item.type === "user_message" ? event.item.clientMessageId : undefined;
   if (clientMessageId) {

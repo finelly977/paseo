@@ -614,9 +614,21 @@ function projectedItemIdentity(item: StreamItem): string | null {
   return null;
 }
 
+function matchesProjectedCompaction(
+  candidate: StreamItem,
+  position: { epoch: string; seq: number },
+  unit: TimelineUnit | undefined,
+): boolean {
+  if (candidate.kind !== "compaction" || !candidate.timelineCursor || !unit) return false;
+  if (candidate.timelineCursor.epoch !== position.epoch) return false;
+  const seq = candidate.timelineCursor.seq;
+  return unit.sourceSeqRanges.some((range) => range.startSeq <= seq && seq <= range.endSeq);
+}
+
 function mergePrependedProjectedTail(
   olderTail: StreamItem[],
   currentTail: StreamItem[],
+  units: TimelineUnit[],
 ): StreamItem[] {
   const existingByIdentity = new Map<string, StreamItem>();
   for (const item of currentTail) {
@@ -624,11 +636,32 @@ function mergePrependedProjectedTail(
     if (identity !== null) existingByIdentity.set(identity, item);
   }
   const claimed = new Set<string>();
+  const compactionUnits = new Map(
+    units
+      .filter((unit) => unit.event.type === "timeline" && unit.event.item.type === "compaction")
+      .map((unit) => [unit.seqEnd, unit]),
+  );
   const prepended = olderTail.map((item) => {
     const identity = projectedItemIdentity(item);
-    const existing = identity === null ? undefined : existingByIdentity.get(identity);
+    let existing = identity === null ? undefined : existingByIdentity.get(identity);
+    if (!existing && item.kind === "compaction" && item.timelineCursor) {
+      const position = item.timelineCursor;
+      const unit = compactionUnits.get(position.seq);
+      existing = currentTail.find((candidate) =>
+        matchesProjectedCompaction(candidate, position, unit),
+      );
+    }
     if (!existing || identity === null) return item;
     claimed.add(identity);
+    const existingIdentity = projectedItemIdentity(existing);
+    if (existingIdentity !== null) claimed.add(existingIdentity);
+    if (item.kind === "compaction" && existing.kind === "compaction") {
+      return {
+        ...item,
+        id: existing.id,
+        status: existing.status === "completed" ? existing.status : item.status,
+      };
+    }
     if (isAgentToolCallItem(item) && isAgentToolCallItem(existing)) {
       const merged = mergeAgentToolCallItem(
         item,
@@ -1023,7 +1056,7 @@ function applyTimelineIncrementalPath(args: {
       );
       nextTail =
         payload.projection === "projected"
-          ? mergePrependedProjectedTail(olderTail, currentTail)
+          ? mergePrependedProjectedTail(olderTail, currentTail, acceptedUnits)
           : mergePrependedCanonicalTail(olderTail, currentTail);
     } else {
       const applied = applyAcceptedForwardTimelineUnits({
