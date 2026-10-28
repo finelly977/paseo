@@ -156,6 +156,7 @@ export function createFakeCodexAppServer(
       ],
     }),
     "skills/list": () => ({ data: [] }),
+    "plugin/installed": () => ({ marketplaces: [] }),
     "thread/start": () => ({ thread: { id: "thread-1" } }),
     "thread/loaded/list": () => ({ data: [] }),
     "thread/resume": () => ({}),

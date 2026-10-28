@@ -53,25 +53,24 @@ export function getGapBetweenStreamItems(
     return 0;
   }
 
-  // 横线可能独占一个流条目，也可能位于下一段正文开头；两侧都只保留横线自身留白。
-  if (hasAssistantDividerAtEdge(item, "last") || hasAssistantDividerAtEdge(belowItem, "first")) {
-    return 0;
-  }
-
   const compactSpacing = Math.round(messageSpacing / 3);
   const relatedSpacing = Math.round((messageSpacing * 2) / 3);
 
-  if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
-    return compactSpacing;
+  // 用户回合边界不能被正文分隔线吞掉。
+  if (isUserMessageItem(belowItem)) {
+    return isUserMessageItem(item) ? compactSpacing : messageSpacing;
+  }
+  if (isUserMessageItem(item)) {
+    return isToolSequenceItem(belowItem) ? relatedSpacing : messageSpacing;
+  }
+  if (hasAssistantDividerAtEdge(item, "last") || hasAssistantDividerAtEdge(belowItem, "first")) {
+    return 0;
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return 0;
   }
   if (item.kind === "compaction" || belowItem.kind === "compaction") {
     return 0;
-  }
-  if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
-    return relatedSpacing;
   }
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
     return compactSpacing;

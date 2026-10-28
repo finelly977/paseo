@@ -22,6 +22,7 @@ import {
   CodexAppServerAgentSession,
   codexAppServerTurnInputFromPrompt,
   listCodexSkills,
+  listCodexInstalledPluginSkills,
   mapCodexPatchNotificationToToolCall,
   mapCodexPlanUpdateToTodo,
   mapCodexPlanToToolCall,
@@ -29,6 +30,82 @@ import {
   threadItemToTimeline,
   toAgentUsage,
 } from "./codex-app-server-agent.js";
+
+test("草稿目录读取原生启用的插件版本，排除旧缓存和停用插件", async () => {
+  const home = await mkdtemp(path.join(tmpdir(), "codex-plugin-skills-"));
+  const skillPath = path.join(
+    home,
+    "plugins/cache/official/remotion/4.0.534/skills/render/SKILL.md",
+  );
+  mkdirSync(path.dirname(skillPath), { recursive: true });
+  const manifestPath = path.join(
+    home,
+    "plugins/cache/official/remotion/4.0.534/.codex-plugin/plugin.json",
+  );
+  mkdirSync(path.dirname(manifestPath), { recursive: true });
+  writeFileSync(manifestPath, JSON.stringify({ skills: "./skills" }));
+  const connectorManifest = path.join(
+    home,
+    "plugins/cache/official/connector/1/.codex-plugin/plugin.json",
+  );
+  mkdirSync(path.dirname(connectorManifest), { recursive: true });
+  writeFileSync(connectorManifest, JSON.stringify({ name: "connector" }));
+  writeFileSync(skillPath, "---\nname: remotion-render\ndescription: 渲染视频\n---\n正文");
+  const request = vi.fn(async () => ({
+    marketplaces: [
+      {
+        name: "official",
+        plugins: [
+          {
+            name: "remotion",
+            remotePluginId: "remote-remotion",
+            version: "4.0.534",
+            installed: true,
+            enabled: true,
+          },
+          {
+            name: "disabled",
+            remotePluginId: "remote-disabled",
+            version: "1",
+            installed: true,
+            enabled: false,
+          },
+          {
+            name: "connector",
+            remotePluginId: "remote-connector",
+            version: "1",
+            installed: true,
+            enabled: true,
+          },
+          {
+            name: "uninstalled",
+            remotePluginId: "remote-uninstalled",
+            version: "1",
+            installed: false,
+            enabled: true,
+          },
+        ],
+      },
+    ],
+  }));
+  try {
+    await expect(
+      listCodexInstalledPluginSkills({ client: { request }, cwd: "/repo", codexHome: home }),
+    ).resolves.toEqual([
+      { name: "remotion:remotion-render", description: "渲染视频", path: skillPath },
+    ]);
+    expect(request).toHaveBeenCalledWith("plugin/installed", { cwds: ["/repo"] });
+    await expect(
+      listCodexInstalledPluginSkills({
+        client: { request: async () => ({}) },
+        cwd: "/repo",
+        codexHome: home,
+      }),
+    ).rejects.toThrow();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 describe("mapCodexPlanUpdateToTodo", () => {
   test("preserves checklist progress without creating a plan card", () => {
@@ -555,6 +632,7 @@ function record(method, params) {
 function resultFor(method) {
   if (method === "initialize") return {};
   if (method === "collaborationMode/list") return { data: [] };
+  if (method === "plugin/installed") return { marketplaces: [] };
   if (method === "skills/list") return { data: [] };
   if (method === "config/read") return { config: {} };
   if (method === "getUserSavedConfig") return { config: {} };
@@ -632,6 +710,7 @@ function resultFor(method, params) {
   if (method === "config/read") return { config: {} };
   if (method === "model/list") return { data: [{ id: "gpt-5.4", isDefault: true, defaultReasoningEffort: "medium" }] };
   if (method === "collaborationMode/list") return { data: [] };
+  if (method === "plugin/installed") return { marketplaces: [] };
   if (method === "skills/list") {
     const cwds = params && params.cwds;
     const projectCwd = "/tmp/codex-question-test";
@@ -684,6 +763,36 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test("Codex 草稿未选择模型也能列出技能，不创建会话或读取模型目录", async () => {
+    const appServer = createFakeCodexAppServer({
+      "skills/list": () => ({
+        data: [
+          {
+            skills: [{ name: "render", description: "渲染视频", path: "/skills/render/SKILL.md" }],
+          },
+        ],
+      }),
+    });
+    const provider = new CodexAppServerAgentClient(createTestLogger(), undefined, {
+      spawnAppServer: () => appServer.spawnChild(),
+      resolveCodexVersion: async () => "codex-cli 0.164.0",
+    });
+    const commands = await provider.listCommands({ provider: "codex", cwd: "/repo" });
+    expect(commands).toContainEqual({
+      name: "render",
+      description: "渲染视频",
+      argumentHint: "",
+      kind: "skill",
+    });
+    expect(appServer.requests().map((request) => request.method)).toEqual([
+      "initialize",
+      "initialized",
+      "skills/list",
+      "plugin/installed",
+    ]);
+    appServer.assertNoErrors();
+  });
+
   test.each([
     { name: "新建", handle: null, method: "thread/start" },
     { name: "恢复", handle: { sessionId: "thread-1" }, method: "thread/resume" },
@@ -2784,6 +2893,7 @@ describe("Codex app-server provider", () => {
   test("resolves Codex skill slash commands into app-server skill input", async () => {
     const session = createSession();
     const request = vi.fn(async (method: string) => {
+      if (method === "plugin/installed") return { marketplaces: [] };
       if (method === "skills/list") {
         return {
           data: [
@@ -5514,6 +5624,7 @@ describe("Codex app-server provider", () => {
         if (method === "thread/loaded/list") {
           return { data: ["test-thread"] };
         }
+        if (method === "plugin/installed") return { marketplaces: [] };
         if (method === "skills/list") {
           return { data: [] };
         }

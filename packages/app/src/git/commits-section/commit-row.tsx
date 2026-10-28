@@ -585,7 +585,7 @@ const styles = StyleSheet.create((theme) => ({
   identityText: {
     flex: 1,
     minWidth: 0,
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundSidebar,
   },
   subject: {
@@ -613,7 +613,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   reference: {
     maxWidth: 132,
-    height: 18,
+    height: 22,
     paddingHorizontal: 4,
     flexDirection: "row",
     alignItems: "center",
@@ -628,14 +628,14 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmGraphTagBackground,
   },
   referenceRemoteIconOnly: {
-    width: 18,
+    width: 22,
     paddingHorizontal: 0,
     justifyContent: "center",
   },
   referenceText: {
     flexShrink: 1,
-    fontSize: 11,
-    lineHeight: 13,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.scmGraphCurrentRefForeground,
   },
   referenceTextTag: {
@@ -655,7 +655,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface3,
   },
   caret: {
-    width: 18,
+    width: 22,
     height: 20,
     alignItems: "center",
     justifyContent: "center",
@@ -682,20 +682,20 @@ const styles = StyleSheet.create((theme) => ({
     gap: 6,
   },
   fileName: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundSidebar,
     flexShrink: 0,
   },
   fileDirectory: {
     flex: 1,
     minWidth: 0,
-    fontSize: 11,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
   },
   fileStatus: {
-    width: 18,
+    width: 22,
     textAlign: "center",
-    fontSize: 12,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
   },
   tooltipSurface: {
@@ -722,21 +722,21 @@ const styles = StyleSheet.create((theme) => ({
     gap: 4,
   },
   tooltipAuthor: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.scmGraphLinkForeground,
   },
   tooltipMessage: {
     marginTop: 4,
     maxWidth: 420,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.popoverForeground,
   },
   tooltipMetadata: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.foregroundMuted,
   },
   tooltipSeparator: {
@@ -749,8 +749,8 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   tooltipStatsText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.popoverForeground,
   },
   tooltipAdditions: {
@@ -777,8 +777,8 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmGraphCurrentRefBackground,
   },
   tooltipReferenceText: {
-    fontSize: 12,
-    lineHeight: 14,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
   },
   tooltipReferenceTextBranch: {
     color: theme.colors.scmGraphCurrentRefForeground,
@@ -793,7 +793,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   tooltipSha: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: theme.fontSize.code,
     lineHeight: 16,
     fontFamily: theme.fontFamily.mono,
     color: theme.colors.scmGraphLinkForeground,
@@ -810,8 +810,8 @@ const styles = StyleSheet.create((theme) => ({
     gap: 4,
   },
   tooltipOpenLinkText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: theme.fontSize.base,
+    lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.scmGraphLinkForeground,
   },
 }));

@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import React, { useMemo, type ReactNode } from "react";
 import { Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native";
 import Markdown, { type ASTNode } from "react-native-markdown-display";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { createMarkdownStyles } from "@/styles/markdown-styles";
 import { getMarkdownListMarker } from "@/utils/markdown-list";
 import { createMarkdownParser } from "@/utils/markdown-parser";
+import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 
 // 不显式传入解析器时，react-native-markdown-display 会启用排版字符替换，
 // 把计划中的 `(c)` 改成 ©。计划卡片沿用原行为，不自动链接裸 URL。
@@ -17,13 +18,19 @@ function MarkdownInlineText({
   inheritedStyle,
   ruleStyle,
   children,
+  code = false,
 }: {
   inheritedStyle: StyleProp<TextStyle>;
   ruleStyle: StyleProp<TextStyle>;
   children: ReactNode;
+  code?: boolean;
 }) {
   const style = useMemo(() => [inheritedStyle, ruleStyle], [inheritedStyle, ruleStyle]);
-  return <Text style={style}>{children}</Text>;
+  return (
+    <Text style={style} dataSet={code ? CODE_SURFACE_DATASET : undefined}>
+      {children}
+    </Text>
+  );
 }
 
 function MarkdownListItemContent({
@@ -92,6 +99,7 @@ function createPlanMarkdownRules() {
         key={node.key}
         inheritedStyle={inheritedStyles}
         ruleStyle={styles.code_block}
+        code
       >
         {node.content}
       </MarkdownInlineText>
@@ -103,7 +111,12 @@ function createPlanMarkdownRules() {
       styles: MarkdownRuleStyles,
       inheritedStyles: TextStyle = {},
     ) => (
-      <MarkdownInlineText key={node.key} inheritedStyle={inheritedStyles} ruleStyle={styles.fence}>
+      <MarkdownInlineText
+        key={node.key}
+        inheritedStyle={inheritedStyles}
+        ruleStyle={styles.fence}
+        code
+      >
         {node.content}
       </MarkdownInlineText>
     ),
@@ -118,6 +131,7 @@ function createPlanMarkdownRules() {
         key={node.key}
         inheritedStyle={inheritedStyles}
         ruleStyle={styles.code_inline}
+        code
       >
         {node.content}
       </MarkdownInlineText>

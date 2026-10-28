@@ -470,11 +470,11 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   title: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundSidebar,
   },
   count: {
-    fontSize: 12,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
   },
   body: {
@@ -495,17 +495,17 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[2],
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
   },
   errorRow: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.statusDanger,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[2],
   },
   unsupportedText: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[2],

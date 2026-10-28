@@ -505,19 +505,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   fileName: {
     color: theme.colors.foregroundSidebar,
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     flexShrink: 0,
   },
   fileDirectory: {
     color: theme.colors.foregroundMuted,
-    fontSize: 11,
+    fontSize: theme.fontSize.base,
     flex: 1,
     minWidth: 0,
   },
   statusText: {
     width: 18,
     textAlign: "center",
-    fontSize: 12,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
   },
   statusAdded: {

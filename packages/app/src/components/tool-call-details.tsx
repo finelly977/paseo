@@ -10,6 +10,7 @@ import { ScrollView as GHScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { TwoAxisScrollView } from "@/components/ui/two-axis-scroll-view";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import {
@@ -161,27 +162,19 @@ function ShellDetailSection({ command, output, ds }: ShellDetailProps) {
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
-        <ScrollView
+        <TwoAxisScrollView
           style={ds.codeVerticalScrollStyle}
           contentContainerStyle={styles.codeVerticalContent}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
+          horizontalContentContainerStyle={styles.codeHorizontalContent}
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
-            <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={styles.scrollText}>
-                <Text style={styles.shellPrompt}>$ </Text>
-                {normalizedCommand}
-                {hasOutput ? `\n\n${commandOutput}` : ""}
-              </Text>
-            </View>
-          </ScrollView>
-        </ScrollView>
+          <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+            <Text selectable style={styles.scrollText}>
+              <Text style={styles.shellPrompt}>$ </Text>
+              {normalizedCommand}
+              {hasOutput ? `\n\n${commandOutput}` : ""}
+            </Text>
+          </View>
+        </TwoAxisScrollView>
       </View>
     </View>
   );
@@ -205,25 +198,17 @@ function WorktreeSetupDetailSection({
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
-        <ScrollView
+        <TwoAxisScrollView
           style={ds.codeVerticalScrollStyle}
           contentContainerStyle={styles.codeVerticalContent}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
+          horizontalContentContainerStyle={styles.codeHorizontalContent}
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
-            <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              <Text selectable style={styles.scrollText}>
-                {hasLog ? setupLog : `Preparing worktree ${branchName} at ${worktreePath}`}
-              </Text>
-            </View>
-          </ScrollView>
-        </ScrollView>
+          <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+            <Text selectable style={styles.scrollText}>
+              {hasLog ? setupLog : `Preparing worktree ${branchName} at ${worktreePath}`}
+            </Text>
+          </View>
+        </TwoAxisScrollView>
       </View>
     </View>
   );
@@ -369,39 +354,31 @@ function SubAgentDetailSection({
   return (
     <View style={ds.sectionFillStyle}>
       <View style={ds.codeBlockFillStyle}>
-        <ScrollView
+        <TwoAxisScrollView
           style={ds.codeVerticalScrollStyle}
           contentContainerStyle={styles.codeVerticalContent}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
+          horizontalContentContainerStyle={styles.codeHorizontalContent}
         >
-          <ScrollView
-            horizontal
-            nestedScrollEnabled
-            showsHorizontalScrollIndicator
-            contentContainerStyle={styles.codeHorizontalContent}
-          >
-            <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
-              {childSessionId ? (
-                <Text selectable style={styles.subAgentSessionText}>
-                  session {childSessionId}
-                </Text>
-              ) : null}
-              {hasActions ? (
-                <View style={styles.subAgentActions}>
-                  {actions.map((action) => (
-                    <SubAgentActionRow key={action.index} action={action} />
-                  ))}
-                </View>
-              ) : null}
-              <SubAgentLogText
-                activityLog={remainingLog}
-                fallbackHeader={fallbackHeader}
-                hasActions={hasActions}
-              />
-            </View>
-          </ScrollView>
-        </ScrollView>
+          <View style={styles.codeLine} dataSet={CODE_SURFACE_DATASET}>
+            {childSessionId ? (
+              <Text selectable style={styles.subAgentSessionText}>
+                session {childSessionId}
+              </Text>
+            ) : null}
+            {hasActions ? (
+              <View style={styles.subAgentActions}>
+                {actions.map((action) => (
+                  <SubAgentActionRow key={action.index} action={action} />
+                ))}
+              </View>
+            ) : null}
+            <SubAgentLogText
+              activityLog={remainingLog}
+              fallbackHeader={fallbackHeader}
+              hasActions={hasActions}
+            />
+          </View>
+        </TwoAxisScrollView>
       </View>
     </View>
   );
@@ -467,22 +444,15 @@ function ScrollableTextSection({
     [content, filePath],
   );
   const body = (
-    <ScrollView
-      style={ds.scrollAreaFillStyle}
-      contentContainerStyle={styles.scrollContent}
-      nestedScrollEnabled
-      showsVerticalScrollIndicator={true}
-    >
-      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={true}>
-        {keyedLines ? (
-          <HighlightedLines lines={keyedLines} startLine={startLine} />
-        ) : (
-          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-            {content}
-          </Text>
-        )}
-      </ScrollView>
-    </ScrollView>
+    <TwoAxisScrollView style={ds.scrollAreaFillStyle} contentContainerStyle={styles.scrollContent}>
+      {keyedLines ? (
+        <HighlightedLines lines={keyedLines} startLine={startLine} />
+      ) : (
+        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+          {content}
+        </Text>
+      )}
+    </TwoAxisScrollView>
   );
   if (!wrapInSectionFill) return body;
   return <View style={ds.sectionFillStyle}>{body}</View>;
@@ -497,18 +467,14 @@ interface FetchDetailProps {
 function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
   return (
     <View style={ds.sectionFillStyle}>
-      <ScrollView
+      <TwoAxisScrollView
         style={ds.scrollAreaFillStyle}
         contentContainerStyle={styles.scrollContent}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
       >
-        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
-          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-            {result ? `${url}\n\n${result}` : url}
-          </Text>
-        </ScrollView>
-      </ScrollView>
+        <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+          {result ? `${url}\n\n${result}` : url}
+        </Text>
+      </TwoAxisScrollView>
     </View>
   );
 }
@@ -543,18 +509,11 @@ function buildSearchSections(detail: SearchDetail, ds: DetailStyles): ReactNode[
   if (detail.content) {
     out.push(
       <View key="search-content" style={styles.section}>
-        <ScrollView
-          style={ds.scrollAreaStyle}
-          contentContainerStyle={styles.scrollContent}
-          nestedScrollEnabled
-          showsVerticalScrollIndicator
-        >
-          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
-            <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
-              {detail.content}
-            </Text>
-          </ScrollView>
-        </ScrollView>
+        <TwoAxisScrollView style={ds.scrollAreaStyle} contentContainerStyle={styles.scrollContent}>
+          <Text selectable style={styles.scrollText} dataSet={CODE_SURFACE_DATASET}>
+            {detail.content}
+          </Text>
+        </TwoAxisScrollView>
       </View>,
     );
   }

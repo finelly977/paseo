@@ -1571,7 +1571,7 @@ const styles = StyleSheet.create((theme) => ({
     overflow: "hidden",
   },
   avatarText: {
-    fontSize: 10,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     color: "#fff",
   },

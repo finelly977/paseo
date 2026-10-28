@@ -221,9 +221,6 @@ const WEB_TOOLCALL_SHIMMER_KEYFRAME_CSS = `
 let webToolCallShimmerRegistered = false;
 const SCROLL_EDGE_EPSILON = 0.5;
 
-// Font size for stream metadata (timestamps, durations, live elapsed timer).
-// Lives between theme.fontSize.xs (12) and theme.fontSize.sm (14); no token.
-export const STREAM_METADATA_FONT_SIZE = 13;
 type ScrollAxis = "x" | "y";
 
 function ensureWebToolCallShimmerKeyframes() {
@@ -376,8 +373,8 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.userMessageBackground,
     borderRadius: theme.borderRadius["2xl"],
     borderTopRightRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[4],
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
     minWidth: 0,
     flexShrink: 1,
   },
@@ -442,7 +439,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   },
   timestampText: {
     color: theme.colors.foregroundMuted,
-    fontSize: STREAM_METADATA_FONT_SIZE,
+    fontSize: theme.fontSize.base,
     fontVariant: ["tabular-nums"],
   },
 }));
@@ -791,7 +788,8 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
   },
   labelSizer: {
     color: theme.colors.foregroundMuted,
-    fontSize: 11,
+    fontFamily: theme.fontFamily.ui,
+    fontSize: theme.fontSize.xs,
     opacity: 0,
   },
   labelOverlay: {
@@ -799,7 +797,8 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     top: 0,
     left: 0,
     color: theme.colors.foregroundMuted,
-    fontSize: 11,
+    fontFamily: theme.fontFamily.ui,
+    fontSize: theme.fontSize.xs,
   },
 }));
 
@@ -2420,7 +2419,7 @@ const compactionStylesheet = StyleSheet.create((theme) => ({
   },
   text: {
     fontFamily: theme.fontFamily.ui,
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foregroundMuted,
   },
 }));

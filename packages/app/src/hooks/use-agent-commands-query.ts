@@ -4,7 +4,6 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { agentCommandsQueryKey, type AgentCommandsDraftConfig } from "@/hooks/agent-commands-query";
 
-const DRAFT_COMMANDS_STALE_TIME = Number.POSITIVE_INFINITY;
 const SESSION_COMMANDS_STALE_TIME = 60_000;
 
 export interface AgentSlashCommand {
@@ -34,6 +33,7 @@ export async function fetchAgentCommands(input: {
     agentId: input.agentId,
     draftConfig: input.draftConfig,
   });
+  if (response.error) throw new Error(response.error);
   return response.commands as AgentSlashCommand[];
 }
 
@@ -63,7 +63,7 @@ export function useAgentCommandsQuery({
       return fetchAgentCommands({ client, agentId, draftConfig });
     },
     enabled: enabled && !!client && isConnected && (!!agentId || !!draftConfig),
-    staleTime: draftConfig ? DRAFT_COMMANDS_STALE_TIME : SESSION_COMMANDS_STALE_TIME,
+    staleTime: SESSION_COMMANDS_STALE_TIME,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
   });

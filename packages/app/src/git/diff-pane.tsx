@@ -3103,7 +3103,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   statusLetter: {
-    fontSize: 11,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
   },
   statusLetterModified: {
@@ -3121,14 +3121,14 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   fileName: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foreground,
     flexShrink: 1,
     minWidth: 0,
   },
   fileDir: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundMuted,
     flex: 1,

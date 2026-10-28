@@ -127,6 +127,15 @@ describe("getAssistantBlockSpacing", () => {
 });
 
 describe("getGapBetweenStreamItems", () => {
+  it("用户卡片与回复边界始终保留消息间距，即使回复以横线开头或结尾", () => {
+    const user = { kind: "user_message", id: "user", text: "继续", timestamp: new Date() } as const;
+    for (const text of ["---", "正文\n\n---", "---\n\n正文"]) {
+      const assistant = assistantBlock({ id: text, blockGroupId: "answer", blockIndex: 0, text });
+      expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(24);
+      expect(getGapBetweenStreamItems(user, assistant, 24)).toBe(24);
+    }
+  });
+
   it("独立横线两侧由横线自身留白，不再叠加消息间距", () => {
     const divider = assistantBlock({
       id: "divider",

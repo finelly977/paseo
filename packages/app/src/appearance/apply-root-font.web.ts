@@ -5,13 +5,14 @@
 // font. Instead we inject ONE rule that points all text at a CSS variable and set
 // that variable live. The selector is high-specificity (1,2,0) so it deterministically
 // beats both RN-web's base font and Unistyles' generated classes (0,1,0) — no reliance
-// on stylesheet order. Code/diff/terminal surfaces carry `data-pmono` (and have their
+// on stylesheet order. Modal 可能直接挂到 body 下，必须与主界面共用字体规则。
+// Code/diff/terminal surfaces carry `data-pmono` (and have their
 // subtree excluded via `:not([data-pmono] *)`) so they keep their monospace font.
 const STYLE_ID = "paseo-ui-font";
 const RULE =
-  ":is(#root, #overlay-root) *:not([data-pmono]):not([data-pmono] *){font-family:var(--paseo-ui-font);}";
+  ":is(body, #root, #overlay-root) *:not([data-pmono]):not([data-pmono] *){font-family:var(--paseo-ui-font);font-size:var(--paseo-ui-font-size)!important;}";
 
-export function applyRootUiFont(uiFontStack: string): void {
+export function applyRootUiFont(uiFontStack: string, uiFontSize: number): void {
   if (typeof document === "undefined") return;
   // Strip anything that could break out of the CSS value; commas/quotes/spaces in a
   // font stack are fine.
@@ -22,6 +23,8 @@ export function applyRootUiFont(uiFontStack: string): void {
   if (value.length === 0) return;
 
   document.documentElement.style.setProperty("--paseo-ui-font", value);
+
+  document.documentElement.style.setProperty("--paseo-ui-font-size", `${uiFontSize}px`);
 
   // The rule itself is static (references the variable); inject it once.
   let style = document.getElementById(STYLE_ID);

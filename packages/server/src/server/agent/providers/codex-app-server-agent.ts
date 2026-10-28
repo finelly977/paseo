@@ -897,6 +897,77 @@ export async function listCodexSkills(
   return Array.from(commandsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const InstalledPluginsSchema = z.object({
+  marketplaceLoadErrors: z.array(z.object({ message: z.string() })).default([]),
+  marketplaces: z.array(
+    z.object({
+      name: z.string().regex(/^[\w.-]+$/),
+      plugins: z.array(
+        z.object({
+          name: z.string().regex(/^[\w.-]+$/),
+          remotePluginId: z.string().nullable(),
+          version: z.string().nullable(),
+          installed: z.boolean(),
+          enabled: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+});
+
+export async function listCodexInstalledPluginSkills(input: {
+  client: Pick<CodexAppServerClient, "request">;
+  cwd: string;
+  codexHome: string;
+}): Promise<Array<{ name: string; description: string; path: string }>> {
+  // 远程插件不在 skills/list 中。只读原生安装目录中的启用版本，不扫描旧版缓存。
+  const response = await input.client.request("plugin/installed", { cwds: [input.cwd] });
+  const { marketplaces, marketplaceLoadErrors } = InstalledPluginsSchema.parse(response);
+  if (marketplaceLoadErrors.length > 0) {
+    throw new AggregateError(
+      marketplaceLoadErrors.map((error) => new Error(error.message)),
+      "Codex plugin catalog could not be loaded",
+    );
+  }
+  const skills: Array<{ name: string; description: string; path: string }> = [];
+  for (const marketplace of marketplaces) {
+    for (const plugin of marketplace.plugins) {
+      if (!plugin.installed || !plugin.enabled || !plugin.remotePluginId) continue;
+      const version = z
+        .string()
+        .regex(/^[\w.-]+$/)
+        .parse(plugin.version);
+      const packageRoot = path.join(
+        input.codexHome,
+        "plugins",
+        "cache",
+        marketplace.name,
+        plugin.name,
+        version,
+      );
+      const manifest = z
+        .object({ skills: z.string().optional() })
+        .parse(
+          JSON.parse(
+            await fs.readFile(path.join(packageRoot, ".codex-plugin", "plugin.json"), "utf8"),
+          ),
+        );
+      if (manifest.skills === undefined) continue;
+      const root = path.resolve(packageRoot, manifest.skills);
+      const entries = await fs.readdir(root, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const skillPath = path.join(root, entry.name, "SKILL.md");
+        const { frontMatter } = parseFrontMatter(await fs.readFile(skillPath, "utf8"));
+        const name = z.string().min(1).parse(frontMatter.name);
+        const description = z.string().min(1).parse(frontMatter.description);
+        skills.push({ name: `${plugin.name}:${name}`, description, path: skillPath });
+      }
+    }
+  }
+  return skills;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -4216,8 +4287,6 @@ export class CodexAppServerAgentSession implements AgentSession {
 
     if (!this.connected) {
       await this.connect();
-    } else {
-      await this.loadSkills();
     }
     const skill = this.cachedSkills.find((entry) => entry.name === commandName);
     if (skill) {
@@ -5164,6 +5233,15 @@ export class CodexAppServerAgentSession implements AgentSession {
     } else {
       await this.loadSkills();
     }
+    if (!this.client) throw new Error("Codex command catalog requires a connected app-server");
+    const pluginSkills = await listCodexInstalledPluginSkills({
+      client: this.client,
+      cwd: this.config.cwd,
+      codexHome: resolveCodexHomeDir(),
+    });
+    const skillsByName = new Map(this.cachedSkills.map((skill) => [skill.name, skill]));
+    for (const skill of pluginSkills) skillsByName.set(skill.name, skill);
+    this.cachedSkills = Array.from(skillsByName.values());
     const appServerSkills = this.cachedSkills.map((skill) => ({
       name: skill.name,
       description: skill.description,
@@ -7535,6 +7613,78 @@ export class CodexAppServerAgentClient implements AgentClient {
     );
     await session.connect();
     return session;
+  }
+
+  async listCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
+    // 草稿只查目录，不解析模型、启动桌面工具或创建原生会话。
+    const child = await this.spawnAppServer();
+    const client =
+      this.deps._createCodexClient?.(child, this.logger, () => ({})) ??
+      new CodexAppServerClient(child, this.logger);
+    try {
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+      const response = z
+        .object({
+          data: z.array(
+            z.object({
+              skills: z.array(
+                z.object({
+                  name: z.string(),
+                  description: z.string(),
+                  path: z.string(),
+                }),
+              ),
+            }),
+          ),
+        })
+        .parse(await client.request("skills/list", { cwds: [config.cwd] }));
+      const skills = new Map<string, AgentSlashCommand>();
+      for (const entry of response.data) {
+        for (const skill of entry.skills) {
+          skills.set(skill.name, {
+            name: skill.name,
+            description: skill.description,
+            argumentHint: "",
+            kind: "skill",
+          });
+        }
+      }
+      const pluginSkills = await listCodexInstalledPluginSkills({
+        client,
+        cwd: config.cwd,
+        codexHome: resolveCodexHomeDir(),
+      });
+      for (const skill of pluginSkills) {
+        skills.set(skill.name, {
+          name: skill.name,
+          description: skill.description,
+          argumentHint: "",
+          kind: "skill",
+        });
+      }
+      const commands: AgentSlashCommand[] = [
+        {
+          name: "compact",
+          description: "Summarize conversation to prevent hitting the context limit",
+          argumentHint: "",
+          kind: "command",
+        },
+        ...skills.values(),
+        ...(await listCodexCustomPrompts()),
+      ];
+      if (await this.resolveGoalsEnabled()) {
+        commands.push({
+          name: "goal",
+          description: "Set, pause, resume, or clear the agent's goal",
+          argumentHint: "[<objective>|pause|resume|clear]",
+          kind: "command",
+        });
+      }
+      return commands.sort((a, b) => a.name.localeCompare(b.name));
+    } finally {
+      await client.dispose();
+    }
   }
 
   async resumeSession(

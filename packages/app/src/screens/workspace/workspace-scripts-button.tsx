@@ -851,7 +851,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   exitBadgeText: {
-    fontSize: 10,
+    fontSize: theme.fontSize.base,
     lineHeight: 12,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foregroundMuted,

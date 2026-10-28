@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
+import { TwoAxisScrollView } from "./two-axis-scroll-view";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
 import { isWeb } from "@/constants/platform";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
@@ -115,20 +116,19 @@ export function ScrollableCodeSurface({
       accessibilityLabel={accessibilityLabel}
       codeSurface
     >
-      <ScrollView
-        style={outerScrollStyle}
-        contentContainerStyle={contentStyle}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-      >
-        {horizontal ? (
-          <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator>
-            {codeContent}
-          </ScrollView>
-        ) : (
-          codeContent
-        )}
-      </ScrollView>
+      {horizontal ? (
+        <TwoAxisScrollView style={outerScrollStyle} contentContainerStyle={contentStyle}>
+          {codeContent}
+        </TwoAxisScrollView>
+      ) : (
+        <ScrollView
+          style={outerScrollStyle}
+          contentContainerStyle={contentStyle}
+          nestedScrollEnabled
+        >
+          {codeContent}
+        </ScrollView>
+      )}
     </SurfaceCard>
   );
 }

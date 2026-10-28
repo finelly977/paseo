@@ -125,7 +125,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     width: FILE_ACTIONS_MENU_WIDTH,
   },
   folderName: {
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foreground,
     flexShrink: 1,

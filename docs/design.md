@@ -30,9 +30,9 @@ Before adding a new component, read `components/ui/`. The primitive usually exis
 
 浅色主题使用白色正文画布、灰白侧栏与浅灰输入面，文字以深中性色分级，默认字号下普通与辅助文字保持至少 4.5:1 对比。蓝色统一用于链接、主要操作和 Git 定位，绿色仅用于成功状态；Git 远端与标签使用柔和底色和深色文字。浅色与深色分别持有语义色，不以整行透明度表示未选中会话。
 
-Hierarchy is conveyed through weight and color, not size. Most labels, titles, and hints across the app are `fontSize.base` or `fontSize.xs`. 设置项、设置分类及主机名称统一使用 `fontSize.sm`，默认 14 像素，与常驻工具界面的标签一致。 The distinction between a row's primary line and its secondary line is `foreground` versus `foregroundMuted`.
+界面普通文字统一使用“外观 → 界面字号”，默认 16 像素。标题、正文、菜单、设置、侧栏、Git 面板、按钮、时间戳和回合耗时不再使用不同字号；层级用字重、前景色和间距表达。所有非代码字号 token 映射到同一个设置值，网页同时覆盖 React Native Web 与 Markdown 渲染器自带的局部字号；代码区域通过 `data-pmono` 排除，代码、差异和终端继续使用独立代码字号。
 
-二开使用一套统一的界面与对话字号，默认值为 16 像素；“外观”设置中的界面字号会同步缩放标题、消息正文、输入框和常驻面板，不另设只对移动端生效的正文字号。用户显式选择的字号始终优先，代码字号继续独立配置。对话正文的一至六级 Markdown 标题统一使用 `fontSize.lg`（默认 18 像素）与半粗字重，行高为字号的 1.4 倍；段前后间距与分隔线保留层级，文件预览和紧凑工具详情继续沿用各自标题样式。
+Markdown 标题保留半粗字重、段落间距和分隔线，字号与普通正文一致。用户消息气泡内边距为左右 12、上下 8 像素，回合之间的消息外间距仍由时间线统一负责；正文分隔线不能清除与下一条用户消息之间的间距。命令输出、读取内容与代码面板在网页端由同一个视口处理横纵滚动，横向滚动条位于可视视口底部，无需先纵向滚到底；原生端保留手势滚动。
 
 Weight has three tiers, applied by role:
 
@@ -46,7 +46,7 @@ Foreground is for the thing being acted on: row titles, section headings, the se
 
 “外观 → 字体 → 文字亮度”按 70–150% 调整主前景色，100% 保留主题原配色；深色主题提高时趋向白色，浅色主题提高时趋向黑色。主前景的旧别名同步更新，辅助、强调和状态文字颜色不随之改变。每个主题保留未调整的 `baseForeground`，亮度始终从该基准计算；插件主题在构建时提供自己的基准。不得通过全页面透明度或滤镜实现，避免连带改变背景、图片与终端。
 
-桌面与网页端可在“设置 → 外观 → 字体”填写本机已安装的字体名称；“界面字体”同时影响对话正文和界面文字，“代码字体”独立作用于代码、差异和终端，留空恢复默认字体栈。原生 Android/iOS 目前不提供任意本机字体名称输入，不能照搬桌面设置。
+桌面与网页端可在“设置 → 外观 → 字体”填写本机已安装的字体名称；“界面字体”统一覆盖对话正文、回合耗时与时间戳、权限卡片、菜单及添加项目等弹窗，包括直接挂在文档 body 下的 Modal，不只覆盖主界面和共享浮层根节点；回合底部可见文字和用于占位的隐藏文字使用相同的界面字体与统一界面字号，悬停切换时间戳时不混用字体。“代码字体”独立作用于代码、差异和终端，权限卡片中的命令与代码内容仍按代码区域处理，留空恢复默认字体栈。原生 Android/iOS 目前不提供任意本机字体名称输入，不能照搬桌面设置。
 
 - 思源黑体使用简体中文静态 Medium 文件时，Windows 传统字体族名称为 `Source Han Sans SC Medium`（中文名 `思源黑体 Medium`），可填写 `"Source Han Sans SC Medium", sans-serif`；完整字体族 `Source Han Sans SC` 的 Medium 对应字重 500，不能把填写完整族名当作已选择 Medium。当前设置没有独立字重选择器，变量字体也不通过名称指定字重。
 - 霞鹜文楷等宽版填写 `"LXGW WenKai Mono", monospace`。先从 [Adobe 官方发布页](https://github.com/adobe-fonts/source-han-sans/releases) 或 [霞鹜文楷官方发布页](https://github.com/lxgw/LxgwWenKai/releases) 安装所需字体，字体名称输入框不会下载或安装字体；新安装字体若尚未被桌面外壳识别，再重开应用。

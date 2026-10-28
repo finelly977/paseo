@@ -527,7 +527,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: 13,
+    fontSize: theme.fontSize.base,
   },
   status: {
     flexDirection: "row",
@@ -537,7 +537,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   statusText: {
     color: theme.colors.foregroundMuted,
-    fontSize: 11,
+    fontSize: theme.fontSize.base,
   },
   body: {
     flex: 1,

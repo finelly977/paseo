@@ -162,50 +162,24 @@ describe("applyAppearance", () => {
     expect(runCapturedUpdater().fontFamily.ui).toBe("Menlo");
   });
 
-  it("scales the whole UI ramp proportionally while preserving ratios", () => {
-    applyAppearance(makeInput({ uiFontSize: 14 }));
-
-    const { fontSize } = runCapturedUpdater();
-    // r = 14 / 16 = 0.875
-    expect(fontSize.base).toBe(14); // round(16 * 0.875)
-    expect(fontSize.lg).toBe(16); // round(18 * 0.875) = round(15.75)
-    expect(fontSize.xs).toBe(11); // round(12 * 0.875) = round(10.5)
-    expect(fontSize["4xl"]).toBe(30); // round(34 * 0.875) = round(29.75)
+  it("所有非代码字号统一跟随界面字号，代码字号独立", () => {
+    applyAppearance(makeInput({ uiFontSize: 18, codeFontSize: 12 }));
+    expect(runCapturedUpdater().fontSize).toEqual({
+      xs: 18,
+      sm: 18,
+      base: 18,
+      lg: 18,
+      xl: 18,
+      "2xl": 18,
+      "3xl": 18,
+      "4xl": 18,
+      code: 12,
+    });
+    const first = runCapturedUpdater();
+    expect(runCapturedUpdater(0, first).fontSize).toEqual(first.fontSize);
+    applyAppearance(makeInput({ uiFontSize: 18, codeFontSize: 14 }));
+    expect(runCapturedUpdater(8).fontSize).toEqual({ ...first.fontSize, code: 14 });
   });
-
-  it("derives the UI ramp from the canonical sizes, not the live theme (no compounding)", () => {
-    applyAppearance(makeInput({ uiFontSize: 14 }));
-
-    // Simulate a theme whose fontSize was already scaled by a prior apply; the
-    // updater must ignore it and rebuild from the authored FONT_SIZE ramp.
-    const updater = updateTheme.mock.calls[0]?.[1] as unknown as ThemeUpdater;
-    const alreadyScaled = makeFakeTheme();
-    alreadyScaled.fontSize = {
-      xs: 4,
-      code: 4,
-      sm: 4,
-      base: 4,
-      lg: 4,
-      xl: 4,
-      "2xl": 4,
-      "3xl": 4,
-      "4xl": 4,
-    };
-
-    const { fontSize } = updater(alreadyScaled);
-    expect(fontSize.base).toBe(14); // not 4 * 0.875 — rebuilt from FONT_SIZE
-    expect(fontSize.lg).toBe(16);
-  });
-
-  it("leaves the UI ramp at authored sizes when only the code size changes", () => {
-    applyAppearance(makeInput({ uiFontSize: 16, codeFontSize: 10 }));
-
-    const { fontSize } = runCapturedUpdater();
-    expect(fontSize.base).toBe(16);
-    expect(fontSize.sm).toBe(14);
-    expect(fontSize.code).toBe(10);
-  });
-
   it("sets fontSize.code to codeFontSize regardless of the UI font size", () => {
     applyAppearance(makeInput({ uiFontSize: 14, codeFontSize: 18 }));
 

@@ -1953,10 +1953,10 @@ const styles = StyleSheet.create((theme) => ({
     gap: 8,
   },
   unavailableTitle: {
-    fontSize: 16,
+    fontSize: theme.fontSize.base,
     fontWeight: "600",
   },
   unavailableSubtitle: {
-    fontSize: 12,
+    fontSize: theme.fontSize.base,
   },
 }));

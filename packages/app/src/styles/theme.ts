@@ -604,16 +604,17 @@ export const SPACING = {
   32: 128,
 } as const;
 
+// 普通界面文字统一字号，代码另有独立设置。
 export const FONT_SIZE = {
-  xs: 12,
+  xs: 16,
   code: 12,
-  sm: 14,
+  sm: 16,
   base: 16,
-  lg: 18,
-  xl: 20,
-  "2xl": 22,
-  "3xl": 26,
-  "4xl": 34,
+  lg: 16,
+  xl: 16,
+  "2xl": 16,
+  "3xl": 16,
+  "4xl": 16,
 } as const;
 
 export const LINE_HEIGHT = {

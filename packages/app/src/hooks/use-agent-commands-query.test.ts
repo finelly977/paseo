@@ -38,6 +38,10 @@ function commandsPayload(commands: ListCommandsResult["commands"]): ListCommands
 }
 
 describe("fetchAgentCommands", () => {
+  it("目录读取失败时显示错误，不把失败缓存为空目录", async () => {
+    const client = createClient({ ...commandsPayload([]), error: "插件目录读取失败" });
+    await expect(fetchAgentCommands({ client, agentId: "" })).rejects.toThrow("插件目录读取失败");
+  });
   it("loads commands for a draft composer without an agent id", async () => {
     const client = createClient(
       commandsPayload([{ name: "compact", description: "Compact context", argumentHint: "" }]),

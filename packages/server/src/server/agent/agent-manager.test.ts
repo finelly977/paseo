@@ -2794,6 +2794,36 @@ test("listDraftCommands returns no commands without guessing a missing model", a
   expect(client.availabilityCalls).toBe(0);
 });
 
+test("listDraftCommands 允许原生目录接口在未选择模型时工作，不启动会话", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-native-draft-commands-"));
+  const commands: AgentSlashCommand[] = [
+    { name: "remotion:render", description: "渲染视频", argumentHint: "", kind: "skill" },
+  ];
+  class NativeCatalogClient extends TestAgentClient {
+    listCommands = vi.fn(async () => commands);
+    override createSession = vi.fn();
+  }
+  const client = new NativeCatalogClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: new AgentStorage(join(workdir, "agents"), logger),
+    logger,
+  });
+  try {
+    await expect(manager.listDraftCommands({ provider: "codex", cwd: workdir })).resolves.toEqual(
+      commands,
+    );
+    expect(client.createSession).not.toHaveBeenCalled();
+    expect(client.listCommands).toHaveBeenCalledWith({
+      provider: "codex",
+      cwd: workdir,
+      modeId: "auto-review",
+    });
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("listDraftCommands uses explicit model config without default model fetching", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-draft-commands-"));
   const storagePath = join(workdir, "agents");
