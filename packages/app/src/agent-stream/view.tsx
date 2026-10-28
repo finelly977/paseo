@@ -1466,9 +1466,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
         displayStateById: historyDisplayStateIds,
         estimatedHeightById: estimatedCollapsedProcessHeightById,
+        processAnchorIdByItemId: new Map(
+          Array.from(completedTurnProcess.toggleByItemId, ([itemId, toggle]) => [
+            itemId,
+            `completed-process-${toggle.turnId}`,
+          ]),
+        ),
         globalDisplayState: isMobile,
       }),
       [
+        completedTurnProcess.toggleByItemId,
         estimatedCollapsedProcessHeightById,
         historyDisplayStateIds,
         isMobile,

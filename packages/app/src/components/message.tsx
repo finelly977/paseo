@@ -93,7 +93,7 @@ import {
   setAssistantImageMetadata,
   type AssistantImageLoadState,
 } from "@/utils/assistant-image-metadata";
-import { setAssistantMarkdownBlockHeight } from "@/utils/assistant-message-height-estimate";
+import { AssistantMessageBlockContainer } from "@/components/markdown/assistant-block";
 import { useAssistantImageResource } from "@/attachments/use-assistant-image-resource";
 import { resolveAssistantImageErrorText } from "@/utils/assistant-image-source";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
@@ -1688,36 +1688,6 @@ function NativeShimmerPeakSvg({ gradientId }: { gradientId: string }) {
       </Defs>
       <Rect x="0" y="0" width="100%" height="100%" fill={`url(#${gradientId})`} />
     </Svg>
-  );
-}
-
-interface AssistantMessageBlockContainerProps {
-  block: string;
-  marginBottom: number;
-  children: ReactNode;
-}
-
-function AssistantMessageBlockContainer({
-  block,
-  marginBottom,
-  children,
-}: AssistantMessageBlockContainerProps) {
-  const style = useMemo(() => (marginBottom > 0 ? { marginBottom } : undefined), [marginBottom]);
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const { width, height } = event.nativeEvent.layout;
-      setAssistantMarkdownBlockHeight({
-        block,
-        width,
-        height,
-      });
-    },
-    [block],
-  );
-  return (
-    <View style={style} onLayout={isWeb ? handleLayout : undefined}>
-      {children}
-    </View>
   );
 }
 

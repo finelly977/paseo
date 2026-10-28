@@ -119,10 +119,8 @@ function estimateAssistantMarkdownBlockHeightFromCache(
   return ASSISTANT_MESSAGE_VERTICAL_PADDING + blockHeight + blockGap;
 }
 
-// Fallback estimate used when no measured height is cached yet: a paragraph
-// line is ~1.4em tall, code lines are taller, and empty lines between blocks
-// add a paragraph gap. This is a coarse first-frame anchor; the real height is
-// measured and cached via onLayout shortly after.
+// 尚未缓存实测高度时，按段落、代码和空行粗估首帧占位；
+// 实际宽高由网页正文块的尺寸观察器测量并缓存。
 const ESTIMATE_PARAGRAPH_LINE_HEIGHT = 20;
 const ESTIMATE_CODE_LINE_HEIGHT = 21;
 const ESTIMATE_MAX_LINES = 40;

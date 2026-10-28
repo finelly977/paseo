@@ -352,9 +352,9 @@ Gotchas:
 
 Unistyles 3.2.4 的网页样式合并器会把两组 `uni__dependencies` 数组递归合并成数字键对象。后续订阅提取只接受数组，因而把这组样式视为没有依赖。典型症状是切换主题后，选中的 Git 标签、主机筛选背景、提交按钮或远端标记保留旧配色；悬停触发重新生成样式或重新打开页面后才恢复。
 
-`patches/react-native-unistyles+3.2.4.patch` 将这一内部字段按集合合并并去重，其余样式仍保持原有覆盖顺序。补丁覆盖源码、ESM 与 CommonJS 入口，通过 `scripts/postinstall-patches.mjs` 在安装依赖时应用；不能仅修改本机 `node_modules`，也不要为每个组件添加主题 Hook、强制重挂载或悬停补刷。
+`patches/react-native-unistyles+3.2.4.patch` 将这一内部字段按集合合并并去重；`withUnistyles` 自动生成的字段重置样式会显式携带 `uni__dependencies: undefined`，该值表示没有新增订阅，合并时跳过，既不展开未设置值，也不清除前面样式的有效订阅。不能用覆盖已有订阅或删除加载图标的方式规避分页崩溃；非法的非数组值仍显式报错。其余样式仍保持原有覆盖顺序。补丁覆盖源码、ESM 与 CommonJS 入口，通过 `scripts/postinstall-patches.mjs` 在安装依赖时应用；不能仅修改本机 `node_modules`，也不要为每个组件添加主题 Hook、强制重挂载或悬停补刷。
 
-回归使用 `node --test scripts/unistyles-theme-dependencies.test.mjs` 验证真实依赖实现。界面验证需在鼠标停留于空白处时反复切换主题，对比同一主题下热切换与全新页面的控件颜色、文字和字号，不能只验证冷启动截图。
+回归使用 `node --test scripts/unistyles-theme-dependencies.test.mjs` 验证真实依赖实现。界面验证必须包含提交图表滚动到底部并跨页加载，确认加载图标真实出现且能够继续加载下一页。主题回归需在鼠标停留于空白处时反复切换主题，对比同一主题下热切换与全新页面的控件颜色、文字和字号，不能只验证冷启动截图。
 
 ## Debugging
 

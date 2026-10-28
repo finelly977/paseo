@@ -11,11 +11,7 @@ import React, {
   type RefObject,
 } from "react";
 import { ActivityIndicator } from "react-native";
-import {
-  defaultRangeExtractor,
-  measureElement as measureVirtualElement,
-  useVirtualizer,
-} from "@tanstack/react-virtual";
+import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   estimateStreamItemHeight,
   shouldAutoLoadOlderHistory,
@@ -35,6 +31,7 @@ type ScrollBehaviorLike = "auto" | "smooth";
 
 const WEB_BOTTOM_SETTLE_TIMEOUT_MS = 200;
 const USER_SCROLL_DELTA_EPSILON = 1;
+const ANCHOR_LAYOUT_EPSILON_PX = 0.5;
 const BOTTOM_OVERSCROLL_TOLERANCE_PX = 2;
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 64;
 const AUTO_SCROLL_RESUME_THRESHOLD_PX = 1;
@@ -134,8 +131,7 @@ interface PendingHistoryAnchor {
 function readHistoryAnchor(scroll: HTMLElement): HistoryAnchor | null {
   const viewportBounds = scroll.getBoundingClientRect();
   for (const row of scroll.querySelectorAll<HTMLElement>("[data-stream-row-id]")) {
-    const process = row.querySelector<HTMLElement>('[data-testid^="completed-process-"]');
-    const bounds = (process ?? row).getBoundingClientRect();
+    const bounds = row.getBoundingClientRect();
     const itemId = row.dataset.streamRowId;
     if (
       itemId &&
@@ -143,10 +139,22 @@ function readHistoryAnchor(scroll: HTMLElement): HistoryAnchor | null {
       bounds.bottom > viewportBounds.top &&
       bounds.top < viewportBounds.bottom
     ) {
+      const process = row.querySelector<HTMLElement>('[data-testid^="completed-process-"]');
+      if (process) {
+        const processBounds = process.getBoundingClientRect();
+        const processId = process.dataset.testid;
+        if (
+          processId &&
+          processBounds.height > 0 &&
+          processBounds.bottom > viewportBounds.top &&
+          processBounds.top < viewportBounds.bottom
+        ) {
+          return { itemId, offset: processBounds.top - viewportBounds.top, processId };
+        }
+      }
       return {
         itemId,
         offset: bounds.top - viewportBounds.top,
-        ...(process?.dataset.testid ? { processId: process.dataset.testid } : {}),
       };
     }
   }
@@ -197,30 +205,51 @@ interface HistoryContentProps {
   followOutputRef: RefObject<boolean>;
   contentRef: (node: HTMLDivElement | null) => void;
   onPrepend: (anchor: HistoryAnchor) => void;
+  onWindowLayoutChange: (anchor: HistoryAnchor) => void;
+  virtualWindowLayout: CSSProperties;
+  isToggleAnchoring: boolean;
   style: CSSProperties;
   children: ReactNode;
 }
 
+interface HistoryLayoutSnapshot {
+  anchor: HistoryAnchor;
+  prepended: boolean;
+}
+
 // 必须在 React 改写旧行之前读取锚点，布局副作用执行时旧 DOM 已经被替换。
-class HistoryContent extends React.Component<HistoryContentProps, never, HistoryAnchor | null> {
-  getSnapshotBeforeUpdate(previous: HistoryContentProps): HistoryAnchor | null {
+class HistoryContent extends React.Component<
+  HistoryContentProps,
+  never,
+  HistoryLayoutSnapshot | null
+> {
+  getSnapshotBeforeUpdate(previous: HistoryContentProps): HistoryLayoutSnapshot | null {
     const scroll = this.props.scrollContainerRef.current;
     const prepended =
       previous.firstItemId !== null &&
       previous.firstItemId !== this.props.firstItemId &&
       this.props.itemIds.has(previous.firstItemId);
-    if (!prepended || !scroll || scroll.clientHeight <= 0 || this.props.followOutputRef.current) {
+    const windowChanged = previous.virtualWindowLayout !== this.props.virtualWindowLayout;
+    if (
+      (!prepended && (!windowChanged || this.props.isToggleAnchoring)) ||
+      !scroll ||
+      scroll.clientHeight <= 0 ||
+      this.props.followOutputRef.current
+    ) {
       return null;
     }
-    return readHistoryAnchor(scroll);
+    const anchor = readHistoryAnchor(scroll);
+    return anchor ? { anchor, prepended } : null;
   }
 
   componentDidUpdate(
     _previous: HistoryContentProps,
     _state: never,
-    anchor: HistoryAnchor | null,
+    snapshot: HistoryLayoutSnapshot | null,
   ): void {
-    if (anchor) this.props.onPrepend(anchor);
+    if (!snapshot) return;
+    if (snapshot.prepended) this.props.onPrepend(snapshot.anchor);
+    else this.props.onWindowLayoutChange(snapshot.anchor);
   }
 
   render() {
@@ -255,6 +284,19 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     isMobileBreakpoint,
   } = props;
   const collapsedHeights = historyRowRevision?.estimatedHeightById;
+  const processAnchorIdByItemId = historyRowRevision?.processAnchorIdByItemId;
+  const resolveHistoryAnchorItemId = useCallback(
+    (anchor: HistoryAnchor) => {
+      // 补页会把收起入口移到本轮更早的过程，旧承载行此时已被零高度过滤。
+      if (anchor.processId && processAnchorIdByItemId) {
+        for (const [itemId, processId] of processAnchorIdByItemId) {
+          if (processId === anchor.processId) return itemId;
+        }
+      }
+      return anchor.itemId;
+    },
+    [processAnchorIdByItemId],
+  );
   const segments = useMemo(
     () => ({
       ...sourceSegments,
@@ -303,6 +345,23 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const recordHistoryAnchor = useCallback((anchor: HistoryAnchor) => {
     historyAnchoringRef.current = true;
     committedHistoryAnchorRef.current = anchor;
+  }, []);
+  const preserveVirtualWindowAnchor = useCallback((anchor: HistoryAnchor) => {
+    const scroll = scrollContainerRef.current;
+    if (!scroll) return;
+    const selector = anchor.processId
+      ? `[data-testid="${CSS.escape(anchor.processId)}"]`
+      : `[data-stream-row-id="${CSS.escape(anchor.itemId)}"]`;
+    const row = scroll.querySelector<HTMLElement>(selector);
+    if (!row) return;
+    // 虚拟窗口更换会改动祖先的占位内边距，浏览器此时会抑制自身滚动锚定。
+    // 只在本次提交绘制前补齐实际位移，不跨帧锁定位置或抵消后续用户滚动。
+    const delta =
+      row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
+    if (Math.abs(delta) > ANCHOR_LAYOUT_EPSILON_PX) {
+      scroll.scrollTop += delta;
+    }
+    lastKnownScrollTopRef.current = scroll.scrollTop;
   }, []);
   const historyStartReadyRef = useRef(false);
   const lastAutoHistoryBackfillSignatureRef = useRef<string | null>(null);
@@ -369,9 +428,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         return index;
       }
       const heightOverride = collapsedHeights?.get(row.id);
-      return heightOverride === undefined ? row.id : `${row.id}:display-height-${heightOverride}`;
+      // 纯入口换承载行后仍是同一个可见条目，复用其已测量高度，避免重新估算。
+      const key = processAnchorIdByItemId?.get(row.id) ?? row.id;
+      return heightOverride === undefined ? key : `${key}:display-height-${heightOverride}`;
     },
-    [segments.historyVirtualized, collapsedHeights],
+    [segments.historyVirtualized, collapsedHeights, processAnchorIdByItemId],
   );
   const estimateSize = useCallback(
     (index: number) => {
@@ -394,9 +455,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         const pending = hasPendingHistoryAnchor ? pendingHistoryAnchorRef.current : null;
         if (!pending || pending.firstItemId === sourceFirstItemId)
           return defaultRangeExtractor(range);
-        const index = segments.historyVirtualized.findIndex(
-          (item) => item.id === pending.anchor.itemId,
-        );
+        const anchorItemId = resolveHistoryAnchorItemId(pending.anchor);
+        const index = segments.historyVirtualized.findIndex((item) => item.id === anchorItemId);
         if (index < 0) return defaultRangeExtractor(range);
         // 新页提交前先保留正在阅读的窗口，不能先挂载新页再靠滚动补救。
         const endIndex = Math.min(
@@ -405,22 +465,29 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         );
         return defaultRangeExtractor({ ...range, startIndex: index, endIndex });
       },
-      [hasPendingHistoryAnchor, segments.historyVirtualized, sourceFirstItemId],
+      [
+        hasPendingHistoryAnchor,
+        segments.historyVirtualized,
+        sourceFirstItemId,
+        resolveHistoryAnchorItemId,
+      ],
     ),
-    measureElement: (element, _entry, instance) => {
-      const scroll = instance.scrollElement;
-      if (!scroll || scroll.clientWidth <= 0 || scroll.clientHeight <= 0) {
-        const index = instance.indexFromElement(element);
-        return instance.measurementsCache[index].size;
+    measureElement: (element, entry, instance) => {
+      // 观察回调直接消费本轮布局结果，不延后一帧再逐行强制重测。
+      const size = entry?.borderBoxSize[0];
+      if (size && size.inlineSize > 0) return size.blockSize;
+      if (!entry) {
+        const bounds = element.getBoundingClientRect();
+        if (bounds.width > 0) return bounds.height;
       }
-      // 延迟的观察记录可能来自补页前或隐藏时，测量当前 DOM，不能缓存旧的零高度。
-      return measureVirtualElement(element, undefined, instance);
+      // 隐藏面板没有参与布局，保留最后有效高度；首次挂载仍在提交时同步测量。
+      const index = instance.indexFromElement(element);
+      return instance.measurementsCache[index].size;
     },
-    useAnimationFrameWithResizeObserver: true,
     overscan: 4,
   });
   useEffect(() => {
-    // 行在正常文档流中增高时浏览器已完成锚定，虚拟器再次补偿会重复移动阅读位置。
+    // 正文自然增高由浏览器锚定；窗口占位改变由提交快照校正，不再叠加虚拟器补偿。
     rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
     return () => {
       rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
@@ -959,7 +1026,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         if (!row) return false;
         const delta =
           row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - anchor.offset;
-        if (Math.abs(delta) > USER_SCROLL_DELTA_EPSILON) {
+        if (Math.abs(delta) > ANCHOR_LAYOUT_EPSILON_PX) {
           stableFrames = 0;
           scroll.scrollTop += delta;
         } else {
@@ -969,7 +1036,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         return true;
       };
       if (!restoreMounted()) {
-        const index = segments.historyVirtualized.findIndex((item) => item.id === anchor.itemId);
+        const anchorItemId = resolveHistoryAnchorItemId(anchor);
+        const index = segments.historyVirtualized.findIndex((item) => item.id === anchorItemId);
         if (index < 0) {
           releaseHistoryAnchor();
           return;
@@ -1006,6 +1074,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       rowVirtualizer,
       segments.historyVirtualized,
       releaseHistoryAnchor,
+      resolveHistoryAnchorItemId,
     ],
   );
   useLayoutEffect(() => {
@@ -1151,6 +1220,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         scrollContainerRef={scrollContainerRef}
         followOutputRef={followOutputRef}
         onPrepend={recordHistoryAnchor}
+        onWindowLayoutChange={preserveVirtualWindowAnchor}
+        virtualWindowLayout={virtualRowsContainerStyle}
+        isToggleAnchoring={isToggleAnchoring}
       >
         {historyStartSlot}
         {shouldUseVirtualizer ? (

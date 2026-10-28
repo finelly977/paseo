@@ -67,6 +67,7 @@ it.each([0, 1600])("原生倒置列表展开 %s 个额外单元后恢复入口�
         contentById: new Set(),
         displayStateById: expanded ? new Set([anchorId]) : new Set(),
         estimatedHeightById: expanded ? new Map() : heights,
+        processAnchorIdByItemId: new Map(),
         globalDisplayState: false,
       },
       liveHeadRowRevision: null,

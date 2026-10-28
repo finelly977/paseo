@@ -112,6 +112,41 @@ async function createConnectedSession(
 }
 
 describe("Codex app-server provider features", () => {
+  test("恢复明确关闭 Fast 的会话时使用可空档位，不发送无效的 default 枚举", async () => {
+    const tierRequest = z.object({ serviceTier: z.enum(["fast", "flex"]).nullable() });
+    const { session, appServer } = createSessionHarness(
+      { featureValues: { fast_mode: false } },
+      {
+        resumeHandle: { sessionId: "native-thread" },
+        handlers: {
+          "config/read": () => ({ config: { service_tier: "fast" } }),
+          "thread/resume": async (params) => ({
+            serviceTier: tierRequest.parse(params).serviceTier,
+            model: "gpt-5.4",
+          }),
+          "turn/start": async (params) => {
+            tierRequest.parse(params);
+            return {};
+          },
+        },
+      },
+    );
+    try {
+      await session.connect();
+      await expect(appServer.waitForRequest("thread/resume")).resolves.toMatchObject({
+        serviceTier: null,
+      });
+      await session.startTurn("恢复后使用标准速度");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
+      expect(session.features).toContainEqual(
+        expect.objectContaining({ id: "fast_mode", value: false }),
+      );
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
   test("GPT-6 模型按原生目录提供 Fast 开关，不按名称前缀限制", async () => {
     const { session } = await createConnectedSession(
       { model: "gpt-6.1-sol" },
@@ -182,9 +217,57 @@ describe("Codex app-server provider features", () => {
       );
       await session.startTurn("标准模式");
       await expect(appServer.waitForRequest("thread/start")).resolves.toMatchObject({
-        serviceTier: "default",
+        serviceTier: null,
       });
-      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "default" });
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("未启用特殊档位的新会话在创建和发送时显式使用 null", async () => {
+    const { session, appServer } = await createConnectedSession({
+      featureValues: { fast_mode: false },
+    });
+    try {
+      await session.startTurn("标准速度");
+      await expect(appServer.waitForRequest("thread/start")).resolves.toMatchObject({
+        serviceTier: null,
+      });
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("恢复未覆盖的 Flex 档位仍保留，明确关闭后才清除", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {},
+      {
+        resumeHandle: { sessionId: "native-thread" },
+        handlers: {
+          "thread/resume": (params) => {
+            const { serviceTier } = z
+              .object({ serviceTier: z.string().nullable().optional() })
+              .parse(params);
+            return { serviceTier: serviceTier === undefined ? "flex" : serviceTier };
+          },
+        },
+      },
+    );
+    try {
+      expect(await appServer.waitForRequest("thread/resume")).not.toHaveProperty("serviceTier");
+      const firstTurn = session.run("保留原生 Flex");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "flex" });
+      appServer.completeTurn({ threadId: "native-thread" });
+      await firstTurn;
+      await session.setFeature?.("fast_mode", false);
+      await session.startTurn("清除特殊档位");
+      const starts = appServer.requests().filter((request) => request.method === "turn/start");
+      expect(starts.map((request) => request.params)).toEqual([
+        expect.objectContaining({ serviceTier: "flex" }),
+        expect.objectContaining({ serviceTier: null }),
+      ]);
     } finally {
       await session.close();
     }
@@ -205,7 +288,28 @@ describe("Codex app-server provider features", () => {
       );
       await session.setFeature?.("fast_mode", false);
       await session.startTurn("标准模式");
-      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "default" });
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("配置中的标准档位覆盖模型自身的 Fast 默认值", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: FAST_MODEL.id },
+      {
+        handlers: {
+          "config/read": () => ({ config: { service_tier: "default" } }),
+          "model/list": () => ({ data: [{ ...FAST_MODEL, defaultServiceTier: "priority" }] }),
+        },
+      },
+    );
+    try {
+      expect(session.features).toContainEqual(
+        expect.objectContaining({ id: "fast_mode", value: false }),
+      );
+      await session.startTurn("按配置使用标准档位");
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
     } finally {
       await session.close();
     }
@@ -240,12 +344,15 @@ describe("Codex app-server provider features", () => {
       {
         resumeHandle: { sessionId: "native-thread" },
         handlers: {
-          "thread/resume": (params) => ({
-            serviceTier:
-              z.object({ serviceTier: z.string().optional() }).parse(params).serviceTier ??
-              "priority",
-            model: "gpt-5.4",
-          }),
+          "thread/resume": (params) => {
+            const { serviceTier } = z
+              .object({ serviceTier: z.string().nullable().optional() })
+              .parse(params);
+            return {
+              serviceTier: serviceTier === undefined ? "priority" : serviceTier,
+              model: "gpt-5.4",
+            };
+          },
         },
       },
     );
@@ -256,7 +363,7 @@ describe("Codex app-server provider features", () => {
       expect(await appServer.waitForRequest("thread/resume")).not.toHaveProperty("serviceTier");
       await session.setFeature?.("fast_mode", false);
       await session.startTurn("关闭后继续");
-      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: "default" });
+      await expect(appServer.waitForTurnStart()).resolves.toMatchObject({ serviceTier: null });
       expect(appServer.requests().filter((request) => request.method === "thread/start")).toEqual(
         [],
       );
@@ -275,7 +382,7 @@ describe("Codex app-server provider features", () => {
     );
     try {
       await expect(appServer.waitForRequest("thread/resume")).resolves.toMatchObject({
-        serviceTier: "default",
+        serviceTier: null,
       });
       expect(session.features).toContainEqual(
         expect.objectContaining({ id: "fast_mode", value: false }),
@@ -608,7 +715,7 @@ describe("Codex app-server provider features", () => {
 
     await session.startTurn("hello");
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "default",
+      serviceTier: null,
     });
   });
 
@@ -632,7 +739,7 @@ describe("Codex app-server provider features", () => {
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "default",
+      serviceTier: null,
     });
   });
 
@@ -756,7 +863,7 @@ describe("Codex app-server provider features", () => {
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      serviceTier: "default",
+      serviceTier: null,
     });
   });
 

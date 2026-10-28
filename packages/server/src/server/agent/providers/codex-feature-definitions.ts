@@ -29,6 +29,7 @@ export const CODEX_PLAN_MODE_FEATURE: Omit<AgentFeatureToggle, "value"> = {
 
 export function normalizeCodexServiceTier(serviceTier: string | null | undefined): string | null {
   if (serviceTier === "fast") return "priority";
+  if (serviceTier === "default") return null;
   return serviceTier ?? null;
 }
 
@@ -47,11 +48,11 @@ export function resolveCodexServiceTier(input: {
   configuredServiceTier: string | null;
   defaultServiceTier: string | null;
 }): string | null {
-  if (input.fastModePreference === false) return "default";
-  if (input.fastModePreference === true) return input.fastServiceTierId ?? "default";
+  if (input.fastModePreference === false) return null;
+  if (input.fastModePreference === true) return input.fastServiceTierId;
   const selectedTier = input.configuredServiceTier ?? input.defaultServiceTier;
   const serviceTier = normalizeCodexServiceTier(selectedTier);
-  if (serviceTier === "priority" && input.fastServiceTierId === null) return "default";
+  if (serviceTier === "priority" && input.fastServiceTierId === null) return null;
   return serviceTier;
 }
 

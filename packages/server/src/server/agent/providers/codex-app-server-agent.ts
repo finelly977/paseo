@@ -3389,7 +3389,7 @@ async function readCodexModelCatalog(input: CodexModelCatalogRequest): Promise<C
     thinkingOptionId: normalizeCodexThinkingOptionId(
       overrides.model_reasoning_effort ?? config.model_reasoning_effort,
     ),
-    serviceTier: normalizeCodexServiceTier(overrides.service_tier ?? config.service_tier),
+    serviceTier: overrides.service_tier ?? config.service_tier ?? null,
     fastModeEnabled,
   };
   return { models, defaults, configuration };
@@ -3687,7 +3687,6 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.config = config;
     this.config.thinkingOptionId = normalizeCodexThinkingOptionId(this.config.thinkingOptionId);
     if (this.config.featureValues?.fast_mode === true) this.serviceTier = "priority";
-    if (this.config.featureValues?.fast_mode === false) this.serviceTier = "default";
     if (this.config.featureValues?.plan_mode) {
       this.planModeEnabled = true;
     }
@@ -3939,7 +3938,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
 
     if (featureId === "fast_mode") {
-      this.serviceTier = value ? this.fastServiceTierId() : "default";
+      this.serviceTier = value ? this.fastServiceTierId() : null;
       this.cachedRuntimeInfo = null;
       return;
     }
@@ -4278,9 +4277,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (thinkingOptionId) {
       params.effort = thinkingOptionId;
     }
-    if (this.serviceTier) {
-      params.serviceTier = this.serviceTier;
-    }
+    // null 明确清除线程档位；不能发送并非所有原生协议都接受的 default 字符串。
+    params.serviceTier = this.serviceTier;
     if (this.resolvedCollaborationMode) {
       params.collaborationMode = {
         mode: this.resolvedCollaborationMode.mode,
@@ -4772,7 +4770,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       if (this.config.featureValues?.fast_mode !== undefined) {
         this.serviceTier = this.resolveServiceTier();
       } else if (fastModeEnabled) {
-        this.serviceTier = this.fastServiceTierId() ?? "default";
+        this.serviceTier = this.fastServiceTierId();
       }
     }
     this.refreshResolvedCollaborationMode();
@@ -5410,7 +5408,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
     const params: Record<string, unknown> = {
       model,
-      ...(this.serviceTier !== null ? { serviceTier: this.serviceTier } : {}),
+      serviceTier: this.serviceTier,
       ...(modelProvider ? { modelProvider } : {}),
       cwd: this.config.cwd ?? null,
       approvalPolicy,

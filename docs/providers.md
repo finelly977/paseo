@@ -507,3 +507,11 @@ Tests use `isProviderAvailable(provider)` to skip when the binary or credentials
 Claude 使用官方 SDK 的 `renameSession` / `getSessionInfo`，独立 Node 进程继承对应配置目录，避免不同账户目录串写；Codex 使用 `thread/name/set` 与不包含回合正文的 `thread/read`；OpenCode 使用 `session.update` / `session.get`；Pi/OMP 使用 `set_session_name`，关闭态只读取 JSONL 名称元数据，不直接改写原生文件。通用 ACP 暂无统一命名请求，Paseo 保留本地别名，不假设 slash command 等价于无副作用元数据操作。
 
 新连接目录刷新按提供方调用原有会话发现接口，不为所有会话启动运行时；仅返回非空权威名称时覆盖展示。同步、迁移和失败语义见 [session-titles.md](session-titles.md)。
+
+## Codex 服务档位
+
+Paseo 通过 Codex app-server 管理原生会话，终端中直接运行 Codex 不经过同一条请求构造路径。恢复失败时若原生返回 `unknown variant default, expected fast or flex`，应检查所连主机的 Paseo 适配器发出的档位值，不要把它当作网络或登录失败。
+
+关闭 Fast 使用显式 `serviceTier: null` 清除线程的特殊档位，创建线程和发送回合也使用同一语义。省略恢复参数表示保留原生选择，不能替代明确关闭。原生返回的 `default` 归为标准档位；读取配置时先保留“显式标准”与“未指定”的区别，选择配置或模型默认值后再标准化，避免关闭 Fast 后被模型默认值覆盖。Flex 和 Fast 在未覆盖时继续保留，不更改全局 Codex 配置。
+
+适配器运行在智能体所属主机的 daemon 中。远程主机需要部署修正后的 daemon；只更新 Windows 或 Android 客户端不会替换远端请求构造代码。排查时保留双方版本和原生错误，禁止通过开启付费 Fast、删除历史会话或清空用户配置绕过恢复失败。

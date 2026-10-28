@@ -1,13 +1,16 @@
 diff --git a/node_modules/react-native-unistyles/lib/commonjs/utils.js b/node_modules/react-native-unistyles/lib/commonjs/utils.js
-index 2add1a7..f0c8200 100644
+index 2add1a7..f466219 100644
 --- a/node_modules/react-native-unistyles/lib/commonjs/utils.js
 +++ b/node_modules/react-native-unistyles/lib/commonjs/utils.js
-@@ -12,6 +12,11 @@ const deepMergeObjects = (...sources) => {
+@@ -12,6 +12,14 @@ const deepMergeObjects = (...sources) => {
      Object.keys(source).forEach(key => {
        const sourceValue = source[key];
        const targetValue = target[key];
 +      // 依赖是订阅集合，不能像普通对象一样递归合并为数字键对象。
 +      if (key === 'uni__dependencies') {
++        // withUnistyles 的字段重置不携带订阅，也不能清除已合并的订阅。
++        if (sourceValue === undefined) return;
++        if (!Array.isArray(sourceValue)) throw new TypeError('Unistyles: uni__dependencies must be an array when provided');
 +        target[key] = Array.from(new Set([...(targetValue ?? []), ...sourceValue]));
 +        return;
 +      }
@@ -15,15 +18,18 @@ index 2add1a7..f0c8200 100644
          // @ts-expect-error - can't assign to generic
          target[key] = deepMergeObjects(targetValue, sourceValue);
 diff --git a/node_modules/react-native-unistyles/lib/module/utils.js b/node_modules/react-native-unistyles/lib/module/utils.js
-index 3897356..7bec999 100644
+index 3897356..cdee323 100644
 --- a/node_modules/react-native-unistyles/lib/module/utils.js
 +++ b/node_modules/react-native-unistyles/lib/module/utils.js
-@@ -7,6 +7,11 @@ export const deepMergeObjects = (...sources) => {
+@@ -7,6 +7,14 @@ export const deepMergeObjects = (...sources) => {
      Object.keys(source).forEach(key => {
        const sourceValue = source[key];
        const targetValue = target[key];
 +      // 依赖是订阅集合，不能像普通对象一样递归合并为数字键对象。
 +      if (key === 'uni__dependencies') {
++        // withUnistyles 的字段重置不携带订阅，也不能清除已合并的订阅。
++        if (sourceValue === undefined) return;
++        if (!Array.isArray(sourceValue)) throw new TypeError('Unistyles: uni__dependencies must be an array when provided');
 +        target[key] = Array.from(new Set([...(targetValue ?? []), ...sourceValue]));
 +        return;
 +      }
@@ -31,16 +37,19 @@ index 3897356..7bec999 100644
          // @ts-expect-error - can't assign to generic
          target[key] = deepMergeObjects(targetValue, sourceValue);
 diff --git a/node_modules/react-native-unistyles/src/utils.ts b/node_modules/react-native-unistyles/src/utils.ts
-index 3e2b45b..87d8a84 100644
+index 3e2b45b..37354c6 100644
 --- a/node_modules/react-native-unistyles/src/utils.ts
 +++ b/node_modules/react-native-unistyles/src/utils.ts
-@@ -8,6 +8,12 @@ export const deepMergeObjects = <T extends Record<PropertyKey, any>>(...sources:
+@@ -8,6 +8,15 @@ export const deepMergeObjects = <T extends Record<PropertyKey, any>>(...sources:
              const sourceValue = source[key]
              const targetValue = target[key]
 -
 +
 +            // 依赖是订阅集合，不能像普通对象一样递归合并为数字键对象。
 +            if (key === 'uni__dependencies') {
++                // withUnistyles 的字段重置不携带订阅，也不能清除已合并的订阅。
++                if (sourceValue === undefined) return
++                if (!Array.isArray(sourceValue)) throw new TypeError('Unistyles: uni__dependencies must be an array when provided')
 +                Object.assign(target, { [key]: Array.from(new Set([...(targetValue ?? []), ...sourceValue])) })
 +                return
 +            }

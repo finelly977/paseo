@@ -25,6 +25,11 @@ let host: HTMLDivElement;
 const ROW_STYLE = { height: 80, flexShrink: 0 };
 const LONG_ROW_STYLE = { padding: 8, fontSize: 16, lineHeight: "24px" };
 const EXPANDED_ROW_STYLE = { height: 900, flexShrink: 0 };
+const PROCESS_ROW_STYLE = { height: 40 };
+const VARIABLE_ROW_STYLES = Array.from({ length: 5 }, (_, index) => ({ height: 73 + index * 61 }));
+const SUBPIXEL_ROW_STYLES = Array.from({ length: 5 }, (_, index) => ({
+  height: 73.2 + index * 61.17,
+}));
 
 afterEach(() => {
   root?.unmount();
@@ -179,6 +184,394 @@ function visibleAnchor(): { id: string; top: number } {
 }
 
 describe("真实浏览器历史分页", () => {
+  it("虚拟窗口的占位使用已测量的小数行高，不逐行舍入", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={SUBPIXEL_ROW_STYLES[Math.abs(Number(item.id.slice(8))) % 5]}
+      >
+        {item.id}
+      </div>
+    );
+    mountViewport({
+      segments: {
+        historyVirtualized: messages(0, 40),
+        historyMounted: messages(40, 20),
+        liveHead: [],
+      },
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    host.style.height = "20000px";
+    await expect.poll(() => host.querySelectorAll("[data-message-id]").length).toBe(60);
+    await nextLayout();
+    const sizes = [...host.querySelectorAll<HTMLElement>("[data-message-id]")].map(
+      (node) => node.getBoundingClientRect().height,
+    );
+    host.style.height = "480px";
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    scroll.scrollTop = 4000;
+    await nextLayout();
+    await nextLayout();
+    const first = host.querySelector<HTMLElement>("[data-index]");
+    if (!first || !first.parentElement) throw new Error("虚拟窗口没有行");
+    const firstIndex = Number(first.dataset.index);
+    expect(firstIndex).toBeGreaterThan(0);
+    const expected = sizes.slice(0, firstIndex).reduce((sum, height) => sum + height, 0);
+    expect(Number.parseFloat(first.parentElement.style.paddingTop)).toBeCloseTo(expected, 2);
+  });
+
+  it("连续滚动经过小数行高时，位置误差保持在一个设备像素以内", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={SUBPIXEL_ROW_STYLES[Math.abs(Number(item.id.slice(8))) % 5]}
+      >
+        {item.id}
+      </div>
+    );
+    mountViewport({
+      segments: {
+        historyVirtualized: messages(0, 400),
+        historyMounted: messages(400, 20),
+        liveHead: [],
+      },
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    scroll.scrollTop = 20_000;
+    await nextLayout();
+    await nextLayout();
+    const errors: number[] = [];
+    for (let step = 0; step < 50; step++) {
+      const before = visibleAnchor();
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+      const previousOffset = scroll.scrollTop;
+      scroll.scrollTop -= 100;
+      const moved = previousOffset - scroll.scrollTop;
+      await nextLayout();
+      const row = host.querySelector<HTMLElement>(`[data-message-id="${before.id}"]`);
+      if (!row) throw new Error(`快速滚动丢失可见行 ${before.id}`);
+      errors.push(
+        Math.abs(
+          row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - before.top - moved,
+        ),
+      );
+    }
+    // Chromium 在设备像素上取整 scrollTop，同一帧的多次窗口提交仍有至多一像素的舍入误差。
+    expect(Math.max(...errors)).toBeLessThanOrEqual(1 / window.devicePixelRatio);
+  });
+
+  it("持续上滚经过未测量的长历史时，每次滚动只移动用户输入的距离", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={VARIABLE_ROW_STYLES[Math.abs(Number(item.id.slice(8))) % 5]}
+      >
+        {item.id}
+      </div>
+    );
+    mountViewport({
+      segments: {
+        historyVirtualized: messages(0, 400),
+        historyMounted: messages(400, 20),
+        liveHead: [],
+      },
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -35 }));
+    scroll.scrollTop = 20_000;
+    await nextLayout();
+    await nextLayout();
+    const shifts: number[] = [];
+    for (let step = 0; step < 80; step++) {
+      const before = visibleAnchor();
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -35 }));
+      scroll.scrollTop -= 35;
+      await nextLayout();
+      const row = host.querySelector<HTMLElement>(`[data-message-id="${before.id}"]`);
+      if (!row) throw new Error(`小幅滚动丢失了可见行 ${before.id}`);
+      shifts.push(
+        Math.round(
+          row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - before.top - 35,
+        ),
+      );
+    }
+    expect(shifts).toEqual(Array.from({ length: 80 }, () => 0));
+  });
+
+  it("持续上滚时插入旧页，后续滚动仍按用户距离推进", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={VARIABLE_ROW_STYLES[Math.abs(Number(item.id.slice(8))) % 5]}
+      >
+        {item.id}
+      </div>
+    );
+    const view = mountViewport({
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -35 }));
+    scroll.scrollTop = 80;
+    await nextLayout();
+    view.render({ hasOlderHistory: true });
+    await nextLayout();
+    view.render({ isLoadingOlderHistory: true });
+    await nextLayout();
+    const shifts: number[] = [];
+    for (let step = 0; step < 50; step++) {
+      const before = visibleAnchor();
+      const delta = Math.min(35, scroll.scrollTop);
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -35 }));
+      scroll.scrollTop -= delta;
+      await nextLayout();
+      if (step === 1) {
+        view.render({
+          segments: {
+            historyVirtualized: messages(-40, 190),
+            historyMounted: messages(150, 20),
+            liveHead: [],
+          },
+          hasOlderHistory: false,
+          isLoadingOlderHistory: false,
+        });
+        await nextLayout();
+      }
+      const row = host.querySelector<HTMLElement>(`[data-message-id="${before.id}"]`);
+      if (!row) throw new Error(`补页滚动丢失了可见行 ${before.id}`);
+      shifts.push(
+        Math.round(
+          row.getBoundingClientRect().top - scroll.getBoundingClientRect().top - before.top - delta,
+        ),
+      );
+    }
+    expect(shifts).toEqual(Array.from({ length: 50 }, () => 0));
+  });
+
+  it("阅读收起入口下方的长正文时，入口已离屏也能保留正文阅读位置", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={item.id === "message-0" ? EXPANDED_ROW_STYLE : ROW_STYLE}
+      >
+        {item.id === "message-0" ? (
+          <div data-testid="completed-process-long-answer" style={PROCESS_ROW_STYLE}>
+            已处理
+          </div>
+        ) : null}
+        {item.id}
+      </div>
+    );
+    const view = mountViewport({
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+    scroll.scrollTop = 80;
+    await nextLayout();
+    const before = visibleAnchor();
+    expect(before.id).toBe("message-0");
+    view.render({ hasOlderHistory: true });
+    await nextLayout();
+    view.render({ isLoadingOlderHistory: true });
+    await nextLayout();
+    view.render({
+      segments: {
+        historyVirtualized: messages(-40, 190),
+        historyMounted: messages(150, 20),
+        liveHead: [],
+      },
+      hasOlderHistory: false,
+      isLoadingOlderHistory: false,
+    });
+    const offsets: (number | null)[] = [];
+    for (let frame = 0; frame < 12; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const anchor = host.querySelector<HTMLElement>('[data-message-id="message-0"]');
+      offsets.push(
+        anchor ? anchor.getBoundingClientRect().top - scroll.getBoundingClientRect().top : null,
+      );
+    }
+    expect(offsets).toEqual(Array.from({ length: 12 }, () => before.top));
+  });
+
+  it("补页占位高度连续修正时，不把中间错误位置绘制到屏幕", async () => {
+    const renderRow = (item: StreamItem) => (
+      <div
+        data-message-id={item.id}
+        style={VARIABLE_ROW_STYLES[Math.abs(Number(item.id.slice(8))) % 5]}
+      >
+        {item.id}
+      </div>
+    );
+    const view = mountViewport({
+      renderers: {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      },
+    });
+    await expect.poll(() => host.querySelector('[data-testid="agent-chat-scroll"]')).not.toBeNull();
+    await nextLayout();
+    const scroll = viewport();
+    scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+    scroll.scrollTop = 32;
+    await nextLayout();
+    const before = visibleAnchor();
+    view.render({ hasOlderHistory: true });
+    await nextLayout();
+    view.render({ isLoadingOlderHistory: true });
+    await nextLayout();
+    view.render({
+      segments: {
+        historyVirtualized: messages(-40, 190),
+        historyMounted: messages(150, 20),
+        liveHead: [],
+      },
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+    });
+    const offsets: (number | null)[] = [];
+    for (let frame = 0; frame < 12; frame++) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const anchor = host.querySelector<HTMLElement>(`[data-message-id="${before.id}"]`);
+      offsets.push(
+        anchor ? anchor.getBoundingClientRect().top - scroll.getBoundingClientRect().top : null,
+      );
+    }
+    expect(offsets).toEqual(Array.from({ length: 12 }, () => before.top));
+  });
+
+  it.each([30, 170])(
+    "初始 %i 项历史补页移动收起入口时，每一帧保留位置且不构建隐藏过程",
+    async (total) => {
+      let processHost = "message-0";
+      const renderHiddenProcess = vi.fn();
+      const renderRow = (item: StreamItem) => {
+        if (item.id === processHost) {
+          return (
+            <div data-testid="completed-process-stable-turn" style={PROCESS_ROW_STYLE}>
+              已处理
+            </div>
+          );
+        }
+        if (item.id === "message-0") renderHiddenProcess();
+        return (
+          <div data-message-id={item.id} style={ROW_STYLE}>
+            {item.id}
+          </div>
+        );
+      };
+      const renderers = {
+        renderHistoryVirtualizedRow: renderRow,
+        renderHistoryMountedRow: renderRow,
+        renderLiveHeadRow: renderRow,
+        renderLiveAuxiliary: () => null,
+      };
+      const revision = (heights: ReadonlyMap<string, number>) => ({
+        contentById: new Set<string>(),
+        displayStateById: new Set<string>(),
+        estimatedHeightById: heights,
+        processAnchorIdByItemId: new Map([[processHost, "completed-process-stable-turn"]]),
+        globalDisplayState: false,
+      });
+      const hidden = new Map<string, number>();
+      const mountedStart = total - 20;
+      const view = mountViewport({
+        renderers,
+        segments:
+          total === 30
+            ? { historyVirtualized: [], historyMounted: messages(0, total), liveHead: [] }
+            : {
+                historyVirtualized: messages(0, mountedStart),
+                historyMounted: messages(mountedStart, 20),
+                liveHead: [],
+              },
+        historyRowRevision: revision(hidden),
+      });
+      await expect
+        .poll(() => host.querySelector('[data-testid="agent-chat-scroll"]'))
+        .not.toBeNull();
+      await nextLayout();
+      const scroll = viewport();
+      scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+      scroll.scrollTop = 0;
+      await nextLayout();
+      const offset = () => {
+        const toggle = host.querySelector('[data-testid="completed-process-stable-turn"]');
+        if (!toggle) return null;
+        return toggle.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+      };
+      const before = offset();
+      expect(before).toBe(16);
+      for (let page = 1; page <= 4; page++) {
+        view.render({ hasOlderHistory: true });
+        await nextLayout();
+        scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -80 }));
+        view.render({ isLoadingOlderHistory: true });
+        await nextLayout();
+        hidden.set(processHost, 0);
+        processHost = `message-${-page * 40}`;
+        view.render({
+          segments: {
+            historyVirtualized: messages(-page * 40, mountedStart + page * 40),
+            historyMounted: messages(mountedStart, 20),
+            liveHead: [],
+          },
+          historyRowRevision: revision(new Map(hidden)),
+          isLoadingOlderHistory: false,
+          hasOlderHistory: false,
+        });
+        const offsets: (number | null)[] = [];
+        for (let frame = 0; frame < 12; frame++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          offsets.push(offset());
+        }
+        expect(offsets).toEqual(Array.from({ length: 12 }, () => before));
+      }
+      expect(renderHiddenProcess).not.toHaveBeenCalled();
+    },
+  );
+
   it("连续补页时复用提供方标识的不同消息不串行渲染，也不产生重复节点或空白视口", async () => {
     const entries: ProcessTimelineResponseInput["payload"]["entries"] = [];
     for (let round = 0; round < 100; round++) {

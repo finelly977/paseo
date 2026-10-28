@@ -6526,7 +6526,7 @@ describe("Codex app-server provider", () => {
       selectedActionId: "implement",
     });
 
-    expect(asInternals(session).serviceTier).toBe("default");
+    expect(asInternals(session).serviceTier).toBeNull();
     expect(asInternals(session).planModeEnabled).toBe(false);
     expect(asInternals(session).config.featureValues).toEqual({
       plan_mode: false,
