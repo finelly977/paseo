@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import {
   getAssistantBlockSpacing,
+  getGapAboveStreamItem,
   getGapBetweenStreamItems,
   isSameAssistantBlockGroup,
 } from "./spacing";
@@ -131,7 +132,8 @@ describe("getGapBetweenStreamItems", () => {
     const user = { kind: "user_message", id: "user", text: "继续", timestamp: new Date() } as const;
     for (const text of ["---", "正文\n\n---", "---\n\n正文"]) {
       const assistant = assistantBlock({ id: text, blockGroupId: "answer", blockIndex: 0, text });
-      expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(24);
+      expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(0);
+      expect(getGapAboveStreamItem(user, assistant, 24)).toBe(48);
       expect(getGapBetweenStreamItems(user, assistant, 24)).toBe(24);
     }
   });
@@ -184,13 +186,13 @@ describe("getGapBetweenStreamItems", () => {
     }
   });
 
-  it("uses one compact turn gap without component-level spacing duplication", () => {
+  it("上一条回复不再重复持有用户卡片的回合前留白", () => {
     expect(
       getGapBetweenStreamItems(
         assistantBlock({ id: "answer", blockGroupId: "answer", blockIndex: 0 }),
         { kind: "user_message", id: "next", text: "next", timestamp: new Date() },
       ),
-    ).toBe(12);
+    ).toBe(0);
   });
 
   it("keeps compaction separators closer to surrounding content", () => {
@@ -207,7 +209,9 @@ describe("getGapBetweenStreamItems", () => {
     const user = { kind: "user_message", id: "next", text: "next", timestamp: new Date() } as const;
     const tool = toolCallBlock("tool");
 
-    expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(24);
+    expect(getGapBetweenStreamItems(assistant, user, 24)).toBe(0);
+    expect(getGapAboveStreamItem(user, assistant, 24)).toBe(48);
+    expect(getGapAboveStreamItem(user, assistant, 0)).toBe(0);
     expect(getGapBetweenStreamItems(assistant, tool, 24)).toBe(8);
     expect(getGapBetweenStreamItems(user, tool, 24)).toBe(16);
   });

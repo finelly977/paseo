@@ -5,12 +5,14 @@ import { Modal, Text, TextInput, View } from "react-native";
 import { afterEach, expect, it } from "vitest";
 import { applyRootUiFont } from "./apply-root-font.web";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { PlanCard } from "@/components/plan-card";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
 
 const labelStyle = { fontSize: 11 };
 const codeStyle = { fontFamily: "Consolas", fontSize: 12 };
+const compactStyle = { fontSize: 12 };
 let root: Root | null = null;
 let host: HTMLDivElement;
 let overlay: HTMLDivElement;
@@ -39,6 +41,9 @@ function mountFontSurfaces() {
       </Text>
       <Text style={codeStyle} dataSet={CODE_SURFACE_DATASET} testID="inline-code">
         const n = 1;
+      </Text>
+      <Text style={compactStyle} dataSet={COMPACT_LABEL_DATASET} testID="compact-label">
+        17
       </Text>
       {createPortal(<Text testID="overlay-label">权限卡片</Text>, overlay)}
       <Modal visible transparent>
@@ -89,6 +94,19 @@ it("字体切换立即更新已打开弹窗的同一节点，不重挂载也不�
   expect(getComputedStyle(modalLabel).fontFamily).toBe("Arial");
   expect(getComputedStyle(node("modal-code")).fontFamily).toBe("Consolas");
   expect(document.querySelectorAll("#paseo-ui-font").length).toBe(1);
+});
+
+it("紧凑徽标保留组件字号，字体仍随界面设置更新，普通正文继续统一字号", async () => {
+  mountFontSurfaces();
+  await expect.poll(() => document.querySelector('[data-testid="compact-label"]')).not.toBeNull();
+  for (const font of ["Arial", '"Times New Roman"']) {
+    applyRootUiFont(font, 20);
+    expect(getComputedStyle(node("compact-label")).fontSize).toBe("12px");
+    expect(getComputedStyle(node("compact-label")).fontFamily).toBe(font);
+    expect(getComputedStyle(node("ordinary-label")).fontSize).toBe("20px");
+    expect(getComputedStyle(node("inline-code")).fontSize).toBe("12px");
+    expect(getComputedStyle(node("inline-code")).fontFamily).toBe("Consolas");
+  }
 });
 
 it("权限计划卡片的正文使用界面字体，行内代码和命令块仍使用代码字体", async () => {

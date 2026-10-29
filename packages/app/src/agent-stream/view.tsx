@@ -188,7 +188,11 @@ function renderStreamItemWithTurnFooter(input: {
     />
   ) : null;
   const content = input.content ? (
-    <StreamItemWrapper itemId={input.layoutItem.item.id} gapBelow={input.layoutItem.gapBelow}>
+    <StreamItemWrapper
+      itemId={input.layoutItem.item.id}
+      gapAbove={input.layoutItem.gapAbove}
+      gapBelow={input.layoutItem.gapBelow}
+    >
       {input.content}
     </StreamItemWrapper>
   ) : null;
@@ -2185,14 +2189,15 @@ const permissionStyles = StyleSheet.create((theme) => ({
 
 interface StreamItemWrapperProps {
   itemId: string;
+  gapAbove: number;
   gapBelow: number;
   children: ReactNode;
 }
 
-function StreamItemWrapper({ itemId, gapBelow, children }: StreamItemWrapperProps) {
+function StreamItemWrapper({ itemId, gapAbove, gapBelow, children }: StreamItemWrapperProps) {
   const wrapperStyle = useMemo(
-    () => [stylesheet.streamItemWrapper, { marginBottom: gapBelow }],
-    [gapBelow],
+    () => [stylesheet.streamItemWrapper, { paddingTop: gapAbove, marginBottom: gapBelow }],
+    [gapAbove, gapBelow],
   );
   return (
     <View nativeID={getStreamItemDomId(itemId)} style={wrapperStyle}>

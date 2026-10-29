@@ -44,6 +44,16 @@ function hasAssistantDividerAtEdge(item: StreamItem, edge: "first" | "last"): bo
   return block !== undefined && isStandaloneMarkdownHorizontalRule(block);
 }
 
+export function getGapAboveStreamItem(
+  item: StreamItem,
+  aboveItem: StreamItem | null,
+  messageSpacing: number,
+): number {
+  const startsUserTurn =
+    item.kind === "user_message" && aboveItem !== null && aboveItem.kind !== "user_message";
+  return startsUserTurn ? messageSpacing * 2 : 0;
+}
+
 export function getGapBetweenStreamItems(
   item: StreamItem | null,
   belowItem: StreamItem | null,
@@ -56,9 +66,9 @@ export function getGapBetweenStreamItems(
   const compactSpacing = Math.round(messageSpacing / 3);
   const relatedSpacing = Math.round((messageSpacing * 2) / 3);
 
-  // 用户回合边界不能被正文分隔线吞掉。
+  // 新用户回合的留白由用户卡片自己持有，避免上一条记录折叠后丢失。
   if (isUserMessageItem(belowItem)) {
-    return isUserMessageItem(item) ? compactSpacing : messageSpacing;
+    return isUserMessageItem(item) ? compactSpacing : 0;
   }
   if (isUserMessageItem(item)) {
     return isToolSequenceItem(belowItem) ? relatedSpacing : messageSpacing;

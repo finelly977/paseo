@@ -27,6 +27,7 @@ import type { CheckoutGitActionStatus } from "@/git/actions-store";
 import type { GitActions } from "@/git/policy";
 import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
 import { GitActionsSplitButton } from "@/git/actions-split-button";
+import { COMPACT_LABEL_DATASET, COMPACT_LABEL_SCALE } from "@/styles/compact-label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -164,7 +165,9 @@ export function SourceControlSectionHeader({
         </Text>
         {count !== undefined && count !== null ? (
           <View style={styles.countBadge} accessibilityLabel={`${title}: ${count}`}>
-            <Text style={styles.countText}>{count}</Text>
+            <Text style={styles.countText} dataSet={COMPACT_LABEL_DATASET}>
+              {count}
+            </Text>
           </View>
         ) : null}
       </Pressable>
@@ -745,8 +748,8 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   countBadge: {
-    minWidth: 22,
-    minHeight: 22,
+    minWidth: Math.max(16, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2),
+    minHeight: Math.max(16, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2),
     paddingHorizontal: 4,
     alignItems: "center",
     justifyContent: "center",
@@ -754,8 +757,9 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmBadgeBackground,
   },
   countText: {
-    fontSize: theme.fontSize.base,
-    lineHeight: Math.round(theme.fontSize.base * 1.4),
+    fontSize: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE),
+    lineHeight: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2,
+    fontVariant: ["tabular-nums"],
     textAlign: "center",
     includeFontPadding: false,
     color: theme.colors.scmBadgeForeground,

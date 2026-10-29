@@ -103,6 +103,30 @@ function strategyFor(platform: "web" | "android"): StreamStrategy {
 }
 
 it.each(["web", "android"] as const)(
+  "%s 用户卡片自己持有回合前间距，不依赖上一行正文、耗时或折叠过程",
+  (platform) => {
+    for (const previous of [assistantMessage("answer", 2), toolCall("tool", 2)]) {
+      const layout = layoutFor({
+        platform,
+        tail: [userMessage("u1", 1), previous, userMessage("u2", 3)],
+      });
+      expect(findLayoutItem(layout, "u2").gapAbove).toBe(24);
+      expect(findLayoutItem(layout, previous.id).gapBelow).toBe(0);
+    }
+    const consecutive = layoutFor({ platform, tail: [userMessage("u1", 1), userMessage("u2", 2)] });
+    expect(findLayoutItem(consecutive, "u1").gapAbove).toBe(0);
+    expect(findLayoutItem(consecutive, "u2").gapAbove).toBe(0);
+    expect(findLayoutItem(consecutive, "u1").gapBelow).toBe(4);
+    const boundary = layoutFor({
+      platform,
+      tail: [userMessage("u1", 1), assistantMessage("a1", 2)],
+      head: [userMessage("u2", 3)],
+    });
+    expect(findLayoutItem(boundary, "u2").gapAbove).toBe(24);
+  },
+);
+
+it.each(["web", "android"] as const)(
   "%s 最后一段正文先于收尾工具时，已处理入口仍在正文之前",
   (platform) => {
     const tail: StreamItem[] = [

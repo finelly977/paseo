@@ -1,6 +1,10 @@
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
-import { getAssistantBlockSpacing, getGapBetweenStreamItems } from "./spacing";
+import {
+  getAssistantBlockSpacing,
+  getGapAboveStreamItem,
+  getGapBetweenStreamItems,
+} from "./spacing";
 import type { StreamFrameChildOrder, StreamStrategy } from "./strategy";
 import { continuesTurn, isTurnBoundary } from "./turn-membership";
 
@@ -21,6 +25,7 @@ export interface StreamLayoutItem {
   items: StreamItem[];
   aboveItem: StreamItem | null;
   belowItem: StreamItem | null;
+  gapAbove: number;
   gapBelow: number;
   assistantSpacing: "default" | "compactTop" | "compactBottom" | "compactBoth";
   completedFooter: TurnFooterHost | null;
@@ -471,6 +476,7 @@ function layoutSegment(input: LayoutSegmentInput): StreamLayoutItem[] {
       items: input.items,
       aboveItem,
       belowItem,
+      gapAbove: getGapAboveStreamItem(item, aboveItem, input.messageSpacing),
       gapBelow: turnFooter ? 0 : getGapBetweenStreamItems(item, belowItem, input.messageSpacing),
       assistantSpacing,
       completedFooter: turnFooter,

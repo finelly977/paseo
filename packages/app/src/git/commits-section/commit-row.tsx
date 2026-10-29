@@ -34,6 +34,7 @@ import { isNative } from "@/constants/platform";
 import { getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
 import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
+import { COMPACT_LABEL_DATASET, COMPACT_LABEL_SCALE } from "@/styles/compact-label";
 import { ForgeBrandIcon } from "@/git/forge-icon";
 import { getForgePresentation } from "@/git/forge";
 import { buildForgeCommitUrl } from "@/git/forge-url";
@@ -158,7 +159,11 @@ function CommitReferences({ viewModel }: { viewModel: CommitGraphViewModel }) {
         >
           <ReferenceIcon kind={reference.kind === "remote" ? "remote" : "head"} />
           {reference.kind !== "remote" ? (
-            <Text style={styles.referenceText} numberOfLines={1}>
+            <Text
+              style={[styles.referenceText, styles.inlineReferenceText]}
+              dataSet={COMPACT_LABEL_DATASET}
+              numberOfLines={1}
+            >
               {reference.name}
             </Text>
           ) : null}
@@ -613,7 +618,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   reference: {
     maxWidth: 132,
-    height: 22,
+    minWidth: 0,
+    flexShrink: 1,
+    height: Math.max(18, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 4),
     paddingHorizontal: 4,
     flexDirection: "row",
     alignItems: "center",
@@ -628,7 +635,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.scmGraphTagBackground,
   },
   referenceRemoteIconOnly: {
-    width: 22,
+    width: Math.max(18, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 4),
     paddingHorizontal: 0,
     justifyContent: "center",
   },
@@ -637,6 +644,11 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     lineHeight: Math.round(theme.fontSize.base * 1.4),
     color: theme.colors.scmGraphCurrentRefForeground,
+  },
+  inlineReferenceText: {
+    fontSize: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE),
+    lineHeight: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2,
+    includeFontPadding: false,
   },
   referenceTextTag: {
     color: theme.colors.scmGraphTagForeground,
