@@ -3408,6 +3408,34 @@ describe("createAgentStreamReducerQueue", () => {
     expect(scheduler.size).toBe(0);
   });
 
+  it("释放时丢弃该会话的待提交事件，重新打开不会混入旧片段", () => {
+    const scheduler = createManualScheduler();
+    const commits: string[] = [];
+    const queue = createAgentStreamReducerQueue({
+      getSnapshot: () => ({
+        currentTail: [],
+        currentHead: [],
+        currentCursor: undefined,
+        currentAgent: null,
+      }),
+      commit: (agentId, result) => {
+        commits.push(
+          `${agentId}:${result.head[0]?.kind === "assistant_message" ? result.head[0].text : ""}`,
+        );
+      },
+      handleSideEffects: () => {},
+      scheduleFlush: scheduler.schedule,
+      cancelFlush: scheduler.cancel,
+    });
+    queue.enqueue("released", makeStreamReducerEvent(makeTimelineEvent("旧片段"), 1));
+    queue.enqueue("other", makeStreamReducerEvent(makeTimelineEvent("其他会话"), 1));
+    queue.discardAgent("released");
+    queue.enqueue("released", makeStreamReducerEvent(makeTimelineEvent("冷恢复后的新片段"), 2));
+    scheduler.flushOne();
+    expect(commits).toEqual(["other:其他会话", "released:冷恢复后的新片段"]);
+    expect(scheduler.size).toBe(0);
+  });
+
   it("keeps a live paragraph in one assistant item when canonical fetch interleaves with queued stream chunks", () => {
     const scheduler = createManualScheduler();
     let currentTail: StreamItem[] = [];

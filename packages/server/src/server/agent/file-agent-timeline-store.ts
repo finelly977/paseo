@@ -157,6 +157,14 @@ export class FileAgentTimelineStore implements AgentTimelineStore {
     });
   }
 
+  async release(agentId: string): Promise<void> {
+    await this.runMutation(agentId, async () => {
+      const loading = this.loading.get(agentId);
+      if (loading) await loading;
+      this.documents.delete(agentId);
+    });
+  }
+
   async bulkInsert(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
     await this.runMutation(agentId, async () => {
       const current = await this.getDocument(agentId);

@@ -110,6 +110,49 @@ describe("智能体任务状态", () => {
 });
 
 describe("对话历史内存预算", () => {
+  it("释放会话清空正文、索引和游标，保留队列与输入以供冷恢复", () => {
+    initializeTestSession();
+    const store = useSessionStore.getState();
+    store.setAgentStreamState("test-server", "agent", {
+      tail: conversationItems("旧", 2),
+      head: conversationItems("活动", 1),
+    });
+    store.setAgentAuthoritativeHistoryApplied("test-server", "agent", true);
+    store.setAgentTimelineCursor(
+      "test-server",
+      new Map([["agent", { epoch: "e", startSeq: 1, endSeq: 6 }]]),
+    );
+    store.setAgentConversationIndex(
+      "test-server",
+      "agent",
+      [
+        {
+          messageId: "u",
+          clientMessageId: null,
+          text: "问题",
+          assistantPreview: "回答",
+          timestamp: new Date(0).toISOString(),
+          seqStart: 1,
+        },
+      ],
+      "v1",
+    );
+    store.setQueuedMessages(
+      "test-server",
+      new Map([["agent", [{ id: "queued", text: "不要丢掉", attachments: [] }]]]),
+    );
+    store.releaseAgentMemory("test-server", "agent");
+    const session = useSessionStore.getState().sessions["test-server"];
+    expect(session.agentStreamTail.has("agent")).toBe(false);
+    expect(session.agentStreamHead.has("agent")).toBe(false);
+    expect(session.agentTimelineCursor.has("agent")).toBe(false);
+    expect(session.agentConversationIndex.has("agent")).toBe(false);
+    expect(session.agentConversationIndexVersion.has("agent")).toBe(false);
+    expect(session.agentAuthoritativeHistoryApplied.has("agent")).toBe(false);
+    expect(session.releasedAgentIds.has("agent")).toBe(true);
+    expect(session.queuedMessages.get("agent")?.[0].text).toBe("不要丢掉");
+  });
+
   it("优先保留当前会话并让被裁剪的旧会话下次重新加载", () => {
     initializeTestSession();
     const store = useSessionStore.getState();

@@ -30,6 +30,7 @@ export interface ProviderSubagentTimelineState {
 }
 
 interface ProviderSubagentState {
+  releaseParent(serverId: string, parentAgentId: string): void;
   descriptors: Map<string, ProviderSubagentDescriptorPayload>;
   timelines: Map<string, ProviderSubagentTimelineState>;
   hiddenFromTrack: Set<string>;
@@ -73,7 +74,29 @@ export function providerSubagentLifecycleStatus(
 
 type ProviderSubagentListClient = Pick<DaemonClient, "listProviderSubagents">;
 
-const pendingListRequests = new WeakMap<ProviderSubagentListClient, Map<string, Promise<void>>>();
+interface PendingProviderList {
+  version: number;
+  promise: Promise<void>;
+}
+const pendingListRequests = new WeakMap<
+  ProviderSubagentListClient,
+  Map<string, PendingProviderList>
+>();
+const parentReleases = new Map<string, number>();
+
+export async function fetchProviderSubagentTimeline(
+  client: Pick<DaemonClient, "fetchProviderSubagentTimeline">,
+  serverId: string,
+  parentAgentId: string,
+  subagentId: string,
+  options: Parameters<DaemonClient["fetchProviderSubagentTimeline"]>[2],
+): Promise<void> {
+  const requestKey = `${serverId}\0${parentAgentId}`;
+  const releaseVersion = parentReleases.get(requestKey) ?? 0;
+  const payload = await client.fetchProviderSubagentTimeline(parentAgentId, subagentId, options);
+  if ((parentReleases.get(requestKey) ?? 0) !== releaseVersion) return;
+  useProviderSubagentStore.getState().replaceTimeline(serverId, payload);
+}
 
 export function refreshProviderSubagents(
   client: ProviderSubagentListClient,
@@ -81,24 +104,26 @@ export function refreshProviderSubagents(
   parentAgentId: string,
 ): Promise<void> {
   const requestKey = `${serverId}\0${parentAgentId}`;
+  const releaseVersion = parentReleases.get(requestKey) ?? 0;
   let clientRequests = pendingListRequests.get(client);
   if (!clientRequests) {
     clientRequests = new Map();
     pendingListRequests.set(client, clientRequests);
   }
   const pending = clientRequests.get(requestKey);
-  if (pending) return pending;
+  if (pending?.version === releaseVersion) return pending.promise;
 
   const request = client
     .listProviderSubagents(parentAgentId)
     .then((payload) => {
+      if ((parentReleases.get(requestKey) ?? 0) !== releaseVersion) return;
       useProviderSubagentStore.getState().replaceList(serverId, parentAgentId, payload.subagents);
       return undefined;
     })
     .finally(() => {
-      clientRequests?.delete(requestKey);
+      if (clientRequests.get(requestKey)?.promise === request) clientRequests.delete(requestKey);
     });
-  clientRequests.set(requestKey, request);
+  clientRequests.set(requestKey, { version: releaseVersion, promise: request });
   return request;
 }
 
@@ -193,6 +218,20 @@ function buildTimelineResponseRows(
 }
 
 export const useProviderSubagentStore = create<ProviderSubagentState>((set) => ({
+  releaseParent(serverId, parentAgentId) {
+    const requestKey = `${serverId}\0${parentAgentId}`;
+    parentReleases.set(requestKey, (parentReleases.get(requestKey) ?? 0) + 1);
+    set((state) => {
+      const prefix = parentPrefix(serverId, parentAgentId);
+      return {
+        descriptors: new Map([...state.descriptors].filter(([key]) => !key.startsWith(prefix))),
+        timelines: new Map([...state.timelines].filter(([key]) => !key.startsWith(prefix))),
+        hiddenFromTrack: new Set(
+          [...state.hiddenFromTrack].filter((key) => !key.startsWith(prefix)),
+        ),
+      };
+    });
+  },
   descriptors: new Map(),
   timelines: new Map(),
   hiddenFromTrack: new Set(),

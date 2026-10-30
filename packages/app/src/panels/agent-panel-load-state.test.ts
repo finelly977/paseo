@@ -48,6 +48,24 @@ describe("clearHistorySyncErrorAfterSuccessfulSync", () => {
 });
 
 describe("shouldInitializeAgentPane", () => {
+  it("当前面板释放并清掉历史后仍等待重新打开，不立即反向恢复", () => {
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: true,
+        hasAuthoritativeHistory: false,
+        shouldResumeClosedRuntime: false,
+        runtimeReleased: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldInitializeAgentPane({
+        hasAgentRecord: true,
+        hasAuthoritativeHistory: false,
+        shouldResumeClosedRuntime: true,
+        runtimeReleased: true,
+      }),
+    ).toBe(true);
+  });
   it("已经回收但保留历史的会话再次打开时仍会恢复运行时", () => {
     expect(
       shouldInitializeAgentPane({

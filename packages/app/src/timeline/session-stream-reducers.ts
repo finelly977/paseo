@@ -1376,6 +1376,7 @@ export type AgentStreamReducerSnapshot = Omit<ProcessAgentStreamEventsInput, "ev
 
 export interface AgentStreamReducerQueue {
   enqueue: (agentId: string, event: AgentStreamReducerEvent) => void;
+  discardAgent: (agentId: string) => void;
   flush: () => void;
   flushAgent: (agentId: string) => void;
   dispose: (options?: { flush?: boolean }) => void;
@@ -1693,6 +1694,10 @@ export function createAgentStreamReducerQueue(
       }
       scheduleFlush();
     },
+    discardAgent(agentId) {
+      pendingByAgentId.delete(agentId);
+      if (pendingByAgentId.size === 0) cancelScheduledFlush();
+    },
     flush,
     flushAgent,
     dispose(options) {
@@ -1803,6 +1808,7 @@ export function createSessionAgentStreamReducerQueue(
       };
     },
     commit: (agentId, result, events) => {
+      if (useSessionStore.getState().sessions[serverId]?.releasedAgentIds.has(agentId)) return;
       if (
         result.changedTail ||
         result.changedHead ||

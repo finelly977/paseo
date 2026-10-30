@@ -1,0 +1,51 @@
+diff --git a/node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh b/node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh
+--- a/node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh
++++ b/node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh
+@@ -83,11 +83,25 @@
+ 
+ Var /GLOBAL isTryToKeepShortcuts
+ 
+-!macro setIsTryToKeepShortcuts
++!macro setIsTryToKeepShortcuts ROOT_KEY
+   StrCpy $isTryToKeepShortcuts "true"
+   !ifdef allowToChangeInstallationDirectory
+     ${ifNot} ${isUpdated}
+       StrCpy $isTryToKeepShortcuts "false"
++      # 手动升级也保留同目录的快捷方式；变更安装目录仍走重建路径。
++      Push $R5
++      Push $R6
++      !insertmacro readReg $R5 "${ROOT_KEY}" "${INSTALL_REGISTRY_KEY}" InstallLocation
++      ${if} $R5 != ""
++      ${andIf} ${FileExists} "$R5\${APP_EXECUTABLE_FILENAME}"
++        GetFullPathName $R5 "$R5\."
++        GetFullPathName $R6 "$INSTDIR\."
++        ${if} $R5 == $R6
++          StrCpy $isTryToKeepShortcuts "true"
++        ${endif}
++      ${endif}
++      Pop $R6
++      Pop $R5
+     ${endIf}
+   !endif
+ !macroend
+@@ -188,7 +202,7 @@
+     StrCpy $0 "/allusers"
+   ${endif}
+ 
+-  !insertMacro setIsTryToKeepShortcuts
++  !insertMacro setIsTryToKeepShortcuts "$rootKey"
+ 
+   ${if} $isTryToKeepShortcuts == "true"
+     !insertmacro readReg $R5 "$rootKey" "${INSTALL_REGISTRY_KEY}" KeepShortcuts
+diff --git a/node_modules/app-builder-lib/templates/nsis/installSection.nsh b/node_modules/app-builder-lib/templates/nsis/installSection.nsh
+--- a/node_modules/app-builder-lib/templates/nsis/installSection.nsh
++++ b/node_modules/app-builder-lib/templates/nsis/installSection.nsh
+@@ -39,7 +39,7 @@
+ 
+ Var /GLOBAL keepShortcuts
+ StrCpy $keepShortcuts "false"
+-!insertMacro setIsTryToKeepShortcuts
++!insertMacro setIsTryToKeepShortcuts SHELL_CONTEXT
+ ${if} $isTryToKeepShortcuts == "true"
+   ReadRegStr $R1 SHELL_CONTEXT "${INSTALL_REGISTRY_KEY}" KeepShortcuts
+ 

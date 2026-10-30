@@ -4322,15 +4322,6 @@ export class Session {
     const agentIds = Array.isArray(agentId) ? agentId : [agentId];
 
     try {
-      await Promise.all(
-        agentIds.map((id) =>
-          ensureAgentLoaded(id, {
-            agentManager: this.agentManager,
-            agentStorage: this.agentStorage,
-            logger: this.sessionLogger,
-          }),
-        ),
-      );
       await Promise.all(agentIds.map((id) => this.agentManager.clearAgentAttention(id)));
       if (requestId) {
         const agents = (
@@ -4429,11 +4420,13 @@ export class Session {
     );
 
     try {
+      const assertRuntimeRead = this.agentManager.createRuntimeReadGuard(agentId);
       const existing = this.agentManager.getAgent(agentId);
       const stored = existing ? null : await this.agentStorage.get(agentId);
       const agent =
         existing || (stored && !stored.archivedAt)
           ? await ensureAgentLoaded(agentId, {
+              assertRuntimeRead,
               agentManager: this.agentManager,
               agentStorage: this.agentStorage,
               logger: this.sessionLogger,
@@ -6984,6 +6977,7 @@ export class Session {
 
     try {
       const snapshot = await ensureAgentLoaded(msg.agentId, {
+        assertRuntimeRead: this.agentManager.createRuntimeReadGuard(msg.agentId),
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
@@ -7106,6 +7100,7 @@ export class Session {
   ): Promise<void> {
     try {
       await ensureUnarchivedAgentLoaded(msg.parentAgentId, {
+        assertRuntimeRead: this.agentManager.createRuntimeReadGuard(msg.parentAgentId),
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
@@ -7138,6 +7133,7 @@ export class Session {
     const direction: AgentTimelineFetchDirection = msg.direction ?? (msg.cursor ? "after" : "tail");
     try {
       await ensureUnarchivedAgentLoaded(msg.parentAgentId, {
+        assertRuntimeRead: this.agentManager.createRuntimeReadGuard(msg.parentAgentId),
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,

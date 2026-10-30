@@ -854,8 +854,11 @@ export class AgentManager {
   private readonly durableTimelineBuffer?: DurableTimelineBuffer;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
+  private readonly durableTimelineUpdates = new Map<string, Set<Promise<void>>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
+  private readonly inFlightRuntimeReleases = new Map<string, Promise<void>>();
+  private readonly runtimeReleaseVersions = new Map<string, number>();
   private readonly pendingAgentReloads = new Map<string, PendingAgentReload>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
@@ -1623,7 +1626,7 @@ export class AgentManager {
     // 前先释放旧运行时，避免 thread/resume 与旧进程退出竞争而触发活动写入者错误。
     const releasedCodexRuntime = provider === "codex" && handle !== null;
     if (releasedCodexRuntime) {
-      await this.closeAgent(agentId);
+      await this.closeAgent(agentId, { retainTimelineForReload: true });
     }
 
     const session = handle
@@ -1738,13 +1741,16 @@ export class AgentManager {
     }
   }
 
-  closeAgent(agentId: string): Promise<void> {
+  closeAgent(agentId: string, options?: { retainTimelineForReload: true }): Promise<void> {
     const existing = this.inFlightAgentCloses.get(agentId);
     if (existing) {
       return existing;
     }
 
-    const close = this.closeAgentRuntime(agentId);
+    if (!options?.retainTimelineForReload) {
+      this.runtimeReleaseVersions.set(agentId, (this.runtimeReleaseVersions.get(agentId) ?? 0) + 1);
+    }
+    const close = this.closeAgentRuntime(agentId, options);
     this.inFlightAgentCloses.set(agentId, close);
     const clearClose = () => {
       if (this.inFlightAgentCloses.get(agentId) === close) {
@@ -1755,16 +1761,53 @@ export class AgentManager {
     return close;
   }
 
-  async releaseAgentRuntime(agentId: string): Promise<void> {
+  /** 历史读取不能跨过一次释放再恢复进程；内部配置重载仍允许等待同一次恢复。 */
+  createRuntimeReadGuard(agentId: string): () => void {
+    const version = this.runtimeReleaseVersions.get(agentId) ?? 0;
+    const assertCurrent = () => {
+      if (
+        this.inFlightRuntimeReleases.has(agentId) ||
+        (this.inFlightAgentCloses.has(agentId) && !this.pendingAgentReloads.has(agentId)) ||
+        (this.runtimeReleaseVersions.get(agentId) ?? 0) !== version
+      ) {
+        throw new Error("会话运行时已释放，旧历史请求已取消，请重新打开会话。");
+      }
+    };
+    assertCurrent();
+    return assertCurrent;
+  }
+
+  releaseAgentRuntime(agentId: string): Promise<void> {
+    const existing = this.inFlightRuntimeReleases.get(agentId);
+    if (existing) return existing;
+    this.runtimeReleaseVersions.set(agentId, (this.runtimeReleaseVersions.get(agentId) ?? 0) + 1);
+    const operation = this.releaseAgentRuntimeState(agentId);
+    this.inFlightRuntimeReleases.set(agentId, operation);
+    const clear = () => {
+      this.inFlightRuntimeReleases.delete(agentId);
+    };
+    void operation.then(clear, clear);
+    return operation;
+  }
+
+  private async releaseAgentRuntimeState(agentId: string): Promise<void> {
+    await this.waitForAgentReload(agentId);
+    try {
+      await waitForAgentInitialization(this, agentId);
+    } catch (error) {
+      this.logger.warn({ err: error, agentId }, "初始化在运行时释放期间失败，继续关闭并清理该会话");
+    }
     const liveAgent = this.agents.get(agentId);
     if (liveAgent) {
       await this.closeAgent(agentId);
+      await this.releaseRetainedAgentState(agentId);
       return;
     }
 
     await this.waitForAgentClose(agentId);
     if (this.agents.has(agentId)) {
       await this.closeAgent(agentId);
+      await this.releaseRetainedAgentState(agentId);
       return;
     }
 
@@ -1773,6 +1816,8 @@ export class AgentManager {
       throw new Error(`未找到智能体 ${agentId}`);
     }
     if (record.lastStatus === "closed") {
+      await this.releaseRetainedAgentState(agentId);
+      if (!record.internal) this.dispatchStoredAgentState(record);
       return;
     }
 
@@ -1782,12 +1827,16 @@ export class AgentManager {
       updatedAt: new Date().toISOString(),
     };
     await this.requireRegistry().upsert(closedRecord);
+    await this.releaseRetainedAgentState(agentId);
     if (!closedRecord.internal) {
       this.dispatchStoredAgentState(closedRecord);
     }
   }
 
-  private async closeAgentRuntime(agentId: string): Promise<void> {
+  private async closeAgentRuntime(
+    agentId: string,
+    options?: { retainTimelineForReload: true },
+  ): Promise<void> {
     const agent = this.requireAgent(agentId);
     this.logger.trace(
       {
@@ -1802,6 +1851,7 @@ export class AgentManager {
       "agent.manager.close.start",
     );
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
+    this.touchUpdatedAt(closedAgent);
     let closeError: unknown;
     try {
       await agent.session.close();
@@ -1815,7 +1865,15 @@ export class AgentManager {
     } catch (error) {
       persistError = error;
     }
+    if (
+      closeError === undefined &&
+      persistError === undefined &&
+      !options?.retainTimelineForReload
+    ) {
+      await this.releaseRetainedAgentState(agentId);
+    }
     this.emitClosedAgent(closedAgent, { persist: false });
+    this.previousStatuses.delete(agentId);
     this.logger.trace(
       {
         agentId,
@@ -2197,7 +2255,24 @@ export class AgentManager {
   }
 
   async clearAgentAttention(agentId: string): Promise<void> {
-    const agent = this.requireAgent(agentId);
+    await this.waitForAgentClose(agentId);
+    const agent = this.agents.get(agentId);
+    if (!agent) {
+      const registry = this.requireRegistry();
+      const record = await registry.get(agentId);
+      if (!record) throw new Error(`Agent not found: ${agentId}`);
+      if (!record.requiresAttention) return;
+      const updated = {
+        ...record,
+        requiresAttention: false,
+        attentionReason: null,
+        attentionTimestamp: null,
+        updatedAt: this.nextStoredUpdatedAt(record),
+      };
+      await registry.upsert(updated);
+      if (!updated.internal) this.dispatchStoredAgentState(updated);
+      return;
+    }
     if (agent.attention.requiresAttention) {
       agent.attention = { requiresAttention: false };
       await this.persistSnapshot(agent);
@@ -3757,6 +3832,15 @@ export class AgentManager {
     }
   }
 
+  private async releaseRetainedAgentState(agentId: string): Promise<void> {
+    await this.sessionEventTails.get(agentId);
+    await this.durableTimelineBuffer?.flush(agentId);
+    const updates = this.durableTimelineUpdates.get(agentId);
+    if (updates) await Promise.all(updates);
+    await this.durableTimelineStore?.release(agentId);
+    this.discardRetainedAgentState(agentId);
+  }
+
   private emitClosedAgent(agent: ManagedAgentClosed, options?: { persist?: boolean }): void {
     this.emitState(agent, options);
   }
@@ -4971,6 +5055,18 @@ export class AgentManager {
         { err, agentId, seq: row.seq, itemType: row.item.type },
         "Failed to enrich durable timeline row",
       );
+    });
+    let updates = this.durableTimelineUpdates.get(agentId);
+    if (!updates) {
+      updates = new Set();
+      this.durableTimelineUpdates.set(agentId, updates);
+    }
+    updates.add(task);
+    const pendingUpdates = updates;
+    void task.then(() => {
+      pendingUpdates.delete(task);
+      if (pendingUpdates.size === 0) this.durableTimelineUpdates.delete(agentId);
+      return undefined;
     });
     this.trackBackgroundTask(task);
   }

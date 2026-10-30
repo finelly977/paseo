@@ -845,6 +845,9 @@ function ChatAgentContent({
       ? state.sessions[serverId]?.agentAuthoritativeHistoryApplied?.get(agentId) === true
       : false,
   );
+  const runtimeReleased = useSessionStore((state) =>
+    agentId ? state.sessions[serverId]?.releasedAgentIds.has(agentId) === true : false,
+  );
   const agentHistorySyncGeneration = useSessionStore((state) =>
     agentId ? (state.sessions[serverId]?.agentHistorySyncGeneration?.get(agentId) ?? -1) : -1,
   );
@@ -1070,6 +1073,7 @@ function ChatAgentContent({
         hasAgentRecord: Boolean(agentState.id),
         hasAuthoritativeHistory: hasAppliedAuthoritativeHistory,
         shouldResumeClosedRuntime,
+        runtimeReleased,
       })
     ) {
       if (
@@ -1147,13 +1151,40 @@ function ChatAgentContent({
     missingAgentState.kind,
     serverId,
     shouldResumeClosedRuntime,
+    runtimeReleased,
   ]);
 
   const retryAgentLoad = useCallback(() => setMissingAgentState({ kind: "idle" }), []);
+  const reloadReleasedAgent = useCallback(() => {
+    if (!agentId) return;
+    useSessionStore.getState().resumeAgentMemory(serverId, agentId);
+    retryAgentLoad();
+  }, [agentId, retryAgentLoad, serverId]);
   const retryTimelineSync = useCallback(() => {
     if (!agentId || !viewedTimelineSync) return;
     viewedTimelineSync.retryVisibleAgentTimeline(agentId);
   }, [agentId, viewedTimelineSync]);
+
+  if (runtimeReleased && !shouldResumeClosedRuntime) {
+    return (
+      <View style={styles.container} testID="agent-runtime-released">
+        <View style={styles.errorContainer}>
+          <Text style={styles.statusText}>{t("agentPanel.states.runtimeReleased")}</Text>
+          <View style={styles.errorAction}>
+            <Button
+              size="sm"
+              variant="secondary"
+              testID="agent-runtime-reload"
+              disabled={!isConnected}
+              onPress={reloadReleasedAgent}
+            >
+              {t("agentPanel.states.reloadConversation")}
+            </Button>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   const nonReadyView = renderChatAgentNonReadyView({
     viewState,

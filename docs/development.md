@@ -23,6 +23,15 @@ npm run build:desktop:win
 
 该命令固定生成 Windows x64 NSIS 安装包，并按顺序完成版本一致性检查、桌面界面依赖编译、Electron 专用 Expo 导出、服务端与 CLI 编译、Electron 主进程编译和最终打包。脚本会主动删除 App 与 Electron 主进程的旧 `dist` 目录，任何一步失败都会立即停止，因此不会把上一次构建的界面或主进程误装进新安装包。
 
+Windows 安装器按注册表中的安装范围和实际目录识别手动升级。同目录升级保留已有开始菜单与桌面快捷方式，避免旧版卸载程序取消固定项；首次安装仍可选择目录，迁移目录仍重建快捷方式。`appId`、可执行文件名和快捷方式名称不能随版本变化。已被旧安装器取消的固定项不会自动恢复，用户需重新固定一次。
+
+`patches/app-builder-lib+26.8.1.patch` 修正 NSIS 模板的快捷方式保留条件，并由 `npm run postinstall` 应用；不能只改本机依赖。保留策略同时用于新安装器与传给旧卸载程序的参数，按实际卸载的注册表范围核对目录，避免当前用户和全用户安装互相误判。升级模板版本时必须重新验证两个调用点。Windows 可用以下命令编译并运行真实 NSIS 策略测试，测试只操作 `.output/windows-shortcut-upgrade` 产物和唯一的临时注册表键，不安装或卸载 Paseo、不操作真实固定项：
+
+```powershell
+$env:NSIS_MAKENSIS = Join-Path $env:LOCALAPPDATA 'electron-builder\Cache\nsis\nsis-3.0.4.1\makensis.exe'
+node --test scripts/windows-installer-shortcuts.test.mjs
+```
+
 不要在 `packages/desktop` 中直接运行 `electron-builder`。该命令只负责打包现有产物，不会补做前置编译。也不要通过多层 npm 命令手动转发 `--win nsis --x64 --publish never`，Windows 下参数可能被 npm 重排。
 
 安装包输出位置：

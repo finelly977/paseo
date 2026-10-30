@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { providerSubagentKey, useProviderSubagentStore } from "./provider-store";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import {
+  fetchProviderSubagentTimeline,
+  providerSubagentKey,
+  refreshProviderSubagents,
+  useProviderSubagentStore,
+} from "./provider-store";
 
 const SERVER_ID = "server-1";
 const PARENT_ID = "parent-1";
@@ -14,6 +20,114 @@ afterEach(() => {
 });
 
 describe("provider subagent client store", () => {
+  test("释放父会话同时清除子智能体缓存与隐藏标记，不影响其他父会话", () => {
+    const store = useProviderSubagentStore.getState();
+    const descriptor = {
+      id: SUBAGENT_ID,
+      parentAgentId: PARENT_ID,
+      provider: "codex" as const,
+      title: "已完成的任务",
+      description: null,
+      status: "completed" as const,
+      createdAt: "2026-07-12T10:00:00.000Z",
+      updatedAt: "2026-07-12T10:00:01.000Z",
+      toolCallId: "call-1",
+    };
+    store.replaceList(SERVER_ID, PARENT_ID, [descriptor]);
+    store.replaceList(SERVER_ID, "other-parent", [
+      { ...descriptor, parentAgentId: "other-parent" },
+    ]);
+    store.applyUpdate(SERVER_ID, {
+      kind: "timeline",
+      parentAgentId: PARENT_ID,
+      subagentId: SUBAGENT_ID,
+      provider: "codex",
+      epoch: "epoch-1",
+      seq: 1,
+      timestamp: descriptor.updatedAt,
+      item: { type: "assistant_message", text: "任务输出" },
+    });
+    store.hideFinishedForParent(SERVER_ID, PARENT_ID);
+    store.releaseParent(SERVER_ID, PARENT_ID);
+
+    const state = useProviderSubagentStore.getState();
+    const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
+    expect(state.descriptors.has(key)).toBe(false);
+    expect(state.timelines.has(key)).toBe(false);
+    expect(state.hiddenFromTrack.has(key)).toBe(false);
+    expect(state.descriptors.has(providerSubagentKey(SERVER_ID, "other-parent", SUBAGENT_ID))).toBe(
+      true,
+    );
+  });
+
+  test("释放前发出的列表请求不能在完成时重新填入缓存", async () => {
+    const pending =
+      Promise.withResolvers<Awaited<ReturnType<DaemonClient["listProviderSubagents"]>>>();
+    const client = { listProviderSubagents: () => pending.promise };
+    const request = refreshProviderSubagents(client, SERVER_ID, PARENT_ID);
+    useProviderSubagentStore.getState().releaseParent(SERVER_ID, PARENT_ID);
+    pending.resolve({
+      requestId: "list-old",
+      parentAgentId: PARENT_ID,
+      subagents: [
+        {
+          id: SUBAGENT_ID,
+          parentAgentId: PARENT_ID,
+          provider: "codex",
+          title: "旧任务",
+          description: null,
+          status: "completed",
+          createdAt: "2026-07-12T10:00:00.000Z",
+          updatedAt: "2026-07-12T10:00:01.000Z",
+          toolCallId: "call-1",
+        },
+      ],
+      error: null,
+    });
+    await request;
+    expect(useProviderSubagentStore.getState().descriptors.size).toBe(0);
+    await refreshProviderSubagents(client, SERVER_ID, PARENT_ID);
+    expect(useProviderSubagentStore.getState().descriptors.size).toBe(1);
+  });
+
+  test("释放前发出的子任务正文不能重新填入缓存，新请求仍可正常读取", async () => {
+    const pending =
+      Promise.withResolvers<Awaited<ReturnType<DaemonClient["fetchProviderSubagentTimeline"]>>>();
+    const client = { fetchProviderSubagentTimeline: () => pending.promise };
+    const request = fetchProviderSubagentTimeline(client, SERVER_ID, PARENT_ID, SUBAGENT_ID, {
+      direction: "tail",
+    });
+    useProviderSubagentStore.getState().releaseParent(SERVER_ID, PARENT_ID);
+    pending.resolve({
+      requestId: "history-old",
+      parentAgentId: PARENT_ID,
+      subagentId: SUBAGENT_ID,
+      provider: "codex",
+      direction: "tail",
+      epoch: "epoch-1",
+      reset: false,
+      staleCursor: false,
+      gap: false,
+      window: { minSeq: 1, maxSeq: 1, nextSeq: 2 },
+      hasOlder: false,
+      hasNewer: false,
+      error: null,
+      rows: [
+        {
+          seq: 1,
+          timestamp: "2026-07-12T10:00:00.000Z",
+          item: { type: "assistant_message", text: "旧输出" },
+        },
+      ],
+    });
+    await request;
+    expect(useProviderSubagentStore.getState().timelines.size).toBe(0);
+    await fetchProviderSubagentTimeline(client, SERVER_ID, PARENT_ID, SUBAGENT_ID, {
+      direction: "tail",
+    });
+    expect(useProviderSubagentStore.getState().timelines.size).toBe(1);
+  });
+
   test("builds a shared stream model from ordered provider updates", () => {
     const subagents = useProviderSubagentStore.getState();
     subagents.applyUpdate(SERVER_ID, {

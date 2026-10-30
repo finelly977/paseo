@@ -203,6 +203,29 @@ test("keeps hidden agents subscribed for thirty seconds", () => {
   expect(VIEWED_TIMELINE_UNSUBSCRIBE_GRACE_MS).toBe(30_000);
 });
 
+test("释放会话立即退订，聚焦和迟到补页不会重新加载，明确重开才恢复", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  const oldFetch = await world.nextFetch("agent-a");
+  world.sync.releaseAgentTimeline("agent-a");
+  const removed = await world.nextMembership();
+  expect(removed.agentIds).toEqual([]);
+  removed.succeed();
+  world.sync.catchUpVisibleTimelines();
+  world.sync.reprojectVisibleTimelines();
+  oldFetch.respond({ hasNewer: true, seq: 4 });
+  await Promise.resolve();
+  world.expectNoPendingFetch();
+  world.sync.resumeAgentTimeline("agent-a");
+  (await world.nextMembership()).succeed();
+  const reopened = await world.nextFetch("agent-a");
+  expect(reopened.request.direction).toBe("tail");
+  reopened.respond({ hasNewer: false });
+  world.sync.dispose();
+});
+
 test("uses a tail fetch when a live cursor is not authoritative", async () => {
   const world = new TimelineWorld();
   world.setLiveCursor("agent-a", 9);

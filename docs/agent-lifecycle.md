@@ -14,12 +14,11 @@ Each live agent in `AgentManager` carries a `lastStatus` of `initializing`, `idl
 
 ## Runtime residency
 
-An unarchived agent may be `closed` without being deleted or archived. Closing releases its provider
-processes and subscriptions while retaining its Paseo identity, persistence handle, timeline,
-workspace, labels, title, usage, attention, timestamps, and parent relationship. Opening or prompting
-the agent runs through `ensureAgentLoaded()`, which resumes the durable provider session under the
-same Paseo agent ID. Provider history is not appended again when the canonical timeline is already
-primed.
+未归档智能体可以处于 `closed`，不代表删除或归档。正常关闭与空闲回收会关闭提供方运行时及订阅，
+等待该会话已进入队列的持久写入结束，再清除规范时间线、持久存储的内存文档和提供方子任务缓存。
+磁盘历史、Paseo 身份、原生会话句柄、工作区、标题、标签、用量、注意状态及父子关系继续保留。
+再次打开时通过 `ensureAgentLoaded()` 恢复同一个原生会话，按首次打开路径读取历史。
+仅在内部配置重载期间，旧运行时关闭与新运行时替换之间暂时保留时间线；普通释放不保留该副本。
 
 Codex 服务商注入属于 Paseo 会话的持久配置。创建或恢复提供方运行时之前，
 `AgentManager.prepareSessionConfig()` 会从守护进程的当前配置解析所选条目，只把
@@ -37,14 +36,20 @@ does not cascade or change parentage.
 指向现有智能体的活动定时任务会保护该智能体不被回收。每个已连接客户端当前选中或在分栏中
 可见的智能体也会受到保护，即使客户端窗口被隐藏或失去焦点也不例外。已暂停、已完成以及新建
 智能体类型的定时任务不提供保护。已经回收的智能体再次进入可见面板时，会立即恢复运行时并
-增量核对历史；不必等到用户发送下一条消息。未被查看的面板可能在运行时回收后仍保持打开；
+从持久历史重新建立内存视图；不必等到用户发送下一条消息。未被查看的面板可能在运行时回收后仍保持打开；
 下次显示或发送消息时会恢复运行时。手动释放仍是明确的用户操作，可以释放当前选中的智能体。
 
 用户可以从会话菜单手动释放一个常驻运行时。手动释放只作用于对应的 Paseo 智能体 ID：
-关闭提供方会话及其拥有的子进程，把智能体持久化为 `closed`，同时保留对话、原生会话句柄、
+关闭提供方会话及其拥有的子进程，把智能体持久化为 `closed`，同时保留磁盘对话、原生会话句柄、
 工作区、标题、标签、注意状态和错误详情。该操作不会归档或移除智能体，不会级联关闭受管
 子智能体或同级会话。共享提供方服务继续遵循原有引用计数，只在最后一个使用它的会话释放后
-退出。之后再次发送消息时，会恢复同一个原生会话和时间线。
+退出。重复释放会合并同一次操作，等待已有初始化、重载和关闭完成，再清理残留缓存；跨越释放边界的旧历史请求会明确取消，不能等关闭结束后又启动进程。内部配置重载不使用这一取消语义。已关闭会话的取消未读操作只更新记录，不能重新启动运行时。
+
+客户端收到已关闭状态后同时清除该会话的正文、索引、游标、任务和提供方子任务缓存，立即取消时间线订阅，
+并忽略释放前请求的迟到响应与已排队的旧事件。草稿、待发送消息和会话目录元数据不清除。
+当前面板显示“会话已释放，历史记录已保存”及重新加载按钮，不因焦点、重连或面板仍然可见而马上恢复。
+明确重新加载或切走后再次进入会话，才按无游标的首次打开路径恢复同一原生会话。
+释放表示解除可重建大对象的持有关系，实际堆回收与进程内存回落由运行时和操作系统决定。
 
 提供方运行时仍可能因崩溃、内存不足或主机休眠而自行退出。驻留在进程内的工作也会随之终止：
 Claude Code 的后台 Bash、`Monitor` 和工作流都运行在 CLI 进程中，原本用于唤醒智能体的完成
@@ -156,7 +161,7 @@ Clicking either kind opens a workspace tab. A Paseo subagent tab is a normal int
 
 Provider timelines use the same structural timeline item format but deliberately have a separate lifecycle and transport. A provider thread/session identifier is not a Paseo agent identifier, and closing its tab is always layout-only.
 
-Claude reports both a native task identifier and the parent `Agent` tool-call identifier for one execution. The provider must alias both identifiers to the tool-call identity before emitting a descriptor or timeline row. The initial `task_started` prompt becomes the child timeline's first user message. Child titles resolve in this order: explicit native name, task description, subagent type, generic fallback. The same rule applies during persisted-history replay: only native agent identifiers referenced by the direct parent's `Agent` results become rows, while identifiers launched from another sidechain are excluded from the root track. When a reopened runtime supplies provider-child history, `AgentManager` replaces the retained provider-child snapshot before applying that history; it must not append the same rows again. Providers that return no child history keep the retained snapshot.
+Claude reports both a native task identifier and the parent `Agent` tool-call identifier for one execution. The provider must alias both identifiers to the tool-call identity before emitting a descriptor or timeline row. The initial `task_started` prompt becomes the child timeline's first user message. Child titles resolve in this order: explicit native name, task description, subagent type, generic fallback. The same rule applies during persisted-history replay: only native agent identifiers referenced by the direct parent's `Agent` results become rows, while identifiers launched from another sidechain are excluded from the root track. When a reopened runtime supplies provider-child history, `AgentManager` replaces the retained provider-child snapshot before applying that history; it must not append the same rows again. 运行时正常释放时也会清除提供方子任务副本；冷恢复后没有返回子任务历史的提供方不会继续显示释放前的旧缓存。
 
 Archived Paseo subagents disappear from the track, by design. To remove one from the track without closing its tab, use the **archive button** on the row — it opens a confirm dialog and archives the subagent on confirm. Provider-owned rows have no individual Paseo lifecycle controls.
 

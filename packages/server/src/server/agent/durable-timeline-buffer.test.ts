@@ -41,6 +41,7 @@ class RecordingStore implements AgentTimelineStore {
     return null;
   }
   async deleteAgent(): Promise<void> {}
+  async release(): Promise<void> {}
   async bulkInsert(_agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
     this.batches.push([...rows]);
     if (this.failuresRemaining > 0) {

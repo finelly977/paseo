@@ -65,6 +65,7 @@ import { getSendingClientMessageIds } from "@/composer/submission/model";
 import { createInstalledTimelineTransform } from "@/plugins/timeline";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { selectLiveAgentTimelineIds } from "@/timeline/live-agent-membership";
+import { isReleasedAgentTimelineResponse } from "@/timeline/fetch-agent-timeline-once";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -698,6 +699,11 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       >["payload"],
     ) => {
       const agentId = payload.agentId;
+      if (
+        isReleasedAgentTimelineResponse(client, payload.requestId) ||
+        useSessionStore.getState().sessions[serverId]?.releasedAgentIds.has(agentId)
+      )
+        return;
       const initKey = getInitKey(serverId, agentId);
       const catchUpComplete = isTimelineCatchUpComplete({
         direction: payload.direction,
@@ -790,6 +796,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       enforceConversationHistoryMemory();
     },
     [
+      client,
       enforceConversationHistoryMemory,
       markAgentHistorySynchronized,
       recoverTimelineGap,
@@ -844,14 +851,15 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           });
           setAgentInitializing(agentId, true);
         }
+        const initialization = getInitDeferred(initKey);
         try {
           const page = await getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, request);
-          if (shouldInitialize && getInitDeferred(initKey)) {
+          if (shouldInitialize && initialization && getInitDeferred(initKey) === initialization) {
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
           return page;
         } catch (error) {
-          if (shouldInitialize) {
+          if (shouldInitialize && initialization && getInitDeferred(initKey) === initialization) {
             setAgentInitializing(agentId, false);
             rejectInitDeferred(initKey, error instanceof Error ? error : new Error(String(error)));
           }
@@ -866,6 +874,9 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         return () => clearTimeout(timeout);
       },
     });
+    for (const agentId of useSessionStore.getState().sessions[serverId]?.releasedAgentIds ?? []) {
+      sync.releaseAgentTimeline(agentId);
+    }
     viewedTimelineSyncRef.current = sync;
     setViewedTimelineSync(serverId, sync);
     // 时间线订阅保持激活，不随应用可见性关闭；重新聚焦时另行执行
@@ -924,10 +935,19 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       transformTimelineItem,
     });
     agentStreamReducerQueueRef.current = agentStreamReducerQueue;
+    const unsubReleasedAgentStreams = useSessionStore.subscribe((state, previous) => {
+      const released = state.sessions[serverId]?.releasedAgentIds;
+      const previousReleased = previous.sessions[serverId]?.releasedAgentIds;
+      if (!released || released === previousReleased) return;
+      for (const agentId of released) {
+        if (!previousReleased?.has(agentId)) agentStreamReducerQueue.discardAgent(agentId);
+      }
+    });
 
     const unsubAgentStream = client.on("agent_stream", (message) => {
       if (message.type !== "agent_stream") return;
       const { agentId, event, timestamp, seq, epoch } = message.payload;
+      if (useSessionStore.getState().sessions[serverId]?.releasedAgentIds.has(agentId)) return;
       const parsedTimestamp = new Date(timestamp);
       const streamEvent = event;
       if (
@@ -973,6 +993,12 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
     const unsubProviderSubagentUpdate = client.on("agent.provider_subagents.update", (message) => {
       if (message.type !== "agent.provider_subagents.update") return;
+      const parentAgentId =
+        message.payload.kind === "upsert"
+          ? message.payload.subagent.parentAgentId
+          : message.payload.parentAgentId;
+      if (useSessionStore.getState().sessions[serverId]?.releasedAgentIds.has(parentAgentId))
+        return;
       useProviderSubagentStore.getState().applyUpdate(serverId, message.payload);
     });
 
@@ -1026,6 +1052,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     const unsubPermissionRequest = client.on("agent_permission_request", (message) => {
       if (message.type !== "agent_permission_request") return;
       const { agentId, request } = message.payload;
+      if (useSessionStore.getState().sessions[serverId]?.releasedAgentIds.has(agentId)) return;
 
       setPendingPermissions(serverId, (prev) => {
         const next = new Map(prev);
@@ -1179,6 +1206,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     return () => {
       unsubTimelineReplacement();
       unsubAgentStream();
+      unsubReleasedAgentStreams();
       unsubAgentTimeline();
       unsubProviderSubagentUpdate();
       unsubAgentAttention();

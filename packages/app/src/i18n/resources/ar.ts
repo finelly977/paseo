@@ -222,6 +222,8 @@ export const ar: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "لم يتم العثور على Agent",
       failedToLoad: "فشل تحميل الوكيل",
       reconnecting: "جارٍ إعادة الاتصال...",

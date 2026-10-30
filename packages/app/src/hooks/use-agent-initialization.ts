@@ -47,6 +47,7 @@ export interface EnsureAgentIsInitializedInput {
 
 export function ensureAgentIsInitialized(input: EnsureAgentIsInitializedInput): Promise<void> {
   const { serverId, agentId, client, setAgentInitializing } = input;
+  useSessionStore.getState().resumeAgentMemory(serverId, agentId);
   const key = getInitKey(serverId, agentId);
   const existing = getInitDeferred(key);
   if (existing) {
@@ -79,6 +80,7 @@ export function ensureAgentIsInitialized(input: EnsureAgentIsInitializedInput): 
   }
 
   input.runtime.fetchAgentTimeline(serverId, agentId, timelineRequest).catch((error) => {
+    if (getInitDeferred(key) !== deferred) return;
     setAgentInitializing(agentId, false);
     rejectInitDeferred(key, error instanceof Error ? error : new Error(String(error)));
   });

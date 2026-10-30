@@ -10,6 +10,7 @@ import { usePaneContext } from "@/panels/pane-context";
 import type { PanelDescriptor, PanelRegistration } from "@/panels/panel-registry";
 import { useSessionStore } from "@/stores/session-store";
 import {
+  fetchProviderSubagentTimeline,
   providerSubagentKey,
   providerSubagentLifecycleStatus,
   refreshProviderSubagents,
@@ -92,16 +93,10 @@ function ProviderSubagentPanel() {
 
   useEffect(() => {
     if (!client || !supported) return;
-    void client
-      .fetchProviderSubagentTimeline(target.parentAgentId, target.subagentId, {
-        direction: "tail",
-        limit: TIMELINE_FETCH_PAGE_SIZE,
-      })
-      .then((payload) => {
-        useProviderSubagentStore.getState().replaceTimeline(serverId, payload);
-        return undefined;
-      })
-      .catch(() => undefined);
+    void fetchProviderSubagentTimeline(client, serverId, target.parentAgentId, target.subagentId, {
+      direction: "tail",
+      limit: TIMELINE_FETCH_PAGE_SIZE,
+    }).catch((error) => console.error("Failed to load provider subagent history", error));
   }, [client, serverId, supported, target.parentAgentId, target.subagentId]);
 
   const loadOlder = useCallback(() => {
@@ -109,17 +104,12 @@ function ProviderSubagentPanel() {
     const firstSeq = timeline.rows.size ? Math.min(...timeline.rows.keys()) : null;
     if (firstSeq === null) return;
     setIsLoadingOlder(true);
-    void client
-      .fetchProviderSubagentTimeline(target.parentAgentId, target.subagentId, {
-        direction: "before",
-        cursor: { epoch: timeline.epoch, seq: firstSeq },
-        limit: TIMELINE_FETCH_PAGE_SIZE,
-      })
-      .then((payload) => {
-        useProviderSubagentStore.getState().replaceTimeline(serverId, payload);
-        return undefined;
-      })
-      .catch(() => undefined)
+    void fetchProviderSubagentTimeline(client, serverId, target.parentAgentId, target.subagentId, {
+      direction: "before",
+      cursor: { epoch: timeline.epoch, seq: firstSeq },
+      limit: TIMELINE_FETCH_PAGE_SIZE,
+    })
+      .catch((error) => console.error("Failed to load older provider subagent history", error))
       .finally(() => setIsLoadingOlder(false));
   }, [
     client,

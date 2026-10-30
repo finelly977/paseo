@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
@@ -16,6 +16,59 @@ import type {
   AgentSessionConfig,
 } from "./agent-sdk-types.js";
 import { createTestAgentClient, createTestAgentClients } from "../test-utils/fake-agent-client.js";
+
+test("释放会取消尚未恢复进程的旧历史读取，新的明确打开仍可冷恢复", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agent-release-read-"));
+  const logger = createTestLogger();
+  const storage = new AgentStorage(path.join(root, "agents"), logger);
+  const manager = new AgentManager({
+    clients: createTestAgentClients(),
+    registry: storage,
+    logger,
+  });
+  const agent = await manager.createAgent({ provider: "codex", cwd: root }, undefined, {});
+  await manager.releaseAgentRuntime(agent.id);
+  const entered = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<void>();
+  const get = storage.get.bind(storage);
+  const heldRead = vi.spyOn(storage, "get").mockImplementationOnce(async (id) => {
+    const record = await get(id);
+    entered.resolve();
+    await gate.promise;
+    return record;
+  });
+  try {
+    const oldRead = ensureAgentLoaded(agent.id, {
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+      assertRuntimeRead: manager.createRuntimeReadGuard(agent.id),
+    });
+    const canceled = expect(oldRead).rejects.toThrow("旧历史请求已取消");
+    await entered.promise;
+    const release = manager.releaseAgentRuntime(agent.id);
+    expect(() => manager.createRuntimeReadGuard(agent.id)).toThrow("旧历史请求已取消");
+    gate.resolve();
+    await canceled;
+    await release;
+    expect(manager.getAgent(agent.id)).toBeNull();
+    expect((await storage.get(agent.id))?.lastStatus).toBe("closed");
+    const reopened = await ensureAgentLoaded(agent.id, {
+      agentManager: manager,
+      agentStorage: storage,
+      logger,
+      assertRuntimeRead: manager.createRuntimeReadGuard(agent.id),
+    });
+    expect(reopened.id).toBe(agent.id);
+  } finally {
+    gate.resolve();
+    heldRead.mockRestore();
+    if (manager.getAgent(agent.id)) await manager.closeAgent(agent.id);
+    await manager.flush();
+    await storage.flush();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("热重载期间的历史请求等待同一次恢复，不再次恢复原生线程", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "agent-reload-loading-"));
@@ -75,6 +128,7 @@ test("热重载期间的历史请求等待同一次恢复，不再次恢复原�
     });
     expect(repeatedReload).toBe(reload);
     const restored = ensureAgentLoaded(agent.id, {
+      assertRuntimeRead: manager.createRuntimeReadGuard(agent.id),
       agentManager: loader,
       agentStorage: storage,
       logger,

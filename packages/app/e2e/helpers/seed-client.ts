@@ -26,6 +26,7 @@ interface SeedProjectDescriptor {
  * prefer those wrappers over reaching for this client directly.
  */
 export interface SeedDaemonClient {
+  releaseAgentRuntime(agentId: string): Promise<void>;
   connect(): Promise<void>;
   close(): Promise<void>;
   addProject(cwd: string): Promise<{

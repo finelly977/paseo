@@ -222,6 +222,8 @@ export const ptBR: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "Agente não encontrado",
       failedToLoad: "Falha ao carregar agente",
       reconnecting: "Reconectando...",

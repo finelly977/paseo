@@ -24,6 +24,53 @@ function document(rows: AgentTimelineRow[], nextSeq: number) {
 }
 
 describe("FileAgentTimelineStore", () => {
+  it("释放等待在途写入完成后再清除文档缓存", async () => {
+    const directory = await storeDirectory();
+    const held = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const store = new FileAgentTimelineStore(directory, {
+      writeJson: async (file, value) => {
+        started.resolve();
+        await held.promise;
+        await writeJsonFileAtomic(file, value);
+      },
+    });
+    const write = store.appendCommitted("agent", user("在途写入"));
+    await started.promise;
+    let released = false;
+    const release = store.release("agent").then(() => {
+      released = true;
+      return undefined;
+    });
+    await Promise.resolve();
+    expect(released).toBe(false);
+    held.resolve();
+    await Promise.all([write, release]);
+    expect(
+      (await new FileAgentTimelineStore(directory).getCommittedRows("agent")).map(
+        (row) => row.item,
+      ),
+    ).toEqual([user("在途写入")]);
+  });
+  it("释放缓存保留磁盘历史，下次读取重新载入原子文档", async () => {
+    const directory = await storeDirectory();
+    const store = new FileAgentTimelineStore(directory);
+    await store.appendCommitted("agent", user("释放前"));
+    await store.release("agent");
+    const disk = await new FileAgentTimelineStore(directory).getCommittedSnapshot("agent");
+    expect(disk.rows.map((row) => row.item)).toEqual([user("释放前")]);
+    await writeJsonFileAtomic(filePath(directory, "agent"), {
+      version: 1,
+      epoch: "reloaded-epoch",
+      nextSeq: 2,
+      historyComplete: true,
+      rows: [{ seq: 1, timestamp: "2026-01-01T00:00:00.000Z", item: user("磁盘已更新") }],
+    });
+    expect((await store.getCommittedRows("agent")).map((row) => row.item)).toEqual([
+      user("磁盘已更新"),
+    ]);
+  });
+
   it("loads a missing agent file as an empty timeline", async () => {
     const store = new FileAgentTimelineStore(await storeDirectory());
     expect(await store.getCommittedRows("agent")).toEqual([]);

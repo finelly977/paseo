@@ -3,6 +3,9 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ViewedTimelineUiBridge } from "@/timeline/viewed-timeline-sync";
+import { releaseAgentTimelineReads } from "@/timeline/fetch-agent-timeline-once";
+import { useProviderSubagentStore } from "@/subagents/provider-store";
+import { getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
 import type { AgentDirectoryEntry } from "@/types/agent-directory";
 import {
   appendSubmittedUserMessage,
@@ -413,6 +416,7 @@ export interface SessionState {
   historySyncGeneration: number;
   agentHistorySyncGeneration: Map<string, number>;
   agentAuthoritativeHistoryApplied: Map<string, boolean>;
+  releasedAgentIds: Set<string>;
 
   // Initializing agents (used for UI loading state)
   initializingAgents: Map<string, boolean>;
@@ -480,6 +484,8 @@ interface SessionStoreActions {
     totalConversationLimit: number;
   }) => void;
   enforceConversationHistoryMemory: () => void;
+  releaseAgentMemory: (serverId: string, agentId: string) => void;
+  resumeAgentMemory: (serverId: string, agentId: string) => void;
   setFocusedTerminalId: (serverId: string, terminalId: string | null) => void;
 
   // Stream state (head/tail model)
@@ -803,6 +809,7 @@ function createInitialSessionState(
     historySyncGeneration: 0,
     agentHistorySyncGeneration: new Map(),
     agentAuthoritativeHistoryApplied: new Map(),
+    releasedAgentIds: new Set(),
     initializingAgents: new Map(),
     agents: new Map(),
     workspaceAgentActivity: new Map(),
@@ -1175,6 +1182,71 @@ export const useSessionStore = create<SessionStore>()(
 
       enforceConversationHistoryMemory: () => {
         set((prev) => enforceConversationHistoryMemory(prev));
+      },
+
+      releaseAgentMemory: (serverId, agentId) => {
+        const session = get().sessions[serverId];
+        if (!session || session.releasedAgentIds.has(agentId)) return;
+        if (session.client) releaseAgentTimelineReads(session.client, agentId);
+        session.viewedTimelineSync?.releaseAgentTimeline(agentId);
+        useProviderSubagentStore.getState().releaseParent(serverId, agentId);
+        rejectInitDeferred(
+          getInitKey(serverId, agentId),
+          new Error("会话运行时已释放，请重新加载会话。"),
+        );
+        set((state) => {
+          const current = state.sessions[serverId];
+          const remove = <T>(values: Map<string, T>): Map<string, T> => {
+            if (!values.has(agentId)) return values;
+            const next = new Map(values);
+            next.delete(agentId);
+            return next;
+          };
+          const opened = new Map(state.conversationHistoryOpenedAt);
+          opened.delete(conversationHistoryKey(serverId, agentId));
+          return {
+            ...state,
+            conversationHistoryOpenedAt: opened,
+            sessions: {
+              ...state.sessions,
+              [serverId]: {
+                ...current,
+                releasedAgentIds: new Set(current.releasedAgentIds).add(agentId),
+                agentStreamTail: remove(current.agentStreamTail),
+                agentStreamHead: remove(current.agentStreamHead),
+                agentTasks: remove(current.agentTasks),
+                agentTimelineCursor: remove(current.agentTimelineCursor),
+                agentTimelineHasOlder: remove(current.agentTimelineHasOlder),
+                agentTimelineOlderFetchInFlight: remove(current.agentTimelineOlderFetchInFlight),
+                agentConversationIndex: remove(current.agentConversationIndex),
+                agentConversationIndexVersion: remove(current.agentConversationIndexVersion),
+                agentHistorySyncGeneration: remove(current.agentHistorySyncGeneration),
+                agentAuthoritativeHistoryApplied: remove(current.agentAuthoritativeHistoryApplied),
+                initializingAgents: remove(current.initializingAgents),
+                fileExplorer: remove(current.fileExplorer),
+                pendingPermissions: new Map(
+                  [...current.pendingPermissions].filter(
+                    ([, pending]) => pending.agentId !== agentId,
+                  ),
+                ),
+              },
+            },
+          };
+        });
+      },
+
+      resumeAgentMemory: (serverId, agentId) => {
+        set((state) => {
+          const session = state.sessions[serverId];
+          if (!session || !session.releasedAgentIds.has(agentId)) return state;
+          const releasedAgentIds = new Set(session.releasedAgentIds);
+          releasedAgentIds.delete(agentId);
+          return {
+            ...state,
+            sessions: { ...state.sessions, [serverId]: { ...session, releasedAgentIds } },
+          };
+        });
+        get().sessions[serverId]?.viewedTimelineSync?.resumeAgentTimeline(agentId);
       },
 
       setFocusedTerminalId: (serverId, terminalId) => {
@@ -1684,6 +1756,8 @@ export const useSessionStore = create<SessionStore>()(
 
       // Agents
       setAgents: (serverId, agents) => {
+        const released: string[] = [];
+        const resumed: string[] = [];
         set((prev) => {
           const session = prev.sessions[serverId];
           if (!session) {
@@ -1692,6 +1766,13 @@ export const useSessionStore = create<SessionStore>()(
           const nextAgents = typeof agents === "function" ? agents(session.agents) : agents;
           if (session.agents === nextAgents) {
             return prev;
+          }
+          for (const [agentId, agent] of nextAgents) {
+            const previous = session.agents.get(agentId);
+            if (agent.status === "closed" && previous && previous.status !== "closed")
+              released.push(agentId);
+            if (agent.status !== "closed" && session.releasedAgentIds.has(agentId))
+              resumed.push(agentId);
           }
           return {
             ...prev,
@@ -1708,6 +1789,8 @@ export const useSessionStore = create<SessionStore>()(
             },
           };
         });
+        for (const agentId of released) get().releaseAgentMemory(serverId, agentId);
+        for (const agentId of resumed) get().resumeAgentMemory(serverId, agentId);
       },
 
       setAgentDetails: (serverId, agents) => {

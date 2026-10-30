@@ -224,6 +224,8 @@ export const fr: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "Agentintrouvable",
       failedToLoad: "Échec du chargement de l'agent",
       reconnecting: "Reconnexion...",

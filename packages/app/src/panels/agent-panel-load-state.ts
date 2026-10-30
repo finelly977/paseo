@@ -16,7 +16,9 @@ export function shouldInitializeAgentPane(input: {
   hasAgentRecord: boolean;
   hasAuthoritativeHistory: boolean;
   shouldResumeClosedRuntime: boolean;
+  runtimeReleased?: boolean;
 }): boolean {
+  if (input.runtimeReleased && !input.shouldResumeClosedRuntime) return false;
   return !input.hasAgentRecord || !input.hasAuthoritativeHistory || input.shouldResumeClosedRuntime;
 }
 

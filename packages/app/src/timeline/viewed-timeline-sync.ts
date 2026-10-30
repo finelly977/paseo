@@ -42,6 +42,8 @@ export type TimelineDeliveryMode = "legacy" | "selective";
 export type ViewedTimelineStatus = "ready" | "pending" | "error" | "retrying";
 
 export interface ViewedTimelineUiBridge {
+  releaseAgentTimeline(agentId: string): void;
+  resumeAgentTimeline(agentId: string): void;
   replaceVisibleAgentIds(sourceId: string, agentIds: string[]): void;
   subscribe(listener: () => void): () => void;
   getAgentTimelineStatus(agentId: string): ViewedTimelineStatus;
@@ -150,6 +152,7 @@ async function backfillInitialConversationHistory(input: {
 
 export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): ViewedTimelineSync {
   const sources = new Map<string, string[]>();
+  const released = new Set<string>();
   const catchUps = new Map<string, CatchUpState>();
   const catchUpGenerations = new Map<string, number>();
   const pendingGaps = new Map<string, ProjectedTimelineForwardFetchPlan>();
@@ -172,7 +175,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   let membershipRetryDelayMs: number | undefined;
   let cancelMembershipRetry: (() => void) | null = null;
 
-  const visibleAgentIds = () => (active ? normalizeAgentIds([...sources.values()].flat()) : []);
+  const visibleAgentIds = () =>
+    active ? normalizeAgentIds([...sources.values()].flat()).filter((id) => !released.has(id)) : [];
   const effectiveAgentIds = () =>
     normalizeAgentIds([...visibleAgentIds(), ...lingeringRemovals.keys()]);
 
@@ -487,6 +491,18 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   };
 
   return {
+    releaseAgentTimeline(agentId) {
+      released.add(agentId);
+      lingeringRemovals.get(agentId)?.();
+      lingeringRemovals.delete(agentId);
+      cancelCatchUp(agentId);
+      replacementEpochs.delete(agentId);
+      commitDesiredMembership(effectiveAgentIds());
+    },
+    resumeAgentTimeline(agentId) {
+      if (!released.delete(agentId)) return;
+      commitDesiredMembership(effectiveAgentIds());
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -604,6 +620,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       membershipNeedsRetry = false;
       membershipRetryDelayMs = undefined;
       sources.clear();
+      released.clear();
       membershipGeneration += 1;
       for (const agentId of desired) cancelCatchUp(agentId);
       desired = [];

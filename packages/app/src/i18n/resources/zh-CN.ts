@@ -222,6 +222,8 @@ export const zhCN: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "未找到 Agent",
       failedToLoad: "加载 Agent 失败",
       reconnecting: "正在重连...",

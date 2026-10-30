@@ -75,6 +75,38 @@ afterEach(() => {
 });
 
 describe("ensureAgentIsInitialized", () => {
+  it("释放会话取消初始化，旧请求失败不能终止重新打开的新初始化", async () => {
+    const oldRead =
+      Promise.withResolvers<Awaited<ReturnType<HostRuntimeStore["fetchAgentTimeline"]>>>();
+    const runtime = new FakeTimelineRuntime();
+    const client = new FakeDaemonClient();
+    useSessionStore.getState().initializeSession(serverId, client as never);
+    const input = {
+      serverId,
+      agentId,
+      client: client as never,
+      runtime,
+      setAgentInitializing: bindSetAgentInitializing(),
+    };
+    const oldInitialization = ensureAgentIsInitialized({
+      ...input,
+      runtime: { fetchAgentTimeline: () => oldRead.promise },
+    });
+    const rejected = expect(oldInitialization).rejects.toThrow("会话运行时已释放");
+    useSessionStore.getState().releaseAgentMemory(serverId, agentId);
+    await rejected;
+    expect(getInitDeferred(getInitKey(serverId, agentId))).toBeUndefined();
+    const newInitialization = ensureAgentIsInitialized(input);
+    const deferred = getInitDeferred(getInitKey(serverId, agentId));
+    oldRead.reject(new Error("旧请求失败"));
+    await Promise.resolve();
+    expect(getInitDeferred(getInitKey(serverId, agentId))).toBe(deferred);
+    expect(useSessionStore.getState().sessions[serverId].initializingAgents.get(agentId)).toBe(
+      true,
+    );
+    resolveInitDeferred(getInitKey(serverId, agentId));
+    await newInitialization;
+  });
   it("requests bounded projected catch-up after the current cursor when authoritative history is loaded", () => {
     const client = new FakeDaemonClient();
     const runtime = new FakeTimelineRuntime();

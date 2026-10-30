@@ -222,6 +222,8 @@ export const ru: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "Agent не найден",
       failedToLoad: "Не удалось загрузить агент",
       reconnecting: "Повторное подключение...",

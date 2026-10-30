@@ -1625,6 +1625,10 @@ test("waits for durable canonical steer commit before resolving accepted", async
       this.memory.delete(agentId);
     }
 
+    async release(): Promise<void> {
+      // 此适配器直接代表持久记录，没有独立内存缓存。
+    }
+
     override async bulkInsert(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void> {
       entered.resolve();
       await release.promise;
@@ -9540,6 +9544,12 @@ test("releaseAgentRuntime 只关闭目标会话并保留其他会话", async () 
         attentionTimestamp: new Date(attentionTimestamp),
       },
     });
+    await manager.clearAgentAttention(target.id);
+    expect(manager.getAgent(target.id)).toBeNull();
+    expect(await storage.get(target.id)).toMatchObject({
+      lastStatus: "closed",
+      requiresAttention: false,
+    });
     expect(manager.getAgent(other.id)).toMatchObject({ id: other.id, lifecycle: "idle" });
   } finally {
     await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
@@ -9552,6 +9562,7 @@ test("releaseAgentRuntime 只关闭目标会话并保留其他会话", async () 
 test("collectIdleAgents releases an idle runtime and resumes the same agent and timeline", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-collection-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const durableTimelineStore = new FileAgentTimelineStore(join(workdir, "timelines"));
   let activeSession: TestAgentSession | null = null;
   const client = new (class extends NativeArchiveRecordingClient {
     override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
@@ -9562,6 +9573,7 @@ test("collectIdleAgents releases an idle runtime and resumes the same agent and 
   const manager = new AgentManager({
     clients: { codex: client },
     registry: storage,
+    durableTimelineStore,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000210",
   });
@@ -9621,13 +9633,8 @@ test("collectIdleAgents releases an idle runtime and resumes the same agent and 
     expect(resumed.id).toBe(created.id);
     expect(resumed.persistence).toEqual(created.persistence);
     expect(manager.getTimeline(created.id)).toEqual(timelineBeforeCollection);
-    expect(manager.listProviderSubagents(created.id)).toEqual([
-      expect.objectContaining({
-        id: "retained-provider-child",
-        title: "Retained provider child",
-        status: "completed",
-      }),
-    ]);
+    // 测试提供方不返回子会话历史，冷恢复后不残留旧内存中的描述符。
+    expect(manager.listProviderSubagents(created.id)).toEqual([]);
     const idleBeforeOpen = resumed.updatedAt;
     await ensureAgentLoaded(created.id, {
       agentManager: manager,

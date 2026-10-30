@@ -41,6 +41,8 @@ export type AgentLoaderManager = Pick<
   Partial<Pick<AgentManager, "touchAgentActivity" | "waitForAgentClose" | "waitForAgentReload">>;
 
 export interface EnsureAgentLoadedDeps {
+  /** 普通历史读取核对释放边界；用户明确恢复与发送消息不使用此限制。 */
+  assertRuntimeRead?: () => void;
   agentManager: AgentLoaderManager;
   agentStorage: AgentStorage;
   validProviders?: Iterable<AgentProvider>;
@@ -92,9 +94,11 @@ export async function ensureAgentLoaded(
   agentId: string,
   deps: EnsureAgentLoadedDeps,
 ): Promise<ManagedAgent> {
+  deps.assertRuntimeRead?.();
   await deps.agentManager.waitForAgentReload?.(agentId);
   await deps.agentManager.waitForAgentClose?.(agentId);
   await deps.agentManager.waitForAgentReload?.(agentId);
+  deps.assertRuntimeRead?.();
   let pendingAgentInitializations = pendingInitializationsByManager.get(deps.agentManager);
   if (!pendingAgentInitializations) {
     pendingAgentInitializations = new Map();
@@ -119,6 +123,7 @@ export async function ensureAgentLoaded(
   // before storage-backed resume begins.
   await deps.agentManager.waitForAgentClose?.(agentId);
   await deps.agentManager.waitForAgentReload?.(agentId);
+  deps.assertRuntimeRead?.();
 
   const laterInflight = pendingAgentInitializations.get(agentId);
   if (laterInflight) {
@@ -132,6 +137,7 @@ export async function ensureAgentLoaded(
   };
   const initPromise = (async () => {
     const record = await deps.agentStorage.get(agentId);
+    deps.assertRuntimeRead?.();
     if (!record) {
       throw new Error(`Agent not found: ${agentId}`);
     }

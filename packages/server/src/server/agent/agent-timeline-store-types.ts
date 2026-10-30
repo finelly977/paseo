@@ -65,6 +65,8 @@ export interface AgentTimelineStore {
   getCommittedSnapshot(agentId: string): Promise<AgentTimelineSnapshot>;
   getLastItem(agentId: string): Promise<AgentTimelineItem | null>;
   getLastAssistantMessage(agentId: string): Promise<string | null>;
+  /** 等待已提交操作后释放内存文档，不删除持久历史。 */
+  release(agentId: string): Promise<void>;
   deleteAgent(agentId: string): Promise<void>;
   bulkInsert(agentId: string, rows: readonly AgentTimelineRow[]): Promise<void>;
   replaceCommittedSnapshot(agentId: string, snapshot: AgentTimelineSnapshot): Promise<void>;

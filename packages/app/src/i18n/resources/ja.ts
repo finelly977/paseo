@@ -222,6 +222,8 @@ export const ja: TranslationResources = {
   },
   agentPanel: {
     states: {
+      runtimeReleased: "会话已释放，历史记录已保存。",
+      reloadConversation: "重新加载会话",
       notFound: "エージェントが見つかりません",
       failedToLoad: "エージェントの読み込みに失敗しました",
       reconnecting: "再接続中...",

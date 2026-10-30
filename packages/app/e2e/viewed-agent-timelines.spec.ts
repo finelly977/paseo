@@ -72,6 +72,39 @@ async function commitMessage(scenario: ViewedTimelineScenario, agentId: string, 
 }
 
 test.describe("Viewed agent timelines", () => {
+  test("释放运行时清空当前面板，重新打开从持久历史恢复", async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const scenario = await seedViewedTimelineScenario();
+    const prompt = "释放后仍可恢复的历史消息";
+    try {
+      await commitMessage(scenario, scenario.firstAgentId, prompt);
+      await openAgent(page, scenario, scenario.firstAgentId);
+      await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+      await scenario.client.releaseAgentRuntime(scenario.firstAgentId);
+      await expect(page.getByTestId("agent-runtime-released")).toBeVisible();
+      await expect(page.getByText(prompt, { exact: true })).toHaveCount(0);
+      const directory = await scenario.client.fetchAgents();
+      expect(
+        directory.entries.find((entry) => entry.agent.id === scenario.firstAgentId)?.agent.status,
+      ).toBe("closed");
+      await page.screenshot({ path: testInfo.outputPath("released-pane.png") });
+      await page.getByTestId("agent-runtime-reload").click();
+      await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+      await scenario.client.releaseAgentRuntime(scenario.firstAgentId);
+      await expect(page.getByTestId("agent-runtime-released")).toBeVisible();
+      expect(
+        (await scenario.client.fetchAgents()).entries.find(
+          (entry) => entry.agent.id === scenario.firstAgentId,
+        )?.agent.status,
+      ).toBe("closed");
+      await selectAgent(page, "Second viewed chat");
+      await selectAgent(page, "First viewed chat");
+      await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+      await expect(page.getByTestId("agent-runtime-released")).toHaveCount(0);
+    } finally {
+      await scenario.cleanup();
+    }
+  });
   test("an unsubscribed hidden chat catches up when shown", async ({ page }) => {
     test.setTimeout(90_000);
     const subscriptions = observeTimelineSubscriptions(page);
