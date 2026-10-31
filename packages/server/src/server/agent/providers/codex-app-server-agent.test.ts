@@ -1777,6 +1777,77 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test.each([false, true])("渐进恢复只发布原生最新页，完整读取延后执行：%s", async (hasOlder) => {
+    const fullPage = Promise.withResolvers<unknown>();
+    const fullRequested = Promise.withResolvers<void>();
+    const latestItem = {
+      turnId: "turn-1",
+      item: { id: "latest", type: "agentMessage", text: "原生最新回复" },
+    };
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+      "thread/turns/list": () => ({ data: [{ id: "turn-1", items: [] }], nextCursor: null }),
+      "thread/items/list": (params) => {
+        const { sortDirection } = z
+          .object({ sortDirection: z.enum(["asc", "desc"]) })
+          .parse(params);
+        if (sortDirection === "desc")
+          return { data: [latestItem], nextCursor: hasOlder ? "older" : null };
+        fullRequested.resolve();
+        return fullPage.promise;
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      {},
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      true,
+    );
+    let continuing: Promise<void> | undefined;
+    try {
+      await session.connect();
+      const preview: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) preview.push(event);
+      expect(preview.map((event) => event.type === "timeline" && event.item)).toEqual([
+        { type: "assistant_message", messageId: "latest", text: "原生最新回复" },
+      ]);
+      expect(session.historyContinuation).toBeTypeOf("function");
+      expect(
+        appServer.requests().filter((request) => request.method === "thread/items/list"),
+      ).toHaveLength(1);
+      const continuation = session.historyContinuation;
+      if (!continuation) throw new Error("缺少后台历史读取入口");
+      continuing = continuation();
+      if (hasOlder) {
+        await fullRequested.promise;
+        fullPage.resolve({
+          data: [
+            { turnId: "turn-1", item: { id: "old", type: "agentMessage", text: "原生早期回复" } },
+            latestItem,
+          ],
+          nextCursor: null,
+        });
+      }
+      await continuing;
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history.filter((event) => event.type === "timeline")).toHaveLength(hasOlder ? 2 : 1);
+      expect(appServer.children).toHaveLength(1);
+      appServer.assertNoErrors();
+    } finally {
+      fullPage.resolve({ data: [], nextCursor: null });
+      if (continuing) await continuing;
+      await session.close();
+    }
+  });
+
   test.each(["thread/resume", "thread/turns/list", "thread/items/list"])(
     "%s 失败时关闭单个进程，不发布半份历史",
     async (failedMethod) => {

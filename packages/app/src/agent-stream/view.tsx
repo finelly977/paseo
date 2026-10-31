@@ -263,6 +263,7 @@ function renderLiveHeadStreamItem(input: {
 export interface AgentStreamViewHandle {
   scrollToBottom(reason?: BottomAnchorLocalRequest["reason"]): void;
   prepareForViewportChange(): void;
+  prepareForHistoryPrepend(): void;
 }
 
 export interface AgentStreamViewProps {
@@ -940,6 +941,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         },
         prepareForViewportChange() {
           viewportRef.current?.prepareForViewportChange();
+        },
+        prepareForHistoryPrepend() {
+          viewportRef.current?.prepareForHistoryPrepend?.();
         },
       }),
       [],

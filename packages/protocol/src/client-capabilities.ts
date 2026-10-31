@@ -26,6 +26,8 @@ export const CLIENT_CAPS = {
   // COMPAT(timelineReplacementInvalidation)：v0.7.0 新增。支持的客户端在时间线被重建后
   // 主动读取权威尾部；旧客户端继续接收重放的时间线行。最低支持版本达到 v0.7.0 后移除旧路径。
   timelineReplacementInvalidation: "timeline_replacement_invalidation",
+  // COMPAT(progressiveAgentHistory): v0.2.6 新增，2027-04-30 后复查门控。
+  progressiveAgentHistory: "progressive_agent_history",
   browserHost: "browser_host",
 } as const;
 

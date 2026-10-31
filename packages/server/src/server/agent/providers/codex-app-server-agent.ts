@@ -94,6 +94,7 @@ import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex
 import {
   CodexThreadReadResponseSchema,
   readCodexThread,
+  readCodexThreadLatest,
   type CodexThreadReadResponse,
 } from "./codex/thread-history.js";
 import { connectCodexDesktopTools, type CodexDesktopTools } from "./codex/desktop-tools.js";
@@ -3744,6 +3745,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     private readonly autoReviewEnabled: boolean = false,
     private readonly agentId?: string,
     private readonly initialResumePurpose: "interactive" | "history" = "interactive",
+    private readonly progressiveHistory: boolean = false,
   ) {
     this.logger = logger.child({
       module: "agent",
@@ -3835,11 +3837,26 @@ export class CodexAppServerAgentSession implements AgentSession {
           allowArchivedHistory: this.initialResumePurpose === "history",
           model: modelOverride,
         });
-        const threadResponse = await readCodexThread(client, this.currentThreadId);
+        const latest = this.progressiveHistory
+          ? await readCodexThreadLatest(client, this.currentThreadId)
+          : { response: await readCodexThread(client, this.currentThreadId), hasOlder: false };
         if (this.client !== client) {
           throw new Error("Codex session closed while connecting");
         }
-        await this.loadPersistedHistory(threadResponse);
+        await this.loadPersistedHistory(latest.response, !this.progressiveHistory);
+        if (this.progressiveHistory) {
+          const threadId = this.currentThreadId;
+          this.historyContinuation = async () => {
+            const full = latest.hasOlder
+              ? await readCodexThread(client, threadId)
+              : latest.response;
+            if (this.client !== client)
+              throw new Error("Codex session closed while loading history");
+            await this.loadPersistedHistory(full);
+            if (this.client !== client)
+              throw new Error("Codex session closed while loading child history");
+          };
+        }
       }
 
       if (this.client !== client) {
@@ -4094,7 +4111,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     );
   }
 
-  private async loadPersistedHistory(threadResponse?: unknown): Promise<void> {
+  historyContinuation?: () => Promise<void>;
+
+  private async loadPersistedHistory(threadResponse?: unknown, loadChildren = true): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const client = this.client;
     const threadId = this.currentThreadId;
@@ -4113,7 +4132,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.persistedProviderSubagentEvents = [];
     this.loadingPersistedHistory = true;
     try {
-      await this.loadPersistedSubAgentHistories(client, subAgentRoutes);
+      if (loadChildren) await this.loadPersistedSubAgentHistories(client, subAgentRoutes);
     } finally {
       this.loadingPersistedHistory = false;
     }
@@ -7714,6 +7733,7 @@ export class CodexAppServerAgentClient implements AgentClient {
       autoReviewEnabled,
       launchContext?.agentId,
       options?.purpose ?? "interactive",
+      options?.progressiveHistory === true,
     );
     await session.connect();
     return session;

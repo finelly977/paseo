@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { readCodexThread, readCodexPaginatedThread } from "./thread-history.js";
+import {
+  readCodexThread,
+  readCodexPaginatedThread,
+  readCodexThreadLatest,
+} from "./thread-history.js";
 
 interface HistoryRequest {
   method: string;
@@ -28,6 +32,81 @@ const firstTurnPage = {
 };
 
 describe("Codex 原生历史分页", () => {
+  test("只读原生最新页即可返回，较早正文留给后台，不混入任何本地副本", async () => {
+    const client = createHistoryClient([
+      paginatedMetadata,
+      {
+        data: [
+          {
+            turnId: "turn-2",
+            item: { id: "answer", type: "agentMessage", text: "其他客户端新增的最新回复" },
+          },
+          { turnId: "turn-2", item: { id: "question", type: "userMessage", content: [] } },
+        ],
+        nextCursor: "older-items",
+      },
+      { data: [{ id: "turn-2", items: [], status: "completed" }], nextCursor: "older-turns" },
+    ]);
+    const latest = await readCodexThreadLatest(client, "thread-1");
+    expect(latest).toEqual({
+      hasOlder: true,
+      response: {
+        thread: {
+          ...paginatedMetadata.thread,
+          turns: [
+            {
+              id: "turn-2",
+              status: "completed",
+              items: [
+                { id: "question", type: "userMessage", content: [] },
+                { id: "answer", type: "agentMessage", text: "其他客户端新增的最新回复" },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    expect(client.requests).toEqual([
+      { method: "thread/read", params: { threadId: "thread-1", includeTurns: false } },
+      {
+        method: "thread/items/list",
+        params: { threadId: "thread-1", cursor: null, limit: 100, sortDirection: "desc" },
+      },
+      {
+        method: "thread/turns/list",
+        params: {
+          threadId: "thread-1",
+          cursor: null,
+          limit: 100,
+          sortDirection: "desc",
+          itemsView: "notLoaded",
+        },
+      },
+    ]);
+  });
+
+  test("最新页跨回合时补齐必要回合头，缺少归属则明确失败", async () => {
+    const client = createHistoryClient([
+      paginatedMetadata,
+      { data: [{ turnId: "older", item: { id: "item", type: "agentMessage" } }], nextCursor: null },
+      { data: [{ id: "empty-newer", items: [] }], nextCursor: "older-turns" },
+      { data: [{ id: "older", items: [] }], nextCursor: null },
+    ]);
+    expect(await readCodexThreadLatest(client, "thread-1")).toMatchObject({
+      hasOlder: false,
+      response: { thread: { turns: [{ id: "older", items: [{ id: "item" }] }] } },
+    });
+    const invalid = createHistoryClient([
+      paginatedMetadata,
+      {
+        data: [{ turnId: "missing", item: { id: "item", type: "agentMessage" } }],
+        nextCursor: null,
+      },
+      { data: [], nextCursor: null },
+    ]);
+    await expect(readCodexThreadLatest(invalid, "thread-1")).rejects.toThrow("unknown turns");
+  });
+
   test("回退的两个反向游标分别读完后恢复时间顺序，重叠条目不重复", async () => {
     const client = createHistoryClient([
       { data: [{ id: "turn-2", items: [] }], nextCursor: "older-turns" },

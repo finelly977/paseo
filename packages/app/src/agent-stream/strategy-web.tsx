@@ -371,7 +371,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     sourceSegments.historyMounted[0]?.id ??
     sourceSegments.liveHead[0]?.id ??
     null;
-  const requestOlderHistory = useCallback(() => {
+  const prepareForHistoryPrepend = useCallback(() => {
     const scroll = scrollContainerRef.current;
     const anchor = scroll && !followOutputRef.current ? readHistoryAnchor(scroll) : null;
     if (anchor) {
@@ -383,8 +383,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       };
       setHasPendingHistoryAnchor(true);
     }
+  }, [sourceFirstItemId, historyStartCursor]);
+  const requestOlderHistory = useCallback(() => {
+    prepareForHistoryPrepend();
     onNearHistoryStart();
-  }, [onNearHistoryStart, sourceFirstItemId, historyStartCursor]);
+  }, [onNearHistoryStart, prepareForHistoryPrepend]);
   useLayoutEffect(() => {
     const pending = pendingHistoryAnchorRef.current;
     if (!pending) return;
@@ -1156,6 +1159,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   );
   useEffect(() => {
     const handle: StreamViewportHandle = {
+      prepareForHistoryPrepend,
       preserveScrollAnchor: preserveToggleAnchor,
       scrollToBottom: () => {
         cancelToggleAnchor();
@@ -1188,6 +1192,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     viewportRef,
     cancelToggleAnchor,
     preserveToggleAnchor,
+    prepareForHistoryPrepend,
   ]);
   const historyStartSlot = useMemo(() => {
     if (!isLoadingOlderHistory) {

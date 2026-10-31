@@ -35,6 +35,25 @@ interface HistoryMatchIndex {
 
 const ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN = "\n\n---\n\n";
 
+/** 将已显示的原生尾页定位到完整规范历史，不按正文相同随意认领重复消息。 */
+export function locateHistoryPreviewRows(
+  canonicalRows: readonly AgentTimelineRow[],
+  previewRows: readonly AgentTimelineRow[],
+): Array<{ previousSeq: number; seq: number }> {
+  const candidates = canonicalRows.map((row, canonicalIndex) => ({
+    row,
+    canonicalIndex,
+    used: false,
+  }));
+  const entries = previewRows.map((row) => ({ item: row.item, timestamp: row.timestamp }));
+  const counts = countStructuralOccurrences(canonicalRows, entries);
+  const index = buildHistoryMatchIndex(candidates);
+  return previewRows.flatMap((row) => {
+    const match = takeMatch(index, row.item, counts);
+    return match ? [{ previousSeq: row.seq, seq: match.row.seq }] : [];
+  });
+}
+
 /** 按提供方顺序对齐规范时间线元数据，不凭空推断回合归属。 */
 export function reconcileProviderHistory(
   canonicalRows: readonly AgentTimelineRow[],

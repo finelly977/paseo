@@ -1637,6 +1637,7 @@ export class Session {
             event.agentId,
             event.epoch,
             this.timelineReplacementInitiators.get(event.agentId),
+            event.rebase,
           );
           return;
         }
@@ -4178,6 +4179,7 @@ export class Session {
     agentId: string,
     epoch: string,
     initiators?: ReadonlyMap<object | undefined, number>,
+    rebase?: Extract<AgentManagerEvent, { type: "timeline_replacement" }>["rebase"],
   ): void {
     const agent = this.agentManager.getAgent(agentId);
     if (!agent) {
@@ -4191,7 +4193,7 @@ export class Session {
     }
     const replacementMessage: SessionOutboundMessage = {
       type: "agent.timeline.replacement",
-      payload: { agentId, epoch },
+      payload: { agentId, epoch, ...(rebase ? { rebase } : {}) },
     };
 
     if (this.clientCapabilitiesBySource.size === 0 || !this.onMessageToSource) {
@@ -6959,6 +6961,44 @@ export class Session {
     return this.selectProjectedTimelineProjection(input);
   }
 
+  private async prepareAgentTimelineRead(
+    agentId: string,
+    direction: AgentTimelineFetchDirection,
+    source: object | undefined,
+  ) {
+    const assertRuntimeRead = this.agentManager.createRuntimeReadGuard(agentId);
+    const supportsProgressive = source
+      ? this.supportsForSource(CLIENT_CAPS.progressiveAgentHistory, source)
+      : this.supports(CLIENT_CAPS.progressiveAgentHistory);
+    const snapshot = await ensureAgentLoaded(agentId, {
+      assertRuntimeRead,
+      agentManager: this.agentManager,
+      agentStorage: this.agentStorage,
+      logger: this.sessionLogger,
+      progressiveHistory: direction !== "before" && supportsProgressive,
+    });
+    const agentPayload = await this.buildAgentPayload(snapshot);
+    assertRuntimeRead();
+    return {
+      snapshot,
+      agentPayload,
+    };
+  }
+
+  private resolveAgentTimelineReadState(
+    agentId: string,
+    requestCursor: AgentTimelineCursor | undefined,
+  ) {
+    return {
+      cursor: requestCursor
+        ? this.agentManager.resolveTimelineCursor(agentId, requestCursor)
+        : undefined,
+      historyPageState: this.agentManager.hasPendingHistory(agentId)
+        ? { historyIncomplete: true, hasOlder: true }
+        : {},
+    };
+  }
+
   private async handleFetchAgentTimelineRequest(
     msg: Extract<SessionInboundMessage, { type: "fetch_agent_timeline_request" }>,
     source?: object,
@@ -6968,7 +7008,7 @@ export class Session {
     const requestedLimit = msg.limit;
     const pageLimit = requestedLimit ?? (direction === "after" ? 0 : 200);
     const conversationLimit = direction === "tail" ? msg.conversationLimit : undefined;
-    const cursor: AgentTimelineCursor | undefined = msg.cursor
+    const requestCursor: AgentTimelineCursor | undefined = msg.cursor
       ? {
           epoch: msg.cursor.epoch,
           seq: msg.cursor.seq,
@@ -6976,13 +7016,16 @@ export class Session {
       : undefined;
 
     try {
-      const snapshot = await ensureAgentLoaded(msg.agentId, {
-        assertRuntimeRead: this.agentManager.createRuntimeReadGuard(msg.agentId),
-        agentManager: this.agentManager,
-        agentStorage: this.agentStorage,
-        logger: this.sessionLogger,
-      });
-      const agentPayload = await this.buildAgentPayload(snapshot);
+      const { snapshot, agentPayload } = await this.prepareAgentTimelineRead(
+        msg.agentId,
+        direction,
+        source,
+      );
+      // 与本次取页处于同一个同步阶段，避免后台恰好完成时返回过期的补载状态。
+      const { cursor, historyPageState } = this.resolveAgentTimelineReadState(
+        msg.agentId,
+        requestCursor,
+      );
 
       const controlTimeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction,
@@ -7042,6 +7085,7 @@ export class Session {
             endCursor,
             hasOlder: selectedTimeline.hasOlder,
             hasNewer: selectedTimeline.hasNewer,
+            ...historyPageState,
             ...(msg.mergeWindow === true ? { mergeWindow: true } : {}),
             entries: selectedTimeline.entries.map((entry) => ({
               provider: snapshot.provider,

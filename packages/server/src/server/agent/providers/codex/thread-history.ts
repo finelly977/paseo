@@ -112,6 +112,58 @@ export async function readCodexThread(
   return readCodexPaginatedThread({ client, threadId, thread, sortDirection: "asc" });
 }
 
+/** 原生最新页与完整读取使用相同格式校验，不用 Paseo 副本代替最新内容。 */
+export async function readCodexThreadLatest(
+  client: CodexHistoryClient,
+  threadId: string,
+): Promise<{ response: CodexThreadReadResponse; hasOlder: boolean }> {
+  const { thread } = ThreadMetadataSchema.parse(
+    await client.request("thread/read", { threadId, includeTurns: false }),
+  );
+  if (thread.historyMode === "legacy") {
+    return {
+      response: CodexThreadReadResponseSchema.parse(
+        await client.request("thread/read", { threadId, includeTurns: true }),
+      ),
+      hasOlder: false,
+    };
+  }
+  const page = HistoryPageSchema.parse(
+    await client.request("thread/items/list", {
+      threadId,
+      cursor: null,
+      limit: 100,
+      sortDirection: "desc",
+    }),
+  );
+  const items = page.data.map((entry) => ThreadItemSchema.parse(entry));
+  const requiredTurns = new Set(items.map((entry) => entry.turnId));
+  const turns = new Map<string, z.infer<typeof TurnHeaderSchema>>();
+  for await (const headers of readCodexHistoryPages({
+    client,
+    threadId,
+    method: "thread/turns/list",
+    sortDirection: "desc",
+  })) {
+    for (const entry of headers.data) {
+      const turn = TurnHeaderSchema.parse(entry);
+      if (requiredTurns.delete(turn.id)) turns.set(turn.id, { ...turn, items: [] });
+    }
+    if (requiredTurns.size === 0) break;
+  }
+  if (requiredTurns.size > 0)
+    throw new CodexHistoryReadError(threadId, "Latest items reference unknown turns");
+  for (const { turnId, item } of items.toReversed()) {
+    const turn = turns.get(turnId);
+    if (!turn) throw new CodexHistoryReadError(threadId, `Unknown turn ${turnId}`);
+    turn.items.push(item);
+  }
+  return {
+    response: { thread: { ...thread, turns: [...turns.values()].toReversed() } },
+    hasOlder: page.nextCursor !== null,
+  };
+}
+
 export async function readCodexPaginatedThread(
   params: PaginatedThreadParams,
 ): Promise<CodexThreadReadResponse> {

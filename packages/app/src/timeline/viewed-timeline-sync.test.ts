@@ -36,12 +36,15 @@ interface TimelineFetch {
     hasOlder?: boolean;
     startSeq?: number | null;
     conversationSeqs?: number[];
+    historyIncomplete?: boolean;
   }): void;
   fail(message: string): void;
 }
 
 class TimelineWorld {
   readonly errors: string[] = [];
+  holdHistoryPages = false;
+  readonly historySettlements: Array<{ task: () => void; canceled: boolean }> = [];
   private initialConversationLimit: number | undefined;
   readonly sync = createViewedTimelineSync({
     initialDeliveryMode: "selective",
@@ -67,15 +70,24 @@ class TimelineWorld {
         hasOlder: boolean;
         startCursor: { epoch: string; seq: number } | null;
         conversationIndex?: Array<{ seqStart: number }>;
+        historyIncomplete?: boolean;
       }>();
       this.fetches.push({
         agentId,
         request,
-        respond: ({ hasNewer, seq = 1, hasOlder = false, startSeq = 1, conversationSeqs }) =>
+        respond: ({
+          hasNewer,
+          seq = 1,
+          hasOlder = false,
+          startSeq = 1,
+          conversationSeqs,
+          historyIncomplete,
+        }) =>
           result.resolve({
             hasNewer,
             endCursor: { epoch: `epoch-${agentId}`, seq },
             hasOlder,
+            historyIncomplete,
             startCursor: startSeq === null ? null : { epoch: `epoch-${agentId}`, seq: startSeq },
             ...(conversationSeqs
               ? { conversationIndex: conversationSeqs.map((seqStart) => ({ seqStart })) }
@@ -90,6 +102,22 @@ class TimelineWorld {
       this.errors.push(error instanceof Error ? error.message : String(error));
       const waiter = this.errorWaiters.shift();
       if (waiter) waiter(this.errors.at(-1) ?? "");
+    },
+    settleHistoryPage: (task) => {
+      if (this.holdHistoryPages) {
+        const pending = { task, canceled: false };
+        this.historySettlements.push(pending);
+        return () => {
+          pending.canceled = true;
+        };
+      }
+      let canceled = false;
+      queueMicrotask(() => {
+        if (!canceled) task();
+      });
+      return () => {
+        canceled = true;
+      };
     },
     schedule: (task, delayMs) => {
       const scheduled = { task, delayMs };
@@ -214,6 +242,91 @@ class TimelineWorld {
 
 test("keeps hidden agents subscribed for thirty seconds", () => {
   expect(VIEWED_TIMELINE_UNSUBSCRIBE_GRACE_MS).toBe(30_000);
+});
+
+test("最新原生页即可就绪，不等待后台历史或配置轮次补载", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: 41,
+    seq: 100,
+    conversationSeqs: [1],
+    historyIncomplete: true,
+  });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.expectNoPendingFetch();
+  world.setCursor("agent-a", 1_100, 1_041);
+  world.setConversationIndex("agent-a", [1, 1_041]);
+  world.sync.rebaseAgentTimeline("agent-a");
+  const current = await world.nextFetch("agent-a");
+  expect(current.request).toMatchObject({ direction: "after", cursor: { seq: 1_100 } });
+  current.respond({ hasNewer: false, hasOlder: true, startSeq: null });
+  const older = await world.nextFetch("agent-a");
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  older.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  world.sync.dispose();
+});
+
+test("自动预取每页前保存阅读锚点，等待本页布局后才读取下一页", async () => {
+  const world = new TimelineWorld();
+  world.holdHistoryPages = true;
+  world.setInitialConversationLimit(100);
+  let prepared = 0;
+  const unregister = world.sync.registerHistoryPrepend("agent-a", () => {
+    prepared++;
+  });
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: 101,
+    seq: 140,
+    conversationSeqs: [1],
+  });
+  const first = await world.nextFetch("agent-a");
+  expect(prepared).toBe(1);
+  first.respond({ hasNewer: false, hasOlder: true, startSeq: 61 });
+  await vi.waitFor(() => expect(world.historySettlements).toHaveLength(1));
+  world.expectNoPendingFetch();
+  world.historySettlements[0].task();
+  const second = await world.nextFetch("agent-a");
+  expect(prepared).toBe(2);
+  expect(second.request).toMatchObject({ direction: "before", cursor: { seq: 61 } });
+  second.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  await vi.waitFor(() => expect(world.historySettlements).toHaveLength(2));
+  unregister();
+  world.sync.dispose();
+});
+
+test("释放会取消尚未完成的页面布局等待，不让迟到帧继续预取", async () => {
+  const world = new TimelineWorld();
+  world.holdHistoryPages = true;
+  world.setInitialConversationLimit(100);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: 101,
+    seq: 140,
+    conversationSeqs: [1],
+  });
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, hasOlder: true, startSeq: 61 });
+  await vi.waitFor(() => expect(world.historySettlements).toHaveLength(1));
+  world.sync.releaseAgentTimeline("agent-a");
+  expect(world.historySettlements[0].canceled).toBe(true);
+  world.historySettlements[0].task();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  world.expectNoPendingFetch();
+  world.sync.dispose();
 });
 
 test("释放会话立即退订，聚焦和迟到补页不会重新加载，明确重开才恢复", async () => {
@@ -373,6 +486,8 @@ test("补齐最近一百轮即停止，保留更早历史供手动加载，切�
   expect(older.request).toMatchObject({ direction: "before", cursor: { seq: 1_801 }, limit: 40 });
   world.setCursor("agent-a", 2_000, 1_001);
   older.respond({ hasNewer: false, hasOlder: true, startSeq: 1_001 });
+  // 首屏就绪不再代表预取结束；让已完成页的 Promise 提交完毕再测试切回。
+  await new Promise<void>((resolve) => setImmediate(resolve));
   await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
   world.expectNoPendingFetch();
 
@@ -1217,6 +1332,10 @@ test("a sync created while already connected subscribes without a setConnected t
     }),
     reportError: () => {},
     schedule: () => () => {},
+    settleHistoryPage: (task) => {
+      queueMicrotask(task);
+      return () => {};
+    },
   });
 
   sync.replaceVisibleAgentIds("workspace", ["agent-a"]);

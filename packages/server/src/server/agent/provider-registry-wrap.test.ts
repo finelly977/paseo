@@ -26,6 +26,7 @@ const OPTIONAL_AGENT_SESSION_METHOD_NAMES = [
   "revertFiles",
   "revertBoth",
   "tryHandleOutOfBand",
+  "historyContinuation",
 ] as const satisfies readonly OptionalAgentSessionMethodName[];
 
 type MissingOptionalAgentSessionMethod = Exclude<
@@ -127,6 +128,10 @@ class FakeSession implements AgentSession {
     return [];
   }
 
+  async historyContinuation() {
+    this.recordedCalls.push("historyContinuation");
+  }
+
   async setModel() {
     this.recordedCalls.push("setModel");
   }
@@ -173,6 +178,7 @@ describe("wrapSessionProvider", () => {
     const wrapped = wrapSessionProvider("custom-claude", session);
 
     await wrapped.listCommands?.();
+    await wrapped.historyContinuation?.();
     await wrapped.setModel?.("sonnet");
     await wrapped.setThinkingOption?.("high");
     await wrapped.setFeature?.("feature-1", true);
@@ -184,6 +190,7 @@ describe("wrapSessionProvider", () => {
 
     expect(session.recordedCalls).toEqual([
       "listCommands",
+      "historyContinuation",
       "setModel",
       "setThinkingOption",
       "setFeature",

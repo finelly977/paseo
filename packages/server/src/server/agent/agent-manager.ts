@@ -59,12 +59,13 @@ import {
 } from "./agent-timeline-store.js";
 import type {
   AgentTimelineFetchOptions,
+  AgentTimelineCursor,
   AgentTimelineFetchResult,
   AgentTimelineRow,
   AgentTimelineStore,
 } from "./agent-timeline-store-types.js";
 import { DurableTimelineBuffer, type DurableTimelineTimers } from "./durable-timeline-buffer.js";
-import { reconcileProviderHistory } from "./history-reconciliation.js";
+import { reconcileProviderHistory, locateHistoryPreviewRows } from "./history-reconciliation.js";
 import {
   AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS,
   AgentStreamCoalescer,
@@ -226,7 +227,7 @@ export type AgentManagerEvent =
   | { type: "agent_metadata"; agentId: string; record: StoredAgentRecord }
   | { type: "agent_state"; agent: ManagedAgent }
   | { type: "provider_subagent"; event: ProviderSubagentStoreEvent }
-  | { type: "timeline_replacement"; agentId: string; epoch: string }
+  | { type: "timeline_replacement"; agentId: string; epoch: string; rebase?: HistoryPreviewRebase }
   | {
       type: "agent_stream";
       agentId: string;
@@ -248,6 +249,18 @@ interface HydrateTimelineOptions {
   broadcast?: boolean | (() => boolean);
   broadcastTimeline?: boolean | (() => boolean);
   emitReplacement?: boolean;
+}
+
+interface HistoryPreviewRebase {
+  previousEpoch: string;
+  minSeq: number;
+  positions: Array<{ previousSeq: number; seq: number }>;
+}
+
+interface ProgressiveHistoryLoad {
+  run: () => Promise<void>;
+  promise: Promise<void> | null;
+  error: Error | null;
 }
 
 export type ImportablePersistedAgentQueryOptions = ListImportableSessionsOptions & {
@@ -841,6 +854,11 @@ export class AgentManager {
   private readonly providerEnabled = new Map<AgentProvider, boolean>();
   private readonly agents = new Map<string, LiveManagedAgent>();
   private readonly timelineStore = new InMemoryAgentTimelineStore();
+  private readonly progressiveHistoryLoads = new Map<string, ProgressiveHistoryLoad>();
+  private readonly historyPreviewRebases = new Map<
+    string,
+    HistoryPreviewRebase & { epoch: string }
+  >();
   private readonly providerSubagents = new ProviderSubagentStore();
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
@@ -1298,7 +1316,47 @@ export class AgentManager {
 
   fetchTimeline(id: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
     this.requireAgent(id);
-    return this.timelineStore.fetch(id, options);
+    const cursor = options?.cursor ? this.resolveTimelineCursor(id, options.cursor) : undefined;
+    const result = this.timelineStore.fetch(id, cursor ? { ...options, cursor } : options);
+    return this.progressiveHistoryLoads.has(id) ? { ...result, hasOlder: true } : result;
+  }
+
+  resolveTimelineCursor(id: string, cursor: AgentTimelineCursor): AgentTimelineCursor {
+    const rebase = this.historyPreviewRebases.get(id);
+    const mapped =
+      rebase && cursor.epoch === rebase.previousEpoch
+        ? rebase.positions.find((position) => position.previousSeq === cursor.seq)
+        : undefined;
+    return mapped && rebase ? { epoch: rebase.epoch, seq: mapped.seq } : cursor;
+  }
+
+  hasPendingHistory(id: string): boolean {
+    return this.progressiveHistoryLoads.has(id);
+  }
+
+  async waitForBackgroundHistory(id: string): Promise<void> {
+    const load = this.progressiveHistoryLoads.get(id);
+    if (!load) return;
+    if (!load.promise) this.startProgressiveHistoryLoad(id, load);
+    await load.promise;
+    if (load.error) throw load.error;
+  }
+
+  private startProgressiveHistoryLoad(id: string, load: ProgressiveHistoryLoad): void {
+    load.error = null;
+    const task = load
+      .run()
+      .catch((error: unknown) => {
+        this.logger.error({ err: error, agentId: id }, "Failed to load remaining native history");
+        if (this.progressiveHistoryLoads.get(id) === load) {
+          load.error = error instanceof Error ? error : new Error(String(error));
+        }
+      })
+      .finally(() => {
+        if (load.promise === task) load.promise = null;
+      });
+    load.promise = task;
+    this.trackBackgroundTask(task);
   }
 
   listProviderSubagents(parentAgentId: string): ProviderSubagentDescriptor[] {
@@ -1850,11 +1908,14 @@ export class AgentManager {
       },
       "agent.manager.close.start",
     );
+    const historyLoad = this.progressiveHistoryLoads.get(agentId)?.promise;
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
     this.touchUpdatedAt(closedAgent);
     let closeError: unknown;
     try {
       await agent.session.close();
+      // 先关闭提供方以取消读请求，再等待已有完整提交退出，释放后不留后台写入者。
+      await historyLoad;
     } catch (error) {
       closeError = error;
     }
@@ -3225,6 +3286,17 @@ export class AgentManager {
     options?: HydrateTimelineOptions,
   ): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
+    if (options?.force && this.progressiveHistoryLoads.has(agentId))
+      await this.waitForBackgroundHistory(agentId);
+    const continuation = agent.session.historyContinuation;
+    if (continuation && options?.force) {
+      await continuation();
+      agent.session.historyContinuation = undefined;
+    }
+    if (continuation && !options?.force && !this.progressiveHistoryLoads.has(agentId)) {
+      await this.primeProgressiveHistory(agent, continuation);
+      return;
+    }
     try {
       await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
     } catch (error) {
@@ -3794,6 +3866,8 @@ export class AgentManager {
     agent: LiveManagedAgent,
     cancelReason: string,
   ): ManagedAgentClosed {
+    this.progressiveHistoryLoads.delete(agent.id);
+    this.historyPreviewRebases.delete(agent.id);
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     this.agents.delete(agent.id);
     this.previousStatuses.delete(agent.id);
@@ -3826,6 +3900,8 @@ export class AgentManager {
   }
 
   private discardRetainedAgentState(agentId: string): void {
+    this.progressiveHistoryLoads.delete(agentId);
+    this.historyPreviewRebases.delete(agentId);
     this.timelineStore.delete(agentId);
     for (const event of this.providerSubagents.deleteParent(agentId)) {
       this.dispatch({ type: "provider_subagent", event });
@@ -4175,6 +4251,89 @@ export class AgentManager {
     this.emitState(agent);
   }
 
+  private async primeProgressiveHistory(
+    agent: ActiveManagedAgent,
+    continuation: () => Promise<void>,
+  ): Promise<void> {
+    const seed = this.timelineStore.getRows(agent.id);
+    const previewEvents: Extract<AgentStreamEvent, { type: "timeline" }>[] = [];
+    for await (const raw of agent.session.streamHistory()) {
+      const event = limitAgentStreamEventContent(raw);
+      if (
+        event.type === "timeline" &&
+        !(event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text))
+      )
+        previewEvents.push(event);
+    }
+    if (this.agents.get(agent.id) !== agent)
+      throw new Error(`Agent ${agent.id} closed while reading native preview history`);
+    // 首屏只来自本次原生读取；持久副本仅用于后台完整核对时保留提交身份等元数据。
+    const previewRows = reconcileProviderHistory(
+      [],
+      previewEvents.map((event) => ({ item: event.item, timestamp: event.timestamp })),
+    );
+    this.timelineStore.initialize(agent.id, { rows: previewRows });
+    const previousEpoch = this.timelineStore.getEpoch(agent.id);
+    let fullEvents: AgentStreamEvent[] | null = null;
+    const load: ProgressiveHistoryLoad = {
+      promise: null,
+      error: null,
+      run: async () => {
+        if (fullEvents === null) {
+          await continuation();
+          const events: AgentStreamEvent[] = [];
+          for await (const event of agent.session.streamHistory())
+            events.push(limitAgentStreamEventContent(event));
+          fullEvents = events;
+        }
+        if (
+          this.agents.get(agent.id) !== agent ||
+          this.progressiveHistoryLoads.get(agent.id) !== load
+        )
+          return;
+        const history = fullEvents.filter(
+          (event): event is Extract<AgentStreamEvent, { type: "timeline" }> =>
+            event.type === "timeline" &&
+            !(event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)),
+        );
+        const rows = reconcileProviderHistory(
+          seed,
+          history.map((event) => ({ item: event.item, timestamp: event.timestamp })),
+          { mode: "force" },
+        );
+        const rebase = {
+          previousEpoch,
+          minSeq: rows[0]?.seq ?? 0,
+          positions: locateHistoryPreviewRows(rows, previewRows),
+        };
+        // 写入确认前保留原生首屏；失败时不把部分历史持久化成完整快照。
+        await this.commitCompleteHistorySnapshot(agent.id, rows);
+        if (
+          this.agents.get(agent.id) !== agent ||
+          this.progressiveHistoryLoads.get(agent.id) !== load
+        )
+          return;
+        this.timelineStore.initialize(agent.id, { rows });
+        const epoch = this.timelineStore.getEpoch(agent.id);
+        this.historyPreviewRebases.set(agent.id, { ...rebase, epoch });
+        this.progressiveHistoryLoads.delete(agent.id);
+        agent.session.historyContinuation = undefined;
+        agent.historyPrimed = true;
+        for (const event of this.providerSubagents.deleteParent(agent.id))
+          this.dispatch({ type: "provider_subagent", event });
+        for (const event of fullEvents) {
+          if (event.type === "provider_subagent") {
+            const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
+            this.dispatch({ type: "provider_subagent", event: update });
+          }
+        }
+        this.dispatch({ type: "timeline_replacement", agentId: agent.id, epoch, rebase });
+      },
+    };
+    this.progressiveHistoryLoads.set(agent.id, load);
+    this.startProgressiveHistoryLoad(agent.id, load);
+  }
+
   private async primeTimelineFromLegacyProviderHistory(
     agent: ActiveManagedAgent,
     broadcast: boolean | (() => boolean),
@@ -4277,11 +4436,14 @@ export class AgentManager {
     }
   }
 
-  private async commitCompleteHistorySnapshot(agentId: string): Promise<void> {
+  private async commitCompleteHistorySnapshot(
+    agentId: string,
+    rows?: AgentTimelineRow[],
+  ): Promise<void> {
     if (!this.durableTimelineStore) return;
     await this.durableTimelineBuffer?.flush(agentId);
     await this.durableTimelineStore.replaceCommittedSnapshot(agentId, {
-      rows: this.timelineStore.getRows(agentId),
+      rows: rows ?? this.timelineStore.getRows(agentId),
       historyComplete: true,
     });
   }

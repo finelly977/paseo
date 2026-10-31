@@ -646,6 +646,8 @@ export interface AgentCreateSessionOptions {
 export interface AgentResumeSessionOptions {
   /** Defaults to interactive. History loading may be read-only for archived native sessions. */
   purpose?: "interactive" | "history";
+  /** 先读取提供方最新页，其余历史由管理器在后台核对。 */
+  progressiveHistory?: boolean;
 }
 
 /**
@@ -668,6 +670,8 @@ export interface AgentSession {
   steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
+  /** 只在原生历史尚未读完时提供；成功后 streamHistory 返回完整原生历史。 */
+  historyContinuation?: () => Promise<void>;
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
   getUsage?(): Promise<AgentUsage | undefined>;
   getAvailableModes(): Promise<AgentMode[]>;

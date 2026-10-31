@@ -4423,6 +4423,8 @@ export const FetchAgentTimelineResponseMessageSchema = z.object({
     endCursor: AgentTimelineCursorSchema.nullable(),
     hasOlder: z.boolean(),
     hasNewer: z.boolean(),
+    // COMPAT(progressiveAgentHistory): v0.2.6 新增，2027-04-30 后复查可选字段。
+    historyIncomplete: z.boolean().optional(),
     // COMPAT(timelineMergeWindow): v0.2.6 新增，2027-02-28 后移除可选兼容。
     mergeWindow: z.boolean().optional(),
     entries: z.array(AgentTimelineEntryPayloadSchema),
@@ -4448,6 +4450,17 @@ export const AgentTimelineReplacementMessageSchema = z.object({
   payload: z.object({
     agentId: z.string(),
     epoch: z.string(),
+    // 原生首屏完成后静默补齐历史，只校准位置，不清空已显示的阅读窗口。
+    // COMPAT(progressiveAgentHistory): v0.2.6 新增，2027-04-30 后复查可选字段。
+    rebase: z
+      .object({
+        previousEpoch: z.string(),
+        minSeq: z.number().int().nonnegative(),
+        positions: z.array(
+          z.object({ previousSeq: z.number().int().positive(), seq: z.number().int().positive() }),
+        ),
+      })
+      .optional(),
   }),
 });
 

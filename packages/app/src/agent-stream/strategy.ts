@@ -42,6 +42,8 @@ export interface StreamEdgeSlotProps {
 }
 
 export interface StreamViewportHandle {
+  /** 网页虚拟窗口在后台前插之前捕捉阅读位置；原生列表由自身的倒置窗口保持位置。 */
+  prepareForHistoryPrepend?: () => void;
   scrollToBottom: (reason?: BottomAnchorLocalRequest["reason"]) => void;
   scrollToItem: (itemId: string) => void;
   prepareForViewportChange: () => void;

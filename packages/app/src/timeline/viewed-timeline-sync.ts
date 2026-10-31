@@ -15,6 +15,7 @@ interface TimelinePageResult {
   hasOlder: boolean;
   startCursor: { epoch: string; seq: number } | null;
   conversationIndex?: ReadonlyArray<{ seqStart: number }>;
+  historyIncomplete?: boolean;
 }
 
 interface ViewedTimelineSyncPorts {
@@ -37,12 +38,16 @@ interface ViewedTimelineSyncPorts {
   fetchPage(agentId: string, request: ProjectedTimelineFetchPlan): Promise<TimelinePageResult>;
   reportError(error: unknown): void;
   schedule(task: () => void, delayMs: number): () => void;
+  /** 等待本页提交和行高测量，再开始低优先级的下一页预取。 */
+  settleHistoryPage(task: () => void): () => void;
 }
 
 export type TimelineDeliveryMode = "legacy" | "selective";
 export type ViewedTimelineStatus = "ready" | "pending" | "error" | "retrying";
 
 export interface ViewedTimelineUiBridge {
+  registerHistoryPrepend(agentId: string, prepare: () => void): () => void;
+  rebaseAgentTimeline(agentId: string): void;
   releaseAgentTimeline(agentId: string): void;
   resumeAgentTimeline(agentId: string): void;
   replaceVisibleAgentIds(sourceId: string, agentIds: string[]): void;
@@ -140,10 +145,15 @@ async function backfillInitialConversationHistory(input: {
   targetSeq: number;
   fetchPage: ViewedTimelineSyncPorts["fetchPage"];
   isCurrent: () => boolean;
+  settlePage: () => Promise<void>;
+  preparePage: () => void;
 }): Promise<boolean> {
   let cursor = input.cursor;
   while (cursor.seq > input.targetSeq) {
+    input.preparePage();
     const olderPage = await input.fetchPage(input.agentId, planTimelineOlderFetch(cursor));
+    if (!input.isCurrent()) return false;
+    await input.settlePage();
     if (!input.isCurrent()) return false;
     const nextCursor = olderPage.startCursor;
     if (!nextCursor || nextCursor.seq >= cursor.seq) {
@@ -170,6 +180,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   const manualRetries = new Set<string>();
   const replacementEpochs = new Map<string, string>();
   const listeners = new Set<() => void>();
+  const historySettlements = new Map<string, () => void>();
+  const historyPrependHandlers = new Map<string, Set<() => void>>();
   let active = true;
   let connected = ports.initialConnected;
   let deliveryMode = ports.initialDeliveryMode;
@@ -220,6 +232,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   };
 
   const cancelCatchUp = (agentId: string) => {
+    historySettlements.get(agentId)?.();
     catchUpGenerations.set(agentId, (catchUpGenerations.get(agentId) ?? 0) + 1);
     catchUps.get(agentId)?.cancelRetry?.();
     catchUps.delete(agentId);
@@ -244,6 +257,8 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         throw new Error(`Timeline page for ${agentId} hasNewer without an end cursor`);
       }
       const historyCursor = ports.readCursor(agentId);
+      // 首个最新页已可阅读。后续原生核对与配置轮次预取都不再阻挡首屏。
+      setVisibilityCatchUpReady(agentId);
       const backfillTarget = getConversationBackfillTarget({
         conversationLimit:
           request.direction === "tail"
@@ -255,12 +270,27 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
           : (page.startCursor ?? undefined),
         hasOlder: page.hasOlder,
       });
-      if (backfillTarget) {
+      if (backfillTarget && !page.historyIncomplete) {
         const completed = await backfillInitialConversationHistory({
           agentId,
           ...backfillTarget,
           fetchPage: ports.fetchPage,
           isCurrent: () => isCatchUpCurrent(agentId, generation),
+          preparePage: () => {
+            for (const prepare of historyPrependHandlers.get(agentId) ?? []) prepare();
+          },
+          settlePage: () =>
+            new Promise<void>((resolve) => {
+              const finish = () => {
+                historySettlements.delete(agentId);
+                resolve();
+              };
+              const cancel = ports.settleHistoryPage(finish);
+              historySettlements.set(agentId, () => {
+                cancel();
+                finish();
+              });
+            }),
         });
         if (!completed) return;
       }
@@ -303,6 +333,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     if (shouldKeepCurrentCatchUp({ current, request, supersede })) {
       return;
     }
+    historySettlements.get(agentId)?.();
     current?.cancelRetry?.();
     const cursor = ports.readCursor(agentId);
     const nextRequest =
@@ -596,6 +627,20 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         supersede: true,
       });
     },
+    registerHistoryPrepend(agentId, prepare) {
+      const handlers = historyPrependHandlers.get(agentId) ?? new Set<() => void>();
+      handlers.add(prepare);
+      historyPrependHandlers.set(agentId, handlers);
+      return () => {
+        handlers.delete(prepare);
+        if (handlers.size === 0) historyPrependHandlers.delete(agentId);
+      };
+    },
+    rebaseAgentTimeline(agentId) {
+      if (!active || !connected || !isDesired(agentId)) return;
+      cancelCatchUp(agentId);
+      startCatchUp(agentId);
+    },
     replaceAgentTimeline(agentId, epoch) {
       if (!active || !connected || !isDesired(agentId)) return;
       if (replacementEpochs.get(agentId) === epoch) return;
@@ -632,6 +677,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       }
     },
     dispose() {
+      historyPrependHandlers.clear();
       disposed = true;
       clearLingeringRemovals();
       cancelMembershipRetry?.();

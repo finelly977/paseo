@@ -18,6 +18,7 @@ import {
   type TimelineReducerSideEffect,
 } from "@/timeline/session-stream-reducers";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
+import { rebaseHistoryPreview } from "@/timeline/history-preview-rebase";
 import {
   isTimelineCatchUpComplete,
   shouldApplyOlderHistoryBoundary,
@@ -771,9 +772,11 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         })
       ) {
         setAgentTimelineHasOlder(serverId, (prev) => {
-          if (prev.get(agentId) === payload.hasOlder) return prev;
+          // 原生剩余历史尚在后台读取时，不因视口不足一屏自动显示旧页加载动画。
+          const canReadOlder = payload.hasOlder && payload.historyIncomplete !== true;
+          if (prev.get(agentId) === canReadOlder) return prev;
           const next = new Map(prev);
-          next.set(agentId, payload.hasOlder);
+          next.set(agentId, canReadOlder);
           return next;
         });
       }
@@ -885,6 +888,13 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       schedule: (task, delayMs) => {
         const timeout = setTimeout(task, delayMs);
         return () => clearTimeout(timeout);
+      },
+      settleHistoryPage: (task) => {
+        // 两帧之间让 React 提交旧页并完成行高测量，避免多页预取挤在同一绘制周期。
+        let frame = requestAnimationFrame(() => {
+          frame = requestAnimationFrame(task);
+        });
+        return () => cancelAnimationFrame(frame);
       },
     });
     for (const agentId of useSessionStore.getState().sessions[serverId]?.releasedAgentIds ?? []) {
@@ -998,6 +1008,23 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
     const unsubTimelineReplacement = client.on("agent.timeline.replacement", (message) => {
       if (message.type !== "agent.timeline.replacement") return;
+      const { agentId, epoch, rebase } = message.payload;
+      if (rebase) {
+        agentStreamReducerQueue.flushAgent(agentId);
+        let applied = false;
+        useSessionStore.setState((state) => {
+          const session = state.sessions[serverId];
+          if (!session) return state;
+          const next = rebaseHistoryPreview(session, agentId, epoch, rebase);
+          if (!next) return state;
+          applied = true;
+          return { ...state, sessions: { ...state.sessions, [serverId]: next } };
+        });
+        if (applied) {
+          viewedTimelineSyncRef.current?.rebaseAgentTimeline(agentId);
+          return;
+        }
+      }
       viewedTimelineSyncRef.current?.replaceAgentTimeline(
         message.payload.agentId,
         message.payload.epoch,

@@ -871,6 +871,12 @@ function ChatAgentContent({
     readTimelineStatus,
   );
   const visibilityCatchUpStatus = isPaneVisible ? timelineStatus : "ready";
+  useEffect(() => {
+    if (!agentId || !viewedTimelineSync || !isPaneVisible) return;
+    return viewedTimelineSync.registerHistoryPrepend(agentId, () =>
+      streamViewRef.current?.prepareForHistoryPrepend(),
+    );
+  }, [agentId, viewedTimelineSync, isPaneVisible]);
   const hasActiveCreateHandoff = useCreateFlowStore((state) =>
     findActiveCreateHandoff({ pendingByDraftId: state.pendingByDraftId, serverId, agentId }),
   );

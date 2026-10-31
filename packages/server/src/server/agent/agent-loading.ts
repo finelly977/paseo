@@ -1,8 +1,8 @@
 import type { Logger } from "pino";
 
-import type { AgentProvider } from "./agent-sdk-types.js";
+import type { AgentProvider, AgentResumeSessionOptions } from "./agent-sdk-types.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
-import type { AgentStorage } from "./agent-storage.js";
+import type { AgentStorage, StoredAgentRecord } from "./agent-storage.js";
 import {
   buildConfigOverrides,
   buildSessionConfig,
@@ -38,7 +38,12 @@ export type AgentLoaderManager = Pick<
   | "resumeAgentFromPersistence"
   | "reloadAgentSession"
 > &
-  Partial<Pick<AgentManager, "touchAgentActivity" | "waitForAgentClose" | "waitForAgentReload">>;
+  Partial<
+    Pick<
+      AgentManager,
+      "touchAgentActivity" | "waitForAgentClose" | "waitForAgentReload" | "waitForBackgroundHistory"
+    >
+  >;
 
 export interface EnsureAgentLoadedDeps {
   /** 普通历史读取核对释放边界；用户明确恢复与发送消息不使用此限制。 */
@@ -48,7 +53,25 @@ export interface EnsureAgentLoadedDeps {
   validProviders?: Iterable<AgentProvider>;
   broadcastTimeline?: boolean;
   replaceTimeline?: boolean;
+  progressiveHistory?: boolean;
   logger: Logger;
+}
+
+function resolveResumeOptions(
+  record: StoredAgentRecord,
+  deps: EnsureAgentLoadedDeps,
+): AgentResumeSessionOptions | undefined {
+  const progressive = deps.progressiveHistory === true && record.provider === "codex";
+  if (!record.archivedAt && !progressive) return undefined;
+  return {
+    purpose: record.archivedAt ? "history" : "interactive",
+    ...(progressive ? { progressiveHistory: true } : {}),
+  };
+}
+
+async function finishHistoryRead(agentId: string, deps: EnsureAgentLoadedDeps): Promise<void> {
+  if (!deps.progressiveHistory) await deps.agentManager.waitForBackgroundHistory?.(agentId);
+  deps.assertRuntimeRead?.();
 }
 
 async function joinInitialization(
@@ -64,7 +87,9 @@ async function joinInitialization(
     pending.options.replaceTimeline = true;
   }
   pending.options.broadcastTimeline ||= deps.broadcastTimeline === true;
-  return pending.promise;
+  const snapshot = await pending.promise;
+  await finishHistoryRead(agentId, deps);
+  return snapshot;
 }
 
 export async function ensureUnarchivedAgentLoaded(
@@ -115,6 +140,7 @@ export async function ensureAgentLoaded(
   if (existing) {
     if (deps.replaceTimeline)
       return deps.agentManager.reloadAgentSession(agentId, undefined, { rehydrateFromDisk: true });
+    await finishHistoryRead(agentId, deps);
     return existing;
   }
 
@@ -156,7 +182,7 @@ export async function ensureAgentLoaded(
         buildConfigOverrides(record),
         agentId,
         extractTimestamps(record),
-        record.archivedAt ? { purpose: "history" } : undefined,
+        resolveResumeOptions(record, deps),
       );
       deps.logger.info({ agentId, provider: record.provider }, "Agent resumed from persistence");
     } else {
@@ -188,7 +214,9 @@ export async function ensureAgentLoaded(
   pendingAgentInitializations.set(agentId, pending);
 
   try {
-    return await initPromise;
+    const snapshot = await initPromise;
+    await finishHistoryRead(agentId, deps);
+    return snapshot;
   } finally {
     const current = pendingAgentInitializations.get(agentId);
     if (current === pending) {
