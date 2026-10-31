@@ -18,7 +18,10 @@ import {
   type TimelineReducerSideEffect,
 } from "@/timeline/session-stream-reducers";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
-import { isTimelineCatchUpComplete } from "@/timeline/timeline-sync-plan";
+import {
+  isTimelineCatchUpComplete,
+  shouldApplyOlderHistoryBoundary,
+} from "@/timeline/timeline-sync-plan";
 import {
   createViewedTimelineSync,
   type TimelineDeliveryMode,
@@ -734,15 +737,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         );
       }
 
-      setAgentTimelineHasOlder(serverId, (prev) => {
-        if (prev.get(agentId) === payload.hasOlder) {
-          return prev;
-        }
-        const next = new Map(prev);
-        next.set(agentId, payload.hasOlder);
-        return next;
-      });
-
       // Call pure reducer
       const result = processTimelineResponse({
         payload,
@@ -765,6 +759,23 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           setInitializingAgents,
         });
         return;
+      }
+
+      if (
+        shouldApplyOlderHistoryBoundary({
+          direction: payload.direction,
+          reset: payload.reset,
+          epoch: payload.epoch,
+          startCursor: payload.startCursor,
+          currentCursor,
+        })
+      ) {
+        setAgentTimelineHasOlder(serverId, (prev) => {
+          if (prev.get(agentId) === payload.hasOlder) return prev;
+          const next = new Map(prev);
+          next.set(agentId, payload.hasOlder);
+          return next;
+        });
       }
 
       applyTimelineStreamPatches({
@@ -822,6 +833,8 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       setSubscription: (agentIds) => client.setAgentTimelineSubscription(agentIds),
       readCursor: (agentId) =>
         useSessionStore.getState().sessions[serverId]?.agentTimelineCursor.get(agentId),
+      readConversationIndex: (agentId) =>
+        useSessionStore.getState().sessions[serverId]?.agentConversationIndex.get(agentId),
       hasAuthoritativeHistory: (agentId) =>
         useSessionStore
           .getState()

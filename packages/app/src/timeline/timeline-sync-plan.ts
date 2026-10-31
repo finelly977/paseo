@@ -102,3 +102,17 @@ export function isTimelineCatchUpComplete(input: {
 
   return input.direction !== "after" || !input.hasNewer;
 }
+
+/** 只有覆盖已缓存历史起点的响应，才能更新该起点之前是否还有历史。 */
+export function shouldApplyOlderHistoryBoundary(input: {
+  direction: "tail" | "before" | "after";
+  reset: boolean;
+  epoch: string;
+  startCursor: TimelineSyncCursor | null;
+  currentCursor: AgentTimelineCursorRange | undefined;
+}): boolean {
+  if (input.reset || !input.currentCursor || input.currentCursor.epoch !== input.epoch) return true;
+  // 向前读取到空页也确认了历史起点；尾部增量的空页没有提供这个信息。
+  if (input.direction === "before" && !input.startCursor) return true;
+  return input.startCursor !== null && input.startCursor.seq <= input.currentCursor.startSeq;
+}

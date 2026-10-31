@@ -5,9 +5,57 @@ import {
   planInitialAgentTimelineSync,
   planResumeTimelineSync,
   planTimelineOlderFetch,
+  shouldApplyOlderHistoryBoundary,
 } from "./timeline-sync-plan";
 
 describe("timeline sync planning", () => {
+  test.each([
+    { direction: "after", startSeq: null },
+    { direction: "after", startSeq: 101 },
+    { direction: "tail", startSeq: 81 },
+    { direction: "before", startSeq: 41 },
+  ] as const)(
+    "$direction 页未覆盖缓存起点时，不重新打开旧历史加载入口",
+    ({ direction, startSeq }) => {
+      expect(
+        shouldApplyOlderHistoryBoundary({
+          direction,
+          reset: false,
+          epoch: "epoch",
+          startCursor: startSeq === null ? null : { epoch: "epoch", seq: startSeq },
+          currentCursor: { epoch: "epoch", startSeq: 1, endSeq: 100 },
+        }),
+      ).toBe(false);
+    },
+  );
+
+  test.each([{ startCursor: null }, { startCursor: { epoch: "epoch", seq: 1 } }])(
+    "向前读到历史起点或空页，仍正确关闭加载入口",
+    ({ startCursor }) => {
+      expect(
+        shouldApplyOlderHistoryBoundary({
+          direction: "before",
+          reset: false,
+          epoch: "epoch",
+          startCursor,
+          currentCursor: { epoch: "epoch", startSeq: 41, endSeq: 100 },
+        }),
+      ).toBe(true);
+    },
+  );
+
+  test("新时间线代际仍以服务端报告的历史边界为准", () => {
+    expect(
+      shouldApplyOlderHistoryBoundary({
+        direction: "after",
+        reset: true,
+        epoch: "new",
+        startCursor: { epoch: "new", seq: 81 },
+        currentCursor: { epoch: "old", startSeq: 1, endSeq: 100 },
+      }),
+    ).toBe(true);
+  });
+
   test("initial open without an authoritative cursor loads a bounded tail page", () => {
     const plan = planInitialAgentTimelineSync({
       cursor: undefined,

@@ -31,6 +31,7 @@ interface ViewedTimelineSyncPorts {
   initialConnected: boolean;
   setSubscription(agentIds: string[]): Promise<void>;
   readCursor(agentId: string): AgentTimelineCursorState | undefined;
+  readConversationIndex(agentId: string): ReadonlyArray<{ seqStart: number }> | undefined;
   hasAuthoritativeHistory(agentId: string): boolean;
   getInitialConversationLimit?(): number | undefined;
   fetchPage(agentId: string, request: ProjectedTimelineFetchPlan): Promise<TimelinePageResult>;
@@ -114,16 +115,23 @@ function sameAgentIds(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((agentId, index) => agentId === right[index]);
 }
 
-function getInitialConversationBackfillTarget(
-  request: ProjectedTimelineForwardFetchPlan,
-  page: TimelinePageResult,
-): { cursor: { epoch: string; seq: number }; targetSeq: number } | null {
-  if (request.direction !== "tail" || request.conversationLimit === undefined) return null;
-  if (!page.hasOlder || !page.startCursor || !page.conversationIndex?.length) return null;
+function getConversationBackfillTarget(input: {
+  conversationLimit: number | undefined;
+  conversationIndex: ReadonlyArray<{ seqStart: number }> | undefined;
+  cursor: { epoch: string; seq: number } | undefined;
+  hasOlder: boolean;
+}): { cursor: { epoch: string; seq: number }; targetSeq: number } | null {
+  if (
+    input.conversationLimit === undefined ||
+    !input.hasOlder ||
+    !input.cursor ||
+    !input.conversationIndex?.length
+  )
+    return null;
   const targetConversation =
-    page.conversationIndex[Math.max(0, page.conversationIndex.length - request.conversationLimit)];
-  if (!targetConversation || page.startCursor.seq <= targetConversation.seqStart) return null;
-  return { cursor: page.startCursor, targetSeq: targetConversation.seqStart };
+    input.conversationIndex[Math.max(0, input.conversationIndex.length - input.conversationLimit)];
+  if (input.cursor.seq <= targetConversation.seqStart) return null;
+  return { cursor: input.cursor, targetSeq: targetConversation.seqStart };
 }
 
 async function backfillInitialConversationHistory(input: {
@@ -235,7 +243,18 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       if (page.hasNewer) {
         throw new Error(`Timeline page for ${agentId} hasNewer without an end cursor`);
       }
-      const backfillTarget = getInitialConversationBackfillTarget(request, page);
+      const historyCursor = ports.readCursor(agentId);
+      const backfillTarget = getConversationBackfillTarget({
+        conversationLimit:
+          request.direction === "tail"
+            ? request.conversationLimit
+            : ports.getInitialConversationLimit?.(),
+        conversationIndex: page.conversationIndex ?? ports.readConversationIndex(agentId),
+        cursor: historyCursor
+          ? { epoch: historyCursor.epoch, seq: historyCursor.startSeq }
+          : (page.startCursor ?? undefined),
+        hasOlder: page.hasOlder,
+      });
       if (backfillTarget) {
         const completed = await backfillInitialConversationHistory({
           agentId,

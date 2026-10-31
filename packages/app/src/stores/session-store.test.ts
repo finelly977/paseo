@@ -110,6 +110,37 @@ describe("智能体任务状态", () => {
 });
 
 describe("对话历史内存预算", () => {
+  it("一百轮加载与三千轮预算下，五个会话切换和再上翻二十轮不会裁掉缓存", () => {
+    initializeTestSession();
+    const store = useSessionStore.getState();
+    store.setConversationHistoryPolicy({
+      perConversationLoadCount: 100,
+      totalConversationLimit: 3_000,
+    });
+    const ids = Array.from({ length: 5 }, (_, index) => `会话-${index}`);
+    const histories = new Map(ids.map((id) => [id, conversationItems(id, 100)]));
+    store.setAgentStreamTail("test-server", histories);
+    for (const id of ids) store.setAgentAuthoritativeHistoryApplied("test-server", id, true);
+    for (const id of [...ids, ...ids.toReversed()]) {
+      store.setFocusedAgentId("test-server", id);
+      store.enforceConversationHistoryMemory();
+    }
+    for (const id of ids) {
+      expect(useSessionStore.getState().sessions["test-server"].agentStreamTail.get(id)).toBe(
+        histories.get(id),
+      );
+      expect(
+        useSessionStore.getState().sessions["test-server"].agentAuthoritativeHistoryApplied.get(id),
+      ).toBe(true);
+    }
+    const more = [...conversationItems("更早", 20), ...conversationItems(ids[0], 100)];
+    store.setAgentStreamTail("test-server", (current) => new Map(current).set(ids[0], more));
+    store.enforceConversationHistoryMemory();
+    expect(useSessionStore.getState().sessions["test-server"].agentStreamTail.get(ids[0])).toBe(
+      more,
+    );
+  });
+
   it("释放会话清空正文、索引和游标，保留队列与输入以供冷恢复", () => {
     initializeTestSession();
     const store = useSessionStore.getState();

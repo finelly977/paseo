@@ -34,7 +34,7 @@ interface TimelineFetch {
     hasNewer: boolean;
     seq?: number;
     hasOlder?: boolean;
-    startSeq?: number;
+    startSeq?: number | null;
     conversationSeqs?: number[];
   }): void;
   fail(message: string): void;
@@ -57,6 +57,7 @@ class TimelineWorld {
       return result.promise;
     },
     readCursor: (agentId) => this.cursors.get(agentId),
+    readConversationIndex: (agentId) => this.conversationIndexes.get(agentId),
     hasAuthoritativeHistory: (agentId) => this.authoritativeHistory.has(agentId),
     getInitialConversationLimit: () => this.initialConversationLimit,
     fetchPage: async (agentId, request) => {
@@ -75,7 +76,7 @@ class TimelineWorld {
             hasNewer,
             endCursor: { epoch: `epoch-${agentId}`, seq },
             hasOlder,
-            startCursor: { epoch: `epoch-${agentId}`, seq: startSeq },
+            startCursor: startSeq === null ? null : { epoch: `epoch-${agentId}`, seq: startSeq },
             ...(conversationSeqs
               ? { conversationIndex: conversationSeqs.map((seqStart) => ({ seqStart })) }
               : {}),
@@ -114,6 +115,7 @@ class TimelineWorld {
     resolve(fetch: TimelineFetch): void;
   }> = [];
   private readonly cursors = new Map<string, { epoch: string; startSeq: number; endSeq: number }>();
+  private readonly conversationIndexes = new Map<string, Array<{ seqStart: number }>>();
   private readonly authoritativeHistory = new Set<string>();
   private readonly errorWaiters: Array<(message: string) => void> = [];
   private readonly scheduled: Array<{ task: () => void; delayMs: number }> = [];
@@ -122,8 +124,8 @@ class TimelineWorld {
     resolve(retry: () => void): void;
   }> = [];
 
-  setCursor(agentId: string, endSeq: number): void {
-    this.cursors.set(agentId, { epoch: `epoch-${agentId}`, startSeq: 1, endSeq });
+  setCursor(agentId: string, endSeq: number, startSeq = 1): void {
+    this.cursors.set(agentId, { epoch: `epoch-${agentId}`, startSeq, endSeq });
     this.authoritativeHistory.add(agentId);
   }
 
@@ -133,6 +135,13 @@ class TimelineWorld {
 
   setInitialConversationLimit(limit: number): void {
     this.initialConversationLimit = limit;
+  }
+
+  setConversationIndex(agentId: string, seqs: number[]): void {
+    this.conversationIndexes.set(
+      agentId,
+      seqs.map((seqStart) => ({ seqStart })),
+    );
   }
 
   nextMembership(): Promise<MembershipRequest> {
@@ -153,6 +162,10 @@ class TimelineWorld {
 
   expectNoPendingFetch(): void {
     expect(this.fetches).toEqual([]);
+  }
+
+  pendingFetch(agentId: string): TimelineFetch | undefined {
+    return this.fetches.find((fetch) => fetch.agentId === agentId);
   }
 
   nextError(): Promise<string> {
@@ -281,6 +294,127 @@ test("首屏尾页有界返回后分批补齐设置要求的最近对话", async
   await vi.waitFor(() => {
     expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
   });
+});
+
+test("面板先完成尾页后，订阅补载仍须补齐设置的最近一百轮", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  // 面板初始化先于订阅确认完成，只拿到了最新一小段历史。
+  world.setCursor("agent-a", 1_000, 801);
+  world.setConversationIndex(
+    "agent-a",
+    Array.from({ length: 100 }, (_, index) => index * 10 + 1),
+  );
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  const incremental = await world.nextFetch("agent-a");
+  expect(incremental.request.direction).toBe("after");
+  incremental.respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: null,
+    seq: 1_000,
+  });
+  await vi.waitFor(() => {
+    expect(world.pendingFetch("agent-a")?.request).toEqual({
+      direction: "before",
+      cursor: { epoch: "epoch-agent-a", seq: 801 },
+      limit: 40,
+      projection: "projected",
+    });
+  });
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.sync.dispose();
+});
+
+test("尾页复用已有索引时仍补齐最近一百轮，不因响应省略索引而停止", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.setConversationIndex(
+    "agent-a",
+    Array.from({ length: 100 }, (_, index) => index * 10 + 1),
+  );
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    startSeq: 801,
+    seq: 1_000,
+  });
+  const older = await world.nextFetch("agent-a");
+  expect(older.request).toEqual({
+    direction: "before",
+    cursor: { epoch: "epoch-agent-a", seq: 801 },
+    limit: 40,
+    projection: "projected",
+  });
+  older.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.sync.dispose();
+});
+
+test("补齐最近一百轮即停止，保留更早历史供手动加载，切回不重复补页", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.setCursor("agent-a", 2_000, 1_801);
+  world.setConversationIndex(
+    "agent-a",
+    Array.from({ length: 200 }, (_, index) => index * 10 + 1),
+  );
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, hasOlder: true, startSeq: null });
+  const older = await world.nextFetch("agent-a");
+  expect(older.request).toMatchObject({ direction: "before", cursor: { seq: 1_801 }, limit: 40 });
+  world.setCursor("agent-a", 2_000, 1_001);
+  older.respond({ hasNewer: false, hasOlder: true, startSeq: 1_001 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.expectNoPendingFetch();
+
+  world.sync.replaceVisibleAgentIds("workspace", []);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  const resumed = await world.nextFetch("agent-a");
+  expect(resumed.request).toMatchObject({ direction: "after", cursor: { seq: 2_000 } });
+  resumed.respond({ hasNewer: false, hasOlder: true, startSeq: null });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
+test("切走中断补页后，切回从已缓存起点继续补齐用户轮次", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.setCursor("agent-a", 1_000, 801);
+  world.setConversationIndex(
+    "agent-a",
+    Array.from({ length: 100 }, (_, index) => index * 10 + 1),
+  );
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, hasOlder: true, startSeq: null });
+  const interrupted = await world.nextFetch("agent-a");
+  world.sync.replaceVisibleAgentIds("workspace", []);
+  world.runUnsubscribeGrace();
+  (await world.nextMembership()).succeed();
+  world.setCursor("agent-a", 1_000, 401);
+  interrupted.respond({ hasNewer: false, hasOlder: true, startSeq: 401 });
+  await Promise.resolve();
+  world.expectNoPendingFetch();
+
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({ hasNewer: false, hasOlder: true, startSeq: null });
+  const remaining = await world.nextFetch("agent-a");
+  expect(remaining.request).toMatchObject({ direction: "before", cursor: { seq: 401 }, limit: 40 });
+  remaining.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready"));
+  world.sync.dispose();
 });
 
 test("unchanged visible-set publication does not cancel paged catch-up", async () => {
@@ -1073,6 +1207,7 @@ test("a sync created while already connected subscribes without a setConnected t
       memberships.push(agentIds);
     },
     readCursor: () => undefined,
+    readConversationIndex: () => undefined,
     hasAuthoritativeHistory: () => false,
     fetchPage: async () => ({
       hasNewer: false,
