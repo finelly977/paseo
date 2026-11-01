@@ -3,6 +3,10 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { ViewedTimelineUiBridge } from "@/timeline/viewed-timeline-sync";
+import {
+  pruneNativeHistoryDetails,
+  releaseNativeHistoryDetails,
+} from "@/timeline/native-history-details";
 import { releaseAgentTimelineReads } from "@/timeline/fetch-agent-timeline-once";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
@@ -697,6 +701,13 @@ function trimSessionConversationHistory(input: {
   }
 
   const nextTailItems = trimConversationHistory(tail, retainedTailTurns);
+  pruneNativeHistoryDetails(
+    entry.serverId,
+    entry.agentId,
+    new Set(
+      nextTailItems.flatMap((item) => (item.nativeTurnId === undefined ? [] : [item.nativeTurnId])),
+    ),
+  );
   const nextTail = new Map(session.agentStreamTail);
   if (nextTailItems.length === 0) {
     nextTail.delete(entry.agentId);
@@ -976,6 +987,8 @@ export const useSessionStore = create<SessionStore>()(
 
       clearSession: (serverId) => {
         agentLastActivityCoalescer.flushNow();
+        for (const agentId of get().sessions[serverId]?.agentNativeHistory.keys() ?? [])
+          releaseNativeHistoryDetails(serverId, agentId);
         set((prev) => {
           const session = prev.sessions[serverId];
           if (!session) {
@@ -1192,6 +1205,7 @@ export const useSessionStore = create<SessionStore>()(
       releaseAgentMemory: (serverId, agentId) => {
         const session = get().sessions[serverId];
         if (!session || session.releasedAgentIds.has(agentId)) return;
+        releaseNativeHistoryDetails(serverId, agentId);
         if (session.client) releaseAgentTimelineReads(session.client, agentId);
         session.viewedTimelineSync?.releaseAgentTimeline(agentId);
         useProviderSubagentStore.getState().releaseParent(serverId, agentId);

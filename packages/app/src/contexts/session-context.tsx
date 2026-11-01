@@ -20,6 +20,7 @@ import {
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { rebaseHistoryPreview } from "@/timeline/history-preview-rebase";
 import { planNativeHistoryPage, retainNativeHistoryLiveItems } from "@/timeline/native-history";
+import { createNativeHistoryDetailsPrefetch } from "@/timeline/native-history-details-prefetch";
 import {
   isTimelineCatchUpComplete,
   shouldApplyOlderHistoryBoundary,
@@ -887,12 +888,18 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
   useEffect(() => {
     const setAgentInitializing = createSetAgentInitializing(serverId, setInitializingAgents);
+    const details = createNativeHistoryDetailsPrefetch({
+      serverId,
+      client,
+      prepare: (agentId) => viewedTimelineSyncRef.current?.prepareAgentHistoryChange(agentId),
+    });
     const initialDeliveryMode = getTimelineDeliveryMode(
       client.getLastServerInfoMessage()?.features?.selectiveAgentTimeline,
     );
     const sync = createViewedTimelineSync({
       initialDeliveryMode,
       initialConnected: isConnectedRef.current,
+      onNativeHistoryReady: (agentId) => details.start(agentId),
       setSubscription: (agentIds) => client.setAgentTimelineSubscription(agentIds),
       readCursor: (agentId) =>
         useSessionStore.getState().sessions[serverId]?.agentTimelineCursor.get(agentId),
@@ -910,6 +917,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           : undefined;
       },
       fetchPage: async (agentId, request) => {
+        details.beforeRead(agentId, request.direction);
         const session = useSessionStore.getState().sessions[serverId];
         const initKey = getInitKey(serverId, agentId);
         const shouldInitialize =
@@ -934,6 +942,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
           if (page.nativeHistory) {
+            details.schedule(agentId);
             const current = useSessionStore.getState().sessions[serverId];
             const native = current?.agentNativeHistory.get(agentId);
             const conversationCount = (current?.agentStreamTail.get(agentId) ?? []).filter(
@@ -998,6 +1007,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
 
     return () => {
       unsubscribeLiveAgentMembership();
+      details.dispose();
       if (viewedTimelineSyncRef.current === sync) {
         viewedTimelineSyncRef.current = null;
       }

@@ -7601,6 +7601,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 export class CodexAppServerAgentClient implements AgentClient {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
+  private catalog: Promise<ProviderCatalog> | null = null;
 
   constructor(
     private readonly logger: Logger,
@@ -7866,7 +7867,19 @@ export class CodexAppServerAgentClient implements AgentClient {
     });
   }
 
-  async fetchCatalog(_options: FetchCatalogOptions): Promise<ProviderCatalog> {
+  fetchCatalog(options: FetchCatalogOptions): Promise<ProviderCatalog> {
+    // 原生 model/list 与项目目录无关；跨作用域复用同一配置的探测，刷新按钮才主动失效。
+    if (this.catalog && !options.force) return this.catalog;
+    const task = this.readCatalog();
+    this.catalog = task;
+    void task.catch((error) => {
+      if (this.catalog === task) this.catalog = null;
+      this.logger.error({ err: error }, "Failed to read Codex model catalog");
+    });
+    return task;
+  }
+
+  private async readCatalog(): Promise<ProviderCatalog> {
     const [models, autoReviewEnabled] = await Promise.all([
       this.fetchModelsFromAppServer(),
       this.resolveAutoReviewEnabled(),
@@ -7885,7 +7898,7 @@ export class CodexAppServerAgentClient implements AgentClient {
   }
 
   private async fetchModelsFromAppServer(): Promise<AgentModelDefinition[]> {
-    // Codex model/list is global to the app server in this flow; cwd/force are intentionally ignored.
+    // 原生目录不随 cwd 变化，是否重新读取由 fetchCatalog 的显式刷新参数决定。
     const child = await this.spawnAppServer();
     const client = new CodexAppServerClient(child, this.logger);
 

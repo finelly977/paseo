@@ -42,12 +42,14 @@ interface ViewedTimelineSyncPorts {
   schedule(task: () => void, delayMs: number): () => void;
   /** 等待本页提交和行高测量，再开始低优先级的下一页预取。 */
   settleHistoryPage(task: () => void): () => void;
+  onNativeHistoryReady?(agentId: string): void;
 }
 
 export type TimelineDeliveryMode = "legacy" | "selective";
 export type ViewedTimelineStatus = "ready" | "pending" | "error" | "retrying";
 
 export interface ViewedTimelineUiBridge {
+  prepareAgentHistoryChange(agentId: string): void;
   refreshAgentTimeline(agentId: string): void;
   registerHistoryPrepend(agentId: string, prepare: () => void): () => void;
   rebaseAgentTimeline(agentId: string): void;
@@ -283,8 +285,10 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       await settleHistory(agentId);
       if (!isCatchUpCurrent(agentId, generation)) return;
     }
-    if (isCatchUpCurrent(agentId, generation))
+    if (isCatchUpCurrent(agentId, generation)) {
       catchUps.set(agentId, { generation, status: "complete" });
+      ports.onNativeHistoryReady?.(agentId);
+    }
   };
 
   const fetchUntilCurrent = async (
@@ -680,6 +684,9 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         request: planTimelineCatchUpAfter({ epoch: cursor.epoch, seq: cursor.endSeq }),
         supersede: true,
       });
+    },
+    prepareAgentHistoryChange(agentId) {
+      for (const prepare of historyPrependHandlers.get(agentId) ?? []) prepare();
     },
     registerHistoryPrepend(agentId, prepare) {
       const handlers = historyPrependHandlers.get(agentId) ?? new Set<() => void>();

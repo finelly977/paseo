@@ -221,6 +221,39 @@ function createProviderWithFakeAppServer(appServer: FakeCodexAppServer): CodexAp
   return provider;
 }
 
+test("全局与项目模型目录共享原生探测，显式刷新重新读取", async () => {
+  const appServer = createFakeCodexAppServer();
+  const provider = createProviderWithFakeAppServer(appServer);
+  const global = { scope: "global" as const, force: false };
+  const first = provider.fetchCatalog(global);
+  const other = provider.fetchCatalog({ scope: "workspace", cwd: "/other", force: false });
+  expect(await first).toEqual(await other);
+  await provider.fetchCatalog({ scope: "workspace", cwd: "/third", force: false });
+  expect(appServer.children).toHaveLength(1);
+  await provider.fetchCatalog({ ...global, force: true });
+  expect(appServer.children).toHaveLength(2);
+  appServer.assertNoErrors();
+});
+
+test("模型目录探测失败不写入成功缓存，后续读取可以重试", async () => {
+  let fail = true;
+  const appServer = createFakeCodexAppServer({
+    "model/list": () => {
+      if (fail) return { __jsonRpcError: { code: -1, message: "原生模型目录不可用" } };
+      return { data: [] };
+    },
+  });
+  const provider = createProviderWithFakeAppServer(appServer);
+  await expect(provider.fetchCatalog({ scope: "global", force: false })).rejects.toThrow(
+    "原生模型目录不可用",
+  );
+  fail = false;
+  await expect(provider.fetchCatalog({ scope: "global", force: false })).resolves.toMatchObject({
+    models: [],
+  });
+  expect(appServer.children).toHaveLength(2);
+});
+
 async function startPublicSteeringSession(
   appServer: FakeCodexAppServer,
   resolveSlashCommandInvocation?: (prompt: AgentPromptInput) => Promise<{

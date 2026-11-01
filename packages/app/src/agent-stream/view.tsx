@@ -1242,6 +1242,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
 
+    const renderNativeHistoryReply = useCallback(
+      (replyLayout: StreamLayoutItem) =>
+        renderStreamItemWithTurnFooter({
+          content: renderStreamItemContent(replyLayout),
+          layoutItem: replyLayout,
+          strategy: streamRenderStrategy,
+          supportsTimelineCursor: supportsAgentForkContextCursor,
+          onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
+        }),
+      [
+        renderStreamItemContent,
+        streamRenderStrategy,
+        supportsAgentForkContextCursor,
+        readOnly,
+        handleForkAssistantTurn,
+      ],
+    );
+
     const renderStreamItem = useCallback(
       (layoutItem: StreamLayoutItem) => {
         if (layoutItem.item.kind === "native_history_process") {
@@ -1259,6 +1277,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               client={client}
               viewport={viewportRef}
               renderItem={renderStreamItemContent}
+              renderReply={renderNativeHistoryReply}
               layout={layoutItem}
             />
           );
@@ -1300,6 +1319,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         expandedCompletedTurnIds,
         handleForkAssistantTurn,
         readOnly,
+        renderNativeHistoryReply,
         renderStreamItemContent,
         streamRenderStrategy,
         supportsAgentForkContextCursor,

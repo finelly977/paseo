@@ -100,6 +100,8 @@ Boundary tests should assert observable behavior: cold reads may call provider a
 
 ---
 
+Codex 原生模型目录在同一提供方客户端内跨全局与项目作用域共享成功结果及在途请求，不因切换项目重复启动 app-server。其原生模型目录本就不按 cwd 区分；不同自定义提供方配置仍使用各自客户端，不互相复用。显式刷新绕过旧结果，失败不作为成功缓存，下次读取可重试；不新增定时或焦点刷新。
+
 ## Provider Usage Fetchers
 
 Provider plan usage is fetch-on-demand, not a daemon push subscription. The app calls `provider.usage.list.request` through React Query when the usage tooltip or Host Usage settings screen is shown, and the daemon returns the normalized `ProviderUsage` list directly.

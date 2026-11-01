@@ -45,12 +45,14 @@ interface TimelineFetch {
 
 class TimelineWorld {
   readonly errors: string[] = [];
+  readonly detailsReady: string[] = [];
   holdHistoryPages = false;
   readonly historySettlements: Array<{ task: () => void; canceled: boolean }> = [];
   private initialConversationLimit: number | undefined;
   readonly sync = createViewedTimelineSync({
     initialDeliveryMode: "selective",
     initialConnected: false,
+    onNativeHistoryReady: (agentId) => this.detailsReady.push(agentId),
     setSubscription: async (agentIds) => {
       const result = deferred<void>();
       this.memberships.push({
@@ -276,6 +278,7 @@ test("最新原生页即可就绪，不等待后台历史或配置轮次补载",
   current.respond({ hasNewer: false, hasOlder: true, startSeq: null });
   const older = await world.nextFetch("agent-a");
   expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  expect(world.detailsReady).toEqual([]);
   older.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
   world.sync.dispose();
 });
@@ -300,6 +303,7 @@ test("摘要首屏立即可读，按真实用户轮数继续原生游标，不�
     projection: "projected",
     nativeHistory: { readId: "native", cursor: "older" },
   });
+  expect(world.detailsReady).toEqual([]);
   older.respond({
     hasNewer: false,
     hasOlder: true,
@@ -308,6 +312,7 @@ test("摘要首屏立即可读，按真实用户轮数继续原生游标，不�
   });
   await new Promise<void>((resolve) => setImmediate(resolve));
   world.expectNoPendingFetch();
+  expect(world.detailsReady).toEqual(["agent-a"]);
   world.sync.dispose();
 });
 
