@@ -3040,6 +3040,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         agentStorage,
         logger: childLogger,
       });
+      await agentManager.ensureCanonicalHistory(agentId);
       const timeline = agentManager.getTimeline(agentId);
       const snapshot = agentManager.getAgent(agentId);
 

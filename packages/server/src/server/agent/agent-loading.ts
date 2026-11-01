@@ -54,6 +54,7 @@ export interface EnsureAgentLoadedDeps {
   broadcastTimeline?: boolean;
   replaceTimeline?: boolean;
   progressiveHistory?: boolean;
+  nativeHistory?: boolean;
   logger: Logger;
 }
 
@@ -62,10 +63,11 @@ function resolveResumeOptions(
   deps: EnsureAgentLoadedDeps,
 ): AgentResumeSessionOptions | undefined {
   const progressive = deps.progressiveHistory === true && record.provider === "codex";
-  if (!record.archivedAt && !progressive) return undefined;
+  if (!record.archivedAt && !progressive && !deps.nativeHistory) return undefined;
   return {
     purpose: record.archivedAt ? "history" : "interactive",
     ...(progressive ? { progressiveHistory: true } : {}),
+    ...(deps.nativeHistory ? { nativeHistory: true } : {}),
   };
 }
 
@@ -201,12 +203,14 @@ export async function ensureAgentLoaded(
     }
 
     pendingOptions.phase = "hydrating";
-    await deps.agentManager.hydrateTimelineFromProvider(agentId, {
-      force: pendingOptions.replaceTimeline,
-      broadcast: () => pendingOptions.broadcastTimeline || pendingOptions.replaceTimeline,
-      broadcastTimeline: () => pendingOptions.broadcastTimeline && !pendingOptions.replaceTimeline,
-      emitReplacement: pendingOptions.replaceTimeline,
-    });
+    if (!deps.nativeHistory)
+      await deps.agentManager.hydrateTimelineFromProvider(agentId, {
+        force: pendingOptions.replaceTimeline,
+        broadcast: () => pendingOptions.broadcastTimeline || pendingOptions.replaceTimeline,
+        broadcastTimeline: () =>
+          pendingOptions.broadcastTimeline && !pendingOptions.replaceTimeline,
+        emitReplacement: pendingOptions.replaceTimeline,
+      });
     return deps.agentManager.getAgent(agentId) ?? snapshot;
   })();
 

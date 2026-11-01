@@ -2204,6 +2204,8 @@ export class Session {
         return this.handleConversationSearch(msg);
       case "fetch_agent_timeline_request":
         return this.handleFetchAgentTimelineRequest(msg, source);
+      case "agent.history.read_turn.request":
+        return this.handleNativeHistoryTurn(msg, source);
       case "agent.provider_subagents.list.request":
         return this.handleProviderSubagentListRequest(msg);
       case "agent.provider_subagents.timeline.get.request":
@@ -6964,19 +6966,26 @@ export class Session {
   private async prepareAgentTimelineRead(
     agentId: string,
     direction: AgentTimelineFetchDirection,
+    projection: TimelineProjectionMode,
     source: object | undefined,
   ) {
     const assertRuntimeRead = this.agentManager.createRuntimeReadGuard(agentId);
     const supportsProgressive = source
       ? this.supportsForSource(CLIENT_CAPS.progressiveAgentHistory, source)
       : this.supports(CLIENT_CAPS.progressiveAgentHistory);
+    const supportsNative = source
+      ? this.supportsForSource(CLIENT_CAPS.nativeHistoryPages, source)
+      : this.supports(CLIENT_CAPS.nativeHistoryPages);
+    const nativeLive = direction === "after" && projection === "projected" && supportsNative;
     const snapshot = await ensureAgentLoaded(agentId, {
       assertRuntimeRead,
       agentManager: this.agentManager,
       agentStorage: this.agentStorage,
       logger: this.sessionLogger,
       progressiveHistory: direction !== "before" && supportsProgressive,
+      nativeHistory: nativeLive,
     });
+    if (!nativeLive) await this.agentManager.ensureCanonicalHistory(agentId);
     const agentPayload = await this.buildAgentPayload(snapshot);
     assertRuntimeRead();
     return {
@@ -6999,6 +7008,134 @@ export class Session {
     };
   }
 
+  private async tryNativeHistoryPage(
+    msg: Extract<SessionInboundMessage, { type: "fetch_agent_timeline_request" }>,
+    source: object | undefined,
+  ): Promise<boolean> {
+    const supportsNative = source
+      ? this.supportsForSource(CLIENT_CAPS.nativeHistoryPages, source)
+      : this.supports(CLIENT_CAPS.nativeHistoryPages);
+    if (!supportsNative || msg.projection === "canonical") return false;
+    const record = await this.agentStorage.get(msg.agentId);
+    if (!record || record.provider !== "codex" || !record.persistence) return false;
+    const guard = this.agentManager.createRuntimeReadGuard(msg.agentId);
+    const snapshot = await ensureAgentLoaded(msg.agentId, {
+      agentManager: this.agentManager,
+      agentStorage: this.agentStorage,
+      logger: this.sessionLogger,
+      assertRuntimeRead: guard,
+      nativeHistory: true,
+    });
+    const history = this.agentManager.getNativeHistory(msg.agentId);
+    // legacy 原生存储没有轻量摘要，继续使用其完整读取路径。
+    if (!history) {
+      await this.agentManager.hydrateTimelineFromProvider(msg.agentId);
+      return false;
+    }
+    // 原生摘要与当前运行的实时序号各自独立。补齐本次运行丢失的事件时只读取规范增量，
+    // 不扫描此前整段原生历史；进程代际已变化则改读新的原生尾页。
+    if (
+      msg.direction === "after" &&
+      msg.cursor &&
+      !this.agentManager.fetchTimeline(msg.agentId, {
+        direction: "after",
+        cursor: msg.cursor,
+        limit: 1,
+      }).reset
+    )
+      return false;
+    const older = msg.direction === "before";
+    if (older && (!msg.nativeHistory || msg.nativeHistory.readId !== history.readId))
+      throw new Error("原生历史已重新打开，请重新加载此会话。");
+    const page = await history.readPage(
+      older && msg.nativeHistory ? msg.nativeHistory.cursor : null,
+      older ? 20 : 5,
+    );
+    const agent = await this.buildAgentPayload(snapshot);
+    guard();
+    this.emitForSource(
+      {
+        type: "fetch_agent_timeline_response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          agent,
+          direction: msg.direction ?? "tail",
+          projection: "projected",
+          epoch: this.agentManager.fetchTimeline(msg.agentId, { limit: 1 }).epoch,
+          reset: false,
+          staleCursor: false,
+          gap: false,
+          window: { minSeq: 0, maxSeq: 0, nextSeq: 0 },
+          startCursor: null,
+          endCursor: null,
+          hasOlder: page.nextCursor !== null,
+          hasNewer: false,
+          entries: [],
+          nativeHistory: page,
+          error: null,
+        },
+      },
+      source,
+    );
+    return true;
+  }
+
+  private async handleNativeHistoryTurn(
+    msg: Extract<SessionInboundMessage, { type: "agent.history.read_turn.request" }>,
+    source: object | undefined,
+  ): Promise<void> {
+    try {
+      const guard = this.agentManager.createRuntimeReadGuard(msg.agentId);
+      await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+        nativeHistory: true,
+        assertRuntimeRead: guard,
+      });
+      const history = this.agentManager.getNativeHistory(msg.agentId);
+      if (!history || history.readId !== msg.readId)
+        throw new Error("原生过程连接已释放，请重新打开会话。");
+      const page = await history.readTurn(msg.turnId, msg.cursor);
+      guard();
+      this.emitForSource(
+        {
+          type: "agent.history.read_turn.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            readId: msg.readId,
+            turnId: msg.turnId,
+            ...page,
+            error: null,
+          },
+        },
+        source,
+      );
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, agentId: msg.agentId },
+        "Failed to read native history turn",
+      );
+      this.emitForSource(
+        {
+          type: "agent.history.read_turn.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: msg.agentId,
+            readId: msg.readId,
+            turnId: msg.turnId,
+            items: [],
+            nextCursor: null,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        },
+        source,
+      );
+    }
+  }
+
   private async handleFetchAgentTimelineRequest(
     msg: Extract<SessionInboundMessage, { type: "fetch_agent_timeline_request" }>,
     source?: object,
@@ -7008,17 +7145,14 @@ export class Session {
     const requestedLimit = msg.limit;
     const pageLimit = requestedLimit ?? (direction === "after" ? 0 : 200);
     const conversationLimit = direction === "tail" ? msg.conversationLimit : undefined;
-    const requestCursor: AgentTimelineCursor | undefined = msg.cursor
-      ? {
-          epoch: msg.cursor.epoch,
-          seq: msg.cursor.seq,
-        }
-      : undefined;
+    const requestCursor = msg.cursor;
 
     try {
+      if (await this.tryNativeHistoryPage(msg, source)) return;
       const { snapshot, agentPayload } = await this.prepareAgentTimelineRead(
         msg.agentId,
         direction,
+        projection,
         source,
       );
       // 与本次取页处于同一个同步阶段，避免后台恰好完成时返回过期的补载状态。
@@ -7182,6 +7316,7 @@ export class Session {
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.ensureCanonicalHistory(msg.parentAgentId);
       const descriptor = this.agentManager.getProviderSubagent(msg.parentAgentId, msg.subagentId);
       if (!descriptor) {
         throw new Error("Provider subagent not found");
@@ -7250,6 +7385,7 @@ export class Session {
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.ensureCanonicalHistory(msg.agentId);
       const agentPayload = await this.buildAgentPayload(snapshot);
       const timeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction: "tail",

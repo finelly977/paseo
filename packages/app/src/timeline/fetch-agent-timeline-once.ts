@@ -43,7 +43,19 @@ export function fetchAgentTimelineOnce(
     inFlightByClient.set(client, inFlight);
   }
 
-  const key = `${agentId}:${JSON.stringify(request)}`;
+  const key = JSON.stringify({
+    agentId,
+    direction: request?.direction,
+    projection: request?.projection,
+    limit: request?.limit,
+    conversationLimit: request?.conversationLimit,
+    conversationIndexVersion: request?.conversationIndexVersion,
+    epoch: request?.cursor?.epoch,
+    seq: request?.cursor?.seq,
+    nativeReadId: request?.nativeHistory?.readId,
+    nativeCursor: request?.nativeHistory?.cursor,
+    timeout: request?.timeout,
+  });
   const existing = inFlight.get(key);
   if (existing) return existing.promise;
 

@@ -145,7 +145,7 @@ interface UserMessageProps {
   images?: UserMessageImageAttachment[];
   providerImages?: AgentUserMessageImage[];
   attachments?: AgentAttachment[];
-  timestamp: number;
+  timestamp: number | null;
   capabilities?: AgentCapabilityFlags;
   client?: DaemonClient | null;
   isFirstInGroup?: boolean;
@@ -624,7 +624,7 @@ export const UserMessage = memo(function UserMessage({
   const [isExpanded, setIsExpanded] = useState(false);
   const showTrailingRow = hasText && (isCompact || isNative || isHovered);
   const formattedTimestamp = useMemo(
-    () => formatMessageTimestamp(new Date(timestamp)),
+    () => (timestamp === null ? null : formatMessageTimestamp(new Date(timestamp))),
     [timestamp],
   );
   const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });

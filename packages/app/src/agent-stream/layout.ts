@@ -143,6 +143,7 @@ export function collectCompletedTurnProcessItemIds(input: {
       if (!item || item.kind === "user_message") {
         return processItemIds;
       }
+      if (item.kind === "native_history_process") return [];
       if (laterItem && !continuesTurn(item, laterItem)) {
         return processItemIds;
       }

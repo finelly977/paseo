@@ -37,6 +37,8 @@ interface TimelineFetch {
     startSeq?: number | null;
     conversationSeqs?: number[];
     historyIncomplete?: boolean;
+    nativeHistory?: { readId: string; nextCursor: string | null };
+    nativeConversationCount?: number;
   }): void;
   fail(message: string): void;
 }
@@ -71,6 +73,8 @@ class TimelineWorld {
         startCursor: { epoch: string; seq: number } | null;
         conversationIndex?: Array<{ seqStart: number }>;
         historyIncomplete?: boolean;
+        nativeHistory?: { readId: string; nextCursor: string | null };
+        nativeConversationCount?: number;
       }>();
       this.fetches.push({
         agentId,
@@ -82,12 +86,16 @@ class TimelineWorld {
           startSeq = 1,
           conversationSeqs,
           historyIncomplete,
+          nativeHistory,
+          nativeConversationCount,
         }) =>
           result.resolve({
             hasNewer,
             endCursor: { epoch: `epoch-${agentId}`, seq },
             hasOlder,
             historyIncomplete,
+            nativeHistory,
+            nativeConversationCount,
             startCursor: startSeq === null ? null : { epoch: `epoch-${agentId}`, seq: startSeq },
             ...(conversationSeqs
               ? { conversationIndex: conversationSeqs.map((seqStart) => ({ seqStart })) }
@@ -269,6 +277,62 @@ test("最新原生页即可就绪，不等待后台历史或配置轮次补载",
   const older = await world.nextFetch("agent-a");
   expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
   older.respond({ hasNewer: false, hasOlder: false, startSeq: 1 });
+  world.sync.dispose();
+});
+
+test("摘要首屏立即可读，按真实用户轮数继续原生游标，不读取规范过程页", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    nativeHistory: { readId: "native", nextCursor: "older" },
+    nativeConversationCount: 5,
+  });
+  const older = await world.nextFetch("agent-a");
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  expect(older.request).toEqual({
+    direction: "before",
+    limit: 20,
+    projection: "projected",
+    nativeHistory: { readId: "native", cursor: "older" },
+  });
+  older.respond({
+    hasNewer: false,
+    hasOlder: true,
+    nativeHistory: { readId: "native", nextCursor: "oldest" },
+    nativeConversationCount: 100,
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
+test("原生摘要预取失败保留可读首屏，记录错误并允许后续重试", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: true,
+    nativeHistory: { readId: "native", nextCursor: "older" },
+    nativeConversationCount: 5,
+  });
+  (await world.nextFetch("agent-a")).fail("读取更早原生页失败");
+  expect(await world.nextError()).toBe("读取更早原生页失败");
+  expect(world.sync.getAgentTimelineStatus("agent-a")).toBe("ready");
+  (await world.nextRetry())();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    hasOlder: false,
+    nativeHistory: { readId: "native", nextCursor: null },
+    nativeConversationCount: 100,
+  });
   world.sync.dispose();
 });
 

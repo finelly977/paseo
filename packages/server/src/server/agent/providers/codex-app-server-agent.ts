@@ -47,6 +47,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { createNativeCodexHistory } from "./codex/native-history.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { isSystemInjectedEnvelope } from "../agent-prompt.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
@@ -3746,6 +3747,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     private readonly agentId?: string,
     private readonly initialResumePurpose: "interactive" | "history" = "interactive",
     private readonly progressiveHistory: boolean = false,
+    private readonly browseNativeHistory: boolean = false,
   ) {
     this.logger = logger.child({
       module: "agent",
@@ -3792,6 +3794,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     client.setUnexpectedTerminationHandler((error) => {
       if (this.client !== client) return;
       this.client = null;
+      this.executionPrepared = false;
+      this.executionPreparation = null;
       this.handleUnexpectedTermination(error);
     });
     client.setNotificationHandler((method, params) => {
@@ -3805,44 +3809,54 @@ export class CodexAppServerAgentSession implements AgentSession {
       await client.request("initialize", buildCodexAppServerInitializeParams());
       client.notify("initialized", {});
 
-      const overrides = this.buildCodexInnerConfig();
-      this.modelCatalog = await readCodexModelCatalog({ client, cwd: this.config.cwd, overrides });
-      const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
-      const codexLaunchCommand = await this.deps.resolveCodexLaunchCommand?.();
-      const desktopTools = await connectDesktopTools({
-        client,
-        cwd: this.config.cwd,
-        overrides: overrides ?? {},
-        configuration: this.modelCatalog.configuration,
-        logger: this.logger,
-        codexLaunchCommand,
-      });
-      if (this.client !== client) {
-        await desktopTools?.dispose();
-        throw new Error("Codex session closed while desktop tools were starting");
+      if (this.browseNativeHistory && this.currentThreadId) {
+        const { thread } = z
+          .object({ thread: z.object({ historyMode: z.enum(["legacy", "paginated"]) }) })
+          .parse(
+            await client.request("thread/read", {
+              threadId: this.currentThreadId,
+              includeTurns: false,
+            }),
+          );
+        if (thread.historyMode === "paginated") {
+          this.connected = true;
+          this.executionPrepared = false;
+          const threadId = this.currentThreadId;
+          this.nativeHistory = createNativeCodexHistory({
+            threadId,
+            request: async (method, params) => {
+              if (this.client !== client) throw new Error("原生历史连接已释放，请重新打开会话。");
+              const response = await client.request(method, params);
+              if (this.client !== client) throw new Error("原生历史连接已释放。");
+              return response;
+            },
+            mapItem: (raw) => {
+              const item = threadItemToTimeline(raw, { cwd: this.config.cwd });
+              if (item?.type === "tool_call" && item.detail.type === "sub_agent" && isRecord(raw))
+                this.registerSubAgentToolCall({
+                  timelineItem: item,
+                  rawItem: raw,
+                  parentCallId: null,
+                });
+              return item;
+            },
+            complete: async () => {
+              await this.prepareExecution();
+              if (this.client !== client) throw new Error("原生历史连接已释放。");
+              await this.loadPersistedHistory(await readCodexThread(client, threadId));
+              if (this.client !== client) throw new Error("原生历史连接已释放。");
+            },
+          });
+          return;
+        }
       }
-      this.desktopTools = desktopTools;
 
-      const modelOverride = this.config.model;
-      const { model, thinkingOptionId } = await this.resolveModelAndThinking();
-      this.config.model = model;
-      this.config.thinkingOptionId = thinkingOptionId;
-      this.serviceTier = this.resolveServiceTier();
-      await this.loadCollaborationModes();
-      await this.loadSkills();
+      await this.prepareExecution();
 
       if (this.currentThreadId) {
-        // 轻量恢复后完整读取官方历史，全部核对完成才进入可用状态。
-        await this.ensureThreadLoaded({
-          allowArchivedHistory: this.initialResumePurpose === "history",
-          model: modelOverride,
-        });
         const latest = this.progressiveHistory
           ? await readCodexThreadLatest(client, this.currentThreadId)
           : { response: await readCodexThread(client, this.currentThreadId), hasOlder: false };
-        if (this.client !== client) {
-          throw new Error("Codex session closed while connecting");
-        }
         await this.loadPersistedHistory(latest.response, !this.progressiveHistory);
         if (this.progressiveHistory) {
           const threadId = this.currentThreadId;
@@ -3858,10 +3872,7 @@ export class CodexAppServerAgentSession implements AgentSession {
           };
         }
       }
-
-      if (this.client !== client) {
-        throw new Error("Codex session closed while connecting");
-      }
+      if (this.client !== client) throw new Error("Codex session closed while connecting");
       this.connected = true;
     } catch (error) {
       try {
@@ -3875,6 +3886,63 @@ export class CodexAppServerAgentSession implements AgentSession {
       }
       throw error;
     }
+  }
+
+  nativeHistory?: AgentSession["nativeHistory"];
+  private executionPrepared = false;
+  private executionPreparation: Promise<void> | null = null;
+
+  private prepareExecution(): Promise<void> {
+    if (this.executionPrepared) return Promise.resolve();
+    if (this.executionPreparation) return this.executionPreparation;
+    const client = this.client;
+    if (!client) return Promise.reject(new Error("Codex session is not connected"));
+    const preparation = this.prepareExecutionInternal(client);
+    this.executionPreparation = preparation;
+    const clear = () => {
+      if (this.executionPreparation === preparation) this.executionPreparation = null;
+    };
+    void preparation.then(clear, clear);
+    return preparation;
+  }
+
+  private async prepareExecutionInternal(client: CodexAppServerClient): Promise<void> {
+    const overrides = this.buildCodexInnerConfig();
+    this.modelCatalog = await readCodexModelCatalog({ client, cwd: this.config.cwd, overrides });
+    const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
+    const codexLaunchCommand = await this.deps.resolveCodexLaunchCommand?.();
+    const desktopTools = await connectDesktopTools({
+      client,
+      cwd: this.config.cwd,
+      overrides: overrides ?? {},
+      configuration: this.modelCatalog.configuration,
+      logger: this.logger,
+      codexLaunchCommand,
+    });
+    if (this.client !== client) {
+      await desktopTools?.dispose();
+      throw new Error("Codex session closed while desktop tools were starting");
+    }
+    this.desktopTools = desktopTools;
+
+    const modelOverride = this.config.model;
+    const { model, thinkingOptionId } = await this.resolveModelAndThinking();
+    this.config.model = model;
+    this.config.thinkingOptionId = thinkingOptionId;
+    this.serviceTier = this.resolveServiceTier();
+    await this.loadCollaborationModes();
+    await this.loadSkills();
+
+    if (this.currentThreadId) {
+      // 执行准备需要原生恢复；只读浏览不会进入此路径。
+      await this.ensureThreadLoaded({
+        allowArchivedHistory: this.initialResumePurpose === "history",
+        model: modelOverride,
+      });
+    }
+    if (this.client !== client) throw new Error("Codex session closed while preparing execution");
+    this.executionPrepared = true;
+    this.cachedRuntimeInfo = null;
   }
 
   private traceContext(): CodexAppServerTraceContext {
@@ -4188,7 +4256,9 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private async ensureThreadLoaded(
-    options: { allowArchivedHistory?: boolean; model?: string } = { model: this.config.model },
+    options: { allowArchivedHistory?: boolean; model?: string } = {
+      model: this.config.model,
+    },
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
     const params: Record<string, unknown> = {
@@ -4504,6 +4574,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.dismissPendingPlanApprovals("新消息已取代待处理的计划批准");
     try {
       await this.connect();
+      if (this.nativeHistory) await this.prepareExecution();
       if (!this.client) {
         throw new Error("Codex 客户端尚未初始化");
       }
@@ -5133,6 +5204,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async revertConversation(input: { messageId: string }): Promise<void> {
     await this.connect();
+    if (this.nativeHistory) await this.prepareExecution();
     if (!this.client) {
       throw new Error("Codex client is not initialized");
     }
@@ -5235,6 +5307,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.modelCatalog = null;
     this.connected = false;
     this.currentThreadId = null;
+    this.executionPrepared = false;
+    this.nativeHistory = undefined;
     this.currentTurnId = null;
     const cleanup = await Promise.allSettled([client?.dispose(), desktopTools?.dispose()]);
     const failures: unknown[] = cleanup.flatMap((result) =>
@@ -5249,6 +5323,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const prompts = await listCodexCustomPrompts();
     if (!this.connected) {
       await this.connect();
+      if (this.nativeHistory) await this.loadSkills();
     } else {
       await this.loadSkills();
     }
@@ -5332,6 +5407,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private async executeCompactCommand(): Promise<string | null> {
     try {
       await this.connect();
+      if (this.nativeHistory) await this.prepareExecution();
       if (this.currentThreadId) {
         await this.ensureThreadLoaded();
       } else {
@@ -5362,6 +5438,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     try {
       await this.connect();
+      if (this.nativeHistory) await this.prepareExecution();
       if (this.currentThreadId) {
         await this.ensureThreadLoaded();
       } else {
@@ -7734,6 +7811,7 @@ export class CodexAppServerAgentClient implements AgentClient {
       launchContext?.agentId,
       options?.purpose ?? "interactive",
       options?.progressiveHistory === true,
+      options?.nativeHistory === true,
     );
     await session.connect();
     return session;

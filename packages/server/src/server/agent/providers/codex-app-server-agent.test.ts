@@ -1686,6 +1686,133 @@ describe("Codex app-server provider", () => {
     await session.close();
   });
 
+  test("原生浏览不等待执行准备和完整历史，同一连接按需读取更早正文", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+      "thread/turns/list": (params) => ({
+        data: [
+          {
+            id: "turn-1",
+            status: "completed",
+            startedAt: 1,
+            durationMs: 1000,
+            error: null,
+            items: [{ type: "agentMessage", id: "answer", text: "原生回复" }],
+          },
+        ],
+        nextCursor: (params as { cursor: string | null }).cursor === null ? "older" : null,
+      }),
+      "thread/items/list": () => ({
+        data: [
+          {
+            turnId: "turn-1",
+            item: {
+              type: "collabAgentToolCall",
+              id: "spawn-from-history",
+              tool: "spawnAgent",
+              status: "completed",
+              prompt: "检查项目",
+              receiverThreadIds: ["native-child"],
+              agentsStates: { "native-child": { status: "completed", message: "检查完成" } },
+            },
+          },
+        ],
+        nextCursor: null,
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      {},
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      false,
+      true,
+    );
+    try {
+      await session.connect();
+      const history = session.nativeHistory;
+      if (!history) throw new Error("缺少原生历史浏览接口");
+      expect((await history.readPage(null, 5)).turns[0].items).toEqual([
+        { type: "assistant_message", messageId: "answer", text: "原生回复" },
+      ]);
+      expect((await history.readPage("older", 20)).readId).toBe("thread-1");
+      const events: AgentStreamEvent[] = [];
+      session.subscribe((event) => events.push(event));
+      await history.readTurn("turn-1", null);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "provider_subagent",
+          event: expect.objectContaining({ type: "upsert", id: "native-child" }),
+        }),
+      );
+      expect(appServer.requests().map((request) => request.method)).toEqual([
+        "initialize",
+        "initialized",
+        "thread/read",
+        "thread/turns/list",
+        "thread/turns/list",
+        "thread/items/list",
+      ]);
+      expect(appServer.children).toHaveLength(1);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("原生浏览后的首次发送才准备执行，不为发送完整扫描原生历史", async () => {
+    let loaded = false;
+    const appServer = createFakeCodexAppServer({
+      "thread/resume": () => {
+        loaded = true;
+        return {};
+      },
+      "thread/loaded/list": () => ({ data: loaded ? ["thread-1"] : [] }),
+      "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      { connectDesktopTools: async () => null },
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      false,
+      true,
+    );
+    try {
+      await session.connect();
+      expect(appServer.requests().map((request) => request.method)).toEqual([
+        "initialize",
+        "initialized",
+        "thread/read",
+      ]);
+      await session.startTurn("继续当前原生上下文");
+      expect(
+        appServer.requests().filter((request) => request.method === "thread/resume"),
+      ).toHaveLength(1);
+      expect(
+        appServer.requests().filter((request) => request.method === "turn/start"),
+      ).toHaveLength(1);
+      expect(
+        appServer.requests().filter((request) => request.method === "thread/items/list"),
+      ).toEqual([]);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
   test("单进程恢复后完整读取官方历史，所有分页完成前不发布就绪", async () => {
     const resume = Promise.withResolvers<unknown>();
     const lastPage = Promise.withResolvers<unknown>();

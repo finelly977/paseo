@@ -645,6 +645,7 @@ export interface FetchAgentOptions {
 }
 type LegacyFetchAgentOptions = Omit<FetchAgentOptions, "agentId">;
 export interface FetchAgentTimelineOptions {
+  nativeHistory?: { readId: string; cursor: string | null };
   conversationIndexVersion?: string;
   direction?: FetchAgentTimelineDirection;
   cursor?: FetchAgentTimelineCursor;
@@ -2985,6 +2986,7 @@ export class DaemonClient {
       agentId,
       requestId: resolvedRequestId,
       conversationIndexVersion: options.conversationIndexVersion,
+      nativeHistory: options.nativeHistory,
       ...(options.direction ? { direction: options.direction } : {}),
       ...(options.cursor ? { cursor: options.cursor } : {}),
       ...(typeof options.limit === "number" ? { limit: options.limit } : {}),
@@ -3024,6 +3026,20 @@ export class DaemonClient {
     });
     if (payload.error) throw new Error(payload.error);
     return payload.matches;
+  }
+
+  async readNativeHistoryTurn(input: {
+    agentId: string;
+    readId: string;
+    turnId: string;
+    cursor: string | null;
+  }) {
+    const payload = await this.sendCorrelatedSessionRequest({
+      message: { type: "agent.history.read_turn.request", ...input },
+      responseType: "agent.history.read_turn.response",
+    });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
   }
 
   async listProviderSubagents(

@@ -855,6 +855,9 @@ export class AgentManager {
   private readonly agents = new Map<string, LiveManagedAgent>();
   private readonly timelineStore = new InMemoryAgentTimelineStore();
   private readonly progressiveHistoryLoads = new Map<string, ProgressiveHistoryLoad>();
+  private readonly completeNativeHistories = new WeakSet<AgentSession>();
+  private readonly nativeHistoryCommits = new WeakMap<AgentSession, Promise<void>>();
+  private readonly nativeTimelineWrites = new WeakMap<AgentSession, Promise<void>>();
   private readonly historyPreviewRebases = new Map<
     string,
     HistoryPreviewRebase & { epoch: string }
@@ -1299,6 +1302,7 @@ export class AgentManager {
 
   async getTimelineRows(id: string): Promise<AgentTimelineRow[]> {
     this.requireAgent(id);
+    await this.ensureCanonicalHistory(id);
     if (this.durableTimelineStore) {
       return await this.durableTimelineStore.getCommittedRows(id);
     }
@@ -1328,6 +1332,54 @@ export class AgentManager {
         ? rebase.positions.find((position) => position.previousSeq === cursor.seq)
         : undefined;
     return mapped && rebase ? { epoch: rebase.epoch, seq: mapped.seq } : cursor;
+  }
+
+  getNativeHistory(id: string) {
+    return this.requireSessionAgent(id).session.nativeHistory;
+  }
+
+  private prepareNativeTimelineWrites(agent: LiveManagedAgent): Promise<void> {
+    const store = this.durableTimelineStore;
+    if (!agent.session.nativeHistory || !store) return Promise.resolve();
+    const session = agent.session;
+    if (this.completeNativeHistories.has(session)) return Promise.resolve();
+    const pending = this.nativeTimelineWrites.get(session);
+    if (pending) return pending;
+    const task = (async () => {
+      await this.nativeHistoryCommits.get(session);
+      const latestSeq = await store.getLatestCommittedSeq(agent.id);
+      if (this.agents.get(agent.id) !== agent) throw new Error("准备历史写入期间会话已释放。");
+      const current = this.timelineStore.fetch(agent.id, { limit: 0 });
+      // 浏览不读取旧正文；首次实际写入才接续磁盘序号，防止新运行从 1 开始覆盖旧记录。
+      this.timelineStore.initialize(agent.id, {
+        rows: current.rows,
+        epoch: current.epoch,
+        nextSeq: Math.max(latestSeq + 1, current.window.nextSeq),
+      });
+    })();
+    this.nativeTimelineWrites.set(session, task);
+    void task.catch((error) => {
+      this.nativeTimelineWrites.delete(session);
+      this.logger.error(
+        { err: error, agentId: agent.id },
+        "Failed to prepare native timeline writes",
+      );
+    });
+    return task;
+  }
+
+  async ensureCanonicalHistory(id: string): Promise<void> {
+    const agent = this.requireSessionAgent(id);
+    if (!agent.session.nativeHistory || this.completeNativeHistories.has(agent.session)) return;
+    const pending = this.nativeHistoryCommits.get(agent.session);
+    if (pending) return pending;
+    const task = this.hydrateTimelineFromProvider(id, { force: true, broadcastTimeline: false });
+    this.nativeHistoryCommits.set(agent.session, task);
+    const clear = () => {
+      this.nativeHistoryCommits.delete(agent.session);
+    };
+    void task.then(clear, clear);
+    await task;
   }
 
   hasPendingHistory(id: string): boolean {
@@ -1909,6 +1961,8 @@ export class AgentManager {
       "agent.manager.close.start",
     );
     const historyLoad = this.progressiveHistoryLoads.get(agentId)?.promise;
+    const nativeCommit = this.nativeHistoryCommits.get(agent.session);
+    const nativeWrite = this.nativeTimelineWrites.get(agent.session);
     const closedAgent = this.prepareAgentForClosure(agent, "agent closed");
     this.touchUpdatedAt(closedAgent);
     let closeError: unknown;
@@ -1916,6 +1970,13 @@ export class AgentManager {
       await agent.session.close();
       // 先关闭提供方以取消读请求，再等待已有完整提交退出，释放后不留后台写入者。
       await historyLoad;
+      await nativeCommit?.catch((error) => {
+        // 关闭会取消只读扫描；原操作仍向调用方报错，释放继续清理独立的待写队列。
+        this.logger.error({ err: error, agentId }, "完整原生历史操作在关闭期间结束");
+      });
+      await nativeWrite?.catch((error) => {
+        this.logger.error({ err: error, agentId }, "原生历史写入准备在关闭期间结束");
+      });
     } catch (error) {
       closeError = error;
     }
@@ -2491,13 +2552,17 @@ export class AgentManager {
     if (!handler) {
       return false;
     }
-    if (options?.clientMessageId) {
-      this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, {
-        images: options.userMessageImages,
-        turnRole: "start",
-      });
-      this.emitState(agent);
-    }
+    const recordPrompt = () => {
+      if (options?.clientMessageId) {
+        this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, {
+          images: options.userMessageImages,
+          turnRole: "start",
+        });
+        this.emitState(agent);
+      }
+    };
+    const nativeWrite = agent.session.nativeHistory !== undefined;
+    if (!nativeWrite) recordPrompt();
     const dispatch = (event: AgentStreamEvent): void => {
       // Persist timeline items so they show up in fetchAgentTimeline; broadcast
       // for live subscribers. Other event types are broadcast only.
@@ -2514,15 +2579,23 @@ export class AgentManager {
       this.dispatchStream(agent.id, event, { timestamp: new Date().toISOString() });
     };
     void (async () => {
+      let writesReady = !nativeWrite;
       try {
+        await this.prepareNativeTimelineWrites(agent);
+        writesReady = true;
+        if (nativeWrite) recordPrompt();
         await handler.run({ emit: dispatch });
       } catch (error) {
+        this.logger.error({ err: error, agentId }, "Out-of-band command failed");
+        if (this.agents.get(agentId) !== agent) return;
         const text = error instanceof Error ? error.message : "Out-of-band command failed";
-        dispatch({
+        const failure: AgentStreamEvent = {
           type: "timeline",
           provider: agent.provider,
           item: { type: "assistant_message", text: `[Error] ${text}` },
-        });
+        };
+        if (writesReady) dispatch(failure);
+        else this.dispatchStream(agent.id, failure, { timestamp: new Date().toISOString() });
       }
     })();
     return true;
@@ -2530,6 +2603,7 @@ export class AgentManager {
 
   async appendTimelineItem(agentId: string, item: AgentTimelineItem): Promise<void> {
     const agent = this.requireAgent(agentId);
+    await this.prepareNativeTimelineWrites(agent);
     item = limitAgentTimelineItemContent(item);
     this.touchUpdatedAt(agent);
     const row = this.recordTimeline(agentId, item);
@@ -2568,6 +2642,7 @@ export class AgentManager {
   }): Promise<string> {
     const { agent, agentId, pendingRun, prompt, options } = params;
     try {
+      await this.prepareNativeTimelineWrites(agent);
       const result = await agent.session.startTurn(prompt, options);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
@@ -3286,6 +3361,10 @@ export class AgentManager {
     options?: HydrateTimelineOptions,
   ): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
+    if (agent.session.nativeHistory) {
+      await this.hydrateNativeCanonicalHistory(agent, options);
+      return;
+    }
     if (options?.force && this.progressiveHistoryLoads.has(agentId))
       await this.waitForBackgroundHistory(agentId);
     const continuation = agent.session.historyContinuation;
@@ -3326,6 +3405,52 @@ export class AgentManager {
         epoch: this.timelineStore.getEpoch(agentId),
       });
     }
+  }
+
+  private async hydrateNativeCanonicalHistory(
+    agent: ActiveManagedAgent,
+    options?: HydrateTimelineOptions,
+  ): Promise<void> {
+    const history = agent.session.nativeHistory;
+    if (!history) throw new Error("原生浏览连接已关闭。");
+    await history.complete();
+    const events: AgentStreamEvent[] = [];
+    for await (const raw of agent.session.streamHistory())
+      events.push(limitAgentStreamEventContent(raw));
+    if (this.agents.get(agent.id) !== agent) throw new Error("原生历史读取期间会话已释放。");
+    const seed = this.durableTimelineStore
+      ? await this.durableTimelineStore.getCommittedRows(agent.id)
+      : this.timelineStore.getRows(agent.id);
+    const timeline = events.filter(
+      (event): event is Extract<AgentStreamEvent, { type: "timeline" }> =>
+        event.type === "timeline" &&
+        !(event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)),
+    );
+    const rows = reconcileProviderHistory(
+      seed,
+      timeline.map((event) => ({ item: event.item, timestamp: event.timestamp })),
+      { mode: "force" },
+    );
+    if (this.agents.get(agent.id) !== agent) throw new Error("原生历史提交前会话已释放。");
+    await this.commitCompleteHistorySnapshot(agent.id, rows);
+    if (this.agents.get(agent.id) !== agent) throw new Error("原生历史提交期间会话已释放。");
+    this.timelineStore.initialize(agent.id, { rows });
+    this.completeNativeHistories.add(agent.session);
+    agent.historyPrimed = true;
+    for (const update of this.providerSubagents.deleteParent(agent.id))
+      this.dispatch({ type: "provider_subagent", event: update });
+    for (const event of events)
+      if (event.type === "provider_subagent")
+        this.dispatch({
+          type: "provider_subagent",
+          event: this.providerSubagents.apply(agent.id, event.provider, event.event),
+        });
+    if (options?.emitReplacement)
+      this.dispatch({
+        type: "timeline_replacement",
+        agentId: agent.id,
+        epoch: this.timelineStore.getEpoch(agent.id),
+      });
   }
 
   rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
@@ -3672,6 +3797,7 @@ export class AgentManager {
         agentId: resolvedAgentId,
         now,
         options,
+        nativeBrowse: session.nativeHistory !== undefined,
       });
 
       const managed = this.buildManagedAgentForRegister({
@@ -3749,6 +3875,7 @@ export class AgentManager {
 
   private async initializeAgentTimelineForRegister(params: {
     agentId: string;
+    nativeBrowse: boolean;
     now: Date;
     options:
       | {
@@ -3765,6 +3892,7 @@ export class AgentManager {
     const timelineAlreadyPrimed = this.timelineStore.has(agentId);
     const explicitTimelineSeed = buildExplicitTimelineSeedForRegister(now, options);
     const shouldSeedFromDurable =
+      !params.nativeBrowse &&
       !explicitTimelineSeed &&
       !this.timelineStore.has(agentId) &&
       this.durableTimelineStore !== undefined;
@@ -4477,6 +4605,8 @@ export class AgentManager {
     event: AgentStreamEvent,
     options?: HandleStreamEventOptions,
   ): Promise<boolean> {
+    if (event.type === "timeline" || event.type === "turn_failed")
+      await this.prepareNativeTimelineWrites(agent);
     event = limitAgentStreamEventContent(event);
     const identified = attachManagedTurnIdentity(agent, event, options?.fromHistory === true);
     event = identified.event;

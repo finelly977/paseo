@@ -1742,6 +1742,7 @@ export class VoiceAssistantWebSocketServer {
         nativeSessionTitles: true,
         // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
         conversationHistoryLimit: true,
+        nativeHistoryPages: true,
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。
         workspaceScriptManagement: true,
         // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.

@@ -28,6 +28,8 @@ export const CLIENT_CAPS = {
   timelineReplacementInvalidation: "timeline_replacement_invalidation",
   // COMPAT(progressiveAgentHistory): v0.2.6 新增，2027-04-30 后复查门控。
   progressiveAgentHistory: "progressive_agent_history",
+  // COMPAT(nativeHistoryPages): v0.2.6 新增，2027-05-01 后复查。
+  nativeHistoryPages: "native_history_pages",
   browserHost: "browser_host",
 } as const;
 

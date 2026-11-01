@@ -1,3 +1,4 @@
+import { nativeBeforeCursor } from "@/timeline/native-history";
 import { useSyncExternalStore, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import equal from "fast-deep-equal/es6";
@@ -477,6 +478,7 @@ function createDefaultDeps(): HostRuntimeControllerDeps {
     [CLIENT_CAPS.selectiveAgentTimeline]: true,
     [CLIENT_CAPS.timelineReplacementInvalidation]: true,
     [CLIENT_CAPS.progressiveAgentHistory]: true,
+    [CLIENT_CAPS.nativeHistoryPages]: true,
     ...browserAutomationCapabilities,
   };
 
@@ -2248,7 +2250,19 @@ export class HostRuntimeStore {
   ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
     const directory = this.directorySyncByServer.get(serverId);
     if (!directory) throw new Error(`Unknown host runtime for serverId ${serverId}`);
-    return directory.fetchTimeline(agentId, request);
+    const session = useSessionStore.getState().sessions[serverId];
+    const native = session?.agentNativeHistory.get(agentId);
+    return directory.fetchTimeline(agentId, {
+      ...request,
+      ...(request?.direction === "before" && native
+        ? {
+            nativeHistory: {
+              readId: native.readId,
+              cursor: nativeBeforeCursor(session?.agentStreamTail.get(agentId) ?? [], native),
+            },
+          }
+        : {}),
+    });
   }
 
   refreshAllAgentDirectories(input?: { serverIds?: string[] }): void {

@@ -216,6 +216,7 @@ function buildAgentManagerSpies() {
     getTimeline: vi.fn().mockReturnValue([]),
     resumeAgentFromPersistence: vi.fn(),
     hydrateTimelineFromProvider: vi.fn().mockResolvedValue(undefined),
+    ensureCanonicalHistory: vi.fn().mockResolvedValue(undefined),
     appendTimelineItem: vi.fn().mockResolvedValue(undefined),
     emitLiveTimelineItem: vi.fn().mockResolvedValue(undefined),
     hasInFlightRun: vi.fn().mockReturnValue(false),
@@ -5739,7 +5740,12 @@ describe("agent snapshot MCP serialization", () => {
     expect(spies.agentManager.resumeAgentFromPersistence).toHaveBeenCalled();
     expect(spies.agentManager.hydrateTimelineFromProvider).toHaveBeenCalledWith(
       "archived-activity-agent",
-      { broadcast: expect.any(Function) },
+      {
+        broadcast: expect.any(Function),
+        broadcastTimeline: expect.any(Function),
+        emitReplacement: false,
+        force: false,
+      },
     );
   });
 
@@ -5766,6 +5772,7 @@ describe("agent snapshot MCP serialization", () => {
     const tool = registeredTool(server, "get_agent_activity");
     const response = await tool.handler({ agentId: "live-activity-agent", limit: 1 });
 
+    expect(spies.agentManager.ensureCanonicalHistory).toHaveBeenCalledWith("live-activity-agent");
     const content = String(response.structuredContent.content);
     expect(content).toContain("Hello world. How are you?");
   });

@@ -11,7 +11,8 @@ export interface LoadOlderAgentHistoryClient {
     agentId: string,
     request: {
       direction: "before";
-      cursor: { epoch: string; seq: number };
+      cursor?: { epoch: string; seq: number };
+      nativeHistory?: { readId: string; cursor: string | null };
       limit: number;
       projection: "projected";
     },
@@ -25,6 +26,7 @@ export interface LoadOlderAgentHistoryLogger {
 export interface LoadOlderAgentHistoryDeps {
   client: LoadOlderAgentHistoryClient | null;
   cursor: AgentTimelineCursorState | undefined;
+  nativeHistory?: { readId: string; nextCursor: string | null };
   hasOlder: boolean;
   isLoadingOlder: boolean;
   setInFlight: (value: boolean) => void;
@@ -39,16 +41,25 @@ export async function loadOlderAgentHistory(
 ): Promise<void> {
   const { client, cursor, hasOlder, isLoadingOlder, setInFlight, toast, logger, failedMessage } =
     deps;
-  if (!client || !cursor || !hasOlder || isLoadingOlder) {
+  if (!client || (!cursor && !deps.nativeHistory) || !hasOlder || isLoadingOlder) {
     return;
   }
 
   setInFlight(true);
   try {
-    await client.fetchAgentTimeline(
-      agentId,
-      planTimelineOlderFetch({ epoch: cursor.epoch, seq: cursor.startSeq }),
-    );
+    let request: Parameters<LoadOlderAgentHistoryClient["fetchAgentTimeline"]>[1];
+    if (deps.nativeHistory) {
+      request = {
+        direction: "before",
+        projection: "projected",
+        limit: 20,
+        nativeHistory: { readId: deps.nativeHistory.readId, cursor: deps.nativeHistory.nextCursor },
+      };
+    } else {
+      if (!cursor) throw new Error("缺少历史阅读位置。");
+      request = planTimelineOlderFetch({ epoch: cursor.epoch, seq: cursor.startSeq });
+    }
+    await client.fetchAgentTimeline(agentId, request);
   } catch (error) {
     (logger ?? console).warn("[Timeline] failed to load older agent history", agentId, error);
     toast?.show(failedMessage ?? i18n.t("loadOlderHistory.failed"), {
@@ -78,6 +89,8 @@ export function useLoadOlderAgentHistory({
       state.sessions[serverId]?.agentTimelineOlderFetchInFlight.get(agentId),
     ) === true;
   const startCursor = useSessionStore((state) => {
+    const native = state.sessions[serverId]?.agentNativeHistory.get(agentId);
+    if (native) return `${native.readId}:${native.nextCursor}`;
     const cursor = state.sessions[serverId]?.agentTimelineCursor.get(agentId);
     return cursor ? `${cursor.epoch}:${cursor.startSeq}` : null;
   });
@@ -109,6 +122,7 @@ export function useLoadOlderAgentHistory({
           }
         : null,
       cursor: session?.agentTimelineCursor.get(agentId),
+      nativeHistory: session?.agentNativeHistory.get(agentId),
       hasOlder: session?.agentTimelineHasOlder.get(agentId) === true,
       isLoadingOlder: session?.agentTimelineOlderFetchInFlight.get(agentId) === true,
       setInFlight,

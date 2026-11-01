@@ -27,7 +27,8 @@ export interface ProjectedTimelineAfterFetchPlan {
 
 export interface ProjectedTimelineBeforeFetchPlan {
   direction: "before";
-  cursor: TimelineSyncCursor;
+  cursor?: TimelineSyncCursor;
+  nativeHistory?: { readId: string; cursor: string | null };
   limit: number;
   projection: "projected";
 }

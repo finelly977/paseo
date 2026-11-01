@@ -409,6 +409,10 @@ export interface SessionState {
   agentTasks: Map<string, TodoEntry[]>;
   messageSubmissions: Map<string, MessageSubmissionRecord[]>;
   agentTimelineCursor: Map<string, AgentTimelineCursorState>;
+  agentNativeHistory: Map<
+    string,
+    { readId: string; nextCursor: string | null; firstTurnId: string | null }
+  >;
   agentTimelineHasOlder: Map<string, boolean>;
   agentTimelineOlderFetchInFlight: Map<string, boolean>;
   agentConversationIndex: Map<string, AgentConversationIndexEntry[]>;
@@ -802,6 +806,7 @@ function createInitialSessionState(
     agentTasks: new Map(),
     messageSubmissions: new Map(),
     agentTimelineCursor: new Map(),
+    agentNativeHistory: new Map(),
     agentTimelineHasOlder: new Map(),
     agentTimelineOlderFetchInFlight: new Map(),
     agentConversationIndex: new Map(),
@@ -1216,6 +1221,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamHead: remove(current.agentStreamHead),
                 agentTasks: remove(current.agentTasks),
                 agentTimelineCursor: remove(current.agentTimelineCursor),
+                agentNativeHistory: remove(current.agentNativeHistory),
                 agentTimelineHasOlder: remove(current.agentTimelineHasOlder),
                 agentTimelineOlderFetchInFlight: remove(current.agentTimelineOlderFetchInFlight),
                 agentConversationIndex: remove(current.agentConversationIndex),

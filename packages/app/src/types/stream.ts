@@ -80,7 +80,7 @@ function createAssistantItemId(
   return `${segmentId}:${suffix.toString(36)}`;
 }
 
-export type StreamItem =
+export type StreamItem = (
   | UserMessageItem
   | AssistantMessageItem
   | ThoughtItem
@@ -88,7 +88,21 @@ export type StreamItem =
   | TodoListItem
   | ActivityLogItem
   | CompactionItem
-  | PluginTimelineStreamItem;
+  | PluginTimelineStreamItem
+  | NativeHistoryProcessItem
+) & { nativeTurnId?: string; nativePageCursor?: string | null; timestampUnknown?: boolean };
+
+export interface NativeHistoryProcessItem {
+  kind: "native_history_process";
+  id: string;
+  turnId: string;
+  timestamp: Date;
+  timelineCursor?: TimelinePosition;
+  status: "completed" | "inProgress" | "failed" | "interrupted";
+  durationMs: number | null;
+  summaryMessageIds: string[];
+  error: string | null;
+}
 
 export type UserMessageImageAttachment = AttachmentMetadata;
 

@@ -172,11 +172,17 @@ describe("对话历史内存预算", () => {
       "test-server",
       new Map([["agent", [{ id: "queued", text: "不要丢掉", attachments: [] }]]]),
     );
+    useSessionStore.getState().sessions["test-server"].agentNativeHistory.set("agent", {
+      readId: "native-thread",
+      nextCursor: "older",
+      firstTurnId: "turn",
+    });
     store.releaseAgentMemory("test-server", "agent");
     const session = useSessionStore.getState().sessions["test-server"];
     expect(session.agentStreamTail.has("agent")).toBe(false);
     expect(session.agentStreamHead.has("agent")).toBe(false);
     expect(session.agentTimelineCursor.has("agent")).toBe(false);
+    expect(session.agentNativeHistory.has("agent")).toBe(false);
     expect(session.agentConversationIndex.has("agent")).toBe(false);
     expect(session.agentConversationIndexVersion.has("agent")).toBe(false);
     expect(session.agentAuthoritativeHistoryApplied.has("agent")).toBe(false);

@@ -342,6 +342,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...(item.preTokens !== undefined ? { preTokens: item.preTokens } : {}),
       };
     case "tool_call":
+    case "native_history_process":
       return null;
     case "plugin":
       return {

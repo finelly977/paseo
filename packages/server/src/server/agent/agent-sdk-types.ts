@@ -648,6 +648,8 @@ export interface AgentResumeSessionOptions {
   purpose?: "interactive" | "history";
   /** 先读取提供方最新页，其余历史由管理器在后台核对。 */
   progressiveHistory?: boolean;
+  /** 原生正文分页浏览，不恢复执行运行时或预取全部过程。 */
+  nativeHistory?: boolean;
 }
 
 /**
@@ -672,6 +674,18 @@ export interface AgentSession {
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
   /** 只在原生历史尚未读完时提供；成功后 streamHistory 返回完整原生历史。 */
   historyContinuation?: () => Promise<void>;
+  nativeHistory?: {
+    readId: string;
+    readPage(
+      cursor: string | null,
+      limit: number,
+    ): Promise<import("@getpaseo/protocol/messages").NativeHistoryPage>;
+    readTurn(
+      turnId: string,
+      cursor: string | null,
+    ): Promise<{ items: AgentTimelineItem[]; nextCursor: string | null }>;
+    complete(): Promise<void>;
+  };
   getRuntimeInfo(): Promise<AgentRuntimeInfo>;
   getUsage?(): Promise<AgentUsage | undefined>;
   getAvailableModes(): Promise<AgentMode[]>;

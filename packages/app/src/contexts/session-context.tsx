@@ -19,6 +19,7 @@ import {
 } from "@/timeline/session-stream-reducers";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { rebaseHistoryPreview } from "@/timeline/history-preview-rebase";
+import { planNativeHistoryPage, retainNativeHistoryLiveItems } from "@/timeline/native-history";
 import {
   isTimelineCatchUpComplete,
   shouldApplyOlderHistoryBoundary,
@@ -709,6 +710,65 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       )
         return;
       const initKey = getInitKey(serverId, agentId);
+      if (payload.nativeHistory && !payload.error) {
+        const page = payload.nativeHistory;
+        useSessionStore.setState((state) => {
+          const session = state.sessions[serverId];
+          if (!session || session.releasedAgentIds.has(agentId)) return state;
+          const older = payload.direction === "before";
+          const previous = session.agentNativeHistory.get(agentId);
+          const plan = planNativeHistoryPage({
+            items: session.agentStreamTail.get(agentId) ?? [],
+            previous,
+            page,
+            older,
+          });
+          if (!plan) return state;
+          const { sameRead, tail } = plan;
+          return {
+            ...state,
+            sessions: {
+              ...state.sessions,
+              [serverId]: {
+                ...session,
+                agentStreamTail: new Map(session.agentStreamTail).set(agentId, tail),
+                agentStreamHead: new Map(session.agentStreamHead).set(
+                  agentId,
+                  retainNativeHistoryLiveItems(session.agentStreamHead.get(agentId) ?? [], page),
+                ),
+                agentTimelineCursor:
+                  sameRead && session.agentTimelineCursor.get(agentId)?.epoch === payload.epoch
+                    ? session.agentTimelineCursor
+                    : new Map([...session.agentTimelineCursor].filter(([id]) => id !== agentId)),
+                agentConversationIndex: sameRead
+                  ? session.agentConversationIndex
+                  : new Map([...session.agentConversationIndex].filter(([id]) => id !== agentId)),
+                agentNativeHistory: new Map(session.agentNativeHistory).set(
+                  agentId,
+                  plan.nativeState,
+                ),
+                agentTimelineHasOlder: new Map(session.agentTimelineHasOlder).set(
+                  agentId,
+                  older || !sameRead
+                    ? page.nextCursor !== null
+                    : session.agentTimelineHasOlder.get(agentId) === true,
+                ),
+                agentAuthoritativeHistoryApplied: new Map(
+                  session.agentAuthoritativeHistoryApplied,
+                ).set(agentId, true),
+                initializingAgents: new Map(session.initializingAgents).set(agentId, false),
+                agentHistorySyncGeneration: new Map(session.agentHistorySyncGeneration).set(
+                  agentId,
+                  session.historySyncGeneration,
+                ),
+              },
+            },
+          };
+        });
+        resolveInitDeferred(initKey);
+        enforceConversationHistoryMemory();
+        return;
+      }
       const catchUpComplete = isTimelineCatchUpComplete({
         direction: payload.direction,
         hasNewer: payload.hasNewer,
@@ -873,6 +933,21 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           if (shouldInitialize && initialization && getInitDeferred(initKey) === initialization) {
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
+          if (page.nativeHistory) {
+            const current = useSessionStore.getState().sessions[serverId];
+            const native = current?.agentNativeHistory.get(agentId);
+            const conversationCount = (current?.agentStreamTail.get(agentId) ?? []).filter(
+              (item) => item.kind === "user_message",
+            ).length;
+            return {
+              ...page,
+              nativeHistory: {
+                readId: page.nativeHistory.readId,
+                nextCursor: native?.nextCursor ?? null,
+              },
+              nativeConversationCount: conversationCount,
+            };
+          }
           return page;
         } catch (error) {
           if (shouldInitialize && initialization && getInitDeferred(initKey) === initialization) {
@@ -883,7 +958,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         }
       },
       reportError: (error) => {
-        console.warn("[Session] viewed timeline synchronization failed", { serverId, error });
+        console.error("[Session] viewed timeline synchronization failed", { serverId, error });
       },
       schedule: (task, delayMs) => {
         const timeout = setTimeout(task, delayMs);
@@ -988,6 +1063,15 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         epoch,
         timestamp: parsedTimestamp,
       });
+      if (
+        (event.type === "turn_completed" ||
+          event.type === "turn_failed" ||
+          event.type === "turn_canceled") &&
+        useSessionStore.getState().sessions[serverId]?.agentNativeHistory.has(agentId)
+      ) {
+        // 终态来自原生事件后重新读取摘要，不能让历史入口永久停在“处理中”。
+        viewedTimelineSyncRef.current?.refreshAgentTimeline(agentId);
+      }
 
       // NOTE: We don't update lastActivityAt on every stream event to prevent
       // cascading rerenders. The agent_update handler updates agent.lastActivityAt

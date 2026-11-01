@@ -1869,6 +1869,8 @@ export const FetchAgentTimelineRequestMessageSchema = z.object({
   requestId: z.string(),
   // COMPAT(conversationIndexVersion): v0.2.2 新增可选协商，2027-03-28 复查。
   conversationIndexVersion: z.string().optional(),
+  // COMPAT(nativeHistoryPages): v0.2.6 新增，2027-05-01 后复查。
+  nativeHistory: z.object({ readId: z.string(), cursor: z.string().nullable() }).optional(),
   direction: z.enum(["tail", "before", "after"]).optional(),
   cursor: AgentTimelineCursorSchema.optional(),
   // 0 means "all matching rows for this query window".
@@ -1880,6 +1882,15 @@ export const FetchAgentTimelineRequestMessageSchema = z.object({
   projection: z.enum(["projected", "canonical"]).optional(),
   // COMPAT(timelineMergeWindow): v0.2.6 新增，2027-02-28 后移除可选兼容。
   mergeWindow: z.boolean().optional(),
+});
+
+export const NativeHistoryTurnRequestSchema = z.object({
+  type: z.literal("agent.history.read_turn.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  readId: z.string(),
+  turnId: z.string(),
+  cursor: z.string().nullable(),
 });
 
 export const ProviderSubagentListRequestMessageSchema = z.object({
@@ -3227,6 +3238,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   RestartServerRequestMessageSchema,
   DaemonUpdateRequestMessageSchema,
   FetchAgentTimelineRequestMessageSchema,
+  NativeHistoryTurnRequestSchema,
   ProviderSubagentListRequestMessageSchema,
   ProviderSubagentTimelineRequestMessageSchema,
   SetAgentTimelineSubscriptionRequestMessageSchema,
@@ -3637,6 +3649,8 @@ export const ServerInfoStatusPayloadSchema = z
         nativeSessionTitles: z.boolean().optional(),
         // COMPAT(conversationHistoryLimit): v0.2.2 新增，2027-01-30 后移除能力门控。
         conversationHistoryLimit: z.boolean().optional(),
+        // COMPAT(nativeHistoryPages): v0.2.6 新增，2027-05-01 后复查。
+        nativeHistoryPages: z.boolean().optional(),
         // COMPAT(workspaceScriptManagement): v0.1.105 新增，2027-01-10 后移除能力门控。
         workspaceScriptManagement: z.boolean().optional(),
         // COMPAT(projectCustomIcon): added in v0.2.0, remove after 2027-01-20.
@@ -4402,6 +4416,36 @@ export const AgentTimelineEntryPayloadSchema = z.object({
   collapsed: z.array(z.enum(["assistant_merge", "reasoning_merge", "tool_lifecycle"])),
 });
 
+export const NativeHistoryTurnSchema = z.object({
+  id: z.string(),
+  status: z.enum(["completed", "inProgress", "failed", "interrupted"]),
+  startedAt: z.number().nullable(),
+  durationMs: z.number().nullable(),
+  error: z.string().nullable(),
+  items: z.array(AgentTimelineItemPayloadSchema),
+});
+export const NativeHistoryPageSchema = z.object({
+  readId: z.string(),
+  cursor: z.string().nullable(),
+  nextCursor: z.string().nullable(),
+  turns: z.array(NativeHistoryTurnSchema),
+});
+export type NativeHistoryPage = z.infer<typeof NativeHistoryPageSchema>;
+export type NativeHistoryTurn = z.infer<typeof NativeHistoryTurnSchema>;
+
+export const NativeHistoryTurnResponseSchema = z.object({
+  type: z.literal("agent.history.read_turn.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    readId: z.string(),
+    turnId: z.string(),
+    items: z.array(AgentTimelineItemPayloadSchema),
+    nextCursor: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const FetchAgentTimelineResponseMessageSchema = z.object({
   type: z.literal("fetch_agent_timeline_response"),
   payload: z.object({
@@ -4425,6 +4469,8 @@ export const FetchAgentTimelineResponseMessageSchema = z.object({
     hasNewer: z.boolean(),
     // COMPAT(progressiveAgentHistory): v0.2.6 新增，2027-04-30 后复查可选字段。
     historyIncomplete: z.boolean().optional(),
+    // COMPAT(nativeHistoryPages): v0.2.6 新增；此分支不用规范序号，2027-05-01 后复查。
+    nativeHistory: NativeHistoryPageSchema.optional(),
     // COMPAT(timelineMergeWindow): v0.2.6 新增，2027-02-28 后移除可选兼容。
     mergeWindow: z.boolean().optional(),
     entries: z.array(AgentTimelineEntryPayloadSchema),
@@ -6428,6 +6474,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ArchiveWorkspaceResponseMessageSchema,
   FetchAgentResponseMessageSchema,
   FetchAgentTimelineResponseMessageSchema,
+  NativeHistoryTurnResponseSchema,
   AgentTimelineReplacementMessageSchema,
   ProviderSubagentListResponseMessageSchema,
   ProviderSubagentTimelineResponseMessageSchema,

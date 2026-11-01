@@ -57,3 +57,29 @@ test("释放后不复用旧请求，迟到响应在新一轮载入时仍被识�
   complete[1](page);
   await Promise.all([first, second]);
 });
+
+test("滚动与自动预取读取同一原生页时，字段顺序不同也只发送一次", async () => {
+  const gate = Promise.withResolvers<TimelinePage>();
+  let requests = 0;
+  const client = {
+    fetchAgentTimeline: async () => {
+      requests++;
+      return gate.promise;
+    },
+  };
+  const first = fetchAgentTimelineOnce(client, "agent", {
+    direction: "before",
+    limit: 20,
+    projection: "projected",
+    nativeHistory: { readId: "native", cursor: "older" },
+  });
+  const second = fetchAgentTimelineOnce(client, "agent", {
+    nativeHistory: { cursor: "older", readId: "native" },
+    projection: "projected",
+    direction: "before",
+    limit: 20,
+  });
+  expect(requests).toBe(1);
+  gate.resolve({ hasNewer: false } as TimelinePage);
+  await Promise.all([first, second]);
+});

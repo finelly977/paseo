@@ -107,6 +107,7 @@ import type { WorkspaceComposerAttachment } from "@/attachments/types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { toErrorMessage } from "@/utils/error-messages";
 import { AgentFailure } from "@/components/agent-failure";
+import { NativeHistoryProcess } from "./native-history-process";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
   buildCompletedTurnProcessModel,
@@ -994,7 +995,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             images={item.images}
             providerImages={item.providerImages}
             attachments={item.attachments}
-            timestamp={item.timestamp.getTime()}
+            timestamp={item.timestampUnknown ? null : item.timestamp.getTime()}
             capabilities={context.capabilities}
             client={client}
             isFirstInGroup={layoutItem.isFirstInUserGroup}
@@ -1243,6 +1244,25 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const renderStreamItem = useCallback(
       (layoutItem: StreamLayoutItem) => {
+        if (layoutItem.item.kind === "native_history_process") {
+          const native = resolvedServerId
+            ? useSessionStore.getState().sessions[resolvedServerId]?.agentNativeHistory.get(agentId)
+            : undefined;
+          if (!native || !resolvedServerId) return null;
+          return (
+            <NativeHistoryProcess
+              key={`${native.readId}:${layoutItem.item.turnId}`}
+              item={layoutItem.item}
+              agentId={agentId}
+              serverId={resolvedServerId}
+              readId={native.readId}
+              client={client}
+              viewport={viewportRef}
+              renderItem={renderStreamItemContent}
+              layout={layoutItem}
+            />
+          );
+        }
         const processTurnId = completedTurnProcess.turnIdByProcessItemId.get(layoutItem.item.id);
         const processExpanded = processTurnId ? expandedCompletedTurnIds.has(processTurnId) : false;
         const content =
@@ -1274,6 +1294,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [
         completedTurnProcess,
+        client,
+        agentId,
+        resolvedServerId,
         expandedCompletedTurnIds,
         handleForkAssistantTurn,
         readOnly,

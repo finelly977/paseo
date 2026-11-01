@@ -16,6 +16,8 @@ interface TimelinePageResult {
   startCursor: { epoch: string; seq: number } | null;
   conversationIndex?: ReadonlyArray<{ seqStart: number }>;
   historyIncomplete?: boolean;
+  nativeHistory?: { readId: string; nextCursor: string | null };
+  nativeConversationCount?: number;
 }
 
 interface ViewedTimelineSyncPorts {
@@ -46,6 +48,7 @@ export type TimelineDeliveryMode = "legacy" | "selective";
 export type ViewedTimelineStatus = "ready" | "pending" | "error" | "retrying";
 
 export interface ViewedTimelineUiBridge {
+  refreshAgentTimeline(agentId: string): void;
   registerHistoryPrepend(agentId: string, prepare: () => void): () => void;
   rebaseAgentTimeline(agentId: string): void;
   releaseAgentTimeline(agentId: string): void;
@@ -239,12 +242,58 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     pendingGaps.delete(agentId);
   };
 
+  const settleHistory = (agentId: string) =>
+    new Promise<void>((resolve) => {
+      const finish = () => {
+        historySettlements.delete(agentId);
+        resolve();
+      };
+      const cancel = ports.settleHistoryPage(finish);
+      historySettlements.set(agentId, () => {
+        cancel();
+        finish();
+      });
+    });
+
+  const backfillNativeHistory = async (
+    agentId: string,
+    generation: number,
+    initial: TimelinePageResult,
+  ) => {
+    let page = initial;
+    const target = ports.getInitialConversationLimit?.() ?? 1;
+    const visited = new Set<string>();
+    while (page.nativeHistory && page.nativeHistory.nextCursor !== null) {
+      if (page.nativeConversationCount === undefined)
+        throw new Error("原生分页响应缺少已加载用户轮数。");
+      if (page.nativeConversationCount >= target) break;
+      const native = page.nativeHistory;
+      const cursor = native.nextCursor;
+      if (cursor === null || visited.has(cursor))
+        throw new Error("原生历史分页游标重复，无法继续读取。");
+      visited.add(cursor);
+      for (const prepare of historyPrependHandlers.get(agentId) ?? []) prepare();
+      page = await ports.fetchPage(agentId, {
+        direction: "before",
+        projection: "projected",
+        limit: 20,
+        nativeHistory: { readId: native.readId, cursor },
+      });
+      if (!isCatchUpCurrent(agentId, generation)) return;
+      await settleHistory(agentId);
+      if (!isCatchUpCurrent(agentId, generation)) return;
+    }
+    if (isCatchUpCurrent(agentId, generation))
+      catchUps.set(agentId, { generation, status: "complete" });
+  };
+
   const fetchUntilCurrent = async (
     agentId: string,
     generation: number,
     request: ProjectedTimelineForwardFetchPlan,
   ): Promise<void> => {
     if (!isCatchUpCurrent(agentId, generation)) return;
+    let nativePageReadable = false;
 
     try {
       const page = await ports.fetchPage(agentId, request);
@@ -259,6 +308,11 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       const historyCursor = ports.readCursor(agentId);
       // 首个最新页已可阅读。后续原生核对与配置轮次预取都不再阻挡首屏。
       setVisibilityCatchUpReady(agentId);
+      nativePageReadable = page.nativeHistory !== undefined;
+      if (page.nativeHistory) {
+        await backfillNativeHistory(agentId, generation, page);
+        return;
+      }
       const backfillTarget = getConversationBackfillTarget({
         conversationLimit:
           request.direction === "tail"
@@ -311,7 +365,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
           cancelRetry,
           retryDelayMs: nextRetryDelayMs,
         });
-        setVisibilityCatchUpError([agentId]);
+        if (!nativePageReadable) setVisibilityCatchUpError([agentId]);
         ports.reportError(error);
       }
     }
@@ -635,6 +689,13 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         handlers.delete(prepare);
         if (handlers.size === 0) historyPrependHandlers.delete(agentId);
       };
+    },
+    refreshAgentTimeline(agentId) {
+      if (!active || !connected || !isDesired(agentId)) return;
+      startCatchUp(agentId, {
+        request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+        supersede: true,
+      });
     },
     rebaseAgentTimeline(agentId) {
       if (!active || !connected || !isDesired(agentId)) return;
