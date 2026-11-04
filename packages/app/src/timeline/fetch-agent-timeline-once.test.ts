@@ -4,6 +4,7 @@ import {
   fetchAgentTimelineOnce,
   releaseAgentTimelineReads,
   isReleasedAgentTimelineResponse,
+  getAgentTimelineReadCursor,
 } from "./fetch-agent-timeline-once";
 
 type TimelinePage = Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>;
@@ -82,4 +83,35 @@ test("滚动与自动预取读取同一原生页时，字段顺序不同也只�
   expect(requests).toBe(1);
   gate.resolve({ hasNewer: false } as TimelinePage);
   await Promise.all([first, second]);
+});
+
+test("同一读取保留发送前的实时边界，不把后加入调用者的新事件算进旧快照", async () => {
+  const gate = Promise.withResolvers<TimelinePage>();
+  let requestId = "";
+  const client = {
+    fetchAgentTimeline: async (
+      _agentId: string,
+      request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+    ) => {
+      if (!request?.requestId) throw new Error("缺少请求标识");
+      requestId = request.requestId;
+      return gate.promise;
+    },
+  };
+  const first = fetchAgentTimelineOnce(
+    client,
+    "agent",
+    { direction: "tail" },
+    { epoch: "epoch", endSeq: 10 },
+  );
+  const second = fetchAgentTimelineOnce(
+    client,
+    "agent",
+    { direction: "tail" },
+    { epoch: "epoch", endSeq: 20 },
+  );
+  expect(getAgentTimelineReadCursor(client, requestId)).toEqual({ epoch: "epoch", endSeq: 10 });
+  gate.resolve({ hasNewer: false } as TimelinePage);
+  await Promise.all([first, second]);
+  expect(getAgentTimelineReadCursor(client, requestId)).toBeUndefined();
 });

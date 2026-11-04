@@ -193,6 +193,80 @@ describe("Codex 独立桌面工具配置", () => {
     ).resolves.toBe(nativeCli);
   });
 
+  test("Codex App 更新后重新解析整组桌面运行时路径，不沿用已删除的哈希目录", async () => {
+    const f = await fixture();
+    const runtimeRoot = path.join(f.home, "runtimes", "cua_node");
+    const oldBin = path.join(runtimeRoot, "old-runtime", "bin");
+    const currentDirectory = path.join(runtimeRoot, "current-runtime");
+    const currentBin = path.join(currentDirectory, "bin");
+    const currentModules = path.join(currentBin, "node_modules");
+    const currentNode = path.join(currentBin, "node.exe");
+    const currentRepl = path.join(currentBin, "node_repl.exe");
+    const helperName =
+      process.arch === "arm64" ? "codex-computer-use-arm64.exe" : "codex-computer-use.exe";
+    const currentFiles = [
+      currentNode,
+      currentRepl,
+      path.join(currentModules, "@oai/sky/package.json"),
+      path.join(currentModules, "@oai/sky/bin/windows", helperName),
+      path.join(
+        currentModules,
+        "@oai/sky/dist/project/cua/sky_js/src/targets/windows/internal/helper_transport.js",
+      ),
+    ];
+    for (const file of currentFiles) {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, "");
+    }
+    await writeFile(
+      path.join(currentDirectory, "manifest.json"),
+      JSON.stringify({
+        platform: "windows",
+        arch: process.arch,
+        node_path: "bin/node.exe",
+        node_modules: "bin/node_modules",
+        node_repl_path: "bin/node_repl.exe",
+      }),
+    );
+    const staleNode = path.join(oldBin, "node.exe");
+    const staleRepl = path.join(oldBin, "node_repl.exe");
+    const staleModules = path.join(oldBin, "node_modules");
+    const nodeServer = f.configuration.mcp_servers.node_repl;
+    nodeServer.command = staleRepl;
+    Object.assign(nodeServer.env, {
+      NODE_REPL_NODE_PATH: staleNode,
+      NODE_REPL_NODE_MODULE_DIRS: staleModules,
+      NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${staleModules}`,
+    });
+    f.cua.command = staleRepl;
+    Object.assign(f.cua.env, {
+      NODE_REPL_NODE_PATH: staleNode,
+      NODE_REPL_NODE_MODULE_DIRS: staleModules,
+      NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${staleModules}`,
+      CUA_REPL_ENABLED_SURFACES: "",
+    });
+    await f.writePlugin();
+
+    const tools = await f.acquire();
+    expect(tools.config).toMatchObject({
+      "mcp_servers.node_repl.command": currentRepl,
+      "mcp_servers.node_repl.env": {
+        NODE_REPL_NODE_PATH: currentNode,
+        NODE_REPL_NODE_MODULE_DIRS: currentModules,
+        NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${currentModules}`,
+      },
+      "mcp_servers.cua_repl": {
+        command: currentRepl,
+        env: {
+          NODE_REPL_NODE_PATH: currentNode,
+          NODE_REPL_NODE_MODULE_DIRS: currentModules,
+          NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${currentModules}`,
+          CUA_REPL_ENABLED_SURFACES: "browser,computer",
+        },
+      },
+    });
+  });
+
   test("会话独立接管管道，保留工具限制且不修改官方配置文件", async () => {
     const f = await fixture();
     const original = await readFile(f.pluginPath, "utf8");
@@ -519,6 +593,7 @@ describe("Codex 独立桌面工具配置", () => {
     if (tools === null) throw new Error("Expected managed desktop tools");
     cleanups.push(() => tools.dispose());
     expect(Object.keys(tools.config)).toEqual([
+      "mcp_servers.node_repl.command",
       "mcp_servers.node_repl.env",
       "plugins.unified-computer-use@openai-bundled.mcp_servers.cua_repl.enabled",
       "mcp_servers.cua_repl",

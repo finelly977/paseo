@@ -3,11 +3,16 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 type TimelineClient = Pick<DaemonClient, "fetchAgentTimeline">;
 type TimelineRequest = Parameters<TimelineClient["fetchAgentTimeline"]>[1];
 type TimelinePage = Awaited<ReturnType<TimelineClient["fetchAgentTimeline"]>>;
+export interface TimelineReadCursor {
+  epoch: string;
+  endSeq: number;
+}
 
 interface TimelineRead {
   agentId: string;
   requestId: string;
   released: boolean;
+  cursor?: TimelineReadCursor;
   promise: Promise<TimelinePage>;
 }
 
@@ -32,10 +37,18 @@ export function isReleasedAgentTimelineResponse(
   return readsByClient.get(client)?.get(requestId)?.released === true;
 }
 
+export function getAgentTimelineReadCursor(
+  client: TimelineClient,
+  requestId: string,
+): TimelineReadCursor | undefined {
+  return readsByClient.get(client)?.get(requestId)?.cursor;
+}
+
 export function fetchAgentTimelineOnce(
   client: TimelineClient,
   agentId: string,
   request: TimelineRequest,
+  cursor?: TimelineReadCursor,
 ): Promise<TimelinePage> {
   let inFlight = inFlightByClient.get(client);
   if (!inFlight) {
@@ -70,6 +83,7 @@ export function fetchAgentTimelineOnce(
     agentId,
     requestId,
     released: false,
+    cursor,
     promise: client.fetchAgentTimeline(agentId, { ...request, requestId }),
   };
   reads.set(requestId, read);

@@ -1,6 +1,7 @@
 import type { NativeHistoryPage } from "@getpaseo/protocol/messages";
-import type { StreamItem } from "@/types/stream";
-import { hydrateStreamState } from "@/types/stream";
+import type { StreamItem, UserMessageItem } from "@/types/stream";
+import { hydrateStreamState, isUnreconciledLocalUserMessage } from "@/types/stream";
+import type { TimelineReadCursor } from "./fetch-agent-timeline-once";
 
 export function nativeHistoryItems(page: NativeHistoryPage, cursor: string | null): StreamItem[] {
   return page.turns.flatMap((turn) => {
@@ -33,6 +34,7 @@ export function nativeHistoryItems(page: NativeHistoryPage, cursor: string | nul
         summaryMessageIds: turn.items.flatMap((item) =>
           "messageId" in item && typeof item.messageId === "string" ? [item.messageId] : [],
         ),
+        summaryRevision: JSON.stringify(turn.items),
       },
       ...rest,
     ].map((item) => Object.assign(item, { nativeTurnId: turn.id, nativePageCursor: cursor }));
@@ -45,10 +47,27 @@ export function mergeNativeHistoryPage(
   page: NativeHistoryPage,
   older: boolean,
   cursor: string | null,
+  localPresentation: readonly StreamItem[] = current,
 ): StreamItem[] {
   const incoming = nativeHistoryItems(page, cursor);
+  const byClient = new Map<string, UserMessageItem>();
+  const byMessage = new Map<string, UserMessageItem>();
+  for (const item of localPresentation) {
+    if (item.kind !== "user_message") continue;
+    if (item.clientMessageId) byClient.set(item.clientMessageId, item);
+    if (item.messageId) byMessage.set(item.messageId, item);
+  }
   const byId = new Map(current.map((item) => [item.id, item]));
   const stable = incoming.map((item) => {
+    if (item.kind === "user_message") {
+      const local =
+        (item.clientMessageId ? byClient.get(item.clientMessageId) : undefined) ??
+        (item.messageId ? byMessage.get(item.messageId) : undefined);
+      // 本地图片是展示副本；另一客户端改写正文后，不以旧输入覆盖权威正文或附加内容。
+      if (local && local.text === item.text) {
+        item = { ...item, images: local.images, attachments: local.attachments };
+      }
+    }
     const previous = byId.get(item.id);
     return previous && JSON.stringify(previous) === JSON.stringify(item) ? previous : item;
   });
@@ -67,10 +86,44 @@ export function mergeNativeHistoryPage(
   return [...prefix, ...stable, ...live];
 }
 
+interface NativeReadBoundary {
+  readCursor: TimelineReadCursor | undefined;
+  activeTurnId: string | null | undefined;
+  coveredStart: number | null;
+  emptyThread: boolean;
+}
+
+function wasRemovedBeforeNativeRead(item: UserMessageItem, boundary: NativeReadBoundary): boolean {
+  const { readCursor, activeTurnId, coveredStart, emptyThread } = boundary;
+  if (!item.timelineCursor || !readCursor) return false;
+  if (item.timelineCursor.epoch !== readCursor.epoch) return false;
+  if (item.timelineCursor.seq > readCursor.endSeq) return false;
+  if (activeTurnId != null && item.turnId === activeTurnId) return false;
+  return emptyThread || (coveredStart !== null && item.timestamp.getTime() >= coveredStart);
+}
+
 export function retainNativeHistoryLiveItems(
   items: readonly StreamItem[],
   page: NativeHistoryPage,
+  readCursor?: TimelineReadCursor,
+  activeTurnId?: string | null,
 ): StreamItem[] {
+  const clientIds = new Set(
+    page.turns.flatMap((turn) =>
+      turn.items.flatMap((item) =>
+        item.type === "user_message" && item.clientMessageId ? [item.clientMessageId] : [],
+      ),
+    ),
+  );
+  const completedClientIds = new Set(
+    page.turns
+      .filter((turn) => turn.status !== "inProgress")
+      .flatMap((turn) =>
+        turn.items.flatMap((item) =>
+          item.type === "user_message" && item.clientMessageId ? [item.clientMessageId] : [],
+        ),
+      ),
+  );
   const covered = new Set(
     page.turns
       .filter((turn) => turn.status !== "inProgress")
@@ -90,11 +143,27 @@ export function retainNativeHistoryLiveItems(
     ),
   );
   const live: StreamItem[] = [];
+  const starts = page.turns.flatMap((turn) =>
+    turn.startedAt === null ? [] : [turn.startedAt * 1000],
+  );
+  const coveredStart = starts.length > 0 ? Math.min(...starts) : null;
+  const emptyThread = page.turns.length === 0 && page.nextCursor === null;
   let coveredGroup = false;
   for (const item of items) {
+    if (item.kind === "user_message") {
+      const matchedClient = clientIds.has(item.clientMessageId ?? item.id);
+      const matchedMessage = item.messageId !== undefined && summaryIds.has(item.messageId);
+      const removedBeforeRead =
+        !matchedClient &&
+        !matchedMessage &&
+        wasRemovedBeforeNativeRead(item, { readCursor, activeTurnId, coveredStart, emptyThread });
+      coveredGroup =
+        (item.messageId !== undefined && covered.has(item.messageId)) ||
+        completedClientIds.has(item.clientMessageId ?? item.id) ||
+        removedBeforeRead;
+      if (matchedClient) continue;
+    }
     if (item.nativeTurnId !== undefined) continue;
-    if (item.kind === "user_message")
-      coveredGroup = item.messageId !== undefined && covered.has(item.messageId);
     if (coveredGroup) continue;
     if ("messageId" in item && typeof item.messageId === "string" && summaryIds.has(item.messageId))
       continue;
@@ -115,15 +184,21 @@ export function nativeBeforeCursor(
 
 export function planNativeHistoryPage(input: {
   items: StreamItem[];
+  head?: StreamItem[];
   previous: { readId: string; nextCursor: string | null; firstTurnId: string | null } | undefined;
   page: NativeHistoryPage;
   older: boolean;
+  readCursor?: TimelineReadCursor;
+  activeTurnId?: string | null;
 }): {
   sameRead: boolean;
   tail: StreamItem[];
+  head: StreamItem[];
+  acknowledgedClientMessageIds: string[];
   nativeState: { readId: string; nextCursor: string | null; firstTurnId: string | null };
 } | null {
   const { items, previous, page, older } = input;
+  const head = input.head ?? [];
   if (older) {
     if (!previous || previous.readId !== page.readId) return null;
     if (page.cursor !== nativeBeforeCursor(items, previous)) return null;
@@ -134,7 +209,29 @@ export function planNativeHistoryPage(input: {
   );
   const hasNativeItems = items.some((item) => item.nativeTurnId !== undefined);
   const sameRead = previous?.readId === page.readId && hasNativeItems && (older || hasOverlap);
-  const tail = mergeNativeHistoryPage(sameRead ? items : [], page, older, page.cursor);
+  const keepAcrossReset = (item: StreamItem) =>
+    (item.kind === "user_message" &&
+      (item.optimistic === true || isUnreconciledLocalUserMessage(item))) ||
+    (input.activeTurnId != null && item.turnId === input.activeTurnId) ||
+    (input.readCursor !== undefined &&
+      item.timelineCursor !== undefined &&
+      item.timelineCursor.epoch === input.readCursor.epoch &&
+      item.timelineCursor.seq > input.readCursor.endSeq);
+  // 活动区可能只有回复、用户行已在尾部；先按完整顺序核对归属，避免两区分开判断留下孤立旧回复。
+  const survivingLive = new Set(
+    retainNativeHistoryLiveItems(
+      [...items, ...head],
+      page,
+      older ? undefined : input.readCursor,
+      input.activeTurnId,
+    ),
+  );
+  const retained = items.filter((item) =>
+    sameRead
+      ? item.nativeTurnId !== undefined || survivingLive.has(item)
+      : survivingLive.has(item) && keepAcrossReset(item),
+  );
+  const tail = mergeNativeHistoryPage(retained, page, older, page.cursor, [...items, ...head]);
   const nativeState =
     sameRead && previous && !older
       ? previous
@@ -143,5 +240,15 @@ export function planNativeHistoryPage(input: {
           nextCursor: page.nextCursor,
           firstTurnId: tail[0]?.nativeTurnId ?? null,
         };
-  return { sameRead, tail, nativeState };
+  return {
+    sameRead,
+    tail,
+    head: head.filter((item) => survivingLive.has(item) && (sameRead || keepAcrossReset(item))),
+    nativeState,
+    acknowledgedClientMessageIds: page.turns.flatMap((turn) =>
+      turn.items.flatMap((item) =>
+        item.type === "user_message" && item.clientMessageId ? [item.clientMessageId] : [],
+      ),
+    ),
+  };
 }

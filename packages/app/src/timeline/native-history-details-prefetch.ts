@@ -16,18 +16,21 @@ export function createNativeHistoryDetailsPrefetch(input: {
 }) {
   const ready = new Set<string>();
   const running = new Set<string>();
+  const refreshedTurns = new Map<string, Set<string>>();
+  const readGenerations = new Map<string, number>();
   let active = true;
   const canRun = (agentId: string) => active && ready.has(agentId);
-  const schedule = (agentId: string) => {
+  const schedule = (agentId: string, turnIds: string[] = []) => {
+    const dirty = refreshedTurns.get(agentId) ?? new Set<string>();
+    for (const turnId of turnIds) dirty.add(turnId);
+    refreshedTurns.set(agentId, dirty);
     const retained =
       useSessionStore.getState().sessions[input.serverId]?.agentStreamTail.get(agentId) ?? [];
-    pruneNativeHistoryDetails(
-      input.serverId,
-      agentId,
-      new Set(
-        retained.flatMap((entry) => (entry.nativeTurnId === undefined ? [] : [entry.nativeTurnId])),
-      ),
+    const retainedTurns = new Set(
+      retained.flatMap((entry) => (entry.nativeTurnId === undefined ? [] : [entry.nativeTurnId])),
     );
+    for (const turnId of dirty) if (!retainedTurns.has(turnId)) dirty.delete(turnId);
+    pruneNativeHistoryDetails(input.serverId, agentId, retainedTurns);
     if (!active || !ready.has(agentId) || running.has(agentId)) return;
     running.add(agentId);
     void (async () => {
@@ -45,22 +48,27 @@ export function createNativeHistoryDetailsPrefetch(input: {
                 nativeHistoryDetailKey(input.serverId, agentId, native.readId, entry.turnId),
               );
             return (
+              dirty.has(entry.turnId) ||
               !cached ||
               cached.revision !== nativeHistoryDetailRevision(entry) ||
               (!cached.complete && !cached.error)
             );
           });
           if (!process || process.kind !== "native_history_process") return;
+          const generation = readGenerations.get(agentId) ?? 0;
+          const refresh = dirty.delete(process.turnId);
           try {
             await loadNativeHistoryDetails({
               ...input,
               agentId,
               readId: native.readId,
               item: process,
+              refresh,
               isCurrent: () => {
                 const current = useSessionStore.getState().sessions[input.serverId];
                 return (
                   active &&
+                  (readGenerations.get(agentId) ?? 0) === generation &&
                   ready.has(agentId) &&
                   !current?.releasedAgentIds.has(agentId) &&
                   current?.agentNativeHistory.get(agentId)?.readId === native.readId &&
@@ -87,17 +95,27 @@ export function createNativeHistoryDetailsPrefetch(input: {
       if (tail?.get(agentId) !== oldTail?.get(agentId)) schedule(agentId);
   });
   return {
-    schedule,
+    afterRead(read: {
+      agentId: string;
+      direction: "tail" | "before" | "after";
+      turnIds: string[];
+    }) {
+      schedule(read.agentId, read.direction === "before" ? [] : read.turnIds);
+    },
     start(agentId: string) {
       ready.add(agentId);
       schedule(agentId);
     },
     beforeRead(agentId: string, direction: "tail" | "before" | "after") {
-      if (direction !== "before") ready.delete(agentId);
+      if (direction === "before") return;
+      ready.delete(agentId);
+      readGenerations.set(agentId, (readGenerations.get(agentId) ?? 0) + 1);
     },
     dispose() {
       active = false;
       ready.clear();
+      refreshedTurns.clear();
+      readGenerations.clear();
       unsubscribe();
     },
   };

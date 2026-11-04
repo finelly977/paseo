@@ -163,10 +163,15 @@ export class DirectorySync {
     const token = this.agents.captureTimeline(agentId);
     const session = useSessionStore.getState().sessions[this.serverId];
     const conversationIndexVersion = session?.agentConversationIndexVersion.get(agentId);
-    const page = await fetchAgentTimelineOnce(client, agentId, {
-      ...request,
-      conversationIndexVersion,
-    });
+    const page = await fetchAgentTimelineOnce(
+      client,
+      agentId,
+      {
+        ...request,
+        conversationIndexVersion,
+      },
+      session?.agentTimelineCursor.get(agentId),
+    );
     if (page.agent) this.agents.submitTimelineAgent(token, page.agent);
     return page;
   }

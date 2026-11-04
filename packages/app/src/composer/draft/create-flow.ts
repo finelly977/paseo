@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useReducer } from "react";
+import { useCallback, useMemo, useReducer, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { ComposerAttachment } from "@/attachments/types";
 import {
@@ -27,11 +27,12 @@ interface CreateAttempt {
 
 type DraftAgentMachineState =
   | { tag: "draft"; errorMessage: string }
-  | { tag: "creating"; attempt: CreateAttempt };
+  | { tag: "creating"; attempt: CreateAttempt; errorMessage: string };
 
 type DraftAgentMachineEvent =
   | { type: "DRAFT_SET_ERROR"; message: string }
   | { type: "SUBMIT"; attempt: CreateAttempt }
+  | { type: "HANDOFF_FAILED"; message: string }
   | { type: "CREATE_FAILED"; message: string };
 
 function assertNever(value: never): never {
@@ -50,7 +51,10 @@ function reducer(
       return { ...state, errorMessage: event.message };
     }
     case "SUBMIT": {
-      return { tag: "creating", attempt: event.attempt };
+      return { tag: "creating", attempt: event.attempt, errorMessage: "" };
+    }
+    case "HANDOFF_FAILED": {
+      return { ...state, errorMessage: event.message };
     }
     case "CREATE_FAILED": {
       if (state.tag !== "creating") {
@@ -115,14 +119,14 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     initialAttempt,
     (attempt): DraftAgentMachineState =>
       attempt
-        ? { tag: "creating", attempt }
+        ? { tag: "creating", attempt, errorMessage: "" }
         : {
             tag: "draft",
             errorMessage: "",
           },
   );
 
-  const setPendingCreateAttempt = useCreateFlowStore((state) => state.setPending);
+  const beginCreateRequest = useCreateFlowStore((state) => state.beginRequest);
   const updatePendingAgentId = useCreateFlowStore((state) => state.updateAgentId);
   const markPendingCreateLifecycle = useCreateFlowStore((state) => state.markLifecycle);
   const clearPendingCreateAttempt = useCreateFlowStore((state) => state.clear);
@@ -130,7 +134,8 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
     (state) => state.handoffCreatedAgentUserMessage,
   );
 
-  const formErrorMessage = machine.tag === "draft" ? machine.errorMessage : "";
+  const hasStartedRequest = useRef(false);
+  const formErrorMessage = machine.errorMessage;
   const isSubmitting = machine.tag === "creating";
 
   const optimisticStreamItems = useMemo<StreamItem[]>(() => {
@@ -166,6 +171,9 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
 
   const runCreateAttempt = useCallback(
     async ({ attempt, cwd }: { attempt: CreateAttempt; cwd: string }) => {
+      if (hasStartedRequest.current) {
+        throw new Error(t("composer.errors.alreadyLoading"));
+      }
       const pendingServerId = getPendingServerId();
       if (!pendingServerId) {
         const error = new Error(t("composer.errors.noHostSelected"));
@@ -173,15 +181,32 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         throw error;
       }
 
-      await onBeforeSubmit?.({
-        attempt,
+      const claimed = beginCreateRequest({
+        draftId,
+        serverId: pendingServerId,
+        agentId: null,
+        clientMessageId: attempt.clientMessageId,
         text: attempt.text,
+        timestamp: attempt.timestamp.getTime(),
         images: attempt.images,
         attachments: attempt.attachments,
-        cwd,
       });
+      if (!claimed) {
+        throw new Error(t("composer.errors.alreadyLoading"));
+      }
 
+      hasStartedRequest.current = true;
+      dispatch({ type: "SUBMIT", attempt });
+      let created = false;
       try {
+        onCreateStart?.();
+        await onBeforeSubmit?.({
+          attempt,
+          text: attempt.text,
+          images: attempt.images,
+          attachments: attempt.attachments,
+          cwd,
+        });
         const createResult = await createRequest({
           attempt,
           text: attempt.text,
@@ -189,9 +214,11 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
           attachments: attempt.attachments,
           cwd,
         });
+        created = true;
 
         if (createResult.agentId) {
           updatePendingAgentId({ draftId, agentId: createResult.agentId });
+          markPendingCreateLifecycle({ draftId, lifecycle: "sent" });
           handoffCreatedAgentUserMessage(
             pendingServerId,
             createResult.agentId,
@@ -203,22 +230,31 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
               attachments: attempt.attachments,
             }),
           );
-          markPendingCreateLifecycle({ draftId, lifecycle: "sent" });
         }
 
         await onCreateSuccess({ result: createResult.result, attempt });
       } catch (error) {
         const resolved =
           error instanceof Error ? error : new Error(t("composer.errors.failedToCreateAgent"));
-        dispatch({ type: "CREATE_FAILED", message: resolved.message });
-        markPendingCreateLifecycle({ draftId, lifecycle: "abandoned" });
-        clearPendingCreateAttempt({ draftId });
+        if (created) {
+          // 服务端已经创建成功，交接失败只能提示打开已有会话，不能放开创建入口再次发送。
+          dispatch({
+            type: "HANDOFF_FAILED",
+            message: t("composer.errors.createdAgentHandoffFailed", { error: resolved.message }),
+          });
+        } else {
+          hasStartedRequest.current = false;
+          dispatch({ type: "CREATE_FAILED", message: resolved.message });
+          markPendingCreateLifecycle({ draftId, lifecycle: "abandoned" });
+          clearPendingCreateAttempt({ draftId });
+        }
         onCreateError?.(resolved);
         throw error;
       }
     },
     [
       handoffCreatedAgentUserMessage,
+      beginCreateRequest,
       clearPendingCreateAttempt,
       createRequest,
       draftId,
@@ -226,6 +262,7 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
       markPendingCreateLifecycle,
       onBeforeSubmit,
       onCreateError,
+      onCreateStart,
       onCreateSuccess,
       t,
       updatePendingAgentId,
@@ -282,44 +319,16 @@ export function useDraftAgentCreateFlow<TDraftAgent, TCreateResult>({
         ...(wirePayload.attachments.length > 0 ? { attachments: wirePayload.attachments } : {}),
       };
 
-      setPendingCreateAttempt({
-        draftId,
-        serverId: pendingServerId,
-        agentId: null,
-        clientMessageId: attempt.clientMessageId,
-        text: attempt.text,
-        timestamp: attempt.timestamp.getTime(),
-        ...(attempt.images && attempt.images.length > 0 ? { images: attempt.images } : {}),
-        ...(attempt.attachments && attempt.attachments.length > 0
-          ? { attachments: attempt.attachments }
-          : {}),
-      });
-
-      dispatch({ type: "SUBMIT", attempt });
-      onCreateStart?.();
       await runCreateAttempt({ attempt, cwd });
     },
-    [
-      allowEmptyText,
-      draftId,
-      getPendingServerId,
-      isSubmitting,
-      onCreateStart,
-      runCreateAttempt,
-      setPendingCreateAttempt,
-      t,
-      validateBeforeSubmit,
-    ],
+    [allowEmptyText, getPendingServerId, isSubmitting, runCreateAttempt, t, validateBeforeSubmit],
   );
 
   const continueCreateFromAttempt = useCallback(
     async ({ attempt, cwd }: { attempt: CreateAttempt; cwd: string }) => {
-      if (!isSubmitting) {
-        dispatch({ type: "SUBMIT", attempt });
-      }
       await runCreateAttempt({ attempt, cwd });
     },
-    [isSubmitting, runCreateAttempt],
+    [runCreateAttempt],
   );
 
   return {

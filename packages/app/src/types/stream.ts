@@ -101,6 +101,7 @@ export interface NativeHistoryProcessItem {
   status: "completed" | "inProgress" | "failed" | "interrupted";
   durationMs: number | null;
   summaryMessageIds: string[];
+  summaryRevision: string;
   error: string | null;
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { ReactElement, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { i18n } from "@/i18n/i18next";
 import { Pressable, StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import type { PressableStateCallbackType } from "react-native";
 import ReanimatedAnimated from "react-native-reanimated";
@@ -1116,7 +1117,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     composerState,
     initialSetup,
   });
-  useCreateFlowStore.getState().setPending({
+  const prepared = useCreateFlowStore.getState().setPending({
     serverId,
     draftId,
     workspaceId,
@@ -1127,6 +1128,9 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     ...(wirePayload.images.length > 0 ? { images: wirePayload.images } : {}),
     ...(wirePayload.attachments.length > 0 ? { attachments: wirePayload.attachments } : {}),
   });
+  if (!prepared) {
+    throw new Error(i18n.t("composer.errors.alreadyLoading"));
+  }
   useWorkspaceDraftSubmissionStore.getState().setPending({
     serverId,
     workspaceId,
@@ -2219,10 +2223,9 @@ export function NewWorkspaceScreen({
           releaseNewSessionDraft(shellDraftId);
         }
       } catch (error) {
-        const message = toErrorMessage(error);
         setPendingAction(null);
-        setErrorMessage(message);
-        toast.error(message);
+        // 交给 Composer 显示错误并释放提交资格，不能把创建失败当成成功消费掉草稿。
+        throw error;
       }
     },
     [
@@ -2235,7 +2238,6 @@ export function NewWorkspaceScreen({
       shellDraftId,
       supportsForgeSearch,
       t,
-      toast,
     ],
   );
 

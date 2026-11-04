@@ -142,6 +142,8 @@ export const zhCN: TranslationResources = {
     errors: {
       failedToSend: "发送消息失败",
       failedToCreateAgent: "创建 Agent 失败",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "未选择 Host",
       initialPromptRequired: "初始 prompt 必填",
       alreadyLoading: "正在加载",

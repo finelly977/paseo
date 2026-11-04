@@ -142,6 +142,8 @@ export const ptBR: TranslationResources = {
     errors: {
       failedToSend: "Falha ao enviar mensagem",
       failedToCreateAgent: "Falha ao criar agente",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "Nenhum host selecionado",
       initialPromptRequired: "O prompt inicial é obrigatório",
       alreadyLoading: "Já está carregando",

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { NativeHistoryProcessItem } from "@/types/stream";
+import { nativeHistoryInterruptedReply } from "./native-history-presentation";
 
 export interface NativeHistoryDetails {
   serverId: string;
@@ -39,7 +40,14 @@ export const nativeHistoryDetailKey = (
   turnId: string,
 ) => JSON.stringify([serverId, agentId, readId, turnId]);
 export const nativeHistoryDetailRevision = (item: NativeHistoryProcessItem) =>
-  JSON.stringify([item.status, item.durationMs, item.summaryMessageIds]);
+  JSON.stringify([
+    item.status,
+    item.durationMs,
+    item.error,
+    item.timestamp,
+    item.summaryMessageIds,
+    item.summaryRevision,
+  ]);
 
 /** 详情只驻留内存，随所属用户轮裁剪；释放代际阻止迟到读取重新填入缓存。 */
 export function pruneNativeHistoryDetails(
@@ -68,6 +76,7 @@ export async function loadNativeHistoryDetails(input: {
   readId: string;
   item: NativeHistoryProcessItem;
   client: Pick<DaemonClient, "readNativeHistoryTurn">;
+  refresh?: boolean;
   isCurrent(): boolean;
   settle(): Promise<void>;
   prepare(): void;
@@ -84,7 +93,8 @@ export async function loadNativeHistoryDetails(input: {
   const current = () => (releaseVersions.get(parent) ?? 0) === version && input.isCurrent();
   if (!current()) return;
   const existing = useNativeHistoryDetails.getState().entries.get(key);
-  if (existing?.revision === revision && existing.complete) return;
+  const previousPresentation = existing?.revision === revision ? existing : undefined;
+  if (previousPresentation?.complete && !previousPresentation.error && !input.refresh) return;
   const requestKey = JSON.stringify([key, revision, version]);
   let pending = pendingByClient.get(input.client);
   if (!pending) {
@@ -93,9 +103,10 @@ export async function loadNativeHistoryDetails(input: {
   }
   const inFlight = pending.get(requestKey);
   if (inFlight) return inFlight;
+  const replacing = input.refresh === true || previousPresentation?.complete === true;
   let details: NativeHistoryDetails =
-    existing?.revision === revision
-      ? existing
+    previousPresentation && !replacing
+      ? previousPresentation
       : {
           serverId: input.serverId,
           agentId: input.agentId,
@@ -110,21 +121,16 @@ export async function loadNativeHistoryDetails(input: {
   const publish = () => {
     if (!current()) return;
     const previous = useNativeHistoryDetails.getState().entries.get(key);
-    const restoresReply =
-      details.complete &&
-      !previous?.complete &&
-      (input.item.status === "interrupted" || input.item.status === "failed") &&
-      details.items.some(
-        (entry) =>
-          entry.type === "assistant_message" &&
-          entry.text.trim().length > 0 &&
-          (entry.messageId === undefined ||
-            !input.item.summaryMessageIds.includes(entry.messageId)),
-      );
+    const restoresReply = changesInterruptedReply(input.item, details, previous);
     // 收起的普通过程只有数据变化，不捕捉或回写滚动位置，避免后台预取干扰用户滚轮。
     if (expandedViews.has(key) || restoresReply) input.prepare();
+    // 已显示的完整过程保留到新快照读完，后台核对不让中断说明反复消失再出现。
+    const presentation =
+      replacing && !details.complete && previousPresentation?.complete
+        ? { ...previousPresentation, loading: details.loading, error: details.error }
+        : details;
     useNativeHistoryDetails.setState((state) => ({
-      entries: new Map(state.entries).set(key, details),
+      entries: new Map(state.entries).set(key, presentation),
     }));
   };
   const task = (async () => {
@@ -173,4 +179,15 @@ export async function loadNativeHistoryDetails(input: {
   };
   void task.then(clear, clear);
   return task;
+}
+
+function changesInterruptedReply(
+  item: NativeHistoryProcessItem,
+  details: NativeHistoryDetails,
+  previous: NativeHistoryDetails | undefined,
+): boolean {
+  if (!details.complete) return false;
+  const incoming = nativeHistoryInterruptedReply(item, details.items);
+  const shown = previous?.complete ? nativeHistoryInterruptedReply(item, previous.items) : [];
+  return JSON.stringify(incoming) !== JSON.stringify(shown);
 }

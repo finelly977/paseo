@@ -8,6 +8,12 @@ import {
 } from "./native-history";
 import { deriveStreamTurnTiming } from "./turn-time";
 import type { StreamItem } from "@/types/stream";
+import {
+  acceptMessageSubmission,
+  beginMessageSubmission,
+  observeMessageSubmissionCanonical,
+} from "@/composer/submission/model";
+import { nativeHistoryDetailRevision } from "./native-history-details";
 
 const page: NativeHistoryPage = {
   readId: "thread",
@@ -140,4 +146,289 @@ test("重复或旧游标的迟到前插页不修改当前窗口", () => {
       older: true,
     }),
   ).toBeNull();
+});
+
+test("首屏原生页到达时保留尚未确认的新输入，页面没有重叠也不能丢草稿消息", () => {
+  const pending: StreamItem = {
+    kind: "user_message",
+    id: "client-pending",
+    clientMessageId: "client-pending",
+    text: "刚刚提交的新问题",
+    timestamp: new Date(10000),
+    optimistic: true,
+  };
+  const result = planNativeHistoryPage({
+    items: [pending],
+    previous: undefined,
+    page,
+    older: false,
+  });
+  expect(result?.tail.at(-1)).toBe(pending);
+});
+
+test.each(["completed", "interrupted", "inProgress"] as const)(
+  "原生 %s 回合按客户端提交身份核对，不重复显示乐观用户卡片",
+  (status) => {
+    const confirmed: NativeHistoryPage = {
+      ...page,
+      turns: [
+        {
+          ...page.turns[0],
+          status,
+          items: [
+            {
+              type: "user_message",
+              messageId: "native-q",
+              clientMessageId: "client-q",
+              text: "原生确认的问题",
+            },
+          ],
+        },
+      ],
+    };
+    const pending: StreamItem = {
+      kind: "user_message",
+      id: "client-q",
+      clientMessageId: "client-q",
+      text: "原生确认的问题",
+      timestamp: new Date(1000),
+      optimistic: true,
+    };
+    expect(retainNativeHistoryLiveItems([pending], confirmed)).toEqual([]);
+    const result = planNativeHistoryPage({
+      items: [pending],
+      previous: undefined,
+      page: confirmed,
+      older: false,
+    });
+    expect(result?.tail.filter((item) => item.kind === "user_message")).toHaveLength(1);
+  },
+);
+
+test("原生摘要接收活动区中的提交后保留本地图片，完成发送登记且采用被改写的新正文", () => {
+  const image = {
+    id: "image",
+    mimeType: "image/png",
+    storageType: "web-indexeddb" as const,
+    storageKey: "image-key",
+    createdAt: 1,
+  };
+  const pending: StreamItem = {
+    kind: "user_message",
+    id: "client-q",
+    clientMessageId: "client-q",
+    text: "带图问题",
+    timestamp: new Date(1000),
+    images: [image],
+    optimistic: true,
+  };
+  const confirmed: NativeHistoryPage = {
+    ...page,
+    turns: [
+      {
+        ...page.turns[0],
+        items: [
+          {
+            type: "user_message",
+            messageId: "native-q",
+            clientMessageId: "client-q",
+            text: "带图问题",
+          },
+        ],
+      },
+    ],
+  };
+  const result = planNativeHistoryPage({
+    items: [],
+    head: [pending],
+    previous: undefined,
+    page: confirmed,
+    older: false,
+  });
+  if (!result) throw new Error("首屏原生页未应用");
+  expect(result?.head).toEqual([]);
+  expect(result?.tail[0]).toMatchObject({
+    kind: "user_message",
+    messageId: "native-q",
+    images: [image],
+  });
+  expect(result?.acknowledgedClientMessageIds).toEqual(["client-q"]);
+  const submissions = acceptMessageSubmission(
+    beginMessageSubmission([], { clientMessageId: "client-q" }),
+    "client-q",
+  );
+  expect(
+    observeMessageSubmissionCanonical(submissions, result.acknowledgedClientMessageIds),
+  ).toEqual([]);
+
+  const originalUser = confirmed.turns[0].items[0];
+  if (originalUser.type !== "user_message") throw new Error("缺少用户消息样本");
+  confirmed.turns[0].items[0] = { ...originalUser, text: "另一客户端改写的新问题" };
+  const edited = planNativeHistoryPage({
+    items: result.tail,
+    previous: result.nativeState,
+    page: confirmed,
+    older: false,
+  });
+  expect(edited?.tail[0]).toMatchObject({ text: "另一客户端改写的新问题" });
+  if (!edited || edited.tail[0].kind !== "user_message") throw new Error("改写后的用户消息未应用");
+  expect(edited.tail[0].images).toBeUndefined();
+});
+
+test("原生消息标识不变但正文或错误被客户端改写时，过程修订随内容变化", () => {
+  const process = (value: NativeHistoryPage) => {
+    const item = mergeNativeHistoryPage([], value, false, null).find(
+      (entry) => entry.kind === "native_history_process",
+    );
+    if (!item || item.kind !== "native_history_process") throw new Error("缺少过程入口");
+    return item;
+  };
+  const original = process(page);
+  const edited: NativeHistoryPage = {
+    ...page,
+    turns: [
+      {
+        ...page.turns[0],
+        items: [
+          { type: "user_message", messageId: "q", text: "改写的问题" },
+          { type: "assistant_message", messageId: "a", text: "改写的回复" },
+        ],
+      },
+    ],
+  };
+  expect(nativeHistoryDetailRevision(process(edited))).not.toBe(
+    nativeHistoryDetailRevision(original),
+  );
+  const failed: NativeHistoryPage = {
+    ...page,
+    turns: [{ ...page.turns[0], error: "更新后的错误" }],
+  };
+  expect(nativeHistoryDetailRevision(process(failed))).not.toBe(
+    nativeHistoryDetailRevision(original),
+  );
+  expect(nativeHistoryDetailRevision(process(structuredClone(page)))).toBe(
+    nativeHistoryDetailRevision(original),
+  );
+});
+
+test("外部回退移除已确认的实时旧尾部，但保留读取开始后收到的新事件与未确认输入", () => {
+  const native = mergeNativeHistoryPage([], page, false, null);
+  const deleted: StreamItem = {
+    kind: "user_message",
+    id: "deleted-q",
+    messageId: "deleted-q",
+    turnId: "deleted-turn",
+    text: "已被另一客户端回退的问题",
+    timestamp: new Date(6000),
+    timelineCursor: { epoch: "epoch", seq: 10 },
+  };
+  const oldReply: StreamItem = {
+    kind: "assistant_message",
+    id: "deleted-answer",
+    messageId: "deleted-answer",
+    turnId: "deleted-turn",
+    text: "已被回退的回复",
+    timestamp: new Date(7000),
+    timelineCursor: { epoch: "epoch", seq: 11 },
+  };
+  const pending: StreamItem = {
+    kind: "user_message",
+    id: "pending",
+    clientMessageId: "pending",
+    text: "尚在发送",
+    optimistic: true,
+    timestamp: new Date(8000),
+  };
+  const later: StreamItem = {
+    kind: "user_message",
+    id: "new-q",
+    messageId: "new-q",
+    text: "读取途中才到达的新消息",
+    timestamp: new Date(9000),
+    timelineCursor: { epoch: "epoch", seq: 12 },
+  };
+  const result = planNativeHistoryPage({
+    items: [...native, deleted],
+    head: [oldReply, pending, later],
+    previous: { readId: "thread", firstTurnId: "turn", nextCursor: "older" },
+    page,
+    older: false,
+    readCursor: { epoch: "epoch", endSeq: 11 },
+  });
+  expect(result?.tail.map((item) => item.id)).toEqual(native.map((item) => item.id));
+  expect(result?.head).toEqual([pending, later]);
+  const running = planNativeHistoryPage({
+    items: [...native, deleted],
+    head: [oldReply],
+    previous: { readId: "thread", firstTurnId: "turn", nextCursor: "older" },
+    page,
+    older: false,
+    readCursor: { epoch: "epoch", endSeq: 11 },
+    activeTurnId: "deleted-turn",
+  });
+  expect(running?.tail.at(-1)).toBe(deleted);
+  expect(running?.head).toEqual([oldReply]);
+});
+
+test("外部清空整个线程后，活动区不能残留旧回复，但保留快照请求之后的新回合", () => {
+  const oldUser: StreamItem = {
+    kind: "user_message",
+    id: "old",
+    messageId: "old",
+    turnId: "old-turn",
+    text: "旧问题",
+    timestamp: new Date(1000),
+    timelineCursor: { epoch: "epoch", seq: 1 },
+  };
+  const oldReply: StreamItem = {
+    kind: "assistant_message",
+    id: "old-a",
+    messageId: "old-a",
+    turnId: "old-turn",
+    text: "旧回复",
+    timestamp: new Date(2000),
+    timelineCursor: { epoch: "epoch", seq: 2 },
+  };
+  const incoming: StreamItem = {
+    kind: "user_message",
+    id: "new",
+    messageId: "new",
+    turnId: "new-turn",
+    text: "新问题",
+    timestamp: new Date(3000),
+    timelineCursor: { epoch: "epoch", seq: 3 },
+  };
+  const emptied: NativeHistoryPage = { ...page, turns: [], nextCursor: null };
+  const result = planNativeHistoryPage({
+    items: [oldUser],
+    head: [oldReply, incoming],
+    previous: undefined,
+    page: emptied,
+    older: false,
+    readCursor: { epoch: "epoch", endSeq: 2 },
+  });
+  expect(result?.tail).toEqual([]);
+  expect(result?.head).toEqual([incoming]);
+});
+
+test("用户行已转为原生摘要后，独立活动区里的同轮旧过程也一并移除", () => {
+  const native = mergeNativeHistoryPage([], page, false, null);
+  const oldPartial: StreamItem = {
+    kind: "assistant_message",
+    id: "partial",
+    messageId: "partial",
+    text: "旧流式过程",
+    turnId: "turn",
+    timestamp: new Date(2000),
+    timelineCursor: { epoch: "epoch", seq: 4 },
+  };
+  const result = planNativeHistoryPage({
+    items: native,
+    head: [oldPartial],
+    previous: { readId: "thread", firstTurnId: "turn", nextCursor: "older" },
+    page,
+    older: false,
+  });
+  expect(result?.head).toEqual([]);
+  expect(result?.tail.map((item) => item.id)).toEqual(native.map((item) => item.id));
 });

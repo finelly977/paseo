@@ -12,6 +12,19 @@ initializing → idle → running → idle (or error → closed)
 
 Each live agent in `AgentManager` carries a `lastStatus` of `initializing`, `idle`, `running`, or `error`. `closed` is the persisted, resumable state for an agent record that has no live provider runtime. State transitions persist to disk and stream to subscribed clients via WebSocket.
 
+## 新建草稿的提交所有权
+
+客户端发送首条消息前同步领取提交资格，不能把 React 下一次渲染后的按钮禁用状态当成互斥锁。
+新建工作区与工作区内草稿共用该规则；新建工作区的父级处理函数必须向 Composer 重新抛出失败，
+由它保留输入、显示错误并恢复重试，不能捕获后正常返回而让草稿被当成发送成功。
+
+跨页自动发送由创建流程存储区区分“已准备”和“已领取实际请求”。同一草稿、主机和消息标识只允许
+领取一次，组件重新渲染、重复续接或另一个挂载实例不能覆盖在途尝试。普通提交与自动续接都在
+保存偏好、编码附件和请求服务端之前完成领取。创建前失败会释放资格；服务端确认创建后，本地
+交接失败只展示打开已有会话的错误，不释放资格再次创建。提供方原始消息到达后可清理交接存储，
+原提交组件仍保留本地已开始标记，覆盖存储清理与草稿卸载之间的空窗。这是客户端的提交所有权，
+不按提示词内容去重，也不宣称跨客户端或守护进程重启后的请求幂等。
+
 ## Runtime residency
 
 未归档智能体可以处于 `closed`，不代表删除或归档。正常关闭与空闲回收会关闭提供方运行时及订阅，

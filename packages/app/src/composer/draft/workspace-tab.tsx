@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { Keyboard, ScrollView, StyleSheet as RNStyleSheet, Text, View } from "react-native";
+import { Keyboard, StyleSheet as RNStyleSheet, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import ReanimatedAnimated from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
@@ -663,6 +663,11 @@ export function WorkspaceDraftAgentTab({
   return (
     <FileDropZone style={styles.container}>
       <View style={styles.contentContainer}>
+        {formErrorMessage ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{formErrorMessage}</Text>
+          </View>
+        ) : null}
         {isSubmitting && draftAgent ? (
           <View style={styles.streamContainer}>
             <AgentStreamView
@@ -674,17 +679,7 @@ export function WorkspaceDraftAgentTab({
               onOpenWorkspaceFile={onOpenWorkspaceFile}
             />
           </View>
-        ) : (
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.configScrollContent}>
-            <View style={styles.configSection}>
-              {formErrorMessage ? (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{formErrorMessage}</Text>
-                </View>
-              ) : null}
-            </View>
-          </ScrollView>
-        )}
+        ) : null}
       </View>
 
       <ReanimatedAnimated.View style={inputAreaWrapperStyle} onLayout={onInputAreaLayout}>
@@ -744,17 +739,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   streamContainer: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  configScrollContent: {
-    paddingHorizontal: theme.spacing[4],
-    paddingTop: theme.spacing[4],
-    paddingBottom: theme.spacing[6],
-  },
-  configSection: {
-    gap: theme.spacing[3],
   },
   importPillRow: {
     width: "100%",

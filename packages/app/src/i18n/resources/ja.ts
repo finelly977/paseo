@@ -142,6 +142,8 @@ export const ja: TranslationResources = {
     errors: {
       failedToSend: "メッセージの送信に失敗しました",
       failedToCreateAgent: "エージェントの作成に失敗しました",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "ホストが選択されていません",
       initialPromptRequired: "初期プロンプトが必要です",
       alreadyLoading: "すでに読み込み中です",

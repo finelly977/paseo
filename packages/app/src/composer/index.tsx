@@ -97,7 +97,7 @@ import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
-import { submitAgentInput } from "@/composer/submit";
+import { submitAgentInput, type AgentInputSubmission } from "@/composer/submit";
 import { ComposerKeyboardScopeProvider } from "@/composer/keyboard-scope";
 import { useAppSettings } from "@/hooks/use-settings";
 import { isWeb, isNative } from "@/constants/platform";
@@ -1160,6 +1160,15 @@ export function Composer({
   });
   const [cursorIndex, setCursorIndex] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const submissionRef = useRef({
+    serverId,
+    agentId,
+    state: { status: "idle" } as AgentInputSubmission,
+  });
+  if (submissionRef.current.serverId !== serverId || submissionRef.current.agentId !== agentId) {
+    submissionRef.current = { serverId, agentId, state: { status: "idle" } };
+  }
+  const submission = submissionRef.current.state;
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [isCancellingAgent, setIsCancellingAgent] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -1486,6 +1495,7 @@ export function Composer({
       forceSend?: boolean,
     ) => {
       const result = await submitAgentInput({
+        submission,
         message: outgoingMessage,
         attachments: outgoingAttachments,
         hasExternalContent,
@@ -1533,6 +1543,7 @@ export function Composer({
       setSelectedAttachments,
       setUserInput,
       submitBehavior,
+      submission,
       submitMessage,
       t,
     ],

@@ -142,6 +142,8 @@ export const ru: TranslationResources = {
     errors: {
       failedToSend: "Не удалось отправить сообщение",
       failedToCreateAgent: "Не удалось создать агента.",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "Хост не выбран",
       initialPromptRequired: "Требуется начальное приглашение",
       alreadyLoading: "Уже загружается",

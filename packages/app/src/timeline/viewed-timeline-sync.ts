@@ -36,6 +36,7 @@ interface ViewedTimelineSyncPorts {
   readCursor(agentId: string): AgentTimelineCursorState | undefined;
   readConversationIndex(agentId: string): ReadonlyArray<{ seqStart: number }> | undefined;
   hasAuthoritativeHistory(agentId: string): boolean;
+  hasNativeHistory?(agentId: string): boolean;
   getInitialConversationLimit?(): number | undefined;
   fetchPage(agentId: string, request: ProjectedTimelineFetchPlan): Promise<TimelinePageResult>;
   reportError(error: unknown): void;
@@ -179,6 +180,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   const catchUps = new Map<string, CatchUpState>();
   const catchUpGenerations = new Map<string, number>();
   const pendingGaps = new Map<string, ProjectedTimelineForwardFetchPlan>();
+  const pendingRefreshes = new Set<string>();
   const lingeringRemovals = new Map<string, () => void>();
   const visibilityCatchUpPending = new Set<string>();
   const visibilityCatchUpErrors = new Set<string>();
@@ -242,6 +244,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     catchUps.get(agentId)?.cancelRetry?.();
     catchUps.delete(agentId);
     pendingGaps.delete(agentId);
+    pendingRefreshes.delete(agentId);
   };
 
   const settleHistory = (agentId: string) =>
@@ -266,6 +269,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     const target = ports.getInitialConversationLimit?.() ?? 1;
     const visited = new Set<string>();
     while (page.nativeHistory && page.nativeHistory.nextCursor !== null) {
+      if (pendingRefreshes.has(agentId)) break;
       if (page.nativeConversationCount === undefined)
         throw new Error("原生分页响应缺少已加载用户轮数。");
       if (page.nativeConversationCount >= target) break;
@@ -287,8 +291,43 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     }
     if (isCatchUpCurrent(agentId, generation)) {
       catchUps.set(agentId, { generation, status: "complete" });
-      ports.onNativeHistoryReady?.(agentId);
+      if (!pendingRefreshes.has(agentId)) ports.onNativeHistoryReady?.(agentId);
     }
+  };
+
+  const backfillProjectedHistory = async (
+    agentId: string,
+    generation: number,
+    request: ProjectedTimelineForwardFetchPlan,
+    page: TimelinePageResult,
+  ): Promise<void> => {
+    const historyCursor = ports.readCursor(agentId);
+    const backfillTarget = getConversationBackfillTarget({
+      conversationLimit:
+        request.direction === "tail"
+          ? request.conversationLimit
+          : ports.getInitialConversationLimit?.(),
+      conversationIndex: page.conversationIndex ?? ports.readConversationIndex(agentId),
+      cursor: historyCursor
+        ? { epoch: historyCursor.epoch, seq: historyCursor.startSeq }
+        : (page.startCursor ?? undefined),
+      hasOlder: page.hasOlder,
+    });
+    if (backfillTarget && !page.historyIncomplete) {
+      const completed = await backfillInitialConversationHistory({
+        agentId,
+        ...backfillTarget,
+        fetchPage: ports.fetchPage,
+        isCurrent: () => isCatchUpCurrent(agentId, generation),
+        preparePage: () => {
+          for (const prepare of historyPrependHandlers.get(agentId) ?? []) prepare();
+        },
+        settlePage: () => settleHistory(agentId),
+      });
+      if (!completed) return;
+    }
+    catchUps.set(agentId, { generation, status: "complete" });
+    setVisibilityCatchUpReady(agentId);
   };
 
   const fetchUntilCurrent = async (
@@ -309,7 +348,20 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       if (page.hasNewer) {
         throw new Error(`Timeline page for ${agentId} hasNewer without an end cursor`);
       }
-      const historyCursor = ports.readCursor(agentId);
+      // 规范游标只覆盖 Paseo 收到的实时事件；其他客户端改写或回退不一定生成这些事件。
+      // 先追平事件避免漏掉后台长回合，再独立核对一页原生摘要，不能用空增量证明原生历史未变。
+      if (
+        request.direction === "after" &&
+        !page.nativeHistory &&
+        ports.hasNativeHistory?.(agentId)
+      ) {
+        await fetchUntilCurrent(
+          agentId,
+          generation,
+          planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+        );
+        return;
+      }
       // 首个最新页已可阅读。后续原生核对与配置轮次预取都不再阻挡首屏。
       setVisibilityCatchUpReady(agentId);
       nativePageReadable = page.nativeHistory !== undefined;
@@ -317,43 +369,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
         await backfillNativeHistory(agentId, generation, page);
         return;
       }
-      const backfillTarget = getConversationBackfillTarget({
-        conversationLimit:
-          request.direction === "tail"
-            ? request.conversationLimit
-            : ports.getInitialConversationLimit?.(),
-        conversationIndex: page.conversationIndex ?? ports.readConversationIndex(agentId),
-        cursor: historyCursor
-          ? { epoch: historyCursor.epoch, seq: historyCursor.startSeq }
-          : (page.startCursor ?? undefined),
-        hasOlder: page.hasOlder,
-      });
-      if (backfillTarget && !page.historyIncomplete) {
-        const completed = await backfillInitialConversationHistory({
-          agentId,
-          ...backfillTarget,
-          fetchPage: ports.fetchPage,
-          isCurrent: () => isCatchUpCurrent(agentId, generation),
-          preparePage: () => {
-            for (const prepare of historyPrependHandlers.get(agentId) ?? []) prepare();
-          },
-          settlePage: () =>
-            new Promise<void>((resolve) => {
-              const finish = () => {
-                historySettlements.delete(agentId);
-                resolve();
-              };
-              const cancel = ports.settleHistoryPage(finish);
-              historySettlements.set(agentId, () => {
-                cancel();
-                finish();
-              });
-            }),
-        });
-        if (!completed) return;
-      }
-      catchUps.set(agentId, { generation, status: "complete" });
-      setVisibilityCatchUpReady(agentId);
+      await backfillProjectedHistory(agentId, generation, request, page);
     } catch (error) {
       if (catchUps.get(agentId)?.generation === generation) {
         const nextRetryDelayMs = getNextRetryDelayMs(catchUps.get(agentId)?.retryDelayMs);
@@ -417,7 +433,19 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       retryDelayMs,
     });
     pendingGaps.delete(agentId);
-    void fetchUntilCurrent(agentId, generation, nextRequest);
+    void fetchUntilCurrent(agentId, generation, nextRequest).then(() => {
+      if (
+        isCatchUpCurrent(agentId, generation) &&
+        catchUps.get(agentId)?.status === "complete" &&
+        pendingRefreshes.delete(agentId)
+      ) {
+        startCatchUp(agentId, {
+          request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
+          supersede: true,
+        });
+      }
+      return undefined;
+    });
   };
 
   const startAcknowledgedCatchUps = () => {
@@ -699,6 +727,10 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     },
     refreshAgentTimeline(agentId) {
       if (!active || !connected || !isDesired(agentId)) return;
+      if (catchUps.get(agentId)?.status === "running") {
+        pendingRefreshes.add(agentId);
+        return;
+      }
       startCatchUp(agentId, {
         request: planTimelineTailFetch(ports.getInitialConversationLimit?.()),
         supersede: true,

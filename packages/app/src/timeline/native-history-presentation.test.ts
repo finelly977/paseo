@@ -13,6 +13,7 @@ test("中断或失败后恢复最后一段真实说明，正常回合及已显�
     error: null,
     timestamp: new Date(1000),
     summaryMessageIds: ["q"],
+    summaryRevision: "original",
   };
   const details: AgentTimelineItem[] = [
     { type: "assistant_message", messageId: "first", text: "开始检查" },

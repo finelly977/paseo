@@ -1,5 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import { submitAgentInput } from "./submit";
+import { submitAgentInput, type AgentInputSubmitActionInput } from "./submit";
+
+function createSubmissionInput(): AgentInputSubmitActionInput<{ id: string }> {
+  return {
+    submission: { status: "idle" },
+    message: "创建会话",
+    attachments: [{ id: "image-1" }],
+    submitBehavior: "preserve-and-lock",
+    isAgentRunning: false,
+    canSubmit: true,
+    queueMessage: vi.fn(),
+    submitMessage: vi.fn(async () => {}),
+    clearDraft: vi.fn(),
+    setUserInput: vi.fn(),
+    setAttachments: vi.fn(),
+    setSendError: vi.fn(),
+    setIsProcessing: vi.fn(),
+  };
+}
 
 function createDeferredPromise<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -16,6 +34,90 @@ function createDeferredPromise<T>() {
 }
 
 describe("submitAgentInput", () => {
+  it("只执行一次同一帧内重复触发的新会话提交", async () => {
+    const deferred = createDeferredPromise<void>();
+    const submitMessage = vi.fn(() => deferred.promise);
+    const input = {
+      message: "创建一个会话",
+      attachments: [],
+      submission: { status: "idle" as "idle" | "submitting" | "submitted" },
+      submitBehavior: "preserve-and-lock" as const,
+      isAgentRunning: false,
+      canSubmit: true,
+      queueMessage: vi.fn(),
+      submitMessage,
+      clearDraft: vi.fn(),
+      setUserInput: vi.fn(),
+      setAttachments: vi.fn(),
+      setSendError: vi.fn(),
+      setIsProcessing: vi.fn(),
+    };
+
+    const first = submitAgentInput(input);
+    const duplicate = submitAgentInput(input);
+    const requestsWhilePending = submitMessage.mock.calls.length;
+    deferred.resolve();
+
+    expect(await Promise.all([first, duplicate])).toEqual(["submitted", "noop"]);
+    expect(requestsWhilePending).toBe(1);
+    expect(input.clearDraft).toHaveBeenCalledTimes(1);
+    expect(input.setSendError).toHaveBeenCalledTimes(1);
+  });
+
+  it("创建成功到切换页面之间再次发送也不会创建第二个会话", async () => {
+    const input = createSubmissionInput();
+
+    expect(await submitAgentInput(input)).toBe("submitted");
+    expect(await submitAgentInput(input)).toBe("noop");
+    expect(input.submitMessage).toHaveBeenCalledTimes(1);
+    expect(input.submission.status).toBe("submitted");
+  });
+
+  it("创建失败后保留草稿和错误提示，允许原地重试一次", async () => {
+    const input = createSubmissionInput();
+    input.submitMessage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("主机连接失败"))
+      .mockResolvedValueOnce(undefined);
+
+    expect(await submitAgentInput(input)).toBe("failed");
+    expect(input.submission.status).toBe("idle");
+    expect(input.setSendError).toHaveBeenLastCalledWith("主机连接失败");
+    expect(input.setUserInput).not.toHaveBeenCalled();
+    expect(input.setAttachments).not.toHaveBeenCalled();
+    expect(input.clearDraft).not.toHaveBeenCalled();
+
+    expect(await submitAgentInput(input)).toBe("submitted");
+    expect(input.submitMessage).toHaveBeenCalledTimes(2);
+    expect(input.clearDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("服务端已接收但本地清草稿失败时不重新发送创建请求", async () => {
+    const input = createSubmissionInput();
+    input.clearDraft = () => {
+      throw new Error("本地草稿写入失败");
+    };
+
+    expect(await submitAgentInput(input)).toBe("failed");
+    expect(await submitAgentInput(input)).toBe("noop");
+    expect(input.submitMessage).toHaveBeenCalledTimes(1);
+    expect(input.setSendError).toHaveBeenLastCalledWith("本地草稿写入失败");
+  });
+
+  it("已有会话发送完成后仍可继续发送下一条消息", async () => {
+    const input = createSubmissionInput();
+    input.submitBehavior = "clear";
+
+    expect(await submitAgentInput(input)).toBe("submitted");
+    input.message = "下一条消息";
+    expect(await submitAgentInput(input)).toBe("submitted");
+    expect(input.submitMessage).toHaveBeenCalledTimes(2);
+    expect(input.submitMessage).toHaveBeenLastCalledWith({
+      message: "下一条消息",
+      attachments: [{ id: "image-1" }],
+    });
+  });
+
   it("clears the composer before an in-flight submit resolves", async () => {
     const deferred = createDeferredPromise<void>();
     const queueMessage = vi.fn();
@@ -29,6 +131,7 @@ describe("submitAgentInput", () => {
     const setIsProcessing = vi.fn();
 
     const submitPromise = submitAgentInput({
+      submission: { status: "idle" },
       message: "  hello world  ",
       attachments: [],
       isAgentRunning: false,
@@ -77,6 +180,7 @@ describe("submitAgentInput", () => {
     const setIsProcessing = vi.fn();
 
     const submitPromise = submitAgentInput({
+      submission: { status: "idle" },
       message: "  keep me  ",
       attachments,
       submitBehavior: "preserve-and-lock",
@@ -119,6 +223,7 @@ describe("submitAgentInput", () => {
 
     await expect(
       submitAgentInput({
+        submission: { status: "idle" },
         message: "  queued message  ",
         attachments: [{ id: "img-1" }],
         isAgentRunning: true,
@@ -161,6 +266,7 @@ describe("submitAgentInput", () => {
 
     await expect(
       submitAgentInput({
+        submission: { status: "idle" },
         message: "  hello world  ",
         attachments,
         isAgentRunning: false,
@@ -197,6 +303,7 @@ describe("submitAgentInput", () => {
 
     await expect(
       submitAgentInput({
+        submission: { status: "idle" },
         message: "  steer this turn  ",
         attachments: [{ id: "img-1" }],
         forceSend: true,
@@ -232,6 +339,7 @@ describe("submitAgentInput", () => {
 
     await expect(
       submitAgentInput({
+        submission: { status: "idle" },
         message: "   ",
         attachments: [],
         allowEmptySubmit: true,

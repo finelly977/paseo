@@ -19,7 +19,7 @@ import {
 } from "@/timeline/session-stream-reducers";
 import { useCreateFlowStore } from "@/stores/create-flow-store";
 import { rebaseHistoryPreview } from "@/timeline/history-preview-rebase";
-import { planNativeHistoryPage, retainNativeHistoryLiveItems } from "@/timeline/native-history";
+import { planNativeHistoryPage } from "@/timeline/native-history";
 import { createNativeHistoryDetailsPrefetch } from "@/timeline/native-history-details-prefetch";
 import {
   isTimelineCatchUpComplete,
@@ -67,11 +67,17 @@ import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache"
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
 import { useSettings } from "@/hooks/use-settings";
-import { getSendingClientMessageIds } from "@/composer/submission/model";
+import {
+  getSendingClientMessageIds,
+  observeMessageSubmissionCanonical,
+} from "@/composer/submission/model";
 import { createInstalledTimelineTransform } from "@/plugins/timeline";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { selectLiveAgentTimelineIds } from "@/timeline/live-agent-membership";
-import { isReleasedAgentTimelineResponse } from "@/timeline/fetch-agent-timeline-once";
+import {
+  getAgentTimelineReadCursor,
+  isReleasedAgentTimelineResponse,
+} from "@/timeline/fetch-agent-timeline-once";
 
 // Re-export types from session-store and draft-store for backward compatibility
 export type { DraftInput } from "@/stores/draft-store";
@@ -720,12 +726,26 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           const previous = session.agentNativeHistory.get(agentId);
           const plan = planNativeHistoryPage({
             items: session.agentStreamTail.get(agentId) ?? [],
+            head: session.agentStreamHead.get(agentId) ?? [],
+            readCursor: getAgentTimelineReadCursor(client, payload.requestId),
+            activeTurnId: session.agents.get(agentId)?.activeTurn?.turnId,
             previous,
             page,
             older,
           });
           if (!plan) return state;
           const { sameRead, tail } = plan;
+          const submissions = session.messageSubmissions.get(agentId) ?? [];
+          const observed = observeMessageSubmissionCanonical(
+            submissions,
+            plan.acknowledgedClientMessageIds,
+          );
+          let messageSubmissions = session.messageSubmissions;
+          if (observed !== submissions) {
+            messageSubmissions = new Map(messageSubmissions);
+            if (observed.length > 0) messageSubmissions.set(agentId, observed);
+            else messageSubmissions.delete(agentId);
+          }
           return {
             ...state,
             sessions: {
@@ -733,10 +753,8 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
               [serverId]: {
                 ...session,
                 agentStreamTail: new Map(session.agentStreamTail).set(agentId, tail),
-                agentStreamHead: new Map(session.agentStreamHead).set(
-                  agentId,
-                  retainNativeHistoryLiveItems(session.agentStreamHead.get(agentId) ?? [], page),
-                ),
+                agentStreamHead: new Map(session.agentStreamHead).set(agentId, plan.head),
+                messageSubmissions,
                 agentTimelineCursor:
                   sameRead && session.agentTimelineCursor.get(agentId)?.epoch === payload.epoch
                     ? session.agentTimelineCursor
@@ -909,6 +927,8 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         useSessionStore
           .getState()
           .sessions[serverId]?.agentAuthoritativeHistoryApplied.get(agentId) === true,
+      hasNativeHistory: (agentId) =>
+        useSessionStore.getState().sessions[serverId]?.agentNativeHistory.has(agentId) === true,
       getInitialConversationLimit: () => {
         const state = useSessionStore.getState();
         const session = state.sessions[serverId];
@@ -942,7 +962,11 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
           if (page.nativeHistory) {
-            details.schedule(agentId);
+            details.afterRead({
+              agentId,
+              direction: request.direction,
+              turnIds: page.nativeHistory.turns.map((turn) => turn.id),
+            });
             const current = useSessionStore.getState().sessions[serverId];
             const native = current?.agentNativeHistory.get(agentId);
             const conversationCount = (current?.agentStreamTail.get(agentId) ?? []).filter(

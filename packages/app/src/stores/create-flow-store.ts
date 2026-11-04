@@ -13,9 +13,12 @@ export interface PendingCreateAttempt {
   text: string;
   timestamp: number;
   lifecycle: CreateFlowLifecycleState;
+  requestStarted: boolean;
   images?: UserMessageImageAttachment[];
   attachments?: AgentAttachment[];
 }
+
+type CreateAttemptInput = Omit<PendingCreateAttempt, "lifecycle" | "requestStarted">;
 
 export function isActiveCreateFlowForDraft(input: {
   pending: PendingCreateAttempt | null | undefined;
@@ -33,7 +36,8 @@ export function isActiveCreateFlowForDraft(input: {
 
 interface CreateFlowState {
   pendingByDraftId: Record<string, PendingCreateAttempt>;
-  setPending: (pending: Omit<PendingCreateAttempt, "lifecycle">) => void;
+  setPending: (pending: CreateAttemptInput) => boolean;
+  beginRequest: (pending: CreateAttemptInput) => boolean;
   updateAgentId: (input: { draftId: string; agentId: string }) => void;
   markLifecycle: (input: { draftId: string; lifecycle: CreateFlowLifecycleState }) => void;
   rekeyDraft: (input: { fromDraftId: string; toDraftId: string }) => void;
@@ -42,18 +46,49 @@ interface CreateFlowState {
   clearAll: () => void;
 }
 
-export const useCreateFlowStore = create<CreateFlowState>((set) => ({
+export const useCreateFlowStore = create<CreateFlowState>((set, get) => ({
   pendingByDraftId: {},
-  setPending: (pending) =>
+  setPending: (pending) => {
+    const current = get().pendingByDraftId[pending.draftId];
+    if (current && current.lifecycle !== "abandoned") {
+      return false;
+    }
     set((state) => ({
       pendingByDraftId: {
         ...state.pendingByDraftId,
         [pending.draftId]: {
           ...pending,
           lifecycle: "active",
+          requestStarted: false,
         },
       },
-    })),
+    }));
+    return true;
+  },
+  beginRequest: (pending) => {
+    const current = get().pendingByDraftId[pending.draftId];
+    if (
+      current &&
+      current.lifecycle !== "abandoned" &&
+      (current.lifecycle === "sent" ||
+        current.requestStarted ||
+        current.serverId !== pending.serverId ||
+        current.clientMessageId !== pending.clientMessageId)
+    ) {
+      return false;
+    }
+    set((state) => ({
+      pendingByDraftId: {
+        ...state.pendingByDraftId,
+        [pending.draftId]: {
+          ...(current && current.lifecycle === "active" ? current : pending),
+          lifecycle: "active",
+          requestStarted: true,
+        },
+      },
+    }));
+    return true;
+  },
   updateAgentId: ({ draftId, agentId }) =>
     set((state) => {
       const current = state.pendingByDraftId[draftId];

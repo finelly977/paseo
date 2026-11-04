@@ -144,6 +144,8 @@ export const fr: TranslationResources = {
     errors: {
       failedToSend: "Échec de l'envoi du message",
       failedToCreateAgent: "Échec de la création de l'agent",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "Aucun hôte sélectionné",
       initialPromptRequired: "Une invite initiale est requise",
       alreadyLoading: "Déjà en cours de chargement",

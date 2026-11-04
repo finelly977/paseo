@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -54,6 +54,13 @@ const StdioSchema = z
   })
   .passthrough();
 const ServicesSchema = z.record(z.string(), z.string());
+const CuaNodeRuntimeManifestSchema = z.object({
+  platform: z.literal("windows"),
+  arch: z.enum(["x64", "arm64"]),
+  node_path: z.string().min(1),
+  node_modules: z.string().min(1),
+  node_repl_path: z.string().min(1),
+});
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/);
 const TurnNotificationSchema = z.object({
   threadId: z.string().min(1),
@@ -311,6 +318,131 @@ async function resolveExecutablePath(command: string): Promise<string> {
   throw new Error(`未找到 Codex 桌面工具运行文件：${command}`);
 }
 
+interface CuaRuntimeLocation {
+  api: typeof path.win32 | typeof path.posix;
+  root: string;
+  directory: string;
+  relativePath: string;
+}
+
+function parseCuaRuntimeLocation(value: string): CuaRuntimeLocation | null {
+  const api = value.includes("\\") || /^[a-z]:[\\/]/iu.test(value) ? path.win32 : path.posix;
+  const directory = api.dirname(api.dirname(value));
+  const root = api.dirname(directory);
+  if (
+    api.basename(root).toLowerCase() !== "cua_node" ||
+    api.basename(api.dirname(root)).toLowerCase() !== "runtimes"
+  )
+    return null;
+  const relativePath = api.relative(directory, value);
+  if (!relativePath || relativePath.startsWith("..") || api.isAbsolute(relativePath)) return null;
+  return { api, root, directory, relativePath };
+}
+
+function sameWindowsPath(left: string, right: string): boolean {
+  return path.win32.resolve(left).toLowerCase() === path.win32.resolve(right).toLowerCase();
+}
+
+function resolveRuntimeManifestPath(
+  location: CuaRuntimeLocation,
+  directory: string,
+  declaredPath: string,
+): string {
+  const candidate = location.api.resolve(directory, declaredPath);
+  const relative = location.api.relative(directory, candidate);
+  if (!relative || relative.startsWith("..") || location.api.isAbsolute(relative)) {
+    throw new Error(`Codex 桌面运行时清单路径越界：${declaredPath}`);
+  }
+  return candidate;
+}
+
+function rewriteRuntimePathList(
+  value: string,
+  location: CuaRuntimeLocation,
+  replacementDirectory: string,
+): string {
+  const rewritten = value
+    .split(";")
+    .filter(Boolean)
+    .map((entry) => {
+      const parsed = parseCuaRuntimeLocation(entry);
+      if (!parsed || !sameWindowsPath(parsed.root, location.root)) return entry;
+      return location.api.join(replacementDirectory, parsed.relativePath);
+    });
+  return [...new Map(rewritten.map((entry) => [entry.toLowerCase(), entry])).values()].join(";");
+}
+
+async function resolveCurrentCuaNodeRuntime(
+  source: z.infer<typeof StdioSchema>,
+  platform: NodeJS.Platform,
+): Promise<z.infer<typeof StdioSchema>> {
+  if (platform !== "win32") return source;
+  const moduleDirectories = requiredEnv(source.env, "NODE_REPL_NODE_MODULE_DIRS")
+    .split(";")
+    .filter(Boolean);
+  const declaredPaths = [
+    source.command,
+    requiredEnv(source.env, "NODE_REPL_NODE_PATH"),
+    ...moduleDirectories,
+  ];
+  const location = declaredPaths.map(parseCuaRuntimeLocation).find((entry) => entry !== null);
+  if (!location) return source;
+  let runtimeDirectories;
+  try {
+    runtimeDirectories = await readdir(location.root, { withFileTypes: true });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return source;
+    throw error;
+  }
+  const candidates = await Promise.all(
+    runtimeDirectories
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const directory = location.api.join(location.root, entry.name);
+        const manifestPath = location.api.join(directory, "manifest.json");
+        let raw: string;
+        try {
+          raw = await readFile(manifestPath, "utf8");
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+          throw error;
+        }
+        const manifest = CuaNodeRuntimeManifestSchema.parse(JSON.parse(raw));
+        if (manifest.arch !== process.arch) return null;
+        const paths = {
+          node: resolveRuntimeManifestPath(location, directory, manifest.node_path),
+          modules: resolveRuntimeManifestPath(location, directory, manifest.node_modules),
+          repl: resolveRuntimeManifestPath(location, directory, manifest.node_repl_path),
+        };
+        if ((await firstAccessibleFile([paths.node])) === null) return null;
+        if ((await firstAccessibleFile([paths.repl])) === null) return null;
+        if ((await firstAccessibleFile([paths.modules])) === null) return null;
+        return { directory, paths, modifiedAt: (await stat(directory)).mtimeMs };
+      }),
+  );
+  const current = candidates
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+    .sort((left, right) => right.modifiedAt - left.modifiedAt)[0];
+  if (!current) return source;
+  const env: Record<string, string> = {
+    ...source.env,
+    NODE_REPL_NODE_PATH: current.paths.node,
+    NODE_REPL_NODE_MODULE_DIRS: rewriteRuntimePathList(
+      requiredEnv(source.env, "NODE_REPL_NODE_MODULE_DIRS"),
+      location,
+      current.directory,
+    ),
+  };
+  if (env.NODE_REPL_TRUSTED_CODE_PATHS) {
+    env.NODE_REPL_TRUSTED_CODE_PATHS = rewriteRuntimePathList(
+      env.NODE_REPL_TRUSTED_CODE_PATHS,
+      location,
+      current.directory,
+    );
+  }
+  return { ...source, command: current.paths.repl, env };
+}
+
 interface ChromePluginRuntime {
   browserServicePath: string;
   installScriptPath: string;
@@ -384,6 +516,7 @@ async function prepareDesktopRuntime(
   source: z.infer<typeof StdioSchema>,
   chrome: boolean,
 ): Promise<{ source: z.infer<typeof StdioSchema>; browserServicePath: string | null }> {
+  source = await resolveCurrentCuaNodeRuntime(source, options.platform);
   const configuredCli = requiredEnv(source.env, "CODEX_CLI_PATH");
   const nativeCodexCliPath = await resolveCodexDesktopCliPath({
     launchCommand: options.codexLaunchCommand,
@@ -464,6 +597,25 @@ function requiredEnv(env: Record<string, string>, name: string): string {
   const value = env[name];
   if (!value || !value.trim()) throw new Error(`Codex desktop runtime is missing ${name}`);
   return value;
+}
+
+type DesktopSurface = "computer" | "browser";
+
+function configuredDesktopSurfaces(env: Record<string, string>): DesktopSurface[] {
+  const value = env.CUA_REPL_ENABLED_SURFACES;
+  if (value === undefined) {
+    throw new Error("Codex desktop runtime is missing CUA_REPL_ENABLED_SURFACES");
+  }
+  return value
+    .split(",")
+    .map((surface) => surface.trim())
+    .filter(Boolean)
+    .map((surface) => {
+      if (surface !== "computer" && surface !== "browser") {
+        throw new Error(`Unsupported Codex desktop surface: ${surface}`);
+      }
+      return surface;
+    });
 }
 
 async function acquireBridge(options: DesktopToolsOptions, env: Record<string, string>) {
@@ -650,7 +802,10 @@ export async function acquireCodexDesktopTools(
     const pipePath = bridge?.pipePath ?? null;
     const env = runtimeEnv({ source: source.env, computer, chrome, pipePath });
     // config/read 包含归一化后的 null 字段，不能把整份服务对象重新写成 TOML 覆盖。
-    const config: Record<string, unknown> = { "mcp_servers.node_repl.env": env };
+    const config: Record<string, unknown> = {
+      "mcp_servers.node_repl.command": source.command,
+      "mcp_servers.node_repl.env": env,
+    };
     const servers = ["node_repl"];
     if (unified) {
       const version = VersionSchema.parse(requiredEnv(source.env, "BROWSER_USE_CODEX_APP_VERSION"));
@@ -662,16 +817,8 @@ export async function acquireCodexDesktopTools(
       );
       const raw: unknown = JSON.parse(await readFile(pluginPath, "utf8"));
       const plugin = z.object({ mcpServers: z.object({ cua_repl: StdioSchema }) }).parse(raw);
-      const cua = plugin.mcpServers.cua_repl;
-      const configuredSurfaces = requiredEnv(cua.env, "CUA_REPL_ENABLED_SURFACES")
-        .split(",")
-        .map((surface) => surface.trim())
-        .filter(Boolean);
-      for (const surface of configuredSurfaces) {
-        if (surface !== "computer" && surface !== "browser") {
-          throw new Error(`Unsupported Codex desktop surface: ${surface}`);
-        }
-      }
+      const cua = await resolveCurrentCuaNodeRuntime(plugin.mcpServers.cua_repl, options.platform);
+      const configuredSurfaces = configuredDesktopSurfaces(cua.env);
       const surfaces = configuredSurfaces.filter(
         (surface) => (surface === "computer" && computer) || (surface === "browser" && chrome),
       );

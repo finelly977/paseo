@@ -2,7 +2,12 @@ import { i18n } from "@/i18n/i18next";
 
 export type AgentInputSubmitResult = "noop" | "queued" | "submitted" | "failed";
 
+export interface AgentInputSubmission {
+  status: "idle" | "submitting" | "submitted";
+}
+
 export interface AgentInputSubmitActionInput<TAttachment> {
+  submission: AgentInputSubmission;
   message: string;
   attachments: TAttachment[];
   hasExternalContent?: boolean;
@@ -25,6 +30,10 @@ export interface AgentInputSubmitActionInput<TAttachment> {
 export async function submitAgentInput<TAttachment>(
   input: AgentInputSubmitActionInput<TAttachment>,
 ): Promise<AgentInputSubmitResult> {
+  // React 的禁用状态要等下一次渲染才生效；提交资格必须在第一个 await 前同步占用。
+  if (input.submission.status !== "idle") {
+    return "noop";
+  }
   const trimmedMessage = input.message.trim();
   const attachments = input.attachments;
   const shouldClearOnSubmit = input.submitBehavior !== "preserve-and-lock";
@@ -51,16 +60,18 @@ export async function submitAgentInput<TAttachment>(
     return "queued";
   }
 
-  // Clear immediately so optimistic stream updates and composer state stay in sync.
-  if (shouldClearOnSubmit) {
-    input.setUserInput("");
-    input.setAttachments([]);
-  }
-  input.setSendError(null);
-  input.setIsProcessing(true);
-
+  input.submission.status = "submitting";
+  let submitted = false;
   try {
+    // Clear immediately so optimistic stream updates and composer state stay in sync.
+    if (shouldClearOnSubmit) {
+      input.setUserInput("");
+      input.setAttachments([]);
+    }
+    input.setSendError(null);
+    input.setIsProcessing(true);
     await input.submitMessage({ message: trimmedMessage, attachments });
+    submitted = true;
     if (shouldClearOnSubmit) {
       input.setUserInput("");
       input.setAttachments([]);
@@ -81,5 +92,8 @@ export async function submitAgentInput<TAttachment>(
     );
     input.setIsProcessing(false);
     return "failed";
+  } finally {
+    // 新建成功后保留锁直到草稿卸载，覆盖成功响应与路由切换之间的空窗；失败允许原地重试。
+    input.submission.status = submitted && !shouldClearOnSubmit ? "submitted" : "idle";
   }
 }

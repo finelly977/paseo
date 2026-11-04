@@ -16,6 +16,7 @@ const item: NativeHistoryProcessItem = {
   error: null,
   timestamp: new Date(1000),
   summaryMessageIds: ["q"],
+  summaryRevision: "original",
 };
 const key = nativeHistoryDetailKey("host", "agent", "read", "turn");
 const options = {
@@ -131,4 +132,63 @@ test("读取失败保留成功页，重试从未完成页继续；释放后的�
   gate.resolve(await client.readNativeHistoryTurn({ cursor: "last" }));
   await reading;
   expect(useNativeHistoryDetails.getState().entries.has(key)).toBe(false);
+});
+
+test("后台重新验证完整过程时保留当前说明，失败可重试且不重复拼接旧结果", async () => {
+  releaseNativeHistoryDetails("host", "agent");
+  const oldItems = [{ type: "assistant_message" as const, messageId: "partial", text: "原说明" }];
+  const result = {
+    requestId: "request",
+    agentId: "agent",
+    readId: "read",
+    turnId: "turn",
+    error: null,
+    nextCursor: null,
+  };
+  await loadNativeHistoryDetails({
+    ...options,
+    client: { readNativeHistoryTurn: async () => ({ ...result, items: oldItems }) },
+  });
+  const gate =
+    Promise.withResolvers<
+      Awaited<
+        ReturnType<
+          Parameters<typeof loadNativeHistoryDetails>[0]["client"]["readNativeHistoryTurn"]
+        >
+      >
+    >();
+  const refreshing = loadNativeHistoryDetails({
+    ...options,
+    refresh: true,
+    client: { readNativeHistoryTurn: () => gate.promise },
+  });
+  expect(useNativeHistoryDetails.getState().entries.get(key)).toMatchObject({
+    items: oldItems,
+    complete: true,
+    loading: true,
+    error: null,
+  });
+  const rejected = expect(refreshing).rejects.toThrow("重新验证失败");
+  gate.reject(new Error("重新验证失败"));
+  await rejected;
+  expect(useNativeHistoryDetails.getState().entries.get(key)).toMatchObject({
+    items: oldItems,
+    complete: true,
+    loading: false,
+    error: "重新验证失败",
+  });
+  const updated = [{ ...oldItems[0], text: "改写后的说明" }];
+  let preparations = 0;
+  await loadNativeHistoryDetails({
+    ...options,
+    prepare: () => preparations++,
+    client: { readNativeHistoryTurn: async () => ({ ...result, items: updated }) },
+  });
+  expect(useNativeHistoryDetails.getState().entries.get(key)).toMatchObject({
+    items: updated,
+    complete: true,
+    loading: false,
+    error: null,
+  });
+  expect(preparations).toBe(1);
 });

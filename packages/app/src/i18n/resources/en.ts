@@ -140,6 +140,8 @@ export const en = {
     errors: {
       failedToSend: "Failed to send message",
       failedToCreateAgent: "Failed to create agent",
+      createdAgentHandoffFailed:
+        "会话已创建，但打开失败。请从侧栏打开已有会话，无需重新发送。{{error}}",
       noHostSelected: "No host selected",
       initialPromptRequired: "Initial prompt is required",
       alreadyLoading: "Already loading",

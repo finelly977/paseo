@@ -46,6 +46,7 @@ interface TimelineFetch {
 class TimelineWorld {
   readonly errors: string[] = [];
   readonly detailsReady: string[] = [];
+  readonly nativeAgents = new Set<string>();
   holdHistoryPages = false;
   readonly historySettlements: Array<{ task: () => void; canceled: boolean }> = [];
   private initialConversationLimit: number | undefined;
@@ -66,6 +67,7 @@ class TimelineWorld {
     readCursor: (agentId) => this.cursors.get(agentId),
     readConversationIndex: (agentId) => this.conversationIndexes.get(agentId),
     hasAuthoritativeHistory: (agentId) => this.authoritativeHistory.has(agentId),
+    hasNativeHistory: (agentId) => this.nativeAgents.has(agentId),
     getInitialConversationLimit: () => this.initialConversationLimit,
     fetchPage: async (agentId, request) => {
       const result = deferred<{
@@ -338,6 +340,86 @@ test("原生摘要预取失败保留可读首屏，记录错误并允许后续�
     nativeHistory: { readId: "native", nextCursor: null },
     nativeConversationCount: 100,
   });
+  world.sync.dispose();
+});
+
+test("已有实时游标的原生会话先补齐全部规范增量，再核对其他客户端可能改写的摘要", async () => {
+  const world = new TimelineWorld();
+  world.nativeAgents.add("agent-a");
+  world.setCursor("agent-a", 10);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  const first = await world.nextFetch("agent-a");
+  expect(first.request.direction).toBe("after");
+  first.respond({ hasNewer: true, seq: 50 });
+  const next = await world.nextFetch("agent-a");
+  expect(next.request).toMatchObject({ direction: "after", cursor: { seq: 50 } });
+  next.respond({ hasNewer: false, seq: 80 });
+  await vi.waitFor(() => expect(world.pendingFetch("agent-a")?.request.direction).toBe("tail"));
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: null },
+    nativeConversationCount: 5,
+  });
+  await vi.waitFor(() => expect(world.detailsReady).toEqual(["agent-a"]));
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
+test("摘要读取期间又收到中断或完成通知时，结束后必须再核对一次，不能吞掉刷新", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  const reading = await world.nextFetch("agent-a");
+  world.sync.refreshAgentTimeline("agent-a");
+  world.sync.refreshAgentTimeline("agent-a");
+  reading.respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: null },
+    nativeConversationCount: 5,
+  });
+  await vi.waitFor(() => expect(world.pendingFetch("agent-a")?.request.direction).toBe("tail"));
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: null },
+    nativeConversationCount: 5,
+  });
+  await vi.waitFor(() => expect(world.detailsReady).toEqual(["agent-a"]));
+  world.expectNoPendingFetch();
+  world.sync.dispose();
+});
+
+test("预取旧轮次期间收到中断通知，当前页结束后先核对最新状态，不等待全部旧页", async () => {
+  const world = new TimelineWorld();
+  world.setInitialConversationLimit(100);
+  world.sync.setConnected(true);
+  world.sync.replaceVisibleAgentIds("workspace", ["agent-a"]);
+  (await world.nextMembership()).succeed();
+  (await world.nextFetch("agent-a")).respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: "older-one" },
+    nativeConversationCount: 5,
+  });
+  const older = await world.nextFetch("agent-a");
+  expect(older.request.direction).toBe("before");
+  world.sync.refreshAgentTimeline("agent-a");
+  older.respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: "older-two" },
+    nativeConversationCount: 25,
+  });
+  const refresh = await world.nextFetch("agent-a");
+  expect(refresh.request.direction).toBe("tail");
+  expect(world.detailsReady).toEqual([]);
+  refresh.respond({
+    hasNewer: false,
+    nativeHistory: { readId: "native", nextCursor: null },
+    nativeConversationCount: 100,
+  });
+  await vi.waitFor(() => expect(world.detailsReady).toEqual(["agent-a"]));
+  world.expectNoPendingFetch();
   world.sync.dispose();
 });
 

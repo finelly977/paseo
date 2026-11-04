@@ -6,6 +6,86 @@ describe("create-flow-store", () => {
     useCreateFlowStore.setState({ pendingByDraftId: {} });
   });
 
+  it("同一草稿只允许一个实际创建请求，不依赖组件是否已经重新渲染", () => {
+    const attempt = {
+      draftId: "draft-1",
+      serverId: "server-1",
+      agentId: null,
+      clientMessageId: "msg-1",
+      text: "创建会话",
+      timestamp: 1000,
+    };
+    const store = useCreateFlowStore.getState();
+
+    expect(store.beginRequest(attempt)).toBe(true);
+    expect(store.beginRequest(attempt)).toBe(false);
+    expect(store.beginRequest({ ...attempt, clientMessageId: "msg-2" })).toBe(false);
+    expect(useCreateFlowStore.getState().pendingByDraftId["draft-1"].clientMessageId).toBe("msg-1");
+  });
+
+  it("跨页面交接的首条消息只领取一次，且保留预留工作区标识", () => {
+    const prepared = {
+      draftId: "draft-1",
+      serverId: "server-1",
+      workspaceId: "workspace-1",
+      agentId: null,
+      clientMessageId: "msg-1",
+      text: "准备发送",
+      timestamp: 1000,
+    };
+    const store = useCreateFlowStore.getState();
+
+    expect(store.setPending(prepared)).toBe(true);
+    expect(useCreateFlowStore.getState().pendingByDraftId["draft-1"].requestStarted).toBe(false);
+    const { workspaceId: _workspaceId, ...request } = prepared;
+    expect(store.beginRequest(request)).toBe(true);
+    expect(store.beginRequest(request)).toBe(false);
+    expect(store.setPending({ ...prepared, clientMessageId: "msg-2" })).toBe(false);
+    expect(useCreateFlowStore.getState().pendingByDraftId["draft-1"]).toEqual({
+      ...prepared,
+      lifecycle: "active",
+      requestStarted: true,
+    });
+  });
+
+  it("创建失败后新尝试可领取，创建成功后不能再次领取", () => {
+    const attempt = {
+      draftId: "draft-1",
+      serverId: "server-1",
+      agentId: null,
+      clientMessageId: "msg-1",
+      text: "创建会话",
+      timestamp: 1000,
+    };
+    const store = useCreateFlowStore.getState();
+
+    expect(store.beginRequest(attempt)).toBe(true);
+    store.markLifecycle({ draftId: "draft-1", lifecycle: "abandoned" });
+    expect(store.beginRequest({ ...attempt, clientMessageId: "msg-2" })).toBe(true);
+    store.updateAgentId({ draftId: "draft-1", agentId: "agent-1" });
+    store.markLifecycle({ draftId: "draft-1", lifecycle: "sent" });
+    expect(store.beginRequest({ ...attempt, clientMessageId: "msg-2" })).toBe(false);
+    expect(store.beginRequest({ ...attempt, clientMessageId: "msg-3" })).toBe(false);
+    expect(useCreateFlowStore.getState().pendingByDraftId["draft-1"].agentId).toBe("agent-1");
+  });
+
+  it("不同草稿即使提示词完全相同也各自创建，不按内容误去重", () => {
+    const attempt = {
+      draftId: "draft-1",
+      serverId: "server-1",
+      agentId: null,
+      clientMessageId: "msg-1",
+      text: "相同提示词",
+      timestamp: 1000,
+    };
+    const store = useCreateFlowStore.getState();
+
+    expect(store.beginRequest(attempt)).toBe(true);
+    expect(store.beginRequest({ ...attempt, draftId: "draft-2", clientMessageId: "msg-2" })).toBe(
+      true,
+    );
+  });
+
   it("tracks lifecycle transitions explicitly", () => {
     const store = useCreateFlowStore.getState();
     store.setPending({
