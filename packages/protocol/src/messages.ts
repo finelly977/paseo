@@ -857,15 +857,18 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("turn_started"),
     provider: AgentProviderSchema,
+    turnId: z.string().optional(),
   }),
   z.object({
     type: z.literal("turn_completed"),
     provider: AgentProviderSchema,
+    turnId: z.string().optional(),
     usage: AgentUsageSchema.optional(),
   }),
   z.object({
     type: z.literal("turn_failed"),
     provider: AgentProviderSchema,
+    turnId: z.string().optional(),
     error: z.string(),
     code: z.string().optional(),
     diagnostic: z.string().optional(),
@@ -873,6 +876,7 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("turn_canceled"),
     provider: AgentProviderSchema,
+    turnId: z.string().optional(),
     reason: z.string(),
   }),
   z.object({

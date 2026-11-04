@@ -2846,7 +2846,7 @@ describe("processAgentStreamEvent", () => {
     expect(result.agent).toBe(null);
   });
 
-  it("preserves updatedAt when agent timestamp is newer than event", () => {
+  it("旧回合终态排队后才处理时，不覆盖已经到达的新运行快照", () => {
     const turnCompletedEvent: AgentStreamEventPayload = {
       type: "turn_completed",
       provider: "claude",
@@ -2863,9 +2863,31 @@ describe("processAgentStreamEvent", () => {
       timestamp: new Date(2000),
     });
 
-    expect(result.agentChanged).toBe(true);
-    expect(result.agent!.updatedAt.getTime()).toBe(5000);
-    expect(result.agent!.lastActivityAt.getTime()).toBe(5000);
+    expect(result.agentChanged).toBe(false);
+    expect(result.agent).toBeNull();
+  });
+
+  it("终态只结束所属活动回合，不能因旧完成事件让新一轮提前停止", () => {
+    const currentAgent = {
+      status: "running" as const,
+      updatedAt: new Date(1000),
+      lastActivityAt: new Date(1000),
+      activeTurnId: "turn-b",
+    };
+    const old = processAgentStreamEvent({
+      ...baseStreamInput,
+      currentAgent,
+      timestamp: new Date(2000),
+      event: { type: "turn_completed", provider: "codex", turnId: "turn-a" },
+    });
+    expect(old.agentChanged).toBe(false);
+    const current = processAgentStreamEvent({
+      ...baseStreamInput,
+      currentAgent,
+      timestamp: new Date(2000),
+      event: { type: "turn_completed", provider: "codex", turnId: "turn-b" },
+    });
+    expect(current.agent).toMatchObject({ status: "idle" });
   });
 
   it("does not produce agent patch for non-terminal events", () => {
@@ -2888,6 +2910,122 @@ describe("processAgentStreamEvent", () => {
 });
 
 describe("processAgentStreamEvents", () => {
+  it("历史补载中的下一条回复即使文字前缀相同，也不能覆盖正在显示的上一条回复", () => {
+    const first: StreamItem = {
+      kind: "assistant_message",
+      id: "reply-a",
+      messageId: "reply-a",
+      turnId: "turn-a",
+      text: "我会检查。",
+      timestamp: new Date(1000),
+      timelineCursor: { epoch: "epoch", seq: 1 },
+    };
+    const result = processTimelineResponse({
+      currentTail: [],
+      currentHead: [first],
+      currentCursor: { epoch: "epoch", startSeq: 1, endSeq: 1 },
+      isInitializing: false,
+      hasActiveInitDeferred: false,
+      initRequestDirection: "tail",
+      payload: {
+        agentId: "agent",
+        direction: "after",
+        projection: "projected",
+        reset: false,
+        epoch: "epoch",
+        startCursor: { seq: 2 },
+        endCursor: { seq: 2 },
+        hasOlder: false,
+        hasNewer: false,
+        error: null,
+        entries: [
+          {
+            seqStart: 2,
+            seqEnd: 2,
+            provider: "codex",
+            turnId: "turn-a",
+            timestamp: new Date(2000).toISOString(),
+            item: {
+              type: "assistant_message",
+              messageId: "reply-b",
+              text: "我会检查。补充另一项结果。",
+            },
+          },
+        ],
+      },
+    });
+    expect(
+      [...result.tail, ...result.head].map((item) => ({
+        id: item.id,
+        text: item.kind === "assistant_message" ? item.text : "",
+      })),
+    ).toEqual([
+      { id: "reply-a", text: "我会检查。" },
+      { id: "reply-b", text: "我会检查。补充另一项结果。" },
+    ]);
+  });
+
+  it("流式段落被完整历史补齐后继续保留原生回合，后续输出不串入下一轮", () => {
+    const live = processAgentStreamEvent({
+      event: {
+        type: "timeline",
+        provider: "codex",
+        turnId: "turn-a",
+        item: { type: "assistant_message", messageId: "answer", text: "第一段。\n\n第二段" },
+      },
+      seq: 1,
+      epoch: "epoch",
+      timestamp: new Date(1000),
+      currentTail: [],
+      currentHead: [],
+      currentCursor: undefined,
+      currentAgent: null,
+    });
+    const result = processTimelineResponse({
+      currentTail: live.tail,
+      currentHead: live.head,
+      currentCursor: live.cursor ?? undefined,
+      isInitializing: false,
+      hasActiveInitDeferred: false,
+      initRequestDirection: "tail",
+      payload: {
+        agentId: "agent",
+        direction: "after",
+        projection: "projected",
+        reset: false,
+        epoch: "epoch",
+        startCursor: { seq: 1 },
+        endCursor: { seq: 2 },
+        hasOlder: false,
+        hasNewer: false,
+        error: null,
+        entries: [
+          {
+            seqStart: 1,
+            seqEnd: 2,
+            sourceSeqRanges: [{ startSeq: 1, endSeq: 2 }],
+            collapsed: ["assistant_merge"],
+            provider: "codex",
+            turnId: "turn-a",
+            timestamp: new Date(2000).toISOString(),
+            item: {
+              type: "assistant_message",
+              messageId: "answer",
+              text: "第一段。\n\n第二段补齐。",
+            },
+          },
+        ],
+      },
+    });
+    const messages = [...result.tail, ...result.head];
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      text: "第一段。\n\n第二段补齐。",
+      turnId: "turn-a",
+      timelineCursor: { epoch: "epoch", seq: 2 },
+    });
+  });
+
   it("coalesces contiguous assistant stream events into one head update and final cursor", () => {
     const result = processAgentStreamEvents({
       events: [

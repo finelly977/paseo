@@ -245,9 +245,20 @@ function shouldResolveTimelineInit({
 }
 
 function deriveOptimisticLifecycleStatus(
-  currentStatus: AgentLifecycleStatus,
-  event: AgentStreamEventPayload,
+  current: AgentStreamReducerAgentSnapshot,
+  event: Extract<
+    AgentStreamEventPayload,
+    { type: "turn_completed" | "turn_failed" | "turn_canceled" }
+  >,
+  timestamp: Date,
 ): AgentLifecycleStatus | null {
+  const sameActiveTurn = event.turnId !== undefined && event.turnId === current.activeTurnId;
+  const anotherActiveTurn =
+    event.turnId !== undefined &&
+    current.activeTurnId != null &&
+    event.turnId !== current.activeTurnId;
+  if (anotherActiveTurn) return null;
+  if (timestamp.getTime() < current.updatedAt.getTime() && !sameActiveTurn) return null;
   switch (event.type) {
     case "turn_completed":
       // 回合完成是服务端权威终局：无论本地状态是否仍为 running（例如
@@ -699,6 +710,8 @@ function replaceLiveAssistantWithProjectedText(params: {
   if (!current || current.kind !== "assistant_message") {
     return null;
   }
+  if (event.turnId && current.turnId && event.turnId !== current.turnId) return null;
+  if (event.item.messageId !== undefined && event.item.messageId !== current.messageId) return null;
   if (!event.item.text.startsWith(current.text)) {
     return null;
   }
@@ -752,10 +765,12 @@ function reconcileOverlappingProjectedAssistant(params: {
 
   const blockGroupId = match.current.blockGroupId;
   const messageId = projectedMessageId ?? match.current.messageId;
+  const turnId = unit.event.turnId ?? match.current.turnId;
   const replacement: AssistantMessageItem = {
     kind: "assistant_message",
     id: blockGroupId ?? match.current.id,
     ...(messageId !== undefined ? { messageId } : {}),
+    ...(turnId ? { turnId } : {}),
     text: projectedText,
     timestamp: unit.timestamp,
     timelineCursor: { epoch: params.epoch, seq: unit.seqEnd },
@@ -1317,6 +1332,7 @@ export interface ProcessAgentStreamEventInput {
     status: AgentLifecycleStatus;
     updatedAt: Date;
     lastActivityAt: Date;
+    activeTurnId?: string | null;
   } | null;
   timestamp: Date;
   transformTimelineItem?: TimelineItemTransform;
@@ -1361,6 +1377,7 @@ export interface AgentStreamReducerAgentSnapshot {
   status: AgentLifecycleStatus;
   updatedAt: Date;
   lastActivityAt: Date;
+  activeTurnId?: string | null;
 }
 
 export interface ProcessAgentStreamEventsInput {
@@ -1402,6 +1419,7 @@ function applyAgentPatch(
     return currentAgent;
   }
   return {
+    ...currentAgent,
     status: patch.status,
     updatedAt: patch.updatedAt,
     lastActivityAt: patch.lastActivityAt,
@@ -1526,7 +1544,7 @@ export function processAgentStreamEvent(
       event.type === "turn_canceled" ||
       event.type === "turn_failed")
   ) {
-    const optimisticStatus = deriveOptimisticLifecycleStatus(currentAgent.status, event);
+    const optimisticStatus = deriveOptimisticLifecycleStatus(currentAgent, event, timestamp);
     if (optimisticStatus) {
       const nextUpdatedAtMs = Math.max(currentAgent.updatedAt.getTime(), timestamp.getTime());
       const nextLastActivityAtMs = Math.max(
@@ -1802,6 +1820,7 @@ export function createSessionAgentStreamReducerQueue(
               status: currentAgentEntry.status,
               updatedAt: currentAgentEntry.updatedAt,
               lastActivityAt: currentAgentEntry.lastActivityAt,
+              activeTurnId: currentAgentEntry.activeTurn?.turnId ?? null,
             }
           : null,
         transformTimelineItem: input.transformTimelineItem,

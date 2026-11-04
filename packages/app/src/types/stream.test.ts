@@ -24,6 +24,19 @@ import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display"
 type CanonicalToolStatus = "running" | "completed" | "failed" | "canceled";
 
 describe("独立图片结果的消息边界", () => {
+  it("同一毫秒收到两条没有消息标识的图片结果时，不因跨区标识碰撞丢图", () => {
+    const event = assistantTimeline("![Image](file:///C:/copy/result.png)", "codex");
+    let state: { tail: StreamItem[]; head: StreamItem[] } = { tail: [], head: [] };
+    for (let index = 0; index < 2; index++)
+      state = applyStreamEvent({ ...state, event, timestamp: new Date(1000) });
+    state = applyStreamEvent({
+      ...state,
+      event: { type: "turn_completed", provider: "codex" },
+      timestamp: new Date(2000),
+    });
+    expect(state.tail.filter((item) => item.kind === "assistant_message")).toHaveLength(2);
+    expect(new Set(state.tail.map((item) => item.id)).size).toBe(2);
+  });
   it("迟到的空 Shell 快照保留已经收到的命令输出和退出码", () => {
     expect(
       mergeToolCallDetail(
@@ -67,6 +80,51 @@ describe("独立图片结果的消息边界", () => {
 });
 
 describe("user message identity", () => {
+  it("另一客户端发来只有图片没有文字的用户消息时，实时区仍显示这条消息", () => {
+    const result = applyStreamEvent({
+      tail: [],
+      head: [],
+      timestamp: new Date(1000),
+      event: {
+        type: "timeline",
+        provider: "codex",
+        turnId: "image-turn",
+        item: {
+          type: "user_message",
+          messageId: "image-user",
+          text: "",
+          images: [{ path: "C:/copy/attachment.png", mimeType: "image/png" }],
+        },
+      },
+    });
+    expect(result.tail).toMatchObject([
+      {
+        kind: "user_message",
+        messageId: "image-user",
+        text: "",
+        providerImages: [{ path: "C:/copy/attachment.png", mimeType: "image/png" }],
+        turnId: "image-turn",
+      },
+    ]);
+  });
+  it("旧回合迟到的结束通知不把新回合正在输出的正文提交到历史区", () => {
+    const reply: StreamItem = {
+      kind: "assistant_message",
+      id: "new-reply",
+      messageId: "new-reply",
+      turnId: "turn-b",
+      text: "新一轮仍在输出",
+      timestamp: new Date(2000),
+    };
+    const result = applyStreamEvent({
+      tail: [],
+      head: [reply],
+      timestamp: new Date(3000),
+      event: { type: "turn_completed", provider: "codex", turnId: "turn-a" },
+    });
+    expect(result.tail).toEqual([]);
+    expect(result.head).toEqual([reply]);
+  });
   it("replaces provisional optimistic turn membership with canonical membership", () => {
     const optimistic = createUserMessage({
       clientMessageId: "hello-client",
@@ -802,6 +860,38 @@ describe("stream reducer canonical tool calls", () => {
       "After two.",
     ]);
     expect(new Set(messages.map((message) => message.id)).size).toBe(messages.length);
+  });
+
+  it("流式正文拆成 Markdown 块后，每块继续保留回合身份与同步位置", () => {
+    const event: AgentStreamEventPayload = {
+      type: "timeline",
+      provider: "codex",
+      turnId: "active-turn",
+      item: {
+        type: "assistant_message",
+        messageId: "reply",
+        text: "第一段。\n\n第二段。\n\n第三段。",
+      },
+    };
+    const result = applyStreamEvent({
+      tail: [],
+      head: [],
+      event,
+      timestamp: new Date(1000),
+      timelineCursor: { epoch: "epoch", seq: 7 },
+    });
+    const messages = [...result.tail, ...result.head];
+    expect(messages).toHaveLength(3);
+    expect(messages.map((item) => item.turnId)).toEqual([
+      "active-turn",
+      "active-turn",
+      "active-turn",
+    ]);
+    expect(messages.map((item) => item.timelineCursor)).toEqual([
+      { epoch: "epoch", seq: 7 },
+      { epoch: "epoch", seq: 7 },
+      { epoch: "epoch", seq: 7 },
+    ]);
   });
 
   it("preserves old assistant merge behavior when message ids are absent", () => {

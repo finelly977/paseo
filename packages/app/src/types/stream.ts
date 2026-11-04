@@ -58,17 +58,14 @@ function createAssistantItemId(
   timestamp: Date,
   reservedItemIds?: ReadonlySet<string>,
 ): string {
-  if (!messageId) {
-    return createUniqueTimelineId(state, "assistant", text, timestamp);
-  }
-
+  const baseId = messageId ?? createUniqueTimelineId(state, "assistant", text, timestamp);
   const isOccupied = (id: string) =>
     reservedItemIds?.has(id) === true || state.some((item) => item.id === id);
-  if (!isOccupied(messageId)) {
-    return messageId;
+  if (!isOccupied(baseId)) {
+    return baseId;
   }
 
-  const segmentId = `${messageId}:segment:${timestamp.getTime().toString(36)}`;
+  const segmentId = `${baseId}:segment:${timestamp.getTime().toString(36)}`;
   if (!isOccupied(segmentId)) {
     return segmentId;
   }
@@ -2147,16 +2144,14 @@ function promoteCompletedAssistantBlocks(params: { tail: StreamItem[]; head: Str
   const completedBlocks = blocks.slice(0, -1);
   const liveBlock = `${blocks[blocks.length - 1] ?? ""}${getTrailingNewlineSuffix(activeItem.text)}`;
   const promotedItems = completedBlocks.map<AssistantMessageItem>((block, offset) => ({
-    kind: "assistant_message",
+    ...activeItem,
     id: createAssistantBlockId({
       groupId: blockGroupId,
       blockIndex: firstBlockIndex + offset,
     }),
-    ...(activeItem.messageId ? { messageId: activeItem.messageId } : {}),
     blockGroupId,
     blockIndex: firstBlockIndex + offset,
     text: block,
-    timestamp: activeItem.timestamp,
   }));
 
   const nextTail = flushHeadToTail(params.tail, promotedItems);
@@ -2351,6 +2346,7 @@ function applyCanonicalUserMessageEvent(params: {
   const { tail, head, event, timestamp, timelineCursor, unmatchedInsert = "tail", source } = params;
   if (event.type !== "timeline" || event.item.type !== "user_message") return null;
   const normalized = normalizeChunk(event.item.text);
+  const hasContent = normalized.hasContent || (event.item.images?.length ?? 0) > 0;
   const canonical = createUserMessage({
     id:
       event.item.messageId ??
@@ -2370,7 +2366,7 @@ function applyCanonicalUserMessageEvent(params: {
       head,
       canonical,
       turnId: event.turnId,
-      hasContent: normalized.hasContent,
+      hasContent,
       source,
     });
   }
@@ -2379,7 +2375,7 @@ function applyCanonicalUserMessageEvent(params: {
     head,
     canonical,
     turnId: event.turnId,
-    hasContent: normalized.hasContent,
+    hasContent,
     source,
   });
 }
@@ -2396,6 +2392,38 @@ function applyCanonicalUserMessageEventUnlessTransformed(params: {
 }): ApplyStreamEventResult | null {
   if (params.transformedTimelineItems !== undefined) return null;
   return applyCanonicalUserMessageEvent(params);
+}
+
+function completesAnotherStreamingTurn(
+  event: AgentStreamEventPayload,
+  head: StreamItem[],
+): boolean {
+  if (!("turnId" in event) || event.turnId === undefined) return false;
+  return head.some(
+    (item) =>
+      isStreamableKind(item.kind) && item.turnId !== undefined && item.turnId !== event.turnId,
+  );
+}
+
+function applyStreamCompletion(params: {
+  tail: StreamItem[];
+  head: StreamItem[];
+  event: AgentStreamEventPayload;
+  timestamp: Date;
+  source: StreamUpdateSource;
+}): ApplyStreamEventResult | null {
+  const { tail, head, event, timestamp, source } = params;
+  if (!STREAM_COMPLETION_EVENTS.has(event.type)) return null;
+  if (completesAnotherStreamingTurn(event, head))
+    return { tail, head, changedTail: false, changedHead: false };
+  const nextTail = applyCompletionToTail(flushHeadToTail(tail, head), event, timestamp, source);
+  const nextHead = head.length === 0 ? head : [];
+  return {
+    tail: nextTail,
+    head: nextHead,
+    changedTail: nextTail !== tail,
+    changedHead: nextHead !== head,
+  };
 }
 
 /**
@@ -2434,6 +2462,8 @@ export function applyStreamEvent(params: {
     transformedTimelineItems,
   });
   if (canonicalUserResult) return canonicalUserResult;
+  const completion = applyStreamCompletion({ tail, head, event, timestamp, source });
+  if (completion) return completion;
   let nextTail = tail;
   let nextHead = head;
   let changedTail = false;
@@ -2451,17 +2481,6 @@ export function applyStreamEvent(params: {
     nextHead = [];
     changedHead = true;
   };
-
-  // Handle turn completion events - flush everything
-  if (STREAM_COMPLETION_EVENTS.has(event.type)) {
-    flushHead();
-    const finalized = applyCompletionToTail(nextTail, event, timestamp, source);
-    if (finalized !== nextTail) {
-      nextTail = finalized;
-      changedTail = true;
-    }
-    return { tail: nextTail, head: nextHead, changedTail, changedHead };
-  }
 
   const incomingKind = getEventItemKind(event, transformedTimelineItems);
 

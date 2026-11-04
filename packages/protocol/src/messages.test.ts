@@ -5,7 +5,18 @@ import {
   parseServerInfoStatusPayload,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
+  AgentStreamEventPayloadSchema,
 } from "./messages.js";
+
+test("回合生命周期消息在协议解析后保留原生回合身份", () => {
+  for (const event of [
+    { type: "turn_started", provider: "codex", turnId: "turn-a" },
+    { type: "turn_completed", provider: "codex", turnId: "turn-a" },
+    { type: "turn_failed", provider: "codex", turnId: "turn-a", error: "失败" },
+    { type: "turn_canceled", provider: "codex", turnId: "turn-a", reason: "中断" },
+  ])
+    expect(AgentStreamEventPayloadSchema.parse(event)).toEqual(event);
+});
 
 function workspaceDescriptor(overrides: Record<string, unknown> = {}) {
   return {

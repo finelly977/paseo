@@ -231,6 +231,17 @@ its completion advances `seqEnd`, followed by a merged assistant message. The ap
 remaining page through the existing stream reducer. It must not append full projected text to a
 live prefix.
 
+流式助手正文按 Markdown 块拆分或被完整投影替换时，每块仍保留同一回合身份和同步位置。
+补载只能按消息身份认领正在输出的回复；不同消息即使正文前缀相同也不能相互替换。
+没有原生消息标识的独立图片同样要避开历史区和活动区已有的展示标识，不能因为同一毫秒
+返回相同路径就丢掉一条记录。来自其他客户端的纯图片用户消息不依赖本地乐观卡片，也不
+要求有非空文字才能进入实时区。
+
+开始、完成、失败与中断通知在协议解析后保留提供方回合标识。结束通知只收束自己的流式区，
+旧回合迟到的通知不提交新回合正文，也不覆盖新一轮的运行状态。没有回合标识的旧协议通知
+继续使用已有行为，但比当前目录快照更早的终态不能倒写该快照；同一明确活动回合的真实终态
+仍可立即结束显示，不等待下一条命令或下一条回复。
+
 Optimistic user prompts occupy stable timeline slots. Catch-up never extracts, delays, or reinserts
 them. A canonical user row replaces its matching slot in place; an unmatched prompt stays exactly
 where the user submitted it. Other canonical rows are applied after the already-present timeline
