@@ -54,6 +54,7 @@ import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useSessionStore } from "@/stores/session-store";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { useNativeHistoryActiveTurn } from "@/timeline/use-native-history-active-turn";
+import { useNativeHistoryProcesses } from "@/timeline/use-native-history-processes";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
 import { useSettings } from "@/hooks/use-settings";
@@ -321,7 +322,7 @@ function CompletedTurnProcessToggle({
   registerAnchor: (input: { turnId: string; node: View }) => () => void;
   anchorItemId: string;
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const handlePress = useCallback(
     () => onToggle({ turnId: model.turnId, itemId: anchorItemId }),
     [anchorItemId, model.turnId, onToggle],
@@ -340,9 +341,9 @@ function CompletedTurnProcessToggle({
     if (model.durationMs === undefined) {
       return t("agentStream.completedTurn.processed");
     }
-    const duration = formatCompletedTurnDuration(model.durationMs, i18n.language);
+    const duration = formatCompletedTurnDuration(model.durationMs);
     return t("agentStream.completedTurn.processedFor", { duration });
-  }, [i18n.language, model.durationMs, t]);
+  }, [model.durationMs, t]);
   const rowStyle = useMemo(
     () => [
       stylesheet.completedTurnProcessToggleRow,
@@ -724,7 +725,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       head: retainedStreamHead,
       activeTurnId,
     });
-    const effectiveStreamItems = nativePresentation.tail;
+    const nativeProcesses = useNativeHistoryProcesses({
+      serverId: resolvedServerId,
+      agentId,
+      tail: nativePresentation.tail,
+    });
+    const effectiveStreamItems = nativeProcesses.tail;
     const effectiveStreamHead = nativePresentation.head;
     const executingToolIds = useMemo(
       () =>
@@ -1252,24 +1258,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const bottomTurnFooterHost = streamLayout.auxiliaryTurnFooter;
 
-    const renderNativeHistoryReply = useCallback(
-      (replyLayout: StreamLayoutItem) =>
-        renderStreamItemWithTurnFooter({
-          content: renderStreamItemContent(replyLayout),
-          layoutItem: replyLayout,
-          strategy: streamRenderStrategy,
-          supportsTimelineCursor: supportsAgentForkContextCursor,
-          onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
-        }),
-      [
-        renderStreamItemContent,
-        streamRenderStrategy,
-        supportsAgentForkContextCursor,
-        readOnly,
-        handleForkAssistantTurn,
-      ],
-    );
-
     const renderStreamItem = useCallback(
       (layoutItem: StreamLayoutItem) => {
         if (layoutItem.item.kind === "native_history_process") {
@@ -1286,9 +1274,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               readId={native.readId}
               client={client}
               viewport={viewportRef}
-              renderItem={renderStreamItemContent}
-              renderReply={renderNativeHistoryReply}
-              layout={layoutItem}
+              expanded={nativeProcesses.expandedTurnIds.has(layoutItem.item.turnId)}
+              onToggle={nativeProcesses.toggle}
             />
           );
         }
@@ -1329,7 +1316,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         expandedCompletedTurnIds,
         handleForkAssistantTurn,
         readOnly,
-        renderNativeHistoryReply,
+        nativeProcesses.expandedTurnIds,
+        nativeProcesses.toggle,
         renderStreamItemContent,
         streamRenderStrategy,
         supportsAgentForkContextCursor,
@@ -1491,7 +1479,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const processMembershipRef = useRef(completedTurnProcess.turnIdByProcessItemId);
     processMembershipRef.current = completedTurnProcess.turnIdByProcessItemId;
     const historyDisplayStateIds = useMemo(() => {
-      const ids = new Set([...expandedToolCallGroupIds, ...expandedCompletedTurnIds]);
+      const ids = new Set([
+        ...expandedToolCallGroupIds,
+        ...expandedCompletedTurnIds,
+        ...nativeProcesses.expandedItemIds,
+      ]);
       // 原生单元按条目身份缓存；只有一个过程项时下标不会改变，也需要刷新入口和正文。
       for (const [itemId, turnId] of processMembershipRef.current) {
         if (expandedCompletedTurnIds.has(turnId)) ids.add(itemId);
@@ -1500,7 +1492,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         if (expandedCompletedTurnIds.has(toggle.turnId)) ids.add(itemId);
       }
       return ids;
-    }, [completedTurnProcess.toggleByItemId, expandedCompletedTurnIds, expandedToolCallGroupIds]);
+    }, [
+      completedTurnProcess.toggleByItemId,
+      expandedCompletedTurnIds,
+      expandedToolCallGroupIds,
+      nativeProcesses.expandedItemIds,
+    ]);
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {

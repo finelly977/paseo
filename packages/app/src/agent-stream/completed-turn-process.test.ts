@@ -37,9 +37,11 @@ function processItem(id: string): StreamItem {
 }
 
 describe("完成回合过程收起展示", () => {
-  it("按当前语言显示完整的处理耗时", () => {
-    expect(formatCompletedTurnDuration(128_000, "zh-CN")).toBe("2 分钟 8 秒");
-    expect(formatCompletedTurnDuration(128_000, "en")).toBe("2 min 8 sec");
+  it("耗时使用统一的英文短单位，不把未知耗时当作零", () => {
+    expect(formatCompletedTurnDuration(128_000)).toBe("2m 8s");
+    expect(formatCompletedTurnDuration(6_692_000)).toBe("1h 51m");
+    expect(formatCompletedTurnDuration(32_000)).toBe("32s");
+    expect(formatCompletedTurnDuration(0)).toBe("0s");
   });
 
   it("最终回复由多个分块组成时使用首个分块判断是否复用 Markdown 横线", () => {

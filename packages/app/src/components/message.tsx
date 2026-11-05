@@ -1454,6 +1454,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   labelRow: {
     flex: 1,
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     overflow: "hidden",
@@ -1461,6 +1462,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   iconBadge: {
     width: 22,
     height: 22,
+    flexShrink: 0,
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
@@ -1470,6 +1472,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   label: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.5,
     fontWeight: theme.fontWeight.normal,
     flexShrink: 0,
   },
@@ -1485,6 +1488,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.5,
     fontWeight: theme.fontWeight.normal,
     marginLeft: theme.spacing[2],
   },
@@ -2835,7 +2839,7 @@ function renderExpandableBadgeIcon({
   if (isError) {
     return (
       <View style={LUCIDE_TOOL_ICON_NUDGE_LEFT}>
-        <ThemedTriangleAlertIcon size={12} opacity={0.8} uniProps={destructiveColorMapping} />
+        <ThemedTriangleAlertIcon size={16} uniProps={destructiveColorMapping} />
       </View>
     );
   }
@@ -2843,7 +2847,7 @@ function renderExpandableBadgeIcon({
     return (
       <View style={LUCIDE_TOOL_ICON_NUDGE_LEFT}>
         <ThemedIcon
-          size={12}
+          size={16}
           uniProps={isActive ? foregroundColorMapping : mutedForegroundColorMapping}
         />
       </View>

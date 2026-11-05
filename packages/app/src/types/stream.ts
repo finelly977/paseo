@@ -117,6 +117,8 @@ export interface UserMessageItem {
   optimistic?: true;
   images?: UserMessageImageAttachment[];
   providerImages?: AgentUserMessageImage[];
+  /** 本地预览对应的原生图片身份，用于识别同正文的图片替换。 */
+  providerImagePaths?: string[];
   attachments?: AgentAttachment[];
 }
 

@@ -14,11 +14,12 @@ export function mergeResolvedProviderUserImages(
   restored: readonly AttachmentMetadata[],
 ): AttachmentMetadata[] {
   const restoredById = new Map(restored.map((image) => [image.id, image]));
-  const merged = existing.map((image) => restoredById.get(image.id) ?? image);
-  const existingIds = new Set(existing.map((image) => image.id));
-  for (const image of restored) {
+  const merged: AttachmentMetadata[] = [];
+  const existingIds = new Set<string>();
+  for (const image of [...existing, ...restored]) {
     if (!existingIds.has(image.id)) {
-      merged.push(image);
+      merged.push(restoredById.get(image.id) ?? image);
+      existingIds.add(image.id);
     }
   }
   return merged;

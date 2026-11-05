@@ -1,24 +1,15 @@
 import type { ComponentType } from "react";
-import {
-  Bot,
-  Brain,
-  Eye,
-  MicVocal,
-  Pencil,
-  Search,
-  Sparkles,
-  SquareTerminal,
-  Wrench,
-} from "lucide-react-native";
+import { Bot, Brain, Eye, MicVocal, Pencil, Search, Sparkles, Wrench } from "lucide-react-native";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import { PaseoLogo } from "@/components/icons/paseo-logo";
+import { CommandIcon } from "@/components/icons/command-icon";
 import { resolveToolCallIconName, type ToolCallIcon } from "./tool-call-icon-name";
 
 export type ToolCallIconComponent = ComponentType<{ size?: number; color?: string }>;
 
 const ICON_COMPONENTS: Record<ToolCallIcon, ToolCallIconComponent> = {
   wrench: Wrench,
-  square_terminal: SquareTerminal,
+  square_terminal: CommandIcon,
   eye: Eye,
   pencil: Pencil,
   search: Search,

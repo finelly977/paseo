@@ -91,36 +91,22 @@ export function buildCompletedTurnProcessModel(input: {
   return { turnIdByProcessItemId, toggleByItemId };
 }
 
-export function formatCompletedTurnDuration(durationMs: number, locale: string): string {
+export function formatCompletedTurnDuration(durationMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000));
   const totalMinutes = Math.floor(totalSeconds / 60);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   const seconds = totalSeconds % 60;
-  const formatUnit = (value: number, unit: "hour" | "minute" | "second") => {
-    const formatter = new Intl.NumberFormat(locale, {
-      style: "unit",
-      unit,
-      unitDisplay: "short",
-    });
-    if (!locale.startsWith("zh")) {
-      return formatter.format(value);
-    }
-    return formatter
-      .formatToParts(value)
-      .map((part) => (part.type === "unit" ? ` ${part.value}` : part.value))
-      .join("");
-  };
   const parts: string[] = [];
 
   if (hours > 0) {
-    parts.push(formatUnit(hours, "hour"));
-    if (minutes > 0) parts.push(formatUnit(minutes, "minute"));
+    parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
   } else if (totalMinutes > 0) {
-    parts.push(formatUnit(totalMinutes, "minute"));
-    if (seconds > 0) parts.push(formatUnit(seconds, "second"));
+    parts.push(`${totalMinutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
   } else {
-    parts.push(formatUnit(totalSeconds, "second"));
+    parts.push(`${totalSeconds}s`);
   }
 
   return parts.join(" ");

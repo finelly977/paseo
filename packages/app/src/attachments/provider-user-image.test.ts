@@ -111,5 +111,9 @@ describe("提供方用户图片恢复", () => {
     const restored = { ...stale, byteSize: 128, createdAt: 2 };
 
     expect(mergeResolvedProviderUserImages([stale], [restored])).toEqual([restored]);
+    expect(mergeResolvedProviderUserImages([], [restored, restored])).toEqual([restored]);
+    expect(
+      mergeResolvedProviderUserImages([], [restored, { ...restored, id: "different-source" }]),
+    ).toHaveLength(2);
   });
 });

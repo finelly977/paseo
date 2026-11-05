@@ -5,6 +5,72 @@ import {
   type NativeHistoryProcessItem,
   type StreamItem,
 } from "@/types/stream";
+import type { NativeHistoryDetails } from "./native-history-details";
+
+const completedDetailsCache = new WeakMap<
+  NativeHistoryProcessItem,
+  WeakMap<AgentTimelineItem[], StreamItem[]>
+>();
+
+/** 展开的历史过程进入普通消息流，再走现有命令分组和外层虚拟化。 */
+export function presentNativeHistoryProcesses(input: {
+  tail: StreamItem[];
+  expandedTurnIds: ReadonlySet<string>;
+  detailsByTurn: ReadonlyMap<string, NativeHistoryDetails>;
+}): StreamItem[] {
+  let changed = false;
+  const result = input.tail.flatMap((item) => {
+    if (item.kind !== "native_history_process" || item.status === "inProgress") return [item];
+    const details = input.detailsByTurn.get(item.turnId);
+    if (!details) return [item];
+    const preview = details.complete ? nativeHistoryInterruptedReply(item, details.items) : [];
+    const previewSource =
+      preview.length > 0
+        ? details.items.findLast(
+            (entry) => entry.type === "assistant_message" && entry.text.trim().length > 0,
+          )
+        : undefined;
+    const inserted: StreamItem[] = [];
+    if (input.expandedTurnIds.has(item.turnId)) {
+      let byItems = completedDetailsCache.get(item);
+      if (!byItems) {
+        byItems = new WeakMap();
+        completedDetailsCache.set(item, byItems);
+      }
+      let rows = byItems.get(details.items);
+      if (!rows) {
+        const summaryIds = new Set(item.summaryMessageIds);
+        rows = hydrateNativeHistoryDetails(
+          item,
+          details.items.filter(
+            (entry) =>
+              entry !== previewSource &&
+              !(
+                "messageId" in entry &&
+                typeof entry.messageId === "string" &&
+                summaryIds.has(entry.messageId)
+              ),
+          ),
+        );
+        for (const row of rows) {
+          row.id = `native-detail:${item.turnId}:${row.id}`;
+          row.nativeTurnId = item.turnId;
+          row.nativePageCursor = item.nativePageCursor;
+        }
+        byItems.set(details.items, rows);
+      }
+      inserted.push(...rows);
+    }
+    for (const row of preview) {
+      row.id = `native-preview:${item.turnId}:${row.id}`;
+      row.nativeTurnId = item.turnId;
+    }
+    inserted.push(...preview);
+    if (inserted.length > 0) changed = true;
+    return [item, ...inserted];
+  });
+  return changed ? result : input.tail;
+}
 
 const activeDetailsCache = new WeakMap<
   NativeHistoryProcessItem,

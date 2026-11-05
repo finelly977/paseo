@@ -65,7 +65,26 @@ export function mergeNativeHistoryPage(
         (item.messageId ? byMessage.get(item.messageId) : undefined);
       // 本地图片是展示副本；另一客户端改写正文后，不以旧输入覆盖权威正文或附加内容。
       if (local && local.text === item.text) {
-        item = { ...item, images: local.images, attachments: local.attachments };
+        const paths = item.providerImages?.map((image) => image.path);
+        const previousPaths = local.providerImagePaths;
+        const sameSource =
+          previousPaths === undefined ||
+          (paths !== undefined &&
+            previousPaths.length === paths.length &&
+            previousPaths.every((path, index) => path === paths[index]));
+        const keepPreview =
+          sameSource &&
+          local.images &&
+          local.images.length > 0 &&
+          (paths === undefined || paths.length === local.images.length);
+        item = {
+          ...item,
+          images: keepPreview ? local.images : undefined,
+          providerImagePaths: paths,
+          attachments: local.attachments,
+          // 同一原生消息已有本地预览时，不能再把提供方图片恢复成另一份缩略图。
+          providerImages: keepPreview ? undefined : item.providerImages,
+        };
       }
     }
     const previous = byId.get(item.id);

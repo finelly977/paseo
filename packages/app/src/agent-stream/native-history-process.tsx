@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FlatList, Pressable, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import { ChevronDown } from "lucide-react-native";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
+import { DisclosureChevron } from "@/components/ui/disclosure";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { useSessionStore } from "@/stores/session-store";
@@ -12,7 +12,6 @@ import type { StreamItem } from "@/types/stream";
 import { formatCompletedTurnDuration } from "./completed-turn-process";
 import { useTranslation } from "react-i18next";
 import type { StreamViewportHandle } from "./strategy";
-import type { StreamLayoutItem } from "./layout";
 import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import {
   loadNativeHistoryDetails,
@@ -21,20 +20,15 @@ import {
   registerExpandedNativeHistoryDetails,
   useNativeHistoryDetails,
 } from "@/timeline/native-history-details";
-import {
-  hydrateNativeHistoryDetails,
-  nativeHistoryInterruptedReply,
-} from "@/timeline/native-history-presentation";
 
 export function NativeHistoryProcess({
   item,
   client,
   agentId,
   readId,
-  renderItem,
-  renderReply,
+  expanded,
+  onToggle,
   viewport,
-  layout,
   serverId,
 }: {
   item: Extract<StreamItem, { kind: "native_history_process" }>;
@@ -42,15 +36,12 @@ export function NativeHistoryProcess({
   agentId: string;
   serverId: string;
   readId: string;
-  renderItem(item: StreamLayoutItem): ReactNode;
-  renderReply(item: StreamLayoutItem): ReactNode;
-  layout: StreamLayoutItem;
+  expanded: boolean;
+  onToggle(turnId: string): void;
   viewport: React.RefObject<StreamViewportHandle | null>;
 }) {
-  const { t, i18n } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
+  const { t } = useTranslation();
   const [localError, setLocalError] = useState<string | null>(null);
-  const [detailsHeight, setDetailsHeight] = useState<number | null>(null);
   const root = useRef<View>(null);
   const key = nativeHistoryDetailKey(serverId, agentId, readId, item.turnId);
   useEffect(() => {
@@ -61,25 +52,6 @@ export function NativeHistoryProcess({
   const loading = details?.loading === true;
   const error = localError ?? details?.error ?? null;
   const complete = details?.complete === true;
-  const preview = useMemo(
-    () => (complete && details ? nativeHistoryInterruptedReply(item, details.items) : []),
-    [complete, details, item],
-  );
-  const rows = useMemo(() => {
-    if (!expanded || !details) return [];
-    const visibleIds = new Set([...item.summaryMessageIds, ...preview.map((entry) => entry.id)]);
-    return hydrateNativeHistoryDetails(
-      item,
-      details.items.filter(
-        (entry) =>
-          !(
-            "messageId" in entry &&
-            typeof entry.messageId === "string" &&
-            visibleIds.has(entry.messageId)
-          ),
-      ),
-    );
-  }, [details, expanded, item, preview]);
   const load = useCallback(async () => {
     setLocalError(null);
     if (!client) {
@@ -115,7 +87,7 @@ export function NativeHistoryProcess({
     }
   }, [client, serverId, agentId, readId, item, viewport]);
   const toggle = useCallback(() => {
-    const change = () => setExpanded((value) => !value);
+    const change = () => onToggle(item.turnId);
     const node = root.current;
     if (node && viewport.current)
       viewport.current.preserveScrollAnchor({
@@ -125,38 +97,16 @@ export function NativeHistoryProcess({
       });
     else change();
     if (!expanded && !complete) void load();
-  }, [expanded, item.id, complete, load, viewport]);
-  const duration =
-    item.durationMs === null ? null : formatCompletedTurnDuration(item.durationMs, i18n.language);
-  let label = "已中断";
-  if (item.status === "completed")
-    label =
-      duration === null
-        ? t("agentStream.completedTurn.processed")
-        : t("agentStream.completedTurn.processedFor", { duration });
-  if (item.status === "failed") label = "处理失败";
-  if ((item.status === "interrupted" || item.status === "failed") && duration !== null)
-    label += ` · ${duration}`;
+  }, [expanded, item.id, item.turnId, complete, load, viewport, onToggle]);
+  const duration = item.durationMs === null ? null : formatCompletedTurnDuration(item.durationMs);
+  const label =
+    duration === null
+      ? t("agentStream.completedTurn.processed")
+      : t("agentStream.completedTurn.processedFor", { duration });
   const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
-  const renderRow = useCallback(
-    ({ item: row }: { item: StreamItem }) => (
-      <View>{renderItem({ ...layout, item: row, completedFooter: null, phase: "complete" })}</View>
-    ),
-    [layout, renderItem],
-  );
   const loadMore = useCallback(() => {
     void load();
   }, [load]);
-  const handleContentSizeChange = useCallback((width: number, height: number) => {
-    if (width <= 0) return;
-    setDetailsHeight((previous) => (previous === height ? previous : height));
-  }, []);
-  const detailsViewportStyle = useMemo(
-    () => ({
-      height: Math.min(400, detailsHeight ?? rows.length * 40),
-    }),
-    [detailsHeight, rows.length],
-  );
   if (item.status === "inProgress") return null;
   return (
     <View
@@ -170,6 +120,7 @@ export function NativeHistoryProcess({
           onPress={toggle}
           accessibilityRole="button"
           accessibilityState={accessibilityState}
+          aria-expanded={expanded}
           style={styles.toggle}
         >
           <Text style={styles.label}>{label}</Text>
@@ -180,53 +131,18 @@ export function NativeHistoryProcess({
         {item.error !== null && (
           <Alert variant="error" title="本轮处理未完成" description={item.error} />
         )}
-        <DisclosureContent expanded={expanded}>
-          {() => (
-            <View>
-              {error && <Alert variant="error" title="加载处理过程失败" description={error} />}
-              {rows.length > 0 && (
-                <FlatList
-                  testID={`native-process-details-${item.turnId}`}
-                  data={rows}
-                  keyExtractor={rowKey}
-                  renderItem={renderRow}
-                  style={[styles.details, detailsViewportStyle]}
-                  onContentSizeChange={handleContentSizeChange}
-                  initialNumToRender={12}
-                  maxToRenderPerBatch={12}
-                  windowSize={5}
-                  nestedScrollEnabled
-                />
-              )}
-              {(!complete || error !== null) && (
-                <Button variant="ghost" loading={loading} disabled={loading} onPress={loadMore}>
-                  {" "}
-                  {error ? "重试加载过程" : "正在加载处理过程"}{" "}
-                </Button>
-              )}
-            </View>
-          )}
-        </DisclosureContent>
+        {expanded && (
+          <View>
+            {error && <Alert variant="error" title="加载处理过程失败" description={error} />}
+            {(!complete || error !== null) && (
+              <Button variant="ghost" loading={loading} disabled={loading} onPress={loadMore}>
+                {" "}
+                {error ? "重试加载过程" : "正在加载处理过程"}{" "}
+              </Button>
+            )}
+          </View>
+        )}
       </View>
-      {preview.map((entry) => (
-        <View key={entry.id}>
-          {renderReply({
-            ...layout,
-            item: entry,
-            assistantSpacing: "default",
-            gapAbove: 8,
-            gapBelow: 0,
-            phase: "complete",
-            completedFooter: {
-              kind: "partial",
-              itemId: entry.id,
-              items: [entry],
-              startIndex: 0,
-              processItemIds: [],
-            },
-          })}
-        </View>
-      ))}
     </View>
   );
 }
@@ -250,9 +166,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
   },
   label: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base, lineHeight: 22 },
-  details: { maxHeight: 400, flexGrow: 0 },
 }));
 
-const rowKey = (row: StreamItem, index: number) => `${row.id}:${index}`;
 const ThemedChevron = withUnistyles(ChevronDown);
 const chevronColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });

@@ -233,6 +233,7 @@ test("原生摘要接收活动区中的提交后保留本地图片，完成发�
             messageId: "native-q",
             clientMessageId: "client-q",
             text: "带图问题",
+            images: [{ path: "/host/同一张图片.png", mimeType: "image/png" }],
           },
         ],
       },
@@ -252,6 +253,35 @@ test("原生摘要接收活动区中的提交后保留本地图片，完成发�
     messageId: "native-q",
     images: [image],
   });
+  if (result.tail[0].kind !== "user_message") throw new Error("缺少用户消息");
+  expect(result.tail[0].providerImages).toBeUndefined();
+  const refreshed = mergeNativeHistoryPage(result.tail, confirmed, false, null);
+  if (refreshed[0].kind !== "user_message") throw new Error("缺少刷新后的用户消息");
+  expect(refreshed[0].images).toEqual([image]);
+  expect(refreshed[0].providerImages).toBeUndefined();
+  const changedImagePage: NativeHistoryPage = {
+    ...confirmed,
+    turns: [
+      {
+        ...confirmed.turns[0],
+        items: [
+          {
+            type: "user_message",
+            messageId: "native-q",
+            clientMessageId: "client-q",
+            text: "带图问题",
+            images: [{ path: "/host/另一张图片.png", mimeType: "image/png" }],
+          },
+        ],
+      },
+    ],
+  };
+  const changedImage = mergeNativeHistoryPage(refreshed, changedImagePage, false, null)[0];
+  if (changedImage.kind !== "user_message") throw new Error("缺少换图后的用户消息");
+  expect(changedImage.images).toBeUndefined();
+  expect(changedImage.providerImages).toEqual([
+    { path: "/host/另一张图片.png", mimeType: "image/png" },
+  ]);
   expect(result?.acknowledgedClientMessageIds).toEqual(["client-q"]);
   const submissions = acceptMessageSubmission(
     beginMessageSubmission([], { clientMessageId: "client-q" }),

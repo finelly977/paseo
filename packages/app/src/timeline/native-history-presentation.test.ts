@@ -1,11 +1,100 @@
 import { expect, test } from "vitest";
-import type { NativeHistoryProcessItem } from "@/types/stream";
+import type { NativeHistoryProcessItem, StreamItem } from "@/types/stream";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import {
   nativeHistoryInterruptedReply,
   presentNativeHistoryActiveTurn,
+  presentNativeHistoryProcesses,
 } from "./native-history-presentation";
 import { nativeHistoryItems } from "./native-history";
+import {
+  prepareToolCallHistory,
+  projectToolCallDetailLevel,
+} from "@/tool-calls/detail-level/projection";
+
+test("展开历史过程后文字和命令进入外层流，每段命令保留独立可折叠分组", () => {
+  const process: NativeHistoryProcessItem = {
+    kind: "native_history_process",
+    id: "native-process:done",
+    turnId: "done",
+    status: "completed",
+    timestamp: new Date(1000),
+    durationMs: 128000,
+    error: null,
+    summaryMessageIds: ["question", "final"],
+    summaryRevision: "summary",
+  };
+  const command = (id: string): AgentTimelineItem => ({
+    type: "tool_call",
+    callId: id,
+    name: "Shell",
+    status: "completed",
+    error: null,
+    detail: { type: "shell", command: id, exitCode: 0 },
+  });
+  const items: AgentTimelineItem[] = [
+    { type: "user_message", messageId: "question", text: "问题" },
+    { type: "assistant_message", messageId: "comment-one", text: "第一段说明" },
+    command("one"),
+    command("two"),
+    { type: "assistant_message", messageId: "comment-two", text: "第二段说明" },
+    command("three"),
+    { type: "assistant_message", messageId: "final", text: "最终回复" },
+  ];
+  const tail: StreamItem[] = [
+    process,
+    {
+      kind: "assistant_message",
+      id: "final",
+      messageId: "final",
+      text: "最终回复",
+      timestamp: new Date(129000),
+    },
+  ];
+  const detailsByTurn = new Map([
+    [
+      "done",
+      {
+        serverId: "host",
+        agentId: "agent",
+        turnId: "done",
+        revision: "summary",
+        items,
+        nextCursor: null,
+        complete: true,
+        loading: false,
+        error: null,
+      },
+    ],
+  ]);
+  expect(presentNativeHistoryProcesses({ tail, expandedTurnIds: new Set(), detailsByTurn })).toBe(
+    tail,
+  );
+  const expanded = presentNativeHistoryProcesses({
+    tail,
+    expandedTurnIds: new Set(["done"]),
+    detailsByTurn,
+  });
+  const grouped = projectToolCallDetailLevel({
+    level: "overview",
+    tail: expanded,
+    head: [],
+    preparedHistory: prepareToolCallHistory("overview", expanded),
+    isTurnActive: false,
+  });
+  expect(grouped.groupsByHostId.size).toBe(2);
+  expect(
+    grouped.tail.filter((row) => row.kind === "assistant_message").map((row) => row.text),
+  ).toEqual(["第一段说明", "第二段说明", "最终回复"]);
+  expect(
+    grouped.tail
+      .filter((row) => row.kind === "tool_call")
+      .map((row) => grouped.groupsByHostId.get(row.id)?.run.calls.length),
+  ).toEqual([2, 1]);
+  expect(presentNativeHistoryProcesses({ tail, expandedTurnIds: new Set(), detailsByTurn })).toBe(
+    tail,
+  );
+});
 
 test("当前轮与旧轮复用调用标识时，不误删当前工具或覆盖旧历史", () => {
   const process = {
