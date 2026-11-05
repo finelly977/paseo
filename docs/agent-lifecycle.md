@@ -184,7 +184,7 @@ Claude reports both a native task identifier and the parent `Agent` tool-call id
 
 Archived Paseo subagents disappear from the track, by design. To remove one from the track without closing its tab, use the **archive button** on the row — it opens a confirm dialog and archives the subagent on confirm. Provider-owned rows have no individual Paseo lifecycle controls.
 
-The track header's **Archive finished** action hides finished provider-owned rows in the current client and persists that presentation choice across parent-session reopen and app restart. Their native sessions and timelines are untouched, and managed Paseo subagents are not archived by this bulk action. If a hidden provider child starts running again, the app brings it back to the track.
+轨道标题栏的“归档已完成子智能体”会从当前客户端隐藏已结束的提供方子任务，重开父会话或重启应用后仍保留。原生子会话和正文不删除，批量操作不归档 Paseo 托管子智能体。归档保存的是子会话自身已确认的原生回合标识；父工具调用和重放时间戳都不能作为新一轮的依据。客户端先恢复本地归档索引，再显示提供方子任务。历史重放没有已确认的回合标识时保持隐藏；核对到同一回合也不清除归档，只有确认子会话进入另一个回合才恢复显示。旧归档或归档当时尚未核对回合身份的记录，以首次确认的原生回合建立基线，期间不闪现旧运行态。
 
 To keep the agent alive but remove it from the parent's track, use **detach**. The daemon clears the parent label, emits the normal agent update, and every client reclassifies the agent from subagent to root/sibling from that updated snapshot.
 
@@ -204,7 +204,7 @@ We considered universal decoupling (no tab close ever archives, archive is alway
 
 ### Subagent accumulation under long-lived parents
 
-A parent that spawns many subagents will see the track grow. Managed Paseo subagents can be archived individually. Finished provider-owned rows can be hidden together with **Archive finished**; this is client-local presentation state and remains hidden after the parent session or app is reopened.
+长期使用的父会话可能积累较多子任务。Paseo 托管子智能体支持单独归档；已结束的提供方子任务通过“归档已完成子智能体”一起隐藏。这是客户端持久化的展示选择，父会话重开、后台重建记录或刷新同一原生回合时都不会恢复这些行。
 
 ### Cross-client tab dismissal
 

@@ -34,7 +34,11 @@ afterEach(() => {
     descriptors: new Map(),
     timelines: new Map(),
   });
-  useProviderSubagentArchiveStore.setState({ hiddenFromTrack: new Set() });
+  useProviderSubagentArchiveStore.setState({
+    hiddenFromTrack: new Set(),
+    hiddenRunIdByKey: {},
+    hydrated: true,
+  });
 });
 
 describe("provider subagent client store", () => {
@@ -373,7 +377,7 @@ describe("provider subagent client store", () => {
     ]);
   });
 
-  test("reveals a hidden child when the provider reports it running again", () => {
+  test("仅子会话自己的新回合恢复已归档子任务，同一工具调用可继续使用", () => {
     const store = useProviderSubagentStore.getState();
     const completed = {
       id: SUBAGENT_ID,
@@ -385,6 +389,7 @@ describe("provider subagent client store", () => {
       createdAt: "2026-07-12T10:00:00.000Z",
       updatedAt: "2026-07-12T10:00:02.000Z",
       toolCallId: "call-1",
+      runId: "child-turn-1",
     };
     store.applyUpdate(SERVER_ID, { kind: "upsert", subagent: completed });
     store.hideFinishedForParent(SERVER_ID, PARENT_ID);
@@ -395,10 +400,53 @@ describe("provider subagent client store", () => {
 
     store.applyUpdate(SERVER_ID, {
       kind: "upsert",
-      subagent: { ...completed, status: "running", updatedAt: "2026-07-12T10:01:00.000Z" },
+      subagent: {
+        ...completed,
+        status: "running",
+        updatedAt: "2026-07-12T10:01:00.000Z",
+        runId: "child-turn-2",
+      },
     });
 
     expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(false);
+  });
+
+  test("重开父会话时旧 running 快照不恢复已归档子任务，终态核对后仍隐藏", () => {
+    const store = useProviderSubagentStore.getState();
+    const completed = {
+      id: SUBAGENT_ID,
+      parentAgentId: PARENT_ID,
+      provider: "codex" as const,
+      title: "Finished child",
+      description: null,
+      status: "completed" as const,
+      createdAt: "2026-11-05T08:00:00.000Z",
+      updatedAt: "2026-11-05T08:00:02.000Z",
+      toolCallId: "call-1",
+      runId: "child-turn-1",
+    };
+    const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
+    store.applyUpdate(SERVER_ID, { kind: "upsert", subagent: completed });
+    store.hideFinishedForParent(SERVER_ID, PARENT_ID);
+    store.releaseParent(SERVER_ID, PARENT_ID);
+
+    store.replaceList(SERVER_ID, PARENT_ID, [
+      {
+        ...completed,
+        status: "running",
+        updatedAt: "2026-11-05T08:01:00.000Z",
+        runId: null,
+        toolCallId: "historical-call",
+      },
+    ]);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
+
+    store.applyUpdate(SERVER_ID, {
+      kind: "upsert",
+      subagent: { ...completed, updatedAt: "2026-11-05T08:02:00.000Z" },
+    });
+    expect(useProviderSubagentStore.getState().descriptors.get(key)?.status).toBe("completed");
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
   });
 
   test("keeps hidden state when a child temporarily disappears from the provider list", () => {

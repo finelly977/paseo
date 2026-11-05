@@ -26,6 +26,25 @@ function createHistoryClient(responses: readonly unknown[]) {
   };
 }
 
+function createConcurrentHistoryClient(responsesByMethod: Record<string, readonly unknown[]>) {
+  const requests: HistoryRequest[] = [];
+  const clients = new Map(
+    Object.entries(responsesByMethod).map(([method, responses]) => [
+      method,
+      createHistoryClient(responses),
+    ]),
+  );
+  return {
+    requests,
+    async request(method: string, params?: unknown): Promise<unknown> {
+      requests.push({ method, params });
+      const client = clients.get(method);
+      if (!client) throw new Error(`Unexpected history request: ${method}`);
+      return client.request(method, params);
+    },
+  };
+}
+
 const paginatedMetadata = { thread: { id: "thread-1", historyMode: "paginated" } };
 const firstTurnPage = {
   data: [{ id: "turn-1", items: [], status: "completed" }],
@@ -38,7 +57,10 @@ describe("Codex 原生历史分页", () => {
       paginatedMetadata,
       { data: [{ id: "last-turn", status: "completed", items: [] }], nextCursor: "older" },
     ]);
-    expect(await readCodexThreadLatestStatus(client, "thread-1")).toBe("completed");
+    expect(await readCodexThreadLatestStatus(client, "thread-1")).toEqual({
+      id: "last-turn",
+      status: "completed",
+    });
     expect(client.requests).toEqual([
       { method: "thread/read", params: { threadId: "thread-1", includeTurns: false } },
       {
@@ -84,7 +106,10 @@ describe("Codex 原生历史分页", () => {
         },
       },
     ]);
-    expect(await readCodexThreadLatestStatus(client, "thread-1")).toBe("interrupted");
+    expect(await readCodexThreadLatestStatus(client, "thread-1")).toEqual({
+      id: "last",
+      status: "interrupted",
+    });
   });
   test("只读原生最新页即可返回，较早正文留给后台，不混入任何本地副本", async () => {
     const client = createHistoryClient([
@@ -162,28 +187,32 @@ describe("Codex 原生历史分页", () => {
   });
 
   test("回退的两个反向游标分别读完后恢复时间顺序，重叠条目不重复", async () => {
-    const client = createHistoryClient([
-      { data: [{ id: "turn-2", items: [] }], nextCursor: "older-turns" },
-      {
-        data: [
-          { id: "turn-2", items: [] },
-          { id: "turn-1", items: [] },
-        ],
-        nextCursor: null,
-      },
-      {
-        data: [{ turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "答复" } }],
-        nextCursor: "older-items",
-      },
-      {
-        data: [
-          { turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "完整答复" } },
-          { turnId: "turn-2", item: { id: "a", type: "userMessage" } },
-          { turnId: "turn-1", item: { id: "a", type: "userMessage" } },
-        ],
-        nextCursor: null,
-      },
-    ]);
+    const client = createConcurrentHistoryClient({
+      "thread/turns/list": [
+        { data: [{ id: "turn-2", items: [] }], nextCursor: "older-turns" },
+        {
+          data: [
+            { id: "turn-2", items: [] },
+            { id: "turn-1", items: [] },
+          ],
+          nextCursor: null,
+        },
+      ],
+      "thread/items/list": [
+        {
+          data: [{ turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "答复" } }],
+          nextCursor: "older-items",
+        },
+        {
+          data: [
+            { turnId: "turn-2", item: { id: "b", type: "agentMessage", text: "完整答复" } },
+            { turnId: "turn-2", item: { id: "a", type: "userMessage" } },
+            { turnId: "turn-1", item: { id: "a", type: "userMessage" } },
+          ],
+          nextCursor: null,
+        },
+      ],
+    });
     const history = await readCodexPaginatedThread({
       client,
       threadId: "thread-1",
@@ -210,6 +239,7 @@ describe("Codex 原生历史分页", () => {
         sortDirection: "desc",
         itemsView: "notLoaded",
       },
+      { threadId: "thread-1", cursor: "retained-items", limit: 100, sortDirection: "desc" },
       {
         threadId: "thread-1",
         cursor: "older-turns",
@@ -217,29 +247,32 @@ describe("Codex 原生历史分页", () => {
         sortDirection: "desc",
         itemsView: "notLoaded",
       },
-      { threadId: "thread-1", cursor: "retained-items", limit: 100, sortDirection: "desc" },
       { threadId: "thread-1", cursor: "older-items", limit: 100, sortDirection: "desc" },
     ]);
   });
 
   test("按原始顺序合并跨页回合与正文，保留回合元信息和未知条目字段", async () => {
     const requests: string[] = [];
-    const responses = [
-      { thread: { id: "thread-1", historyMode: "paginated" } },
-      { data: [{ id: "turn-1", items: [], startedAt: 123 }], nextCursor: "turn-next" },
-      { data: [{ id: "turn-2", items: [], status: "completed" }], nextCursor: null },
-      {
-        data: [{ turnId: "turn-1", item: { id: "item-1", type: "userMessage", text: "问题" } }],
-        nextCursor: "item-next",
-      },
-      {
-        data: [
-          { turnId: "turn-1", item: { id: "item-2", type: "agentMessage", text: "回复" } },
-          { turnId: "turn-2", item: { id: "item-3", type: "futureItem", payload: { a: 1 } } },
-        ],
-        nextCursor: null,
-      },
-    ];
+    const client = createConcurrentHistoryClient({
+      "thread/read": [{ thread: { id: "thread-1", historyMode: "paginated" } }],
+      "thread/turns/list": [
+        { data: [{ id: "turn-1", items: [], startedAt: 123 }], nextCursor: "turn-next" },
+        { data: [{ id: "turn-2", items: [], status: "completed" }], nextCursor: null },
+      ],
+      "thread/items/list": [
+        {
+          data: [{ turnId: "turn-1", item: { id: "item-1", type: "userMessage", text: "问题" } }],
+          nextCursor: "item-next",
+        },
+        {
+          data: [
+            { turnId: "turn-1", item: { id: "item-2", type: "agentMessage", text: "回复" } },
+            { turnId: "turn-2", item: { id: "item-3", type: "futureItem", payload: { a: 1 } } },
+          ],
+          nextCursor: null,
+        },
+      ],
+    });
     const history = await readCodexThread(
       {
         async request(method, params) {
@@ -249,7 +282,7 @@ describe("Codex 原生历史分页", () => {
             expect(params).toMatchObject({ sortDirection: "asc", limit: 100 });
           if (method === "thread/turns/list")
             expect(params).toMatchObject({ itemsView: "notLoaded" });
-          return responses.shift();
+          return client.request(method, params);
         },
       },
       "thread-1",
@@ -278,11 +311,10 @@ describe("Codex 原生历史分页", () => {
     expect(requests).toEqual([
       "thread/read",
       "thread/turns/list",
+      "thread/items/list",
       "thread/turns/list",
       "thread/items/list",
-      "thread/items/list",
     ]);
-    expect(responses).toEqual([]);
   });
 
   test("legacy 存储按其原生接口完整读取，不请求分页接口", async () => {
@@ -309,31 +341,35 @@ describe("Codex 原生历史分页", () => {
   );
 
   test("重叠页按回合及条目身份去重，不打乱顺序也不合并不同回合的同名条目", async () => {
-    const client = createHistoryClient([
-      paginatedMetadata,
-      { ...firstTurnPage, nextCursor: "turn-next" },
-      {
-        data: [
-          { id: "turn-1", items: [], status: "updated" },
-          { id: "turn-2", items: [] },
-        ],
-        nextCursor: null,
-      },
-      {
-        data: [
-          { turnId: "turn-1", item: { id: "a", type: "agentMessage", text: "未完成" } },
-          { turnId: "turn-1", item: { id: "b", type: "agentMessage", text: "第二条" } },
-        ],
-        nextCursor: "item-next",
-      },
-      {
-        data: [
-          { turnId: "turn-1", item: { id: "a", type: "agentMessage", text: "完成" } },
-          { turnId: "turn-2", item: { id: "a", type: "agentMessage", text: "其他回合" } },
-        ],
-        nextCursor: null,
-      },
-    ]);
+    const client = createConcurrentHistoryClient({
+      "thread/read": [paginatedMetadata],
+      "thread/turns/list": [
+        { ...firstTurnPage, nextCursor: "turn-next" },
+        {
+          data: [
+            { id: "turn-1", items: [], status: "updated" },
+            { id: "turn-2", items: [] },
+          ],
+          nextCursor: null,
+        },
+      ],
+      "thread/items/list": [
+        {
+          data: [
+            { turnId: "turn-1", item: { id: "a", type: "agentMessage", text: "未完成" } },
+            { turnId: "turn-1", item: { id: "b", type: "agentMessage", text: "第二条" } },
+          ],
+          nextCursor: "item-next",
+        },
+        {
+          data: [
+            { turnId: "turn-1", item: { id: "a", type: "agentMessage", text: "完成" } },
+            { turnId: "turn-2", item: { id: "a", type: "agentMessage", text: "其他回合" } },
+          ],
+          nextCursor: null,
+        },
+      ],
+    });
     await expect(readCodexThread(client, "thread-1")).resolves.toMatchObject({
       thread: {
         turns: [
@@ -349,7 +385,7 @@ describe("Codex 原生历史分页", () => {
         ],
       },
     });
-    expect(client.requests[2].params).toMatchObject({ cursor: "turn-next" });
+    expect(client.requests[3].params).toMatchObject({ cursor: "turn-next" });
     expect(client.requests[4].params).toMatchObject({ cursor: "item-next" });
   });
 
@@ -380,18 +416,21 @@ describe("Codex 原生历史分页", () => {
   test.each(["thread/turns/list", "thread/items/list"])(
     "%s 游标形成循环时明确失败",
     async (method) => {
-      const responses: unknown[] = [paginatedMetadata];
-      if (method === "thread/items/list") responses.push(firstTurnPage);
-      responses.push(
+      const responses = [
         { data: [], nextCursor: "a" },
         { data: [], nextCursor: "b" },
         { data: [], nextCursor: "a" },
-      );
-      const client = createHistoryClient(responses);
+      ];
+      const client = createConcurrentHistoryClient({
+        "thread/read": [paginatedMetadata],
+        "thread/turns/list": method === "thread/turns/list" ? responses : [firstTurnPage],
+        "thread/items/list":
+          method === "thread/items/list" ? responses : [{ data: [], nextCursor: null }],
+      });
       await expect(readCodexThread(client, "thread-1")).rejects.toThrow(
         `${method} returned a repeated cursor`,
       );
-      expect(client.requests).toHaveLength(responses.length);
+      expect(client.requests).toHaveLength(5);
     },
   );
 

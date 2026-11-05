@@ -6,58 +6,118 @@ import { createValidatedPersistStorage } from "@/storage/validated-persist-stora
 
 interface ProviderSubagentArchiveState {
   hiddenFromTrack: Set<string>;
-  hide(keys: readonly string[]): void;
-  reveal(key: string): void;
+  hiddenRunIdByKey: Record<string, string | null>;
+  hydrated: boolean;
+  hide(entries: readonly ProviderSubagentArchiveEntry[]): void;
+  observe(entry: ProviderSubagentArchiveEntry): void;
+  markHydrated(): void;
 }
 
-interface PersistedProviderSubagentArchiveState {
-  hiddenFromTrack: string[];
+interface ProviderSubagentArchiveEntry {
+  key: string;
+  runId: string | null;
 }
 
-const PersistedProviderSubagentArchiveStateSchema = z.strictObject({
+const LegacyProviderSubagentArchiveStateSchema = z.strictObject({
   hiddenFromTrack: z.array(z.string().min(1)),
 });
+const PersistedProviderSubagentArchiveStateSchema = z.strictObject({
+  hiddenRunIdByKey: z.record(z.string().min(1), z.string().min(1).nullable()),
+});
+const StoredProviderSubagentArchiveStateSchema = z.union([
+  LegacyProviderSubagentArchiveStateSchema,
+  PersistedProviderSubagentArchiveStateSchema,
+]);
+type PersistedProviderSubagentArchiveState = z.infer<
+  typeof PersistedProviderSubagentArchiveStateSchema
+>;
+type StoredProviderSubagentArchiveState = z.infer<typeof StoredProviderSubagentArchiveStateSchema>;
+
+function normalizePersistedState(
+  persisted: StoredProviderSubagentArchiveState,
+): PersistedProviderSubagentArchiveState {
+  if ("hiddenRunIdByKey" in persisted) return persisted;
+  return {
+    hiddenRunIdByKey: Object.fromEntries(persisted.hiddenFromTrack.map((key) => [key, null])),
+  };
+}
+
+function hasHiddenEntry(state: ProviderSubagentArchiveState, key: string): boolean {
+  return Object.hasOwn(state.hiddenRunIdByKey, key);
+}
 
 export function createProviderSubagentArchiveStore(backingStorage: StateStorage) {
   return create<ProviderSubagentArchiveState>()(
-    persist<ProviderSubagentArchiveState, [], [], PersistedProviderSubagentArchiveState>(
+    persist<ProviderSubagentArchiveState, [], [], StoredProviderSubagentArchiveState>(
       (set) => ({
         hiddenFromTrack: new Set(),
-        hide: (keys) => {
-          if (keys.length === 0) return;
+        hiddenRunIdByKey: {},
+        hydrated: false,
+        hide: (entries) => {
+          if (entries.length === 0) return;
           set((state) => {
-            const hiddenFromTrack = new Set(state.hiddenFromTrack);
-            for (const key of keys) {
-              if (!key) throw new Error("归档提供方子智能体需要有效标识");
-              hiddenFromTrack.add(key);
+            const hiddenRunIdByKey = { ...state.hiddenRunIdByKey };
+            for (const entry of entries) {
+              if (!entry.key) throw new Error("归档提供方子智能体需要有效标识");
+              hiddenRunIdByKey[entry.key] = entry.runId;
             }
-            return { hiddenFromTrack };
+            return {
+              hiddenRunIdByKey,
+              hiddenFromTrack: new Set(Object.keys(hiddenRunIdByKey)),
+            };
           });
         },
-        reveal: (key) => {
-          if (!key) throw new Error("恢复提供方子智能体需要有效标识");
+        observe: (entry) => {
+          if (!entry.key) throw new Error("核对子智能体归档状态需要有效标识");
           set((state) => {
-            if (!state.hiddenFromTrack.has(key)) return state;
+            if (!hasHiddenEntry(state, entry.key)) return state;
+            if (entry.runId === null) return state;
+            const hiddenRunId = state.hiddenRunIdByKey[entry.key];
+            if (hiddenRunId === null) {
+              return {
+                hiddenRunIdByKey: {
+                  ...state.hiddenRunIdByKey,
+                  [entry.key]: entry.runId,
+                },
+              };
+            }
+            if (entry.runId === hiddenRunId) return state;
+
+            const hiddenRunIdByKey = { ...state.hiddenRunIdByKey };
+            delete hiddenRunIdByKey[entry.key];
             const hiddenFromTrack = new Set(state.hiddenFromTrack);
-            hiddenFromTrack.delete(key);
-            return { hiddenFromTrack };
+            hiddenFromTrack.delete(entry.key);
+            return { hiddenRunIdByKey, hiddenFromTrack };
           });
         },
+        markHydrated: () => set({ hydrated: true }),
       }),
       {
         name: "provider-subagent-track-archive",
-        version: 1,
+        version: 2,
         storage: createValidatedPersistStorage(
           backingStorage,
-          PersistedProviderSubagentArchiveStateSchema,
+          StoredProviderSubagentArchiveStateSchema,
         ),
-        partialize: (state) => ({ hiddenFromTrack: [...state.hiddenFromTrack] }),
+        partialize: (state) => ({ hiddenRunIdByKey: state.hiddenRunIdByKey }),
+        migrate: (persisted) =>
+          normalizePersistedState(StoredProviderSubagentArchiveStateSchema.parse(persisted)),
         merge: (persisted, current) => {
-          const restored = PersistedProviderSubagentArchiveStateSchema.parse(persisted);
+          if (persisted === undefined) return current;
+          const restored = normalizePersistedState(
+            StoredProviderSubagentArchiveStateSchema.parse(persisted),
+          );
           return {
             ...current,
-            hiddenFromTrack: new Set(restored.hiddenFromTrack),
+            hiddenRunIdByKey: restored.hiddenRunIdByKey,
+            hiddenFromTrack: new Set(Object.keys(restored.hiddenRunIdByKey)),
           };
+        },
+        onRehydrateStorage: () => (state, error) => {
+          if (error) {
+            console.error("[提供方子智能体] 读取本地归档状态失败", error);
+          }
+          state?.markHydrated();
         },
       },
     ),

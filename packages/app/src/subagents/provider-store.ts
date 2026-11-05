@@ -250,13 +250,16 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
   timelines: new Map(),
   hideFinishedForParent(serverId, parentAgentId) {
     const prefix = parentPrefix(serverId, parentAgentId);
-    const finishedKeys = [...useProviderSubagentStore.getState().descriptors].flatMap(
-      ([key, subagent]) => (key.startsWith(prefix) && subagent.status !== "running" ? [key] : []),
+    const finished = [...useProviderSubagentStore.getState().descriptors].flatMap(
+      ([key, subagent]) =>
+        key.startsWith(prefix) && subagent.status !== "running"
+          ? [{ key, runId: subagent.runId ?? null }]
+          : [],
     );
-    useProviderSubagentArchiveStore.getState().hide(finishedKeys);
+    useProviderSubagentArchiveStore.getState().hide(finished);
   },
   replaceList(serverId, parentAgentId, subagents) {
-    const revealedKeys: string[] = [];
+    const observed: Array<{ key: string; runId: string | null }> = [];
     set((state) => {
       const prefix = parentPrefix(serverId, parentAgentId);
       const descriptors = new Map(
@@ -266,7 +269,10 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
         const key = providerSubagentKey(serverId, parentAgentId, incoming.id);
         const subagent = preferCurrentDescriptor(state.descriptors.get(key), incoming);
         descriptors.set(key, subagent);
-        if (subagent.status === "running") revealedKeys.push(key);
+        observed.push({
+          key,
+          runId: subagent.runId ?? null,
+        });
       }
       const retainedKeys = new Set(descriptors.keys());
       const timelines = new Map(
@@ -287,10 +293,10 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
       }
       return { descriptors, timelines };
     });
-    for (const key of revealedKeys) useProviderSubagentArchiveStore.getState().reveal(key);
+    for (const entry of observed) useProviderSubagentArchiveStore.getState().observe(entry);
   },
   applyUpdate(serverId, payload) {
-    let revealedKey: string | null = null;
+    let observed: { key: string; runId: string | null } | undefined;
     set((state) => {
       if (payload.kind === "upsert") {
         const key = providerSubagentKey(
@@ -302,7 +308,10 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
         const previous = descriptors.get(key);
         const subagent = preferCurrentDescriptor(previous, payload.subagent);
         descriptors.set(key, subagent);
-        if (subagent.status === "running") revealedKey = key;
+        observed = {
+          key,
+          runId: subagent.runId ?? null,
+        };
         let timelines = state.timelines;
         const current = state.timelines.get(key);
         if (current && previous?.status !== subagent.status) {
@@ -357,7 +366,7 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
       });
       return { timelines };
     });
-    if (revealedKey) useProviderSubagentArchiveStore.getState().reveal(revealedKey);
+    if (observed) useProviderSubagentArchiveStore.getState().observe(observed);
   },
   replaceTimeline(serverId, payload) {
     const provider = payload.provider;

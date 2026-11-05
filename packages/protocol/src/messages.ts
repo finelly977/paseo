@@ -4524,6 +4524,8 @@ export const ProviderSubagentDescriptorPayloadSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   toolCallId: z.string().nullable(),
+  // COMPAT(providerSubagentRunId): v0.2.5，2026-11-05 加入，2027-05-05 后复核；缺失时归档保持隐藏。
+  runId: z.string().min(1).nullable().optional(),
   cwd: z.string().nullable().optional(),
 });
 

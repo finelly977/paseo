@@ -12,6 +12,7 @@ import { createFakeCodexAppServer } from "./agent/providers/codex/test-utils/fak
 
 test("真实列表 RPC 独立核对子任务终态，失败保留缓存且重试可发现新一轮，不调用正文接口", async () => {
   let status = "inProgress";
+  let runId = "child-turn";
   let failed = false;
   let bodyReads = 0;
   const statusRequests: unknown[] = [];
@@ -47,7 +48,7 @@ test("真实列表 RPC 独立核对子任务终态，失败保留缓存且重试
     },
     "thread/turns/list": (params) => {
       statusRequests.push(params);
-      return { data: [{ id: "child-turn", status, items: [] }], nextCursor: null };
+      return { data: [{ id: runId, status, items: [] }], nextCursor: null };
     },
     "thread/items/list": () => {
       bodyReads += 1;
@@ -110,7 +111,7 @@ test("真实列表 RPC 独立核对子任务终态，失败保留缓存且重试
     status = "completed";
     const completed = await client.listProviderSubagents(parent.id);
     expect(completed.subagents).toEqual([
-      expect.objectContaining({ id: "child", status: "completed" }),
+      expect.objectContaining({ id: "child", status: "completed", runId: "child-turn" }),
     ]);
     expect(statusRequests).toEqual([
       {
@@ -129,9 +130,10 @@ test("真实列表 RPC 独立核对子任务终态，失败保留缓存且重试
     ]);
     failed = false;
     status = "inProgress";
+    runId = "child-turn-next";
     const restarted = await client.listProviderSubagents(parent.id);
     expect(restarted.subagents).toEqual([
-      expect.objectContaining({ id: "child", status: "running" }),
+      expect.objectContaining({ id: "child", status: "running", runId: "child-turn-next" }),
     ]);
     expect(bodyReads).toBe(baselineBodyReads);
     appServer.assertNoErrors();

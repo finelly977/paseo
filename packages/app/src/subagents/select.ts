@@ -123,9 +123,16 @@ export function useSubagentsForParent(params: SelectSubagentsParams) {
     (state) => state.sessions[params.serverId]?.serverInfo?.features?.providerSubagents === true,
   );
   const hiddenFromTrack = useProviderSubagentArchiveStore((state) => state.hiddenFromTrack);
+  const archiveStateHydrated = useProviderSubagentArchiveStore((state) => state.hydrated);
   const providerRows = useStoreWithEqualityFn(
     useProviderSubagentStore,
-    (state) => selectProviderSubagentsForParent(state, params, supported, hiddenFromTrack),
+    (state) =>
+      selectProviderSubagentsForParent(
+        state,
+        params,
+        supported && archiveStateHydrated,
+        hiddenFromTrack,
+      ),
     equal,
   );
   const client = useSessionStore((state) => state.sessions[params.serverId]?.client ?? null);
@@ -133,7 +140,7 @@ export function useSubagentsForParent(params: SelectSubagentsParams) {
   const query = useFetchQuery(
     {
       queryKey: ["provider-subagent-list", params.serverId, params.parentAgentId],
-      enabled: active && supported && client !== null,
+      enabled: active && supported && archiveStateHydrated && client !== null,
       queryFn: async () => {
         if (!client) throw new Error("主机连接已断开，无法核对子智能体状态。");
         await refreshProviderSubagents(client, params.serverId, params.parentAgentId);

@@ -25,6 +25,7 @@ export interface ProviderSubagentDescriptor {
   createdAt: string;
   updatedAt: string;
   toolCallId: string | null;
+  runId: string | null;
   cwd: string | null;
 }
 
@@ -36,6 +37,7 @@ export type ProviderSubagentInputEvent =
       description?: string | null;
       status: ProviderSubagentStatus;
       toolCallId?: string | null;
+      runId?: string | null;
       cwd?: string | null;
       timestamp?: string;
     }
@@ -96,6 +98,15 @@ export class ProviderSubagentStore {
       };
     }
 
+    return this.upsert(parentAgentId, provider, event);
+  }
+
+  private upsert(
+    parentAgentId: string,
+    provider: AgentProvider,
+    event: Extract<ProviderSubagentInputEvent, { type: "upsert" }>,
+  ): ProviderSubagentStoreEvent {
+    const key = storeKey(parentAgentId, event.id);
     const previous = this.descriptors.get(key);
     if (!this.timelines.has(key)) {
       this.timelines.initialize(key);
@@ -113,6 +124,7 @@ export class ProviderSubagentStore {
       updatedAt: timestamp,
       toolCallId:
         event.toolCallId === undefined ? (previous?.toolCallId ?? null) : event.toolCallId,
+      runId: event.runId === undefined ? (previous?.runId ?? null) : event.runId,
       cwd: event.cwd === undefined ? (previous?.cwd ?? null) : event.cwd,
     };
     this.descriptors.set(key, subagent);

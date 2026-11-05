@@ -585,6 +585,7 @@ interface CodexThreadHistoryProjection {
   subAgentRoutes: PersistedSubAgentRoute[];
   nativeTurnIdsByMessageId: Map<string, string>;
   latestStatus: ToolCallTimelineItem["status"] | null;
+  latestTurnId: string | null;
 }
 
 function codexSubagentHistoryStatus(
@@ -2470,7 +2471,8 @@ async function loadCodexThreadHistoryTimeline(params: {
     },
   );
   const latestStatus = codexSubagentHistoryStatus(response.thread.turns.at(-1)?.status);
-  return { timeline, subAgentRoutes, nativeTurnIdsByMessageId, latestStatus };
+  const latestTurnId = response.thread.turns.at(-1)?.id ?? null;
+  return { timeline, subAgentRoutes, nativeTurnIdsByMessageId, latestStatus, latestTurnId };
 }
 
 export async function forkCodexThread(
@@ -2538,6 +2540,7 @@ const TurnCompletedNotificationSchema = z
     threadId: z.string().optional(),
     turn: z
       .object({
+        id: z.string().min(1).optional(),
         status: z.string(),
         error: z
           .object({
@@ -2813,6 +2816,7 @@ type ParsedCodexNotification =
   | { kind: "turn_started"; turnId: string; threadId: string | null }
   | {
       kind: "turn_completed";
+      turnId: string | null;
       status: string;
       errorMessage: string | null;
       threadId: string | null;
@@ -2963,6 +2967,7 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
+        turnId: params.turn.id ?? null,
         status: params.turn.status,
         errorMessage: params.turn.error?.message ?? null,
         threadId: params.threadId ?? null,
@@ -3383,6 +3388,7 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
+        turnId: null,
         status: "interrupted",
         errorMessage: null,
         threadId: getCodexEventThreadId(params),
@@ -3403,6 +3409,7 @@ const CodexNotificationSchema = z.union([
     .transform(
       ({ params }): ParsedCodexNotification => ({
         kind: "turn_completed",
+        turnId: null,
         status: "completed",
         errorMessage: null,
         threadId: getCodexEventThreadId(params),
@@ -3717,6 +3724,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private subAgentCallsByCallId = new Map<string, CodexSubAgentCallState>();
   private subAgentCallIdByChildThreadId = new Map<string, string>();
   private readonly subAgentRunVersions = new Map<string, number>();
+  private readonly subAgentTurnIds = new Map<string, string>();
   private pendingSubAgentNotificationsByThreadId = new Map<string, ParsedCodexNotification[]>();
   private warnedUnknownNotificationMethods = new Set<string>();
   private warnedInvalidNotificationPayloads = new Set<string>();
@@ -4216,6 +4224,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.subAgentCallsByCallId.clear();
     this.subAgentCallIdByChildThreadId.clear();
     this.subAgentRunVersions.clear();
+    this.subAgentTurnIds.clear();
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.persistedProviderSubagentEvents = [];
     this.loadingPersistedHistory = true;
@@ -4269,6 +4278,8 @@ export class CodexAppServerAgentSession implements AgentSession {
         }
         const state = this.subAgentCallsByCallId.get(next.route.toolCall.callId);
         if (state && childHistory.latestStatus !== null) {
+          if (childHistory.latestTurnId !== null)
+            this.subAgentTurnIds.set(next.route.childThreadId, childHistory.latestTurnId);
           if (state.childThreadIds.size === 1) {
             state.toolCall = this.withSubagentStatus(state.toolCall, childHistory.latestStatus);
           }
@@ -4911,8 +4922,9 @@ export class CodexAppServerAgentSession implements AgentSession {
             nativeStatus === null
           )
             return;
-          const status = codexSubagentHistoryStatus(nativeStatus);
+          const status = codexSubagentHistoryStatus(nativeStatus.status);
           if (status === null) throw new Error("Codex 未返回已知的子智能体回合状态。");
+          this.subAgentTurnIds.set(threadId, nativeStatus.id);
           if (state.childThreadIds.size === 1 && state.toolCall.status !== status) {
             state.toolCall = this.withSubagentStatus(state.toolCall, status);
             // 这里只更新状态，保留父工具已有日志，不用空的历史条目覆盖日志。
@@ -4939,6 +4951,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (this.subAgentCallsByCallId.get(state.callId) !== state) return null;
     if ((this.subAgentRunVersions.get(subagentId) ?? 0) !== version) return null;
     if (history.latestStatus === null) throw new Error("Codex 未返回子智能体自己的回合状态。");
+    if (history.latestTurnId !== null) this.subAgentTurnIds.set(subagentId, history.latestTurnId);
     if (state.childThreadIds.size === 1) {
       state.childItems.clear();
       state.childItemOrder.length = 0;
@@ -6342,6 +6355,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         description: detail.description ?? null,
         status: providerStatus,
         toolCallId: state.callId,
+        runId: this.subAgentTurnIds.get(childThreadId) ?? null,
       },
     });
   }
@@ -6558,6 +6572,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   ): void {
     const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
     if (subAgentCallId) {
+      if (parsed.threadId) this.subAgentTurnIds.set(parsed.threadId, parsed.turnId);
       if (parsed.threadId)
         this.subAgentRunVersions.set(
           parsed.threadId,
@@ -6584,6 +6599,8 @@ export class CodexAppServerAgentSession implements AgentSession {
   ): void {
     const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
     if (subAgentCallId) {
+      if (parsed.threadId && parsed.turnId)
+        this.subAgentTurnIds.set(parsed.threadId, parsed.turnId);
       if (parsed.threadId)
         this.subAgentRunVersions.set(
           parsed.threadId,

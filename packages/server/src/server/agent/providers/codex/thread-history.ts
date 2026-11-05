@@ -118,7 +118,7 @@ export async function readCodexThread(
 export async function readCodexThreadLatestStatus(
   client: CodexHistoryClient,
   threadId: string,
-): Promise<z.infer<typeof NativeTurnStatusSchema> | null> {
+): Promise<{ id: string; status: z.infer<typeof NativeTurnStatusSchema> } | null> {
   const { thread } = ThreadMetadataSchema.parse(
     await client.request("thread/read", { threadId, includeTurns: false }),
   );
@@ -142,7 +142,7 @@ export async function readCodexThreadLatestStatus(
   }
   // 原生子任务刚创建但尚未开始时允许没有回合，不能将其标记为结束。
   if (latest === undefined) return null;
-  return z.object({ status: NativeTurnStatusSchema }).parse(latest).status;
+  return z.object({ id: z.string().min(1), status: NativeTurnStatusSchema }).parse(latest);
 }
 
 /** 原生最新页与完整读取使用相同格式校验，不用 Paseo 副本代替最新内容。 */

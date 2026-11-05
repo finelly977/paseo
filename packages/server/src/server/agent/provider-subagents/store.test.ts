@@ -2,6 +2,30 @@ import { describe, expect, test } from "vitest";
 import { ProviderSubagentStore } from "./store.js";
 
 describe("ProviderSubagentStore", () => {
+  test("子任务原生回合身份不随重放时间和父工具调用改变", () => {
+    const store = new ProviderSubagentStore();
+    store.apply("parent", "codex", {
+      type: "upsert",
+      id: "child",
+      status: "completed",
+      runId: "child-turn-1",
+      toolCallId: "spawn",
+    });
+    store.apply("parent", "codex", {
+      type: "upsert",
+      id: "child",
+      status: "running",
+      toolCallId: "historical-spawn",
+    });
+    expect(store.get("parent", "child")).toMatchObject({ runId: "child-turn-1" });
+    store.apply("parent", "codex", {
+      type: "upsert",
+      id: "child",
+      status: "running",
+      runId: "child-turn-2",
+    });
+    expect(store.get("parent", "child")).toMatchObject({ runId: "child-turn-2" });
+  });
   test("原生子任务核对后替换正文并更换代际，不重复追加旧片段", () => {
     const store = new ProviderSubagentStore();
     store.apply("parent", "codex", { type: "upsert", id: "child", status: "completed" });

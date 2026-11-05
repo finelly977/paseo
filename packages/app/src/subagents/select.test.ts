@@ -82,7 +82,11 @@ afterEach(() => {
     descriptors: new Map(),
     timelines: new Map(),
   });
-  useProviderSubagentArchiveStore.setState({ hiddenFromTrack: new Set() });
+  useProviderSubagentArchiveStore.setState({
+    hiddenFromTrack: new Set(),
+    hiddenRunIdByKey: {},
+    hydrated: true,
+  });
 });
 
 describe("selectSubagentsForParent", () => {

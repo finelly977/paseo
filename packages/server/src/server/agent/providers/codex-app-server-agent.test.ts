@@ -373,7 +373,7 @@ describe("Codex active-turn steering admission", () => {
           events.findLast(
             (event) => event.type === "provider_subagent" && event.event.type === "upsert",
           ),
-        ).toMatchObject({ event: { id: "child", status: expected } });
+        ).toMatchObject({ event: { id: "child", status: expected, runId: "child-last" } });
         expect(
           events.findLast((event) => event.type === "timeline" && event.item.type === "tool_call"),
         ).toMatchObject({ item: { callId: "spawn", status: expected } });
@@ -4102,7 +4102,9 @@ describe("Codex app-server provider", () => {
         events.findLast(
           (event) => event.type === "provider_subagent" && event.event.type === "upsert",
         ),
-      ).toMatchObject({ event: { id: "settled-child-thread", status: "running" } });
+      ).toMatchObject({
+        event: { id: "settled-child-thread", status: "running", runId: "next-child-turn" },
+      });
 
       appServer.completeTurn({ threadId: "settled-child-thread" });
       appServer.completeTurn();
@@ -5640,7 +5642,7 @@ describe("Codex app-server provider", () => {
         history.findLast(
           (event) => event.type === "provider_subagent" && event.event.type === "upsert",
         ),
-      ).toMatchObject({ event: { id: "child", status: "completed" } });
+      ).toMatchObject({ event: { id: "child", status: "completed", runId: "child-turn" } });
       expect(
         history.find((event) => event.type === "timeline" && event.item.type === "tool_call"),
       ).toMatchObject({ item: { callId: "spawn", status: "completed" } });
