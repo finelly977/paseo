@@ -201,28 +201,33 @@ export async function readCodexPaginatedThread(
   params: PaginatedThreadParams,
 ): Promise<CodexThreadReadResponse> {
   const { client, threadId, thread, sortDirection } = params;
-  // 回合头与正文分别顺序扫描，避免全量接口对每个回合逐一补读。
+  // 两条游标链彼此独立，并发读取；链内仍严格按游标顺序推进。
+  const collectPages = async (method: HistoryPagesParams["method"], cursor?: string | null) => {
+    const pages: z.infer<typeof HistoryPageSchema>[] = [];
+    for await (const page of readCodexHistoryPages({
+      client,
+      threadId,
+      method,
+      sortDirection,
+      cursor,
+    }))
+      pages.push(page);
+    return pages;
+  };
+  const [turnPages, itemPages] = await Promise.all([
+    collectPages("thread/turns/list", params.turnsCursor),
+    collectPages("thread/items/list", params.itemsCursor),
+  ]);
+
   const turns = new Map<string, z.infer<typeof TurnHeaderSchema>>();
-  for await (const page of readCodexHistoryPages({
-    client,
-    threadId,
-    method: "thread/turns/list",
-    sortDirection,
-    cursor: params.turnsCursor,
-  })) {
+  for (const page of turnPages) {
     for (const entry of page.data) {
       const turn = TurnHeaderSchema.parse(entry);
       turns.set(turn.id, turn);
     }
   }
   const itemsByTurn = new Map<string, Map<string, z.infer<typeof ThreadItemSchema>["item"]>>();
-  for await (const page of readCodexHistoryPages({
-    client,
-    threadId,
-    method: "thread/items/list",
-    sortDirection,
-    cursor: params.itemsCursor,
-  })) {
+  for (const page of itemPages) {
     for (const entry of page.data) {
       const { turnId, item } = ThreadItemSchema.parse(entry);
       if (!turns.has(turnId)) {

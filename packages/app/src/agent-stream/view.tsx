@@ -128,6 +128,7 @@ import {
 import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
 import { renderCompletedProcessRow } from "./completed-process-row";
+import { placeCompletedTurnToolsBeforeFinalReply } from "./completed-turn-tool-order";
 import { getStandaloneMarkdownImages } from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
@@ -764,16 +765,30 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         toolCallDetailLevel,
       ],
     );
+    const orderedToolCalls = useMemo(
+      () => ({
+        ...projectedToolCalls,
+        tail: placeCompletedTurnToolsBeforeFinalReply({
+          items: projectedToolCalls.tail,
+          isTurnActive: context.status === "running",
+        }),
+        head: placeCompletedTurnToolsBeforeFinalReply({
+          items: projectedToolCalls.head,
+          isTurnActive: context.status === "running",
+        }),
+      }),
+      [context.status, projectedToolCalls],
+    );
 
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
         agentStatus: context.status,
-        tail: projectedToolCalls.tail,
-        head: projectedToolCalls.head,
+        tail: orderedToolCalls.tail,
+        head: orderedToolCalls.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
       });
-    }, [context.status, isMobile, projectedToolCalls.head, projectedToolCalls.tail]);
+    }, [context.status, isMobile, orderedToolCalls.head, orderedToolCalls.tail]);
     const streamLayout = useMemo(
       () =>
         layoutStream({
@@ -806,14 +821,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ];
       return buildCompletedTurnProcessModel({
         hosts,
-        chronologicalItems: [...projectedToolCalls.tail, ...projectedToolCalls.head],
+        chronologicalItems: [...orderedToolCalls.tail, ...orderedToolCalls.head],
       });
     }, [
       streamLayout.auxiliaryTurnFooter,
       streamLayout.history,
       streamLayout.liveHead,
-      projectedToolCalls.tail,
-      projectedToolCalls.head,
+      orderedToolCalls.tail,
+      orderedToolCalls.head,
     ]);
 
     const completedProcessAnchors = useRef(new Map<string, View>());

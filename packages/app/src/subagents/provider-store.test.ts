@@ -1,4 +1,21 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>();
+  return {
+    default: {
+      getItem: (name: string) => Promise.resolve(values.get(name) ?? null),
+      setItem: (name: string, value: string) => {
+        values.set(name, value);
+        return Promise.resolve();
+      },
+      removeItem: (name: string) => {
+        values.delete(name);
+        return Promise.resolve();
+      },
+    },
+  };
+});
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import {
   fetchProviderSubagentTimeline,
@@ -6,6 +23,7 @@ import {
   refreshProviderSubagents,
   useProviderSubagentStore,
 } from "./provider-store";
+import { useProviderSubagentArchiveStore } from "./provider-subagent-archive-store";
 
 const SERVER_ID = "server-1";
 const PARENT_ID = "parent-1";
@@ -15,8 +33,8 @@ afterEach(() => {
   useProviderSubagentStore.setState({
     descriptors: new Map(),
     timelines: new Map(),
-    hiddenFromTrack: new Set(),
   });
+  useProviderSubagentArchiveStore.setState({ hiddenFromTrack: new Set() });
 });
 
 describe("provider subagent client store", () => {
@@ -90,7 +108,7 @@ describe("provider subagent client store", () => {
     });
     expect(useProviderSubagentStore.getState().descriptors.get(key)?.status).toBe("running");
   });
-  test("释放父会话同时清除子智能体缓存与隐藏标记，不影响其他父会话", () => {
+  test("释放父会话清除正文缓存但保留已归档子智能体，不影响其他父会话", () => {
     const store = useProviderSubagentStore.getState();
     const descriptor = {
       id: SUBAGENT_ID,
@@ -124,7 +142,7 @@ describe("provider subagent client store", () => {
     const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
     expect(state.descriptors.has(key)).toBe(false);
     expect(state.timelines.has(key)).toBe(false);
-    expect(state.hiddenFromTrack.has(key)).toBe(false);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
     expect(state.descriptors.has(providerSubagentKey(SERVER_ID, "other-parent", SUBAGENT_ID))).toBe(
       true,
     );
@@ -349,7 +367,7 @@ describe("provider subagent client store", () => {
     const state = useProviderSubagentStore.getState();
     const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
     expect(state.descriptors.get(key)?.title).toBe("Finished child");
-    expect(state.hiddenFromTrack.has(key)).toBe(true);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
     expect(state.timelines.get(key)?.tail).toEqual([
       expect.objectContaining({ kind: "assistant_message", text: "Finished output." }),
     ]);
@@ -373,14 +391,14 @@ describe("provider subagent client store", () => {
     store.replaceList(SERVER_ID, PARENT_ID, [completed]);
 
     const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
-    expect(useProviderSubagentStore.getState().hiddenFromTrack.has(key)).toBe(true);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
 
     store.applyUpdate(SERVER_ID, {
       kind: "upsert",
       subagent: { ...completed, status: "running", updatedAt: "2026-07-12T10:01:00.000Z" },
     });
 
-    expect(useProviderSubagentStore.getState().hiddenFromTrack.has(key)).toBe(false);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(false);
   });
 
   test("keeps hidden state when a child temporarily disappears from the provider list", () => {
@@ -406,7 +424,7 @@ describe("provider subagent client store", () => {
     const state = useProviderSubagentStore.getState();
     const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
     expect(state.descriptors.has(key)).toBe(false);
-    expect(state.hiddenFromTrack.has(key)).toBe(true);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
   });
 
   test("keeps a finished child hidden across remove and history replay", () => {
@@ -432,7 +450,7 @@ describe("provider subagent client store", () => {
     store.applyUpdate(SERVER_ID, { kind: "upsert", subagent: completed });
 
     const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
-    expect(useProviderSubagentStore.getState().hiddenFromTrack.has(key)).toBe(true);
+    expect(useProviderSubagentArchiveStore.getState().hiddenFromTrack.has(key)).toBe(true);
   });
   test("applies terminal list status to a timeline received before its descriptor", () => {
     const store = useProviderSubagentStore.getState();

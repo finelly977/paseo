@@ -3689,6 +3689,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private planModeEnabled = false;
   private historyPending = false;
   private persistedHistory: PersistedTimelineEntry[] = [];
+  private preparedNativeHistorySnapshot = false;
   private loadingPersistedHistory = false;
   private persistedProviderSubagentEvents: AgentStreamEvent[] = [];
   private pendingPermissions = new Map<string, AgentPermissionRequest>();
@@ -3857,6 +3858,10 @@ export class CodexAppServerAgentSession implements AgentSession {
             complete: async () => {
               await this.prepareExecution();
               if (this.client !== client) throw new Error("原生历史连接已释放。");
+              if (this.preparedNativeHistorySnapshot) {
+                this.preparedNativeHistorySnapshot = false;
+                return;
+              }
               await this.loadPersistedHistory(await readCodexThread(client, threadId));
               if (this.client !== client) throw new Error("原生历史连接已释放。");
             },
@@ -4863,6 +4868,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    this.preparedNativeHistorySnapshot = false;
     if (
       (!this.historyPending || this.persistedHistory.length === 0) &&
       this.persistedProviderSubagentEvents.length === 0
@@ -5327,6 +5333,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.persistedHistory = [];
         this.historyPending = false;
         await this.loadPersistedHistory(history);
+        this.preparedNativeHistorySnapshot = true;
       },
     });
   }
@@ -5411,6 +5418,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.currentThreadId = null;
     this.executionPrepared = false;
     this.nativeHistory = undefined;
+    this.preparedNativeHistorySnapshot = false;
     this.currentTurnId = null;
     const cleanup = await Promise.allSettled([client?.dispose(), desktopTools?.dispose()]);
     const failures: unknown[] = cleanup.flatMap((result) =>

@@ -8,6 +8,7 @@ import { create } from "zustand";
 import { applyStreamEvent } from "@/types/stream";
 import type { StreamItem } from "@/types/stream";
 import type { AgentLifecycleStatus } from "@getpaseo/protocol/agent-lifecycle";
+import { useProviderSubagentArchiveStore } from "./provider-subagent-archive-store";
 
 type ProviderSubagentTimelineItem = Extract<
   Extract<SessionOutboundMessage, { type: "agent.provider_subagents.update" }>["payload"],
@@ -33,7 +34,6 @@ interface ProviderSubagentState {
   releaseParent(serverId: string, parentAgentId: string): void;
   descriptors: Map<string, ProviderSubagentDescriptorPayload>;
   timelines: Map<string, ProviderSubagentTimelineState>;
-  hiddenFromTrack: Set<string>;
   hideFinishedForParent(serverId: string, parentAgentId: string): void;
   replaceList(
     serverId: string,
@@ -243,41 +243,30 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
       return {
         descriptors: new Map([...state.descriptors].filter(([key]) => !key.startsWith(prefix))),
         timelines: new Map([...state.timelines].filter(([key]) => !key.startsWith(prefix))),
-        hiddenFromTrack: new Set(
-          [...state.hiddenFromTrack].filter((key) => !key.startsWith(prefix)),
-        ),
       };
     });
   },
   descriptors: new Map(),
   timelines: new Map(),
-  hiddenFromTrack: new Set(),
   hideFinishedForParent(serverId, parentAgentId) {
-    set((state) => {
-      const prefix = parentPrefix(serverId, parentAgentId);
-      const hiddenFromTrack = new Set(state.hiddenFromTrack);
-      for (const [key, subagent] of state.descriptors) {
-        if (key.startsWith(prefix) && subagent.status !== "running") {
-          hiddenFromTrack.add(key);
-        }
-      }
-      return { hiddenFromTrack };
-    });
+    const prefix = parentPrefix(serverId, parentAgentId);
+    const finishedKeys = [...useProviderSubagentStore.getState().descriptors].flatMap(
+      ([key, subagent]) => (key.startsWith(prefix) && subagent.status !== "running" ? [key] : []),
+    );
+    useProviderSubagentArchiveStore.getState().hide(finishedKeys);
   },
   replaceList(serverId, parentAgentId, subagents) {
+    const revealedKeys: string[] = [];
     set((state) => {
       const prefix = parentPrefix(serverId, parentAgentId);
       const descriptors = new Map(
         [...state.descriptors].filter(([key]) => !key.startsWith(prefix)),
       );
-      const hiddenFromTrack = new Set(state.hiddenFromTrack);
       for (const incoming of subagents) {
         const key = providerSubagentKey(serverId, parentAgentId, incoming.id);
         const subagent = preferCurrentDescriptor(state.descriptors.get(key), incoming);
         descriptors.set(key, subagent);
-        if (subagent.status === "running") {
-          hiddenFromTrack.delete(key);
-        }
+        if (subagent.status === "running") revealedKeys.push(key);
       }
       const retainedKeys = new Set(descriptors.keys());
       const timelines = new Map(
@@ -296,10 +285,12 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
           );
         }
       }
-      return { descriptors, timelines, hiddenFromTrack };
+      return { descriptors, timelines };
     });
+    for (const key of revealedKeys) useProviderSubagentArchiveStore.getState().reveal(key);
   },
   applyUpdate(serverId, payload) {
+    let revealedKey: string | null = null;
     set((state) => {
       if (payload.kind === "upsert") {
         const key = providerSubagentKey(
@@ -308,13 +299,10 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
           payload.subagent.id,
         );
         const descriptors = new Map(state.descriptors);
-        const hiddenFromTrack = new Set(state.hiddenFromTrack);
         const previous = descriptors.get(key);
         const subagent = preferCurrentDescriptor(previous, payload.subagent);
         descriptors.set(key, subagent);
-        if (subagent.status === "running") {
-          hiddenFromTrack.delete(key);
-        }
+        if (subagent.status === "running") revealedKey = key;
         let timelines = state.timelines;
         const current = state.timelines.get(key);
         if (current && previous?.status !== subagent.status) {
@@ -324,7 +312,7 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
             buildTimelineState(current.rows, current.epoch, subagent, current.hasOlder),
           );
         }
-        return { descriptors, timelines, hiddenFromTrack };
+        return { descriptors, timelines };
       }
       if (payload.kind === "remove") {
         const key = providerSubagentKey(serverId, payload.parentAgentId, payload.subagentId);
@@ -369,6 +357,7 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
       });
       return { timelines };
     });
+    if (revealedKey) useProviderSubagentArchiveStore.getState().reveal(revealedKey);
   },
   replaceTimeline(serverId, payload) {
     const provider = payload.provider;

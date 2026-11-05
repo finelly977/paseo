@@ -24,7 +24,7 @@ export const ProviderImageMessage = memo(function ProviderImageMessage(
   imageProps: ProviderImageMessageProps,
 ) {
   const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
   const handleHoverOut = useCallback(() => setIsHovered(false), []);

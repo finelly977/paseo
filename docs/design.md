@@ -60,7 +60,7 @@ Markdown 共享等值主题样式的编译结果，缓存按完整颜色、字�
 
 命令概览中的自动追尾只由新增调用触发，并以读者仍接近列表底部为前提；不能在 `onContentSizeChange` 中无条件滚到末尾。展开详情、动画结束和既有输出的尺寸修正不代表新的阅读意图，桌面内联概览与移动底部面板遵循同一规则。
 
-历史过程展开后，说明文字与各段命令组进入普通对话流，不用一个内部滚动条包住整轮。命令组和单条详情保留各自展开层级。耗时入口显示“用时”，单位使用 h、m、s 短写；中断回合同样显示用时，真实错误另行保留。命令行使用 16 像素正方形终端图标，图标槽不可被长文本挤窄；图标与标签按文字行框居中对齐，文字保持统一界面字号。
+历史过程展开后，说明文字与各段命令组进入普通对话流，不用一个内部滚动条包住整轮。命令组和单条详情保留各自展开层级。提供方在最终回复后补到的命令完成记录仍放回该回复之前，不能挂在回合尾部。耗时入口显示“用时”，单位使用 h、m、s 短写；中断回合同样显示用时，真实错误另行保留。命令行使用 16 像素正方形终端图标，图标槽不可被长文本挤窄；图标与标签按文字行框居中对齐，文字保持统一界面字号。纯图片工具结果的“已查看图像”入口默认收起，只有用户明确展开时才挂载缩略图。
 
 `foregroundExtraMuted` is reserved for passive chrome that must sit behind muted text, such as an always-visible window control. Use the solid token instead of lowering SVG opacity; per-path opacity makes overlapping icon strokes render unevenly. Interactive hover and pressed states return to `foreground`.
 

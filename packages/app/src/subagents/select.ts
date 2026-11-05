@@ -8,6 +8,7 @@ import type { ProviderSubagentDescriptorPayload } from "@getpaseo/protocol/messa
 import { useFetchQuery } from "@/data/query";
 import { queryClient } from "@/data/query-client";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useProviderSubagentArchiveStore } from "./provider-subagent-archive-store";
 
 export interface PaseoSubagentRow {
   kind: "paseo";
@@ -89,12 +90,13 @@ export function selectProviderSubagentsForParent(
   state: ProviderSubagentStoreSnapshot,
   params: SelectSubagentsParams,
   supported: boolean,
+  hiddenFromTrack: ReadonlySet<string>,
 ): ProviderSubagentRow[] {
   if (!supported) return EMPTY_PROVIDER_SUBAGENT_ROWS;
   const rows: ProviderSubagentRow[] = [];
   const prefix = `${params.serverId}\0${params.parentAgentId}\0`;
   for (const [key, subagent] of state.descriptors) {
-    if (!key.startsWith(prefix) || state.hiddenFromTrack.has(key)) continue;
+    if (!key.startsWith(prefix) || hiddenFromTrack.has(key)) continue;
     rows.push({
       kind: "provider",
       id: subagent.id,
@@ -120,9 +122,10 @@ export function useSubagentsForParent(params: SelectSubagentsParams) {
   const supported = useSessionStore(
     (state) => state.sessions[params.serverId]?.serverInfo?.features?.providerSubagents === true,
   );
+  const hiddenFromTrack = useProviderSubagentArchiveStore((state) => state.hiddenFromTrack);
   const providerRows = useStoreWithEqualityFn(
     useProviderSubagentStore,
-    (state) => selectProviderSubagentsForParent(state, params, supported),
+    (state) => selectProviderSubagentsForParent(state, params, supported, hiddenFromTrack),
     equal,
   );
   const client = useSessionStore((state) => state.sessions[params.serverId]?.client ?? null);

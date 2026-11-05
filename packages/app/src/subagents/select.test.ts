@@ -1,7 +1,25 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>();
+  return {
+    default: {
+      getItem: (name: string) => Promise.resolve(values.get(name) ?? null),
+      setItem: (name: string, value: string) => {
+        values.set(name, value);
+        return Promise.resolve();
+      },
+      removeItem: (name: string) => {
+        values.delete(name);
+        return Promise.resolve();
+      },
+    },
+  };
+});
 import { selectProviderSubagentsForParent, selectSubagentsForParent } from "./select";
 import { useProviderSubagentStore } from "./provider-store";
+import { useProviderSubagentArchiveStore } from "./provider-subagent-archive-store";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 
 const SERVER_ID = "server-1";
@@ -63,8 +81,8 @@ afterEach(() => {
   useProviderSubagentStore.setState({
     descriptors: new Map(),
     timelines: new Map(),
-    hiddenFromTrack: new Set(),
   });
+  useProviderSubagentArchiveStore.setState({ hiddenFromTrack: new Set() });
 });
 
 describe("selectSubagentsForParent", () => {
@@ -86,12 +104,20 @@ describe("selectSubagentsForParent", () => {
     const params = { serverId: SERVER_ID, parentAgentId: "parent-a" };
 
     expect(
-      selectProviderSubagentsForParent(useProviderSubagentStore.getState(), params, false),
+      selectProviderSubagentsForParent(
+        useProviderSubagentStore.getState(),
+        params,
+        false,
+        new Set(),
+      ),
     ).toEqual([]);
     expect(
-      selectProviderSubagentsForParent(useProviderSubagentStore.getState(), params, true).map(
-        (row) => row.id,
-      ),
+      selectProviderSubagentsForParent(
+        useProviderSubagentStore.getState(),
+        params,
+        true,
+        new Set(),
+      ).map((row) => row.id),
     ).toEqual(["provider-child"]);
   });
 
@@ -118,6 +144,7 @@ describe("selectSubagentsForParent", () => {
         useProviderSubagentStore.getState(),
         { serverId: SERVER_ID, parentAgentId: "parent-a" },
         true,
+        useProviderSubagentArchiveStore.getState().hiddenFromTrack,
       ),
     ).toEqual([]);
     expect(useProviderSubagentStore.getState().descriptors.size).toBe(1);

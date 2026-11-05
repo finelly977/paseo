@@ -10,6 +10,7 @@ import {
   revertCodexConversation,
 } from "./rewind.js";
 import { CodexAppServerRpcError } from "./app-server-transport.js";
+import { readCodexPaginatedThread } from "./thread-history.js";
 
 class FakeCodex implements CodexRewindClient {
   readonly recordedRollbacks: CodexThreadRollbackParams[] = [];
@@ -70,7 +71,55 @@ class ScriptedCodex implements CodexRewindClient {
   }
 }
 
+class MethodScriptedCodex implements CodexRewindClient {
+  readonly requests: Array<{ method: string; params: unknown }> = [];
+
+  constructor(private readonly responses: Record<string, unknown[]>) {}
+
+  async request(method: string, params: unknown): Promise<unknown> {
+    this.requests.push({ method, params });
+    const queue = this.responses[method];
+    if (!queue || queue.length === 0) throw new Error(`Unexpected request: ${method}`);
+    const response = queue.shift();
+    if (response instanceof Error) throw response;
+    return response;
+  }
+}
+
 describe("Codex Rewind", () => {
+  test("回退后的回合头与正文分页并发读取", async () => {
+    const turnsStarted = Promise.withResolvers<void>();
+    const releaseTurns = Promise.withResolvers<void>();
+    const requested: string[] = [];
+    const client: CodexRewindClient = {
+      async request(method) {
+        requested.push(method);
+        if (method === "thread/turns/list") {
+          turnsStarted.resolve();
+          await releaseTurns.promise;
+          return { data: [{ id: "turn", items: [], status: "completed" }], nextCursor: null };
+        }
+        if (method === "thread/items/list") {
+          await turnsStarted.promise;
+          releaseTurns.resolve();
+          return {
+            data: [{ turnId: "turn", item: { id: "answer", type: "agentMessage" } }],
+            nextCursor: null,
+          };
+        }
+        throw new Error(`Unexpected request: ${method}`);
+      },
+    };
+
+    await readCodexPaginatedThread({
+      client,
+      threadId: "source-thread",
+      thread: { id: "source-thread", historyMode: "paginated" },
+      sortDirection: "desc",
+    });
+    expect(requested).toEqual(["thread/turns/list", "thread/items/list"]);
+  });
+
   test("已读取的原生回合直接定位目标，保留历史只读回合头和有界正文页", async () => {
     const codex = new ScriptedCodex([
       { thread: { id: "source-thread", historyMode: "paginated" } },
@@ -206,33 +255,41 @@ describe("Codex Rewind", () => {
           { type: "agentMessage", id: "answer-retained", text: "已记录" },
         ],
       };
-      const codex = new ScriptedCodex([
-        { thread: { id: "source-thread", historyMode: "paginated" } },
-        {
-          data: [{ turnId: "turn-latest", item: { id: "latest-answer", type: "agentMessage" } }],
-          nextCursor: "older-items",
-        },
-        {
-          data: [
-            {
-              turnId: "turn-target",
-              item: { type: "userMessage", id: "codex-target", clientId: "client-target" },
-            },
-          ],
-          nextCursor: null,
-        },
-        {
-          thread: { id: "source-thread", historyMode: "paginated", turns: [] },
-          turnsBackwardsCursor: "retained-tail",
-          itemsBackwardsCursor: "retained-items",
-        },
-        { data: [{ ...retainedTurn, items: [] }], nextCursor: "retained-older" },
-        { data: [oldestTurn], nextCursor: null },
-        {
-          data: retainedTurn.items.toReversed().map((item) => ({ turnId: retainedTurn.id, item })),
-          nextCursor: null,
-        },
-      ]);
+      const codex = new MethodScriptedCodex({
+        "thread/read": [{ thread: { id: "source-thread", historyMode: "paginated" } }],
+        "thread/items/list": [
+          {
+            data: [{ turnId: "turn-latest", item: { id: "latest-answer", type: "agentMessage" } }],
+            nextCursor: "older-items",
+          },
+          {
+            data: [
+              {
+                turnId: "turn-target",
+                item: { type: "userMessage", id: "codex-target", clientId: "client-target" },
+              },
+            ],
+            nextCursor: null,
+          },
+          {
+            data: retainedTurn.items
+              .toReversed()
+              .map((item) => ({ turnId: retainedTurn.id, item })),
+            nextCursor: null,
+          },
+        ],
+        "thread/revert": [
+          {
+            thread: { id: "source-thread", historyMode: "paginated", turns: [] },
+            turnsBackwardsCursor: "retained-tail",
+            itemsBackwardsCursor: "retained-items",
+          },
+        ],
+        "thread/turns/list": [
+          { data: [{ ...retainedTurn, items: [] }], nextCursor: "retained-older" },
+          { data: [oldestTurn], nextCursor: null },
+        ],
+      });
       const restored: Array<{ threadId: string; history: unknown }> = [];
 
       await revertCodexConversation({
@@ -280,6 +337,15 @@ describe("Codex Rewind", () => {
           },
         },
         {
+          method: "thread/items/list",
+          params: {
+            threadId: "source-thread",
+            cursor: "retained-items",
+            limit: 100,
+            sortDirection: "desc",
+          },
+        },
+        {
           method: "thread/turns/list",
           params: {
             threadId: "source-thread",
@@ -287,15 +353,6 @@ describe("Codex Rewind", () => {
             limit: 100,
             sortDirection: "desc",
             itemsView: "notLoaded",
-          },
-        },
-        {
-          method: "thread/items/list",
-          params: {
-            threadId: "source-thread",
-            cursor: "retained-items",
-            limit: 100,
-            sortDirection: "desc",
           },
         },
       ]);

@@ -2796,6 +2796,103 @@ describe("Codex app-server provider", () => {
     },
   );
 
+  test("原生会话回退复用回退响应历史，不再立即全量读取第二遍", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+      "thread/items/list": (params) => {
+        const { cursor } = z.object({ cursor: z.string().nullable() }).parse(params);
+        if (cursor === null) {
+          return {
+            data: [
+              {
+                turnId: "turn-target",
+                item: { id: "codex-target", type: "userMessage", clientId: "client-target" },
+              },
+            ],
+            nextCursor: null,
+          };
+        }
+        expect(cursor).toBe("retained-items");
+        return {
+          data: [
+            {
+              turnId: "turn-first",
+              item: { id: "answer-first", type: "agentMessage", text: "第一轮答复" },
+            },
+            {
+              turnId: "turn-first",
+              item: {
+                id: "codex-first",
+                type: "userMessage",
+                clientId: "client-first",
+                content: [{ type: "text", text: "第一轮" }],
+              },
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+      "thread/turns/list": (params) => {
+        const { cursor } = z.object({ cursor: z.string().nullable() }).parse(params);
+        expect(cursor).toBe("retained-turns");
+        return {
+          data: [{ id: "turn-first", items: [], status: "completed" }],
+          nextCursor: null,
+        };
+      },
+      "thread/revert": () => ({
+        thread: { id: "thread-1", historyMode: "paginated", turns: [] },
+        turnsBackwardsCursor: "retained-turns",
+        itemsBackwardsCursor: "retained-items",
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      {},
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      false,
+      true,
+    );
+    try {
+      await session.connect();
+      await session.revertConversation({ messageId: "client-target" });
+      const historyRequestsBeforeCompletion = appServer
+        .requests()
+        .filter((request) =>
+          ["thread/turns/list", "thread/items/list"].includes(request.method),
+        ).length;
+      await session.nativeHistory?.complete();
+      expect(
+        appServer
+          .requests()
+          .filter((request) => ["thread/turns/list", "thread/items/list"].includes(request.method))
+          .length,
+      ).toBe(historyRequestsBeforeCompletion);
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual([
+        expect.objectContaining({
+          type: "timeline",
+          item: expect.objectContaining({ type: "user_message", text: "第一轮" }),
+        }),
+        expect.objectContaining({
+          type: "timeline",
+          item: expect.objectContaining({ type: "assistant_message", text: "第一轮答复" }),
+        }),
+      ]);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
   test("分页会话立即中断后可按客户端消息回退，保留旧历史并继续同一会话", async () => {
     const retainedTurn = {
       id: "turn-first",
