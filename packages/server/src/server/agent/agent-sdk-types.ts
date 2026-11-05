@@ -672,6 +672,10 @@ export interface AgentSession {
   steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;
   subscribe(callback: (event: AgentStreamEvent) => void): () => void;
   streamHistory(): AsyncGenerator<AgentStreamEvent>;
+  /** 按原生子会话核对终态并读取正文；返回 null 表示读取已被该子会话的新回合取代。 */
+  readProviderSubagentTimeline?(subagentId: string): Promise<ImportedTimelineEntry[] | null>;
+  /** 仅核对直接子任务自己的原生回合状态，不加载正文。 */
+  refreshProviderSubagentStatuses?(): Promise<void>;
   /** 只在原生历史尚未读完时提供；成功后 streamHistory 返回完整原生历史。 */
   historyContinuation?: () => Promise<void>;
   nativeHistory?: {

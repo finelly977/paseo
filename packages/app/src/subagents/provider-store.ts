@@ -95,6 +95,7 @@ export async function fetchProviderSubagentTimeline(
   const releaseVersion = parentReleases.get(requestKey) ?? 0;
   const payload = await client.fetchProviderSubagentTimeline(parentAgentId, subagentId, options);
   if ((parentReleases.get(requestKey) ?? 0) !== releaseVersion) return;
+  if (payload.error) throw new Error(payload.error);
   useProviderSubagentStore.getState().replaceTimeline(serverId, payload);
 }
 
@@ -117,6 +118,7 @@ export function refreshProviderSubagents(
     .listProviderSubagents(parentAgentId)
     .then((payload) => {
       if ((parentReleases.get(requestKey) ?? 0) !== releaseVersion) return;
+      if (payload.error) throw new Error(payload.error);
       useProviderSubagentStore.getState().replaceList(serverId, parentAgentId, payload.subagents);
       return undefined;
     })
@@ -129,6 +131,21 @@ export function refreshProviderSubagents(
 
 function parentPrefix(serverId: string, parentAgentId: string): string {
   return `${serverId}\0${parentAgentId}\0`;
+}
+
+function preferCurrentDescriptor(
+  previous: ProviderSubagentDescriptorPayload | undefined,
+  incoming: ProviderSubagentDescriptorPayload,
+): ProviderSubagentDescriptorPayload {
+  if (!previous) return incoming;
+  if (previous.updatedAt > incoming.updatedAt) return previous;
+  if (
+    previous.updatedAt === incoming.updatedAt &&
+    previous.status !== "running" &&
+    incoming.status === "running"
+  )
+    return previous;
+  return incoming;
 }
 
 const EMPTY_TIMELINE: ProviderSubagentTimelineState = {
@@ -254,8 +271,9 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
         [...state.descriptors].filter(([key]) => !key.startsWith(prefix)),
       );
       const hiddenFromTrack = new Set(state.hiddenFromTrack);
-      for (const subagent of subagents) {
-        const key = providerSubagentKey(serverId, parentAgentId, subagent.id);
+      for (const incoming of subagents) {
+        const key = providerSubagentKey(serverId, parentAgentId, incoming.id);
+        const subagent = preferCurrentDescriptor(state.descriptors.get(key), incoming);
         descriptors.set(key, subagent);
         if (subagent.status === "running") {
           hiddenFromTrack.delete(key);
@@ -265,8 +283,10 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
       const timelines = new Map(
         [...state.timelines].filter(([key]) => !key.startsWith(prefix) || retainedKeys.has(key)),
       );
-      for (const subagent of subagents) {
-        const key = providerSubagentKey(serverId, parentAgentId, subagent.id);
+      for (const incoming of subagents) {
+        const key = providerSubagentKey(serverId, parentAgentId, incoming.id);
+        const subagent = descriptors.get(key);
+        if (!subagent) throw new Error("子智能体列表缺少已接收的描述信息");
         const current = timelines.get(key);
         const previous = state.descriptors.get(key);
         if (current && previous?.status !== subagent.status) {
@@ -290,17 +310,18 @@ export const useProviderSubagentStore = create<ProviderSubagentState>((set) => (
         const descriptors = new Map(state.descriptors);
         const hiddenFromTrack = new Set(state.hiddenFromTrack);
         const previous = descriptors.get(key);
-        descriptors.set(key, payload.subagent);
-        if (payload.subagent.status === "running") {
+        const subagent = preferCurrentDescriptor(previous, payload.subagent);
+        descriptors.set(key, subagent);
+        if (subagent.status === "running") {
           hiddenFromTrack.delete(key);
         }
         let timelines = state.timelines;
         const current = state.timelines.get(key);
-        if (current && previous?.status !== payload.subagent.status) {
+        if (current && previous?.status !== subagent.status) {
           timelines = new Map(state.timelines);
           timelines.set(
             key,
-            buildTimelineState(current.rows, current.epoch, payload.subagent, current.hasOlder),
+            buildTimelineState(current.rows, current.epoch, subagent, current.hasOlder),
           );
         }
         return { descriptors, timelines, hiddenFromTrack };

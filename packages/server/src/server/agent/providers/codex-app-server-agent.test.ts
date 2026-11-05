@@ -137,7 +137,7 @@ import {
 } from "./codex/test-utils/fake-app-server.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { asInternals as castInternals, createStub } from "../../test-utils/class-mocks.js";
-import { buildProviderRegistry } from "../provider-registry.js";
+import { buildProviderRegistry, wrapSessionProvider } from "../provider-registry.js";
 import { CODEX_MODEL_CAPACITY_MESSAGE } from "./codex/capacity-retry.js";
 
 interface CollaborationModeRecord {
@@ -284,6 +284,265 @@ function deferred<T>() {
 }
 
 describe("Codex active-turn steering admission", () => {
+  test.each(["started", "completed"] as const)(
+    "父列表核对期间收到子任务 %s 事件时舍弃旧状态",
+    async (edge) => {
+      const reading = deferred<void>();
+      const release = deferred<void>();
+      const appServer = createFakeCodexAppServer({
+        "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+        "thread/turns/list": async () => {
+          reading.resolve();
+          await release.promise;
+          return {
+            data: [
+              {
+                id: "old-turn",
+                status: edge === "started" ? "completed" : "inProgress",
+                items: [],
+              },
+            ],
+            nextCursor: null,
+          };
+        },
+      });
+      const { session } = await startPublicSteeringSession(appServer);
+      const events: AgentStreamEvent[] = [];
+      const unsubscribe = session.subscribe((event) => events.push(event));
+      try {
+        const announced = waitForProviderSubagent(session, "child");
+        appServer.startsSubAgent({ callId: "spawn", threadId: "child", agentPath: "/root/review" });
+        await announced;
+        if (!session.refreshProviderSubagentStatuses) throw new Error("缺少子任务状态核对接口");
+        const refresh = session.refreshProviderSubagentStatuses();
+        await reading.promise;
+        const notified = waitForProviderSubagent(session, "child");
+        if (edge === "started") appServer.startsTurn({ threadId: "child", turnId: "new-turn" });
+        else appServer.completeTurn({ threadId: "child" });
+        await notified;
+        release.resolve();
+        await refresh;
+        expect(
+          events.findLast(
+            (event) => event.type === "provider_subagent" && event.event.type === "upsert",
+          ),
+        ).toMatchObject({
+          event: { id: "child", status: edge === "started" ? "running" : "completed" },
+        });
+      } finally {
+        release.resolve();
+        unsubscribe();
+        await session.close();
+        appServer.assertNoErrors();
+      }
+    },
+  );
+
+  test.each(["inProgress", "completed", "interrupted", "failed"] as const)(
+    "不打开详情，仅核对父列表即可按子任务自身的 %s 更新轨道和父工具",
+    async (status) => {
+      const requests: { method: string; params: unknown }[] = [];
+      const appServer = createFakeCodexAppServer({
+        "thread/read": (params) => {
+          requests.push({ method: "thread/read", params });
+          return { thread: { historyMode: "paginated" } };
+        },
+        "thread/turns/list": (params) => {
+          requests.push({ method: "thread/turns/list", params });
+          return { data: [{ id: "child-last", status, items: [] }], nextCursor: "older" };
+        },
+      });
+      const { session: inner } = await startPublicSteeringSession(appServer);
+      const session = wrapSessionProvider("codex", inner);
+      const events: AgentStreamEvent[] = [];
+      const unsubscribe = session.subscribe((event) => events.push(event));
+      try {
+        const announced = waitForProviderSubagent(session, "child");
+        appServer.startsSubAgent({ callId: "spawn", threadId: "child", agentPath: "/root/review" });
+        await announced;
+        appServer.completeTurn();
+        if (!session.refreshProviderSubagentStatuses) throw new Error("未转发子任务状态核对接口");
+        await session.refreshProviderSubagentStatuses();
+        const expected = {
+          inProgress: "running",
+          completed: "completed",
+          interrupted: "canceled",
+          failed: "failed",
+        }[status];
+        expect(
+          events.findLast(
+            (event) => event.type === "provider_subagent" && event.event.type === "upsert",
+          ),
+        ).toMatchObject({ event: { id: "child", status: expected } });
+        expect(
+          events.findLast((event) => event.type === "timeline" && event.item.type === "tool_call"),
+        ).toMatchObject({ item: { callId: "spawn", status: expected } });
+        expect(requests).toEqual([
+          { method: "thread/read", params: { threadId: "child", includeTurns: false } },
+          {
+            method: "thread/turns/list",
+            params: {
+              threadId: "child",
+              cursor: null,
+              limit: 1,
+              sortDirection: "desc",
+              itemsView: "notLoaded",
+            },
+          },
+        ]);
+      } finally {
+        unsubscribe();
+        await session.close();
+        appServer.assertNoErrors();
+      }
+    },
+  );
+
+  test("重新打开原生已完成的子智能体时，定向读取其终态和最终回复，不沿用父工具的运行态", async () => {
+    const requested: string[] = [];
+    const appServer = createFakeCodexAppServer({
+      "thread/read": (params) => {
+        const parsed = z.object({ threadId: z.string() }).parse(params);
+        requested.push(parsed.threadId);
+        return {
+          thread: {
+            id: parsed.threadId,
+            historyMode: "legacy",
+            turns: [
+              {
+                id: "child-turn",
+                status: "completed",
+                startedAt: 1,
+                completedAt: 2,
+                items: [
+                  {
+                    type: "agentMessage",
+                    id: "child-final",
+                    phase: "final_answer",
+                    text: "子任务已经结束，这是完整结果。",
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      },
+    });
+    const { session: inner } = await startPublicSteeringSession(appServer);
+    const session = wrapSessionProvider("codex", inner);
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      const announced = waitForProviderSubagent(session, "child-thread");
+      appServer.startsSubAgent({
+        callId: "spawn",
+        threadId: "child-thread",
+        agentPath: "/root/layout_review",
+      });
+      await announced;
+      if (!session.readProviderSubagentTimeline) throw new Error("没有实现子会话定向核对");
+      expect(await session.readProviderSubagentTimeline("child-thread")).toEqual([
+        {
+          item: {
+            type: "assistant_message",
+            messageId: "child-final",
+            text: "子任务已经结束，这是完整结果。",
+          },
+          timestamp: "1970-01-01T00:00:02.000Z",
+        },
+      ]);
+      expect(
+        events.findLast(
+          (event) => event.type === "provider_subagent" && event.event.type === "upsert",
+        ),
+      ).toMatchObject({
+        event: { id: "child-thread", status: "completed" },
+      });
+      expect(requested).toEqual(["child-thread", "child-thread"]);
+    } finally {
+      unsubscribe();
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
+  test.each(["started", "completed"] as const)(
+    "子智能体核对期间收到 %s 原生回合事件时，不让过期快照覆盖新状态",
+    async (event) => {
+      const reading = deferred<void>();
+      const response = deferred<void>();
+      const appServer = createFakeCodexAppServer({
+        "thread/read": async () => {
+          reading.resolve();
+          await response.promise;
+          return {
+            thread: {
+              id: "child",
+              historyMode: "legacy",
+              turns: [
+                {
+                  id: "old-child-turn",
+                  status: event === "started" ? "completed" : "inProgress",
+                  items: [],
+                },
+              ],
+            },
+          };
+        },
+      });
+      const { session } = await startPublicSteeringSession(appServer);
+      try {
+        const announced = waitForProviderSubagent(session, "child");
+        appServer.startsSubAgent({ callId: "spawn", threadId: "child", agentPath: "/root/review" });
+        await announced;
+        if (!session.readProviderSubagentTimeline) throw new Error("没有实现子会话定向核对");
+        const result = session.readProviderSubagentTimeline("child");
+        await reading.promise;
+        const updated = waitForProviderSubagent(session, "child");
+        if (event === "started") appServer.startsTurn({ threadId: "child", turnId: "new-turn" });
+        else appServer.completeTurn({ threadId: "child" });
+        await updated;
+        response.resolve();
+        expect(await result).toBeNull();
+      } finally {
+        response.resolve();
+        await session.close();
+        appServer.assertNoErrors();
+      }
+    },
+  );
+
+  test("父回合结束时，原生仍在运行的子智能体保持运行态", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({
+        thread: {
+          id: "child",
+          historyMode: "legacy",
+          turns: [{ id: "child-turn", status: "inProgress", items: [] }],
+        },
+      }),
+    });
+    const { session } = await startPublicSteeringSession(appServer);
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      const announced = waitForProviderSubagent(session, "child");
+      appServer.startsSubAgent({ callId: "spawn", threadId: "child", agentPath: "/root/review" });
+      await announced;
+      appServer.completeTurn();
+      if (!session.readProviderSubagentTimeline) throw new Error("没有实现子会话定向核对");
+      await session.readProviderSubagentTimeline("child");
+      expect(
+        events.findLast(
+          (event) => event.type === "provider_subagent" && event.event.type === "upsert",
+        ),
+      ).toMatchObject({ event: { id: "child", status: "running" } });
+    } finally {
+      unsubscribe();
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
+
   test("new provider runtimes never reuse a logical foreground turn ID", async () => {
     const startInNewRuntime = async (): Promise<string> => {
       const appServer = createFakeCodexAppServer();
@@ -5231,6 +5490,72 @@ describe("Codex app-server provider", () => {
         }),
       },
     ]);
+  });
+
+  test("冷恢复按子任务自己的终态同时修正父工具卡片和子任务描述", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": (params) => {
+        const { threadId } = z.object({ threadId: z.string() }).parse(params);
+        return {
+          thread: {
+            id: threadId,
+            historyMode: "legacy",
+            turns: [
+              {
+                id: `${threadId}-turn`,
+                status: "completed",
+                items:
+                  threadId === "parent"
+                    ? [
+                        {
+                          type: "subAgentActivity",
+                          id: "spawn",
+                          kind: "started",
+                          agentThreadId: "child",
+                          agentPath: "/root/review",
+                        },
+                      ]
+                    : [
+                        {
+                          type: "agentMessage",
+                          id: "final",
+                          text: "完整结果",
+                          phase: "final_answer",
+                        },
+                      ],
+              },
+            ],
+          },
+        };
+      },
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig({ cwd: "/workspace" }),
+      { sessionId: "parent" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+    );
+    try {
+      await session.connect();
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(
+        history.findLast(
+          (event) => event.type === "provider_subagent" && event.event.type === "upsert",
+        ),
+      ).toMatchObject({ event: { id: "child", status: "completed" } });
+      expect(
+        history.find((event) => event.type === "timeline" && event.item.type === "tool_call"),
+      ).toMatchObject({ item: { callId: "spawn", status: "completed" } });
+      expect(
+        history.find(
+          (event) => event.type === "provider_subagent" && event.event.type === "timeline",
+        ),
+      ).toMatchObject({ event: { item: { type: "assistant_message", text: "完整结果" } } });
+    } finally {
+      await session.close();
+      appServer.assertNoErrors();
+    }
   });
 
   test("does not import a parent interaction from child history as another sub-agent", async () => {

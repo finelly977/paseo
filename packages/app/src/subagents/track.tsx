@@ -18,6 +18,8 @@ import {
   countFinishedSubagents,
   formatHeaderLabel,
 } from "./track-presentation";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 const ThemedArchive = withUnistyles(Archive);
 const ThemedChevronDown = withUnistyles(ChevronDown);
@@ -31,6 +33,9 @@ const foregroundMutedColorMapping = (theme: Theme) => ({
 
 export interface SubagentsTrackProps {
   rows: SubagentRow[];
+  syncError: Error | null;
+  onRetrySync: () => void;
+  isSyncing: boolean;
   onOpenSubagent: (id: string) => void;
   onOpenProviderSubagent: (parentAgentId: string, subagentId: string) => void;
   onArchiveSubagent: (id: string) => void;
@@ -52,6 +57,9 @@ function buildRowPresentation(row: SubagentRow): WorkspaceTabPresentation {
 
 export function SubagentsTrack({
   rows,
+  syncError,
+  onRetrySync,
+  isSyncing,
   onOpenSubagent,
   onOpenProviderSubagent,
   onArchiveSubagent,
@@ -82,7 +90,7 @@ export function SubagentsTrack({
     [expanded],
   );
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && !syncError) {
     return null;
   }
 
@@ -91,59 +99,79 @@ export function SubagentsTrack({
 
   return (
     <View style={styles.outer} testID="subagents-track">
-      <View style={styles.track}>
-        <View style={surfaceStyle}>
-          <View style={headerContainerStyle}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={headerLabel}
-              testID="subagents-track-header"
-              onPress={toggleExpanded}
-              style={headerStyle}
-            >
-              {expanded ? (
-                <ThemedChevronDown size={12} uniProps={foregroundMutedColorMapping} />
-              ) : (
-                <ThemedChevronRight size={12} uniProps={foregroundMutedColorMapping} />
-              )}
-              <Text style={styles.headerLabel} numberOfLines={1}>
-                {headerLabel}
-              </Text>
-            </Pressable>
-            {finishedCount > 0 && onArchiveFinished ? (
-              <View style={styles.headerAction}>
-                <SubagentActionButton
-                  accessibilityLabel={t("subagents.archiveFinishedAction")}
-                  testID="subagents-track-archive-finished"
-                  tooltipLabel={t("subagents.archiveFinishedTooltip")}
-                  icon="archive"
-                  visible
-                  onPress={onArchiveFinished}
-                />
-              </View>
+      {syncError && (
+        <Alert
+          variant="error"
+          title={t("subagents.refreshFailed")}
+          description={syncError.message}
+          testID="subagents-track-sync-error"
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={onRetrySync}
+            loading={isSyncing}
+            disabled={isSyncing}
+          >
+            {t("common.actions.retry")}
+          </Button>
+        </Alert>
+      )}
+      {rows.length > 0 && (
+        <View style={styles.track}>
+          <View style={surfaceStyle}>
+            <View style={headerContainerStyle}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={headerLabel}
+                testID="subagents-track-header"
+                onPress={toggleExpanded}
+                style={headerStyle}
+              >
+                {expanded ? (
+                  <ThemedChevronDown size={12} uniProps={foregroundMutedColorMapping} />
+                ) : (
+                  <ThemedChevronRight size={12} uniProps={foregroundMutedColorMapping} />
+                )}
+                <Text style={styles.headerLabel} numberOfLines={1}>
+                  {headerLabel}
+                </Text>
+              </Pressable>
+              {finishedCount > 0 && onArchiveFinished ? (
+                <View style={styles.headerAction}>
+                  <SubagentActionButton
+                    accessibilityLabel={t("subagents.archiveFinishedAction")}
+                    testID="subagents-track-archive-finished"
+                    tooltipLabel={t("subagents.archiveFinishedTooltip")}
+                    icon="archive"
+                    visible
+                    onPress={onArchiveFinished}
+                  />
+                </View>
+              ) : null}
+            </View>
+            {expanded ? (
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+              >
+                {rows.map((row) => (
+                  <SubagentsTrackRow
+                    key={row.id}
+                    row={row}
+                    onOpenSubagent={onOpenSubagent}
+                    onOpenProviderSubagent={onOpenProviderSubagent}
+                    onArchiveSubagent={onArchiveSubagent}
+                    onDetachSubagent={onDetachSubagent}
+                  />
+                ))}
+              </ScrollView>
             ) : null}
           </View>
-          {expanded ? (
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled
-            >
-              {rows.map((row) => (
-                <SubagentsTrackRow
-                  key={row.id}
-                  row={row}
-                  onOpenSubagent={onOpenSubagent}
-                  onOpenProviderSubagent={onOpenProviderSubagent}
-                  onArchiveSubagent={onArchiveSubagent}
-                  onDetachSubagent={onDetachSubagent}
-                />
-              ))}
-            </ScrollView>
-          ) : null}
         </View>
-      </View>
+      )}
     </View>
   );
 }

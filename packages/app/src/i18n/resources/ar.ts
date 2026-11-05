@@ -1716,6 +1716,7 @@ export const ar: TranslationResources = {
     backdrop: "خلفية القائمة",
   },
   subagents: {
+    refreshFailed: "تعذر التحقق من حالة الوكيل الفرعي",
     detachAction: "فصل {{label}}",
     detachTooltip: "فصل الوكيل الفرعي",
     archiveAction: "أرشيف{{label}}",

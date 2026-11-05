@@ -1,7 +1,62 @@
 import { expect, test } from "vitest";
 import type { NativeHistoryProcessItem } from "@/types/stream";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
-import { nativeHistoryInterruptedReply } from "./native-history-presentation";
+import {
+  nativeHistoryInterruptedReply,
+  presentNativeHistoryActiveTurn,
+} from "./native-history-presentation";
+import { nativeHistoryItems } from "./native-history";
+
+test("当前轮与旧轮复用调用标识时，不误删当前工具或覆盖旧历史", () => {
+  const process = {
+    kind: "native_history_process" as const,
+    id: "current-process",
+    turnId: "current",
+    status: "inProgress" as const,
+    timestamp: new Date(2000),
+    durationMs: null,
+    error: null,
+    summaryMessageIds: [],
+    summaryRevision: "summary",
+  };
+  const tool: AgentTimelineItem = {
+    type: "tool_call",
+    callId: "reused",
+    name: "Shell",
+    status: "running",
+    error: null,
+    detail: { type: "shell", command: "新的命令" },
+  };
+  const older = nativeHistoryItems(
+    {
+      readId: "read",
+      cursor: null,
+      nextCursor: null,
+      turns: [
+        {
+          id: "old",
+          status: "completed",
+          startedAt: 1,
+          durationMs: 100,
+          error: null,
+          items: [{ ...tool, status: "completed" }],
+        },
+      ],
+    },
+    null,
+  );
+  const shown = presentNativeHistoryActiveTurn({
+    tail: [...older, process],
+    head: [],
+    process,
+    details: [tool],
+    activeTurnId: "current",
+  });
+  expect(
+    shown.tail.filter((entry) => entry.kind === "tool_call").map((entry) => entry.turnId),
+  ).toEqual(["old", "current"]);
+  expect(new Set(shown.tail.map((entry) => entry.id)).size).toBe(shown.tail.length);
+});
 
 test("中断或失败后恢复最后一段真实说明，正常回合及已显示的回复不重复", () => {
   const item: NativeHistoryProcessItem = {
@@ -27,4 +82,187 @@ test("中断或失败后恢复最后一段真实说明，正常回合及已显�
   expect(
     nativeHistoryInterruptedReply({ ...item, summaryMessageIds: ["q", "last"] }, details),
   ).toEqual([]);
+});
+
+test("正在运行的原生回合直接展示正文和工具，不显示历史处理入口或重复实时段落", () => {
+  const tail = nativeHistoryItems(
+    {
+      readId: "read",
+      cursor: null,
+      nextCursor: null,
+      turns: [
+        {
+          id: "native-turn",
+          status: "inProgress",
+          startedAt: 1,
+          durationMs: null,
+          error: null,
+          items: [{ type: "user_message", messageId: "question", text: "测试问题" }],
+        },
+      ],
+    },
+    null,
+  );
+  const process = tail.find((entry) => entry.kind === "native_history_process");
+  if (!process || process.kind !== "native_history_process") throw new Error("缺少原生读取元数据");
+  const head = [
+    {
+      kind: "assistant_message" as const,
+      id: "live",
+      messageId: "comment",
+      turnId: "live-turn",
+      text: "我先检查这个问题。\n\n正在继续。",
+      timestamp: new Date(2000),
+    },
+  ];
+  const details: AgentTimelineItem[] = [
+    { type: "user_message", messageId: "question", text: "测试问题" },
+    { type: "assistant_message", messageId: "comment", text: "我先检查这个问题。" },
+    {
+      type: "tool_call",
+      callId: "shell",
+      name: "Shell",
+      status: "completed",
+      error: null,
+      detail: { type: "shell", command: "git status", output: "", exitCode: 0 },
+    },
+  ];
+  const shown = presentNativeHistoryActiveTurn({
+    tail,
+    head,
+    process,
+    details,
+    activeTurnId: "live-turn",
+  });
+  expect([...shown.tail, ...shown.head].map((entry) => entry.kind)).toEqual([
+    "user_message",
+    "assistant_message",
+    "tool_call",
+  ]);
+  expect(shown.head[0]).toBe(head[0]);
+  expect(shown.head[1].turnId).toBe("live-turn");
+});
+
+test("原生当前轮详情尚未返回时也不出现“处理中”折叠区，已结束的历史入口继续保留", () => {
+  const current = {
+    kind: "native_history_process" as const,
+    id: "process",
+    turnId: "turn",
+    status: "inProgress" as const,
+    durationMs: null,
+    error: null,
+    timestamp: new Date(1000),
+    summaryMessageIds: [],
+    summaryRevision: "summary",
+  };
+  const older = { ...current, id: "old-process", turnId: "old", status: "completed" as const };
+  expect(
+    presentNativeHistoryActiveTurn({
+      tail: [older, current],
+      head: [],
+      process: current,
+      details: [],
+      activeTurnId: null,
+    }).tail,
+  ).toEqual([older]);
+});
+
+test("活动快照只补缺失前缀，实时段落继续增长时复用未变化的历史行", () => {
+  const process = {
+    kind: "native_history_process" as const,
+    id: "process",
+    turnId: "turn",
+    status: "inProgress" as const,
+    timestamp: new Date(1000),
+    durationMs: null,
+    error: null,
+    summaryMessageIds: [],
+    summaryRevision: "summary",
+  };
+  const tail = [process];
+  const live = {
+    kind: "assistant_message" as const,
+    id: "live",
+    messageId: "message",
+    turnId: "turn",
+    text: "已收到的后半句。",
+    timestamp: new Date(2000),
+  };
+  const details: AgentTimelineItem[] = [
+    { type: "assistant_message", messageId: "message", text: "之前缺少的前半句。已收到的后半句。" },
+  ];
+  const first = presentNativeHistoryActiveTurn({
+    tail,
+    head: [live],
+    process,
+    details,
+    activeTurnId: "turn",
+  });
+  expect(first.head[0]).toMatchObject({ text: "之前缺少的前半句。已收到的后半句。" });
+  const tool: AgentTimelineItem = {
+    type: "tool_call",
+    callId: "tool",
+    name: "Shell",
+    status: "completed",
+    error: null,
+    detail: { type: "shell", command: "git status" },
+  };
+  const cached = [tool];
+  const one = presentNativeHistoryActiveTurn({
+    tail,
+    head: [live],
+    process,
+    details: cached,
+    activeTurnId: "turn",
+  });
+  const two = presentNativeHistoryActiveTurn({
+    tail,
+    head: [{ ...live, text: "新的实时文字" }],
+    process,
+    details: cached,
+    activeTurnId: "turn",
+  });
+  expect(two.tail).toBe(one.tail);
+});
+
+test("活动摘要与实时区包含同一条回复时只保留实时版本", () => {
+  const items = nativeHistoryItems(
+    {
+      readId: "read",
+      cursor: null,
+      nextCursor: null,
+      turns: [
+        {
+          id: "turn",
+          status: "inProgress",
+          startedAt: 1,
+          durationMs: null,
+          error: null,
+          items: [{ type: "assistant_message", messageId: "message", text: "旧摘要" }],
+        },
+      ],
+    },
+    null,
+  );
+  const process = items.find((entry) => entry.kind === "native_history_process");
+  if (!process || process.kind !== "native_history_process") throw new Error("缺少元数据");
+  const head = [
+    {
+      kind: "assistant_message" as const,
+      id: "live",
+      messageId: "message",
+      turnId: "turn",
+      text: "最新实时内容",
+      timestamp: new Date(2000),
+    },
+  ];
+  const result = presentNativeHistoryActiveTurn({
+    tail: items,
+    head,
+    process,
+    details: [],
+    activeTurnId: "turn",
+  });
+  expect(result.tail).toEqual([]);
+  expect(result.head).toEqual(head);
 });

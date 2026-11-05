@@ -4,6 +4,69 @@ import type { NativeHistoryProcessItem } from "@/types/stream";
 import { createNativeHistoryDetailsPrefetch } from "./native-history-details-prefetch";
 import { nativeHistoryDetailKey, useNativeHistoryDetails } from "./native-history-details";
 
+test("运行中的过程优先自动补齐，不等全部旧轮次预取，也不要求用户展开", async () => {
+  const host = "active-process-host";
+  const agent = "agent";
+  const store = useSessionStore.getState();
+  store.initializeSession(host, null);
+  const current: NativeHistoryProcessItem = {
+    kind: "native_history_process",
+    id: "current",
+    turnId: "current",
+    status: "inProgress",
+    durationMs: null,
+    error: null,
+    timestamp: new Date(1000),
+    summaryMessageIds: ["question"],
+    summaryRevision: "current",
+  };
+  const old = { ...current, id: "old", turnId: "old", status: "completed" as const };
+  useSessionStore.getState().sessions[host].agentNativeHistory.set(agent, {
+    readId: "read",
+    nextCursor: "older",
+    firstTurnId: "old",
+  });
+  store.setAgentStreamTail(
+    host,
+    new Map([
+      [
+        agent,
+        [
+          { ...old, nativeTurnId: "old" },
+          { ...current, nativeTurnId: "current" },
+        ],
+      ],
+    ]),
+  );
+  const calls: string[] = [];
+  const scheduler = createNativeHistoryDetailsPrefetch({
+    serverId: host,
+    prepare: () => undefined,
+    client: {
+      readNativeHistoryTurn: async (request) => {
+        calls.push(request.turnId);
+        return { ...request, requestId: "request", error: null, items: [], nextCursor: null };
+      },
+    },
+  });
+  try {
+    scheduler.afterRead({ agentId: agent, direction: "tail", turnIds: ["old", "current"] });
+    await vi.waitFor(() =>
+      expect(
+        useNativeHistoryDetails
+          .getState()
+          .entries.get(nativeHistoryDetailKey(host, agent, "read", "current"))?.complete,
+      ).toBe(true),
+    );
+    expect(calls).toEqual(["current"]);
+    scheduler.start(agent);
+    await vi.waitFor(() => expect(calls).toEqual(["current", "old"]));
+  } finally {
+    scheduler.dispose();
+    store.clearSession(host);
+  }
+});
+
 test("摘要先完成再预取，后来上翻的过程也自动读完，释放清除共享缓存", async () => {
   const host = "prefetch-host";
   const agent = "agent";

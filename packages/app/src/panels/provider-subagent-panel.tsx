@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useFetchQuery } from "@/data/query";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import invariant from "tiny-invariant";
@@ -21,6 +23,10 @@ import type { PendingPermission } from "@/types/shared";
 import type { StreamItem } from "@/types/stream";
 import { deriveSidebarStateBucket } from "@/utils/sidebar-agent-state";
 import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
+import { queryClient } from "@/data/query-client";
+import { useRetainedPanelActive } from "@/components/retained-panel";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 const EMPTY_PERMISSIONS = new Map<string, PendingPermission>();
 const EMPTY_STREAM_ITEMS: StreamItem[] = [];
@@ -84,42 +90,81 @@ function ProviderSubagentPanel() {
   const serverInfo = useSessionStore((state) => state.sessions[serverId]?.serverInfo ?? null);
   // COMPAT(providerSubagents): added in v0.2.11, remove after 2027-01-12.
   const supported = serverInfo?.features?.providerSubagents === true;
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
-
+  const active = useRetainedPanelActive();
+  const status = descriptor?.status;
+  const historyQuery = useFetchQuery(
+    {
+      queryKey: ["provider-subagent-history", serverId, target.parentAgentId, target.subagentId],
+      enabled: active && supported && client !== null,
+      queryFn: async () => {
+        if (!client) throw new Error(t("common.errors.daemonClientDisconnected"));
+        await refreshProviderSubagents(client, serverId, target.parentAgentId);
+        await fetchProviderSubagentTimeline(
+          client,
+          serverId,
+          target.parentAgentId,
+          target.subagentId,
+          {
+            direction: "tail",
+            limit: TIMELINE_FETCH_PAGE_SIZE,
+          },
+        );
+        return true;
+      },
+      dataShape: "value",
+      staleTimeMs: 0,
+      refetchOnReconnect: true,
+      refetchOnWindowFocus: true,
+      refetchInterval: status === "running" ? 10000 : false,
+      refetchIntervalInBackground: false,
+      retry: false,
+    },
+    queryClient,
+  );
+  const { refetch } = historyQuery;
+  const terminalRefreshStatus = useRef<typeof status>(undefined);
   useEffect(() => {
-    if (!client || !supported) return;
-    void refreshProviderSubagents(client, serverId, target.parentAgentId).catch(() => undefined);
-  }, [client, serverId, supported, target.parentAgentId]);
+    if (status === "running") terminalRefreshStatus.current = undefined;
+    if (!active || !supported || !client || status === undefined || status === "running") return;
+    // 等旧读取结束后再核对一次终态，不能只加入仍在读取运行态的请求。
+    if (historyQuery.isFetching || terminalRefreshStatus.current === status) return;
+    terminalRefreshStatus.current = status;
+    void refetch({ cancelRefetch: false });
+  }, [active, supported, client, status, refetch, historyQuery.isFetching]);
 
-  useEffect(() => {
-    if (!client || !supported) return;
-    void fetchProviderSubagentTimeline(client, serverId, target.parentAgentId, target.subagentId, {
-      direction: "tail",
-      limit: TIMELINE_FETCH_PAGE_SIZE,
-    }).catch((error) => console.error("Failed to load provider subagent history", error));
-  }, [client, serverId, supported, target.parentAgentId, target.subagentId]);
+  const olderQuery = useMutation(
+    {
+      mutationFn: async () => {
+        if (!client || !timeline?.epoch || timeline.rows.size === 0)
+          throw new Error(t("common.errors.daemonClientUnavailable"));
+        const firstSeq = Math.min(...timeline.rows.keys());
+        await fetchProviderSubagentTimeline(
+          client,
+          serverId,
+          target.parentAgentId,
+          target.subagentId,
+          {
+            direction: "before",
+            cursor: { epoch: timeline.epoch, seq: firstSeq },
+            limit: TIMELINE_FETCH_PAGE_SIZE,
+          },
+        );
+      },
+    },
+    queryClient,
+  );
+  const isLoadingOlder = olderQuery.isPending;
+  const { mutate: fetchOlder } = olderQuery;
 
   const loadOlder = useCallback(() => {
     if (!client || !supported || isLoadingOlder || !timeline?.hasOlder || !timeline.epoch) return;
-    const firstSeq = timeline.rows.size ? Math.min(...timeline.rows.keys()) : null;
-    if (firstSeq === null) return;
-    setIsLoadingOlder(true);
-    void fetchProviderSubagentTimeline(client, serverId, target.parentAgentId, target.subagentId, {
-      direction: "before",
-      cursor: { epoch: timeline.epoch, seq: firstSeq },
-      limit: TIMELINE_FETCH_PAGE_SIZE,
-    })
-      .catch((error) => console.error("Failed to load older provider subagent history", error))
-      .finally(() => setIsLoadingOlder(false));
-  }, [
-    client,
-    isLoadingOlder,
-    serverId,
-    supported,
-    target.parentAgentId,
-    target.subagentId,
-    timeline,
-  ]);
+    fetchOlder();
+  }, [client, isLoadingOlder, supported, fetchOlder, timeline]);
+  const retry = useCallback(() => {
+    if (historyQuery.error) void refetch({ cancelRefetch: false });
+    else fetchOlder();
+  }, [historyQuery.error, fetchOlder, refetch]);
+  const readError = historyQuery.error ?? olderQuery.error;
 
   const streamContext = useMemo<AgentScreenAgent>(
     () => ({
@@ -152,6 +197,27 @@ function ProviderSubagentPanel() {
 
   return (
     <View style={styles.container} testID="provider-subagent-panel">
+      {readError && (
+        <Alert
+          variant="error"
+          title={t("agentPanel.states.failedToLoad")}
+          description={readError.message}
+          testID="provider-subagent-history-error"
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            onPress={retry}
+            loading={historyQuery.isFetching || isLoadingOlder}
+            disabled={historyQuery.isFetching || isLoadingOlder}
+          >
+            {t("common.actions.retry")}
+          </Button>
+        </Alert>
+      )}
+      {!timeline && historyQuery.isFetching && (
+        <Text style={styles.loading}>{t("common.loading")}</Text>
+      )}
       <AgentStreamView
         agentId={streamId}
         serverId={serverId}
@@ -159,7 +225,7 @@ function ProviderSubagentPanel() {
         streamItems={timeline?.tail ?? EMPTY_STREAM_ITEMS}
         streamHead={timeline?.head ?? EMPTY_STREAM_ITEMS}
         pendingPermissions={EMPTY_PERMISSIONS}
-        isAuthoritativeHistoryReady
+        isAuthoritativeHistoryReady={timeline !== null}
         onOpenWorkspaceFile={openFileInWorkspace}
         readOnly
         historyPagination={historyPagination}
@@ -170,6 +236,7 @@ function ProviderSubagentPanel() {
 
 const styles = StyleSheet.create((theme) => ({
   container: { flex: 1 },
+  loading: { color: theme.colors.foregroundMuted, padding: theme.spacing[2] },
   unsupported: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   unsupportedText: { color: theme.colors.foregroundMuted, textAlign: "center" },
 }));

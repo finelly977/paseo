@@ -3,6 +3,45 @@ import type { WorkspaceLayout } from "@/stores/workspace-layout-store";
 import type { WorkspaceTab } from "@/workspace-tabs/model";
 import { selectVisibleAgentIds } from "./visible-agent-ids";
 
+test("查看提供方子任务时保护所属父运行时，关闭或隐藏后不再额外保护", () => {
+  const layout: WorkspaceLayout = {
+    focusedPaneId: "main",
+    root: {
+      kind: "pane",
+      pane: { id: "main", tabIds: ["child", "parent"], focusedTabId: "child" },
+    },
+  };
+  const tabs: WorkspaceTab[] = [
+    {
+      tabId: "child",
+      target: {
+        kind: "provider_subagent",
+        parentAgentId: "parent-agent",
+        subagentId: "native-child",
+      },
+      createdAt: 1,
+    },
+    { tabId: "parent", target: { kind: "agent", agentId: "hidden-agent" }, createdAt: 2 },
+  ];
+  expect(
+    selectVisibleAgentIds({ layout, tabs, routeFocused: true, focusedPaneOnly: false }),
+  ).toEqual(["parent-agent"]);
+  expect(
+    selectVisibleAgentIds({ layout, tabs, routeFocused: true, focusedPaneOnly: true }),
+  ).toEqual(["parent-agent"]);
+  expect(
+    selectVisibleAgentIds({ layout, tabs, routeFocused: false, focusedPaneOnly: false }),
+  ).toEqual([]);
+  expect(
+    selectVisibleAgentIds({
+      layout,
+      tabs: tabs.slice(1),
+      routeFocused: true,
+      focusedPaneOnly: false,
+    }),
+  ).toEqual(["hidden-agent"]);
+});
+
 test("selects only the active agent tab in every visible pane", () => {
   const layout: WorkspaceLayout = {
     focusedPaneId: "left",

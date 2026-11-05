@@ -47,6 +47,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import pLimit from "p-limit";
 import { createNativeCodexHistory } from "./codex/native-history.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { isSystemInjectedEnvelope } from "../agent-prompt.js";
@@ -96,6 +97,7 @@ import {
   CodexThreadReadResponseSchema,
   readCodexThread,
   readCodexThreadLatest,
+  readCodexThreadLatestStatus,
   type CodexThreadReadResponse,
 } from "./codex/thread-history.js";
 import { connectCodexDesktopTools, type CodexDesktopTools } from "./codex/desktop-tools.js";
@@ -582,6 +584,16 @@ interface CodexThreadHistoryProjection {
   timeline: PersistedTimelineEntry[];
   subAgentRoutes: PersistedSubAgentRoute[];
   nativeTurnIdsByMessageId: Map<string, string>;
+  latestStatus: ToolCallTimelineItem["status"] | null;
+}
+
+function codexSubagentHistoryStatus(
+  status: string | undefined,
+): ToolCallTimelineItem["status"] | null {
+  if (status === "inProgress") return "running";
+  if (status === "completed" || status === "failed") return status;
+  if (status === "interrupted") return "canceled";
+  return null;
 }
 
 function codexMicrosoftStorePackageRoot(): string | null {
@@ -2457,7 +2469,8 @@ async function loadCodexThreadHistoryTimeline(params: {
         : [];
     },
   );
-  return { timeline, subAgentRoutes, nativeTurnIdsByMessageId };
+  const latestStatus = codexSubagentHistoryStatus(response.thread.turns.at(-1)?.status);
+  return { timeline, subAgentRoutes, nativeTurnIdsByMessageId, latestStatus };
 }
 
 export async function forkCodexThread(
@@ -3702,6 +3715,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private emittedProviderSubagentUserMessageKeys = new Set<string>();
   private subAgentCallsByCallId = new Map<string, CodexSubAgentCallState>();
   private subAgentCallIdByChildThreadId = new Map<string, string>();
+  private readonly subAgentRunVersions = new Map<string, number>();
   private pendingSubAgentNotificationsByThreadId = new Map<string, ParsedCodexNotification[]>();
   private warnedUnknownNotificationMethods = new Set<string>();
   private warnedInvalidNotificationPayloads = new Set<string>();
@@ -4196,6 +4210,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const { timeline, subAgentRoutes } = history;
     this.subAgentCallsByCallId.clear();
     this.subAgentCallIdByChildThreadId.clear();
+    this.subAgentRunVersions.clear();
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.persistedProviderSubagentEvents = [];
     this.loadingPersistedHistory = true;
@@ -4209,6 +4224,10 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.nativeTurnIdsByMessageId.set(messageId, nativeTurnId);
     }
     for (const entry of timeline) {
+      if (entry.item.type === "tool_call" && entry.item.detail.type === "sub_agent") {
+        const state = this.subAgentCallsByCallId.get(entry.item.callId);
+        if (state) entry.item = state.toolCall;
+      }
       if (entry.item.type === "user_message") {
         this.rememberCodexUserMessageTurn(entry.item.messageId, null);
       }
@@ -4242,6 +4261,17 @@ export class CodexAppServerAgentSession implements AgentSession {
         });
         for (const entry of childHistory.timeline) {
           this.emitProviderSubagentTimeline(next.route.childThreadId, entry.item, entry.timestamp);
+        }
+        const state = this.subAgentCallsByCallId.get(next.route.toolCall.callId);
+        if (state && childHistory.latestStatus !== null) {
+          if (state.childThreadIds.size === 1) {
+            state.toolCall = this.withSubagentStatus(state.toolCall, childHistory.latestStatus);
+          }
+          this.emitProviderSubagentUpsert(
+            next.route.childThreadId,
+            state,
+            childHistory.latestStatus,
+          );
         }
         for (const route of childHistory.subAgentRoutes) {
           queue.push({ route, parentCallId: next.route.toolCall.callId });
@@ -4855,6 +4885,78 @@ export class CodexAppServerAgentSession implements AgentSession {
         timestamp: entry.timestamp,
       };
     }
+  }
+
+  async refreshProviderSubagentStatuses(): Promise<void> {
+    const client = this.client;
+    if (!client) throw new Error("原生子智能体连接已释放，请重新打开父会话。");
+    const limit = pLimit(4);
+    await Promise.all(
+      [...this.subAgentCallIdByChildThreadId].map(([threadId, callId]) =>
+        limit(async () => {
+          const state = this.subAgentCallsByCallId.get(callId);
+          if (!state || state.parentCallId !== null) return;
+          const version = this.subAgentRunVersions.get(threadId) ?? 0;
+          const nativeStatus = await readCodexThreadLatestStatus(client, threadId);
+          if (this.client !== client) throw new Error("核对子智能体状态期间父会话已释放。");
+          if (
+            this.subAgentCallsByCallId.get(callId) !== state ||
+            (this.subAgentRunVersions.get(threadId) ?? 0) !== version ||
+            nativeStatus === null
+          )
+            return;
+          const status = codexSubagentHistoryStatus(nativeStatus);
+          if (status === null) throw new Error("Codex 未返回已知的子智能体回合状态。");
+          if (state.childThreadIds.size === 1 && state.toolCall.status !== status) {
+            state.toolCall = this.withSubagentStatus(state.toolCall, status);
+            // 这里只更新状态，保留父工具已有日志，不用空的历史条目覆盖日志。
+            this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: state.toolCall });
+          }
+          this.emitProviderSubagentUpsert(threadId, state, status);
+        }),
+      ),
+    );
+  }
+
+  async readProviderSubagentTimeline(subagentId: string): Promise<PersistedTimelineEntry[] | null> {
+    const client = this.client;
+    const callId = this.subAgentCallIdByChildThreadId.get(subagentId);
+    const state = callId ? this.subAgentCallsByCallId.get(callId) : undefined;
+    if (!client || !state) throw new Error("原生子智能体连接不存在，请重新打开父会话。");
+    const version = this.subAgentRunVersions.get(subagentId) ?? 0;
+    const history = await loadCodexThreadHistoryTimeline({
+      threadId: subagentId,
+      cwd: this.config.cwd ?? null,
+      requestThread: (threadId) => readCodexThread(client, threadId),
+    });
+    if (this.client !== client) throw new Error("读取子智能体期间父会话已释放。");
+    if (this.subAgentCallsByCallId.get(state.callId) !== state) return null;
+    if ((this.subAgentRunVersions.get(subagentId) ?? 0) !== version) return null;
+    if (history.latestStatus === null) throw new Error("Codex 未返回子智能体自己的回合状态。");
+    if (state.childThreadIds.size === 1) {
+      state.childItems.clear();
+      state.childItemOrder.length = 0;
+      for (const [index, entry] of history.timeline.entries()) {
+        let id = `history:${index}`;
+        if (entry.item.type === "assistant_message" && entry.item.messageId)
+          id = entry.item.messageId;
+        if (entry.item.type === "tool_call") id = entry.item.callId;
+        this.upsertSubAgentChildItem(state.callId, id, entry.item);
+      }
+      this.emitSubAgentActivityUpdate(state.callId, history.latestStatus, { reopen: true });
+    } else {
+      this.emitProviderSubagentUpsert(subagentId, state, history.latestStatus);
+    }
+    return history.timeline;
+  }
+
+  private withSubagentStatus(
+    toolCall: ToolCallTimelineItem,
+    status: ToolCallTimelineItem["status"],
+  ): ToolCallTimelineItem {
+    if (status === "failed")
+      return { ...toolCall, status, error: toolCall.error ?? { message: "Sub-agent failed" } };
+    return { ...toolCall, status, error: null };
   }
 
   async getSessionTitle(): Promise<string | null> {
@@ -6448,6 +6550,11 @@ export class CodexAppServerAgentSession implements AgentSession {
   ): void {
     const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
     if (subAgentCallId) {
+      if (parsed.threadId)
+        this.subAgentRunVersions.set(
+          parsed.threadId,
+          (this.subAgentRunVersions.get(parsed.threadId) ?? 0) + 1,
+        );
       this.emitSubAgentActivityUpdate(subAgentCallId, "running", { reopen: true });
       return;
     }
@@ -6469,6 +6576,11 @@ export class CodexAppServerAgentSession implements AgentSession {
   ): void {
     const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
     if (subAgentCallId) {
+      if (parsed.threadId)
+        this.subAgentRunVersions.set(
+          parsed.threadId,
+          (this.subAgentRunVersions.get(parsed.threadId) ?? 0) + 1,
+        );
       let status: ToolCallTimelineItem["status"] = "completed";
       if (parsed.status === "failed") {
         status = "failed";

@@ -7283,6 +7283,7 @@ export class Session {
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.refreshProviderSubagentStatuses(msg.parentAgentId);
       this.emit({
         type: "agent.provider_subagents.list.response",
         payload: {
@@ -7317,6 +7318,9 @@ export class Session {
         logger: this.sessionLogger,
       });
       await this.agentManager.ensureCanonicalHistory(msg.parentAgentId);
+      if (direction !== "before") {
+        await this.agentManager.refreshProviderSubagentTimeline(msg.parentAgentId, msg.subagentId);
+      }
       const descriptor = this.agentManager.getProviderSubagent(msg.parentAgentId, msg.subagentId);
       if (!descriptor) {
         throw new Error("Provider subagent not found");

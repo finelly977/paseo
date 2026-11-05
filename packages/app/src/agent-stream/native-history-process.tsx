@@ -50,6 +50,7 @@ export function NativeHistoryProcess({
   const { t, i18n } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [detailsHeight, setDetailsHeight] = useState<number | null>(null);
   const root = useRef<View>(null);
   const key = nativeHistoryDetailKey(serverId, agentId, readId, item.turnId);
   useEffect(() => {
@@ -133,7 +134,6 @@ export function NativeHistoryProcess({
       duration === null
         ? t("agentStream.completedTurn.processed")
         : t("agentStream.completedTurn.processedFor", { duration });
-  if (item.status === "inProgress") label = "处理中";
   if (item.status === "failed") label = "处理失败";
   if ((item.status === "interrupted" || item.status === "failed") && duration !== null)
     label += ` · ${duration}`;
@@ -147,6 +147,17 @@ export function NativeHistoryProcess({
   const loadMore = useCallback(() => {
     void load();
   }, [load]);
+  const handleContentSizeChange = useCallback((width: number, height: number) => {
+    if (width <= 0) return;
+    setDetailsHeight((previous) => (previous === height ? previous : height));
+  }, []);
+  const detailsViewportStyle = useMemo(
+    () => ({
+      height: Math.min(400, detailsHeight ?? rows.length * 40),
+    }),
+    [detailsHeight, rows.length],
+  );
+  if (item.status === "inProgress") return null;
   return (
     <View
       ref={root}
@@ -175,10 +186,12 @@ export function NativeHistoryProcess({
               {error && <Alert variant="error" title="加载处理过程失败" description={error} />}
               {rows.length > 0 && (
                 <FlatList
+                  testID={`native-process-details-${item.turnId}`}
                   data={rows}
                   keyExtractor={rowKey}
                   renderItem={renderRow}
-                  style={styles.details}
+                  style={[styles.details, detailsViewportStyle]}
+                  onContentSizeChange={handleContentSizeChange}
                   initialNumToRender={12}
                   maxToRenderPerBatch={12}
                   windowSize={5}
@@ -237,7 +250,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
   },
   label: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base, lineHeight: 22 },
-  details: { height: 400, maxHeight: 480 },
+  details: { maxHeight: 400, flexGrow: 0 },
 }));
 
 const rowKey = (row: StreamItem, index: number) => `${row.id}:${index}`;

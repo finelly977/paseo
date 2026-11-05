@@ -863,6 +863,8 @@ export class AgentManager {
     HistoryPreviewRebase & { epoch: string }
   >();
   private readonly providerSubagents = new ProviderSubagentStore();
+  private readonly providerSubagentReads = new WeakMap<AgentSession, Map<string, Promise<void>>>();
+  private readonly providerSubagentStatusReads = new WeakMap<AgentSession, Promise<void>>();
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
   private readonly steerEventBarriers = new Map<string, SteerEventBarrier>();
@@ -1431,6 +1433,61 @@ export class AgentManager {
   ): AgentTimelineFetchResult {
     this.requirePublicAgent(parentAgentId);
     return this.providerSubagents.fetchTimeline(parentAgentId, subagentId, options);
+  }
+
+  async refreshProviderSubagentStatuses(parentAgentId: string): Promise<void> {
+    const { session } = this.requireSessionAgent(parentAgentId);
+    const refresh = session.refreshProviderSubagentStatuses;
+    if (!refresh) return;
+    const pending = this.providerSubagentStatusReads.get(session);
+    if (pending) return pending;
+    const operation = (async () => {
+      await refresh.call(session);
+      await this.drainSessionEvents(parentAgentId);
+      if (this.agents.get(parentAgentId)?.session !== session)
+        throw new Error("核对子智能体状态期间父会话已释放。");
+    })();
+    this.providerSubagentStatusReads.set(session, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.providerSubagentStatusReads.get(session) === operation)
+        this.providerSubagentStatusReads.delete(session);
+    }
+  }
+
+  async refreshProviderSubagentTimeline(parentAgentId: string, subagentId: string): Promise<void> {
+    const agent = this.requireSessionAgent(parentAgentId);
+    const session = agent.session;
+    const reader = session.readProviderSubagentTimeline;
+    // 流式子任务提供方只使用其现有事件历史；Codex 额外具备原生子会话定向读取。
+    if (!reader) return;
+    let reads = this.providerSubagentReads.get(session);
+    if (!reads) {
+      reads = new Map();
+      this.providerSubagentReads.set(session, reads);
+    }
+    const existing = reads.get(subagentId);
+    if (existing) return existing;
+    const operation = (async () => {
+      const entries = await reader.call(session, subagentId);
+      await this.drainSessionEvents(parentAgentId);
+      if (this.agents.get(parentAgentId)?.session !== session)
+        throw new Error("读取子智能体期间父会话已释放。");
+      if (entries === null) return;
+      const descriptor = this.providerSubagents.get(parentAgentId, subagentId);
+      if (!descriptor) throw new Error("原生子智能体已移除。");
+      // 当前轮还在输出时保留规范实时流，不能用较早的原生读取截短它。
+      const current = this.providerSubagents.fetchTimeline(parentAgentId, subagentId, { limit: 1 });
+      if (descriptor.status === "running" && current.rows.length > 0) return;
+      this.providerSubagents.replaceTimeline(parentAgentId, subagentId, entries);
+    })();
+    reads.set(subagentId, operation);
+    try {
+      await operation;
+    } finally {
+      if (reads.get(subagentId) === operation) reads.delete(subagentId);
+    }
   }
 
   createAgent(

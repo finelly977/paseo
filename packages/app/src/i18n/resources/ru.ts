@@ -1750,6 +1750,7 @@ export const ru: TranslationResources = {
     backdrop: "Фон меню",
   },
   subagents: {
+    refreshFailed: "Не удалось проверить состояние субагента",
     detachAction: "Отсоединить {{label}}",
     detachTooltip: "Отсоединить субагент",
     archiveAction: "Архив{{label}}",

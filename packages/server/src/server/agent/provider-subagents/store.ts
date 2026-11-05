@@ -1,4 +1,8 @@
-import type { AgentProvider, AgentTimelineItem } from "../agent-sdk-types.js";
+import type {
+  AgentProvider,
+  AgentTimelineItem,
+  ImportedTimelineEntry,
+} from "../agent-sdk-types.js";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
 import { InMemoryAgentTimelineStore } from "../agent-timeline-store.js";
 import type {
@@ -7,6 +11,7 @@ import type {
   AgentTimelineRow,
 } from "../agent-timeline-store-types.js";
 import { selectTimelineWindowByProjectedLimit } from "../timeline-projection.js";
+import { isDeepStrictEqual } from "node:util";
 
 export type ProviderSubagentStatus = "running" | "completed" | "failed" | "canceled";
 
@@ -153,6 +158,24 @@ export class ProviderSubagentStore {
       hasNewer:
         timeline.hasNewer || (lastRow !== undefined && lastRow.seq < timeline.window.maxSeq),
     };
+  }
+
+  replaceTimeline(
+    parentAgentId: string,
+    subagentId: string,
+    entries: ImportedTimelineEntry[],
+  ): void {
+    const key = storeKey(parentAgentId, subagentId);
+    const descriptor = this.descriptors.get(key);
+    if (!descriptor) throw new Error(`Provider subagent ${subagentId} does not exist`);
+    const rows = entries.map((entry, index) => ({
+      seq: index + 1,
+      item: limitAgentTimelineItemContent(entry.item),
+      timestamp: entry.timestamp ?? descriptor.createdAt,
+    }));
+    // 相同快照保留代际与分页游标，重新聚焦不能使已读历史失效。
+    if (isDeepStrictEqual(this.timelines.getRows(key), rows)) return;
+    this.timelines.initialize(key, { rows });
   }
 
   deleteParent(parentAgentId: string): ProviderSubagentStoreEvent[] {

@@ -13,6 +13,8 @@ const resolvePackageEntry = (packageName: string) => {
 };
 
 export default defineConfig({
+  esbuild: { jsx: "automatic" },
+  optimizeDeps: { include: ["react/jsx-dev-runtime"] },
   test: {
     environment: "node",
     exclude: [...configDefaults.exclude, "e2e/**"],
@@ -35,6 +37,7 @@ export default defineConfig({
           include: ["src/**/*.browser.{test,spec}.{ts,tsx}"],
           browser: {
             enabled: true,
+            api: { host: "127.0.0.1" },
             provider: playwright(),
             headless: true,
             connectTimeout: 180_000,

@@ -1584,7 +1584,7 @@ function ActiveAgentComposer({
   const closeWorkspaceTab = useWorkspaceLayoutStore((state) => state.closeTab);
   const hideWorkspaceAgent = useWorkspaceLayoutStore((state) => state.hideAgent);
   const unpinWorkspaceAgent = useWorkspaceLayoutStore((state) => state.unpinAgent);
-  const subagentRows = useSubagentsForParent({
+  const subagents = useSubagentsForParent({
     serverId,
     parentAgentId: agentId,
   });
@@ -1695,7 +1695,10 @@ function ActiveAgentComposer({
       />
       <AgentTaskList serverId={serverId} agentId={agentId} />
       <SubagentsTrack
-        rows={subagentRows}
+        rows={subagents.rows}
+        syncError={subagents.error}
+        onRetrySync={subagents.retry}
+        isSyncing={subagents.isRefreshing}
         onOpenSubagent={handleOpenSubagent}
         onOpenProviderSubagent={handleOpenProviderSubagent}
         onArchiveSubagent={handleArchiveSubagent}

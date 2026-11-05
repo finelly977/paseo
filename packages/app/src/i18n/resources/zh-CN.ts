@@ -1694,6 +1694,7 @@ export const zhCN: TranslationResources = {
     backdrop: "菜单背景",
   },
   subagents: {
+    refreshFailed: "无法核对子智能体状态",
     detachAction: "分离 {{label}}",
     detachTooltip: "分离 subagent",
     archiveAction: "归档 {{label}}",

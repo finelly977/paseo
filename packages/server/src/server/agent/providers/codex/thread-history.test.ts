@@ -3,6 +3,7 @@ import {
   readCodexThread,
   readCodexPaginatedThread,
   readCodexThreadLatest,
+  readCodexThreadLatestStatus,
 } from "./thread-history.js";
 
 interface HistoryRequest {
@@ -32,6 +33,59 @@ const firstTurnPage = {
 };
 
 describe("Codex 原生历史分页", () => {
+  test("核对子任务状态只取最后一个原生回合头，不读取过程正文或旧分页", async () => {
+    const client = createHistoryClient([
+      paginatedMetadata,
+      { data: [{ id: "last-turn", status: "completed", items: [] }], nextCursor: "older" },
+    ]);
+    expect(await readCodexThreadLatestStatus(client, "thread-1")).toBe("completed");
+    expect(client.requests).toEqual([
+      { method: "thread/read", params: { threadId: "thread-1", includeTurns: false } },
+      {
+        method: "thread/turns/list",
+        params: {
+          threadId: "thread-1",
+          cursor: null,
+          limit: 1,
+          sortDirection: "desc",
+          itemsView: "notLoaded",
+        },
+      },
+    ]);
+  });
+
+  test("尚未开始的子任务没有回合时不猜测完成，未知状态显式失败", async () => {
+    expect(
+      await readCodexThreadLatestStatus(
+        createHistoryClient([paginatedMetadata, { data: [], nextCursor: null }]),
+        "thread-1",
+      ),
+    ).toBeNull();
+    await expect(
+      readCodexThreadLatestStatus(
+        createHistoryClient([
+          paginatedMetadata,
+          { data: [{ id: "last", status: "unknown" }], nextCursor: null },
+        ]),
+        "thread-1",
+      ),
+    ).rejects.toThrow();
+  });
+
+  test("非分页原生会话核对最后一轮自己的中断态", async () => {
+    const client = createHistoryClient([
+      { thread: { historyMode: "legacy" } },
+      {
+        thread: {
+          turns: [
+            { id: "old", items: [], status: "completed" },
+            { id: "last", items: [], status: "interrupted" },
+          ],
+        },
+      },
+    ]);
+    expect(await readCodexThreadLatestStatus(client, "thread-1")).toBe("interrupted");
+  });
   test("只读原生最新页即可返回，较早正文留给后台，不混入任何本地副本", async () => {
     const client = createHistoryClient([
       paginatedMetadata,

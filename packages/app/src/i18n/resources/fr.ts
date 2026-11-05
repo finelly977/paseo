@@ -1765,6 +1765,7 @@ export const fr: TranslationResources = {
     backdrop: "Toile de fond du menu",
   },
   subagents: {
+    refreshFailed: "Impossible de vérifier l’état du sous-agent",
     detachAction: "Detacher {{label}}",
     detachTooltip: "Detacher le sous-agent",
     archiveAction: "Archiver{{label}}",

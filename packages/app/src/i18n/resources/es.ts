@@ -1762,6 +1762,7 @@ export const es: TranslationResources = {
     backdrop: "Fondo del menú",
   },
   subagents: {
+    refreshFailed: "No se pudo verificar el estado del subagente",
     detachAction: "Separar {{label}}",
     detachTooltip: "Separar subagente",
     archiveAction: "Archivo{{label}}",

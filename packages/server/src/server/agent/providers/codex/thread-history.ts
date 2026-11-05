@@ -4,6 +4,8 @@ interface CodexHistoryClient {
   request(method: string, params?: unknown): Promise<unknown>;
 }
 
+const NativeTurnStatusSchema = z.enum(["inProgress", "completed", "failed", "interrupted"]);
+
 export const CodexThreadReadResponseSchema = z
   .object({
     thread: z
@@ -110,6 +112,37 @@ export async function readCodexThread(
   }
 
   return readCodexPaginatedThread({ client, threadId, thread, sortDirection: "asc" });
+}
+
+/** 列表状态核对只读取最后一轮的回合头，避免为状态扫描整段子任务正文。 */
+export async function readCodexThreadLatestStatus(
+  client: CodexHistoryClient,
+  threadId: string,
+): Promise<z.infer<typeof NativeTurnStatusSchema> | null> {
+  const { thread } = ThreadMetadataSchema.parse(
+    await client.request("thread/read", { threadId, includeTurns: false }),
+  );
+  let latest: unknown;
+  if (thread.historyMode === "paginated") {
+    const page = HistoryPageSchema.parse(
+      await client.request("thread/turns/list", {
+        threadId,
+        cursor: null,
+        limit: 1,
+        sortDirection: "desc",
+        itemsView: "notLoaded",
+      }),
+    );
+    latest = page.data[0];
+  } else {
+    const response = CodexThreadReadResponseSchema.parse(
+      await client.request("thread/read", { threadId, includeTurns: true }),
+    );
+    latest = response.thread.turns.at(-1);
+  }
+  // 原生子任务刚创建但尚未开始时允许没有回合，不能将其标记为结束。
+  if (latest === undefined) return null;
+  return z.object({ status: NativeTurnStatusSchema }).parse(latest).status;
 }
 
 /** 原生最新页与完整读取使用相同格式校验，不用 Paseo 副本代替最新内容。 */

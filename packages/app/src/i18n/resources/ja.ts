@@ -1731,6 +1731,7 @@ export const ja: TranslationResources = {
     backdrop: "メニューの背景",
   },
   subagents: {
+    refreshFailed: "サブエージェントの状態を確認できませんでした",
     detachAction: "{{label}}を切り離す",
     detachTooltip: "サブエージェントを切り離す",
     archiveAction: "{{label}}をアーカイブ",

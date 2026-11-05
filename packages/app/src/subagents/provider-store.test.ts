@@ -20,6 +20,76 @@ afterEach(() => {
 });
 
 describe("provider subagent client store", () => {
+  test("子任务列表读取失败时显式报错，不把已显示的任务清空", async () => {
+    const client = {
+      listProviderSubagents: async () => ({
+        requestId: "failed-list",
+        parentAgentId: PARENT_ID,
+        subagents: [],
+        error: "原生读取失败",
+      }),
+    };
+    await expect(refreshProviderSubagents(client, SERVER_ID, PARENT_ID)).rejects.toThrow(
+      "原生读取失败",
+    );
+  });
+
+  test("子任务正文读取失败时显式报错，不创建伪装为空的历史", async () => {
+    const client = {
+      fetchProviderSubagentTimeline: async () => ({
+        requestId: "failed-history",
+        parentAgentId: PARENT_ID,
+        subagentId: SUBAGENT_ID,
+        provider: "codex",
+        direction: "tail" as const,
+        epoch: "",
+        reset: false,
+        staleCursor: false,
+        gap: false,
+        window: { minSeq: 0, maxSeq: 0, nextSeq: 1 },
+        hasOlder: false,
+        hasNewer: false,
+        rows: [],
+        error: "子会话读取失败",
+      }),
+    };
+    await expect(
+      fetchProviderSubagentTimeline(client, SERVER_ID, PARENT_ID, SUBAGENT_ID, {
+        direction: "tail",
+      }),
+    ).rejects.toThrow("子会话读取失败");
+    expect(useProviderSubagentStore.getState().timelines.size).toBe(0);
+  });
+
+  test("已完成子任务不会被较早返回的运行态列表或更新重新打开", () => {
+    const store = useProviderSubagentStore.getState();
+    const completed = {
+      id: SUBAGENT_ID,
+      parentAgentId: PARENT_ID,
+      provider: "codex",
+      title: "Review",
+      description: null,
+      status: "completed" as const,
+      createdAt: "2026-11-05T00:00:00.000Z",
+      updatedAt: "2026-11-05T00:00:02.000Z",
+      toolCallId: "tool",
+    };
+    store.applyUpdate(SERVER_ID, { kind: "upsert", subagent: completed });
+    const stale = {
+      ...completed,
+      status: "running" as const,
+      updatedAt: "2026-11-05T00:00:01.000Z",
+    };
+    store.replaceList(SERVER_ID, PARENT_ID, [stale]);
+    store.applyUpdate(SERVER_ID, { kind: "upsert", subagent: stale });
+    const key = providerSubagentKey(SERVER_ID, PARENT_ID, SUBAGENT_ID);
+    expect(useProviderSubagentStore.getState().descriptors.get(key)?.status).toBe("completed");
+    store.applyUpdate(SERVER_ID, {
+      kind: "upsert",
+      subagent: { ...stale, updatedAt: "2026-11-05T00:00:03.000Z" },
+    });
+    expect(useProviderSubagentStore.getState().descriptors.get(key)?.status).toBe("running");
+  });
   test("释放父会话同时清除子智能体缓存与隐藏标记，不影响其他父会话", () => {
     const store = useProviderSubagentStore.getState();
     const descriptor = {

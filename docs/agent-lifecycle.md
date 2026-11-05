@@ -174,6 +174,12 @@ Clicking either kind opens a workspace tab. A Paseo subagent tab is a normal int
 
 Provider timelines use the same structural timeline item format but deliberately have a separate lifecycle and transport. A provider thread/session identifier is not a Paseo agent identifier, and closing its tab is always layout-only.
 
+Codex 子智能体状态以它自己的最新原生回合为准，父级调用的历史状态只用于首次发现子会话。冷恢复时读取子会话状态；父列表请求在返回前独立核对直接子任务的原生状态并排空对应状态事件，不能只返回描述缓存，也不能依赖用户点击详情才修正。分页子会话的状态读取只请求最新一轮回合头（倒序、上限一轮、不加载条目），不扫描过程正文；最多四路并发，相同父会话的并发列表请求共享核对。打开或重新显示子任务标签时，再通过现有正文请求定向读取原生子会话。结束态用完整正文替换片段，内容变化时更新正文代际，让旧分页游标明确失效；相同正文保留分页游标。运行态不截断已有实时正文。读取期间出现原生回合开始或结束事件时舍弃过期快照。父回合结束、子线程未装载和后续命令到来都不构成子任务完成证据。
+
+父列表和只读子任务标签都在可见且含运行任务时每十秒核对一次；隐藏后停查，重新显示、恢复连接或聚焦后重新读取。结束后停止定时核对。列表只核对状态，详情保留原正文进行后台读取，两者不互相依赖。客户端按描述信息的更新时间拒绝过期状态，同一时间戳优先保留终态；新一轮有较新更新时间时仍可正常运行。核对失败保留列表和正文，在各自上下文显示错误与重试入口，不清空已有内容。
+
+可见的提供方子任务标签把所属父智能体加入可见会话集合，因为它的原生连接与正文副本仍由父运行时持有。只读子任务没有输入框也不能省略这份保护，否则空闲回收会在阅读期间删除描述信息与正文。标签关闭、隐藏或工作区失焦后仍正常撤销保护，手动释放不受保护限制。
+
 Claude reports both a native task identifier and the parent `Agent` tool-call identifier for one execution. The provider must alias both identifiers to the tool-call identity before emitting a descriptor or timeline row. The initial `task_started` prompt becomes the child timeline's first user message. Child titles resolve in this order: explicit native name, task description, subagent type, generic fallback. The same rule applies during persisted-history replay: only native agent identifiers referenced by the direct parent's `Agent` results become rows, while identifiers launched from another sidechain are excluded from the root track. When a reopened runtime supplies provider-child history, `AgentManager` replaces the retained provider-child snapshot before applying that history; it must not append the same rows again. 运行时正常释放时也会清除提供方子任务副本；冷恢复后没有返回子任务历史的提供方不会继续显示释放前的旧缓存。
 
 Archived Paseo subagents disappear from the track, by design. To remove one from the track without closing its tab, use the **archive button** on the row — it opens a confirm dialog and archives the subagent on confirm. Provider-owned rows have no individual Paseo lifecycle controls.

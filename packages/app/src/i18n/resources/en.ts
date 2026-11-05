@@ -1727,6 +1727,7 @@ export const en = {
     backdrop: "Menu backdrop",
   },
   subagents: {
+    refreshFailed: "Couldn't verify subagent status",
     detachAction: "Detach {{label}}",
     detachTooltip: "Detach subagent",
     archiveAction: "Archive {{label}}",

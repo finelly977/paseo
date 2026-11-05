@@ -53,6 +53,7 @@ import type {
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useSessionStore } from "@/stores/session-store";
 import { useRevealedText } from "@/hooks/use-revealed-text";
+import { useNativeHistoryActiveTurn } from "@/timeline/use-native-history-active-turn";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
 import { useSettings } from "@/hooks/use-settings";
@@ -714,8 +715,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       frozenStreamItemsRef.current = streamItems;
       frozenStreamHeadRef.current = streamHead;
     }
-    const effectiveStreamItems = isActive ? streamItems : frozenStreamItemsRef.current;
-    const effectiveStreamHead = isActive ? streamHead : frozenStreamHeadRef.current;
+    const retainedStreamItems = isActive ? streamItems : frozenStreamItemsRef.current;
+    const retainedStreamHead = isActive ? streamHead : frozenStreamHeadRef.current;
+    const nativePresentation = useNativeHistoryActiveTurn({
+      serverId: resolvedServerId,
+      agentId,
+      tail: retainedStreamItems,
+      head: retainedStreamHead,
+      activeTurnId,
+    });
+    const effectiveStreamItems = nativePresentation.tail;
+    const effectiveStreamHead = nativePresentation.head;
     const executingToolIds = useMemo(
       () =>
         activeToolCallIds({

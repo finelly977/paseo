@@ -1747,6 +1747,7 @@ export const ptBR: TranslationResources = {
     backdrop: "Fundo do menu",
   },
   subagents: {
+    refreshFailed: "Não foi possível verificar o estado do subagente",
     detachAction: "Desanexar {{label}}",
     detachTooltip: "Desanexar subagente",
     archiveAction: "Arquivar {{label}}",

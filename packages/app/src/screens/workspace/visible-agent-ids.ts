@@ -21,7 +21,10 @@ export function selectVisibleAgentIds(input: {
       panes.flatMap((pane) => {
         const target = deriveWorkspacePaneState({ pane, tabs: input.tabs }).activeTab?.descriptor
           .target;
-        return target?.kind === "agent" ? [target.agentId] : [];
+        if (target?.kind === "agent") return [target.agentId];
+        // 提供方子任务的原生连接和正文由父运行时持有，可见时同样需要保护。
+        if (target?.kind === "provider_subagent") return [target.parentAgentId];
+        return [];
       }),
     ),
   ].sort();

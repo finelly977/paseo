@@ -2,6 +2,35 @@ import { describe, expect, test } from "vitest";
 import { ProviderSubagentStore } from "./store.js";
 
 describe("ProviderSubagentStore", () => {
+  test("原生子任务核对后替换正文并更换代际，不重复追加旧片段", () => {
+    const store = new ProviderSubagentStore();
+    store.apply("parent", "codex", { type: "upsert", id: "child", status: "completed" });
+    store.apply("parent", "codex", {
+      type: "timeline",
+      id: "child",
+      item: { type: "assistant_message", text: "旧片段" },
+    });
+    const previous = store.fetchTimeline("parent", "child");
+    store.replaceTimeline("parent", "child", [
+      {
+        item: { type: "assistant_message", messageId: "final", text: "原生完整结果" },
+        timestamp: "2026-11-05T00:00:01.000Z",
+      },
+    ]);
+    const next = store.fetchTimeline("parent", "child");
+    expect(next.epoch).not.toBe(previous.epoch);
+    expect(next.rows.map((row) => row.item)).toEqual([
+      { type: "assistant_message", messageId: "final", text: "原生完整结果" },
+    ]);
+    store.replaceTimeline("parent", "child", [
+      {
+        item: { type: "assistant_message", messageId: "final", text: "原生完整结果" },
+        timestamp: "2026-11-05T00:00:01.000Z",
+      },
+    ]);
+    expect(store.fetchTimeline("parent", "child").rows).toHaveLength(1);
+    expect(store.fetchTimeline("parent", "child").epoch).toBe(next.epoch);
+  });
   test("keeps provider children and their timelines scoped to the parent agent", () => {
     const subagents = new ProviderSubagentStore();
 

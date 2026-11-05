@@ -295,6 +295,150 @@ test("reopening a runtime replaces provider subagent history instead of appendin
   }
 });
 
+test.each(["completed", "running"] as const)(
+  "子智能体原生核对为 %s 时合并并发读取，结束态补全正文，运行态保留实时正文",
+  async (status) => {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-child-native-read-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const read = Promise.withResolvers<void>();
+    let readCount = 0;
+    class ChildReadSession extends TestAgentSession {
+      override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+        yield {
+          type: "provider_subagent",
+          provider: "codex",
+          event: { type: "upsert", id: "child", status: "running", title: "核对任务" },
+        };
+        yield {
+          type: "provider_subagent",
+          provider: "codex",
+          event: {
+            type: "timeline",
+            id: "child",
+            item: { type: "assistant_message", text: "实时正文" },
+          },
+        };
+      }
+      async readProviderSubagentTimeline() {
+        readCount += 1;
+        await read.promise;
+        this.pushEvent({
+          type: "provider_subagent",
+          provider: "codex",
+          event: { type: "upsert", id: "child", status, title: "核对任务" },
+        });
+        return [{ item: { type: "assistant_message" as const, text: "原生完整结果" } }];
+      }
+    }
+    class ChildReadClient extends TestAgentClient {
+      override async resumeSession(): Promise<AgentSession> {
+        return new ChildReadSession({ provider: "codex", cwd: workdir });
+      }
+    }
+    const manager = new AgentManager({
+      clients: { codex: new ChildReadClient() },
+      registry: storage,
+      logger,
+    });
+    const agentId = "00000000-0000-4000-8000-000000000221";
+    try {
+      await manager.resumeAgentFromPersistence(
+        { provider: "codex", sessionId: "parent", metadata: { cwd: workdir } },
+        { cwd: workdir },
+        agentId,
+      );
+      await manager.hydrateTimelineFromProvider(agentId);
+      const first = manager.refreshProviderSubagentTimeline(agentId, "child");
+      const second = manager.refreshProviderSubagentTimeline(agentId, "child");
+      expect(readCount).toBe(1);
+      read.resolve();
+      await Promise.all([first, second]);
+      expect(manager.getProviderSubagent(agentId, "child")?.status).toBe(status);
+      expect(
+        manager.fetchProviderSubagentTimeline(agentId, "child").rows.map((row) => row.item),
+      ).toEqual([
+        { type: "assistant_message", text: status === "completed" ? "原生完整结果" : "实时正文" },
+      ]);
+    } finally {
+      read.resolve();
+      await manager.closeAgent(agentId);
+      await storage.flush();
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("父列表核对子任务状态时合并并发请求，先应用终态再返回且不读取正文", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-child-status-read-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const gate = Promise.withResolvers<void>();
+  let statusReads = 0;
+  class StatusSession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      yield {
+        type: "provider_subagent",
+        provider: "codex",
+        event: { type: "upsert", id: "child", status: "running" },
+      };
+      yield {
+        type: "provider_subagent",
+        provider: "codex",
+        event: {
+          type: "timeline",
+          id: "child",
+          item: { type: "assistant_message", text: "保留已读正文" },
+        },
+      };
+    }
+    async refreshProviderSubagentStatuses() {
+      statusReads += 1;
+      await gate.promise;
+      this.pushEvent({
+        type: "provider_subagent",
+        provider: "codex",
+        event: { type: "upsert", id: "child", status: "completed" },
+      });
+    }
+    async readProviderSubagentTimeline(): Promise<never> {
+      throw new Error("列表不应读取正文");
+    }
+  }
+  class StatusClient extends TestAgentClient {
+    override async resumeSession(): Promise<AgentSession> {
+      return new StatusSession({ provider: "codex", cwd: workdir });
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new StatusClient() },
+    registry: storage,
+    logger,
+  });
+  const id = "00000000-0000-4000-8000-000000000222";
+  try {
+    await manager.resumeAgentFromPersistence(
+      { provider: "codex", sessionId: "parent", metadata: { cwd: workdir } },
+      { cwd: workdir },
+      id,
+    );
+    await manager.hydrateTimelineFromProvider(id);
+    const before = manager.fetchProviderSubagentTimeline(id, "child");
+    const a = manager.refreshProviderSubagentStatuses(id);
+    const b = manager.refreshProviderSubagentStatuses(id);
+    expect(statusReads).toBe(1);
+    gate.resolve();
+    await Promise.all([a, b]);
+    expect(manager.listProviderSubagents(id)).toEqual([
+      expect.objectContaining({ id: "child", status: "completed" }),
+    ]);
+    expect(manager.fetchProviderSubagentTimeline(id, "child")).toEqual(before);
+  } finally {
+    gate.resolve();
+    await manager.closeAgent(id);
+    await storage.flush();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("重新打开时清理重复的提供方助手消息并保留实时回合记录", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-assistant-history-duplicate-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
