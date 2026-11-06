@@ -667,6 +667,8 @@ export interface AgentSession {
   readonly id: string | null;
   readonly capabilities: AgentCapabilityFlags;
   readonly features?: AgentFeature[];
+  /** 只读准备会话菜单能力，不恢复执行或加载完整历史。由管理器后台调用并发布完成后的状态。 */
+  prepareMetadata?(): Promise<void>;
   run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult>;
   startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<{ turnId: string }>;
   steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;

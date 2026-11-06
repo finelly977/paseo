@@ -2058,6 +2058,155 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("只读打开会话即可补齐 Fast 与计划模式，目录慢时不阻塞历史且首次发送复用读取", async () => {
+    const catalog = Promise.withResolvers<unknown>();
+    let desktopStarts = 0;
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({
+        thread: {
+          id: "thread-1",
+          historyMode: "paginated",
+          model: "gpt-5.4",
+          reasoningEffort: "high",
+        },
+      }),
+      "thread/turns/list": () => ({ data: [], nextCursor: null }),
+      "model/list": () => catalog.promise,
+      "config/read": () => ({ config: { service_tier: "priority" } }),
+      "collaborationMode/list": () => ({
+        data: [
+          { name: "Code", mode: "default" },
+          { name: "Plan", mode: "plan" },
+        ],
+      }),
+    });
+    const inner = new CodexAppServerAgentSession(
+      createConfig({ model: undefined, thinkingOptionId: undefined }),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      {
+        connectDesktopTools: async () => {
+          desktopStarts += 1;
+          return null;
+        },
+      },
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      false,
+      true,
+    );
+    const session = wrapSessionProvider("codex", inner);
+    try {
+      await inner.connect();
+      if (!session.prepareMetadata) throw new Error("缺少只读会话菜单准备接口");
+      if (!session.nativeHistory) throw new Error("缺少原生浏览接口");
+      const preparation = session.prepareMetadata();
+      expect((await session.nativeHistory.readPage(null, 5)).turns).toEqual([]);
+      catalog.resolve({
+        data: [
+          {
+            id: "gpt-5.4",
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            serviceTiers: [{ id: "priority", name: "Fast" }],
+          },
+        ],
+      });
+      await preparation;
+      expect(await session.getRuntimeInfo()).toMatchObject({
+        model: "gpt-5.4",
+        thinkingOptionId: "high",
+      });
+      expect(session.features).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "fast_mode", value: true }),
+          expect.objectContaining({ id: "plan_mode", value: false }),
+        ]),
+      );
+      expect(desktopStarts).toBe(0);
+      expect(
+        appServer
+          .requests()
+          .filter((request) =>
+            ["thread/resume", "thread/start", "turn/start", "skills/list"].includes(request.method),
+          ),
+      ).toEqual([]);
+      await inner.setFeature("fast_mode", false);
+      await inner.startTurn("首次发送");
+      for (const method of ["model/list", "config/read", "collaborationMode/list"])
+        expect(appServer.requests().filter((request) => request.method === method)).toHaveLength(1);
+      expect(desktopStarts).toBe(1);
+      expect(session.features).toContainEqual(
+        expect.objectContaining({ id: "fast_mode", value: false }),
+      );
+      appServer.assertNoErrors();
+    } finally {
+      catalog.resolve({ data: [] });
+      await inner.close();
+    }
+  });
+
+  test.each(["model/list", "collaborationMode/list"])(
+    "只读菜单 %s 读取失败不缓存为空，后续操作可以重试",
+    async (method) => {
+      let fail = true;
+      const appServer = createFakeCodexAppServer({
+        "thread/read": () => ({ thread: { id: "thread-1", historyMode: "paginated" } }),
+        [method]: () => {
+          if (fail) return { __jsonRpcError: { code: -1, message: "测试：菜单读取失败" } };
+          return method === "model/list"
+            ? {
+                data: [
+                  {
+                    id: "gpt-5.4",
+                    isDefault: true,
+                    serviceTiers: [{ id: "priority", name: "Fast" }],
+                  },
+                ],
+              }
+            : { data: [{ name: "Plan", mode: "plan" }] };
+        },
+      });
+      const session = new CodexAppServerAgentSession(
+        createConfig(),
+        { sessionId: "thread-1" },
+        createTestLogger(),
+        () => appServer.spawnChild(),
+        {},
+        false,
+        false,
+        false,
+        undefined,
+        "interactive",
+        false,
+        true,
+      );
+      try {
+        await session.connect();
+        await expect(session.prepareMetadata()).rejects.toThrow("菜单读取失败");
+        expect(session.features).toEqual([]);
+        fail = false;
+        await session.setFeature("fast_mode", true);
+        expect(session.features).toContainEqual(
+          expect.objectContaining({ id: "fast_mode", value: true }),
+        );
+        expect(appServer.requests().filter((request) => request.method === method)).toHaveLength(2);
+        expect(
+          appServer
+            .requests()
+            .filter((request) => ["thread/resume", "turn/start"].includes(request.method)),
+        ).toEqual([]);
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
   test("原生浏览后的首次发送才准备执行，不为发送完整扫描原生历史", async () => {
     let loaded = false;
     const appServer = createFakeCodexAppServer({

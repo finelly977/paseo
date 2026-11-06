@@ -3894,6 +3894,27 @@ export class AgentManager {
       this.assertAgentRegistrationActive(managed);
       this.emitState(managed, { persist: false });
       this.subscribeToSession(managed);
+      if (session.prepareMetadata) {
+        const prepareMetadata = session
+          .prepareMetadata()
+          .then(async () => {
+            if (this.agents.get(managed.id) !== managed) return;
+            await this.refreshRuntimeInfo(managed, { emit: false });
+            if (this.agents.get(managed.id) !== managed) return;
+            this.syncFeaturesFromSession(managed);
+            this.touchUpdatedAt(managed);
+            // 即使模型未改变，也要推送新增的菜单能力；不能等下一次对话才刷新。
+            this.emitState(managed);
+            return undefined;
+          })
+          .catch((error) => {
+            this.logger.error(
+              { err: error, agentId: managed.id },
+              "Failed to prepare session metadata",
+            );
+          });
+        this.trackBackgroundTask(prepareMetadata);
+      }
       const refreshTitle = this.refreshAgentSessionTitle(managed.id).catch((error) => {
         this.logger.error(
           { err: error, agentId: managed.id },

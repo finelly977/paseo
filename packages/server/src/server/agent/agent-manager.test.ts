@@ -73,6 +73,57 @@ test("marks a fresh agent canonical timeline complete", async () => {
   }
 });
 
+test.each([false, true])(
+  "首次打开会话后台补齐菜单不等待对话，释放后不发布迟到结果：%s",
+  async (releaseBeforeReady) => {
+    const ready = Promise.withResolvers<void>();
+    class MetadataSession extends TestAgentSession {
+      features: AgentFeature[] = [];
+      async prepareMetadata() {
+        await ready.promise;
+        this.features = [{ id: "plan_mode", label: "计划模式", type: "toggle", value: false }];
+      }
+    }
+    class MetadataClient extends TestAgentClient {
+      override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+        return new MetadataSession(config);
+      }
+    }
+    const manager = new AgentManager({ clients: { codex: new MetadataClient() }, logger });
+    const updates: ManagedAgent[] = [];
+    const unsubscribe = manager.subscribe(
+      (event) => {
+        if (event.type === "agent_state") updates.push(event.agent);
+      },
+      { replayState: false },
+    );
+    const agent = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+      workspaceId: undefined,
+    });
+    try {
+      expect(agent.features).toEqual([]);
+      if (releaseBeforeReady) await manager.closeAgent(agent.id);
+      const beforeReady = updates.length;
+      ready.resolve();
+      await manager.flush();
+      if (releaseBeforeReady) {
+        expect(updates).toHaveLength(beforeReady);
+        expect(manager.getAgent(agent.id)).toBeNull();
+      } else {
+        expect(updates.at(-1)?.features).toContainEqual(
+          expect.objectContaining({ id: "plan_mode" }),
+        );
+        expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+        expect(manager.fetchTimeline(agent.id).rows).toEqual([]);
+      }
+    } finally {
+      ready.resolve();
+      unsubscribe();
+      if (!releaseBeforeReady) await manager.closeAgent(agent.id);
+    }
+  },
+);
+
 test("restores durable canonical turn membership when an agent is reopened", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-durable-turn-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);

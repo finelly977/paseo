@@ -558,6 +558,14 @@ interface CodexConfiguredDefaults {
   fastModeEnabled: boolean;
 }
 
+const CodexCollaborationModeSchema = z.object({
+  name: z.string(),
+  mode: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  reasoning_effort: z.string().nullable().optional(),
+  developer_instructions: z.string().nullable().optional(),
+});
+
 interface CodexModelCatalog {
   models: CodexModel[];
   defaults: CodexConfiguredDefaults;
@@ -3743,13 +3751,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private unpairedCompactionNotificationCompletions = 0;
   private unpairedCompactionItemCompletions = 0;
   private connected = false;
-  private collaborationModes: Array<{
-    name: string;
-    mode?: string | null;
-    model?: string | null;
-    reasoning_effort?: string | null;
-    developer_instructions?: string | null;
-  }> = [];
+  private collaborationModes: z.infer<typeof CodexCollaborationModeSchema>[] = [];
   private resolvedCollaborationMode: {
     mode: string;
     settings: Record<string, unknown>;
@@ -3819,6 +3821,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.client = null;
       this.executionPrepared = false;
       this.executionPreparation = null;
+      this.metadataPreparation = null;
       this.handleUnexpectedTermination(error);
     });
     client.setNotificationHandler((method, params) => {
@@ -3834,7 +3837,13 @@ export class CodexAppServerAgentSession implements AgentSession {
 
       if (this.browseNativeHistory && this.currentThreadId) {
         const { thread } = z
-          .object({ thread: z.object({ historyMode: z.enum(["legacy", "paginated"]) }) })
+          .object({
+            thread: z.object({
+              historyMode: z.enum(["legacy", "paginated"]),
+              model: z.string().nullable().optional(),
+              reasoningEffort: z.string().nullable().optional(),
+            }),
+          })
           .parse(
             await client.request("thread/read", {
               threadId: this.currentThreadId,
@@ -3842,6 +3851,8 @@ export class CodexAppServerAgentSession implements AgentSession {
             }),
           );
         if (thread.historyMode === "paginated") {
+          this.config.model ??= thread.model ?? undefined;
+          this.config.thinkingOptionId ??= normalizeCodexThinkingOptionId(thread.reasoningEffort);
           this.connected = true;
           this.executionPrepared = false;
           const threadId = this.currentThreadId;
@@ -3918,6 +3929,20 @@ export class CodexAppServerAgentSession implements AgentSession {
   nativeHistory?: AgentSession["nativeHistory"];
   private executionPrepared = false;
   private executionPreparation: Promise<void> | null = null;
+  private metadataPreparation: Promise<void> | null = null;
+
+  prepareMetadata(): Promise<void> {
+    if (this.metadataPreparation) return this.metadataPreparation;
+    const client = this.client;
+    if (!client) return Promise.reject(new Error("Codex session is not connected"));
+    const preparation = this.prepareMetadataInternal(client);
+    this.metadataPreparation = preparation;
+    void preparation.catch(() => {
+      // 调用者负责报告错误，失败不缓存，下一次操作可以重新读取。
+      if (this.metadataPreparation === preparation) this.metadataPreparation = null;
+    });
+    return preparation;
+  }
 
   private prepareExecution(): Promise<void> {
     if (this.executionPrepared) return Promise.resolve();
@@ -3935,7 +3960,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   private async prepareExecutionInternal(client: CodexAppServerClient): Promise<void> {
     const overrides = this.buildCodexInnerConfig();
-    this.modelCatalog = await readCodexModelCatalog({ client, cwd: this.config.cwd, overrides });
+    await this.prepareMetadata();
+    if (!this.modelCatalog) throw new Error("Codex model catalog was released during preparation");
     const connectDesktopTools = this.deps.connectDesktopTools ?? connectCodexDesktopTools;
     const codexLaunchCommand = await this.deps.resolveCodexLaunchCommand?.();
     const desktopTools = await connectDesktopTools({
@@ -3957,7 +3983,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.config.model = model;
     this.config.thinkingOptionId = thinkingOptionId;
     this.serviceTier = this.resolveServiceTier();
-    await this.loadCollaborationModes();
+    this.refreshResolvedCollaborationMode();
     await this.loadSkills();
 
     if (this.currentThreadId) {
@@ -3980,39 +4006,24 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
   }
 
-  private async loadCollaborationModes(): Promise<void> {
-    if (!this.client) return;
-    try {
-      const response = toObjectRecord(await this.client.request("collaborationMode/list", {}));
-      const data = Array.isArray(response?.data) ? response.data : [];
-      this.collaborationModes = data.map((entry) => {
-        const record = toObjectRecord(entry);
-        return {
-          name: typeof record?.name === "string" ? record.name : "",
-          mode: typeof record?.mode === "string" ? record.mode : null,
-          model: typeof record?.model === "string" ? record.model : null,
-          reasoning_effort:
-            typeof record?.reasoning_effort === "string" ? record.reasoning_effort : null,
-          developer_instructions:
-            typeof record?.developer_instructions === "string"
-              ? record.developer_instructions
-              : null,
-        };
-      });
-    } catch (error) {
-      this.logger.trace(
-        {
-          agentId: this.agentId,
-          provider: CODEX_PROVIDER,
-          sessionId: this.currentThreadId,
-          turnId: this.activeForegroundTurnId ?? undefined,
-          error,
-        },
-        "provider.codex.metadata.collaboration_modes_failed",
-      );
-      this.collaborationModes = [];
-    }
+  private async prepareMetadataInternal(client: CodexAppServerClient): Promise<void> {
+    const [catalog, rawModes] = await Promise.all([
+      readCodexModelCatalog({
+        client,
+        cwd: this.config.cwd,
+        overrides: this.buildCodexInnerConfig(),
+      }),
+      client.request("collaborationMode/list", {}),
+    ]);
+    const { data: modes } = z
+      .object({ data: z.array(CodexCollaborationModeSchema) })
+      .parse(rawModes);
+    if (this.client !== client) throw new Error("Codex session closed while reading metadata");
+    this.modelCatalog = catalog;
+    this.collaborationModes = modes;
+    this.serviceTier = this.resolveServiceTier();
     this.refreshResolvedCollaborationMode();
+    this.cachedRuntimeInfo = null;
   }
 
   private async loadSkills(): Promise<void> {
@@ -5067,6 +5078,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   async setFeature(featureId: string, value: unknown): Promise<void> {
+    await this.prepareMetadata();
     if (featureId === "fast_mode") {
       const enabled = z.boolean().parse(value);
       if (enabled && this.fastServiceTierId() === null) {
@@ -5427,6 +5439,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.client = null;
     this.desktopTools = null;
     this.modelCatalog = null;
+    this.metadataPreparation = null;
     this.connected = false;
     this.currentThreadId = null;
     this.executionPrepared = false;

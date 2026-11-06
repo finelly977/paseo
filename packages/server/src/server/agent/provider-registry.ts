@@ -360,6 +360,7 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
     renameSessionTitle: inner.renameSessionTitle?.bind(inner),
     readProviderSubagentTimeline: inner.readProviderSubagentTimeline?.bind(inner),
     refreshProviderSubagentStatuses: inner.refreshProviderSubagentStatuses?.bind(inner),
+    prepareMetadata: inner.prepareMetadata?.bind(inner),
     capabilities: inner.capabilities,
     get features() {
       return inner.features;
