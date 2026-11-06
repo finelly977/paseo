@@ -6,6 +6,7 @@ import {
   ScrollView,
   type GestureResponderEvent,
   type PressableStateCallbackType,
+  type PressableProps,
   type ViewStyle,
 } from "react-native";
 import { useMutation } from "@tanstack/react-query";
@@ -99,6 +100,7 @@ import {
   type CodexProviderInjectionMenuItem,
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
+import { useSidebarRowHover } from "@/components/sidebar/use-sidebar-row-hover";
 import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
@@ -122,6 +124,7 @@ import {
   buildSidebarProjectRowModel,
   resolveSidebarProjectIconTarget,
   resolveSidebarProjectLocalPath,
+  shouldShowSidebarProjectActions,
   type SidebarProjectHostTarget,
 } from "@/utils/sidebar-project-row-model";
 import { redirectIfArchivingActiveWorkspace } from "@/utils/sidebar-workspace-archive-redirect";
@@ -161,6 +164,8 @@ const DEFAULT_STATUS_DOT_SIZE = 7;
 const EMPHASIZED_STATUS_DOT_SIZE = 9;
 const DEFAULT_STATUS_DOT_OFFSET = 0;
 const EMPHASIZED_STATUS_DOT_OFFSET = -1;
+const PROJECT_ACTION_SIZE = 24;
+const PROJECT_ACTION_GAP = 2;
 
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
@@ -518,24 +523,27 @@ function ProjectRowTrailingActions({
   project,
   displayName,
   worktreeTarget,
-  isHovered,
-  isMobileBreakpoint,
+  visible,
   isProjectActive,
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  onFocus,
+  onBlur,
+  onMenuOpenChange,
 }: {
   project: SidebarProjectEntry;
   displayName: string;
   worktreeTarget: SidebarProjectHostTarget | null;
-  isHovered: boolean;
-  isMobileBreakpoint: boolean;
+  visible: boolean;
   isProjectActive: boolean;
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  onFocus: NonNullable<PressableProps["onFocus"]>;
+  onBlur: () => void;
+  onMenuOpenChange: (open: boolean) => void;
 }) {
-  const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   const localDaemonServerId = useLocalDaemonServerId();
   const localProjectPath = resolveSidebarProjectLocalPath(project, localDaemonServerId);
   const settingsTarget = project.hosts[0] ?? null;
@@ -545,15 +553,17 @@ function ProjectRowTrailingActions({
         <NewWorktreeButton
           displayName={displayName}
           onPress={onBeginWorkspaceSetup}
-          visible={actionsVisible}
+          visible={visible}
+          onFocus={onFocus}
+          onBlur={onBlur}
           showShortcutHint={isProjectActive}
           testID={`sidebar-project-new-worktree-${project.projectKey}`}
         />
       ) : null}
       {onRemoveProject ? (
         <View
-          style={!actionsVisible && styles.projectKebabButtonHidden}
-          pointerEvents={actionsVisible ? "auto" : "none"}
+          style={!visible && styles.projectKebabButtonHidden}
+          pointerEvents={visible ? "auto" : "none"}
         >
           <ProjectKebabMenu
             projectKey={project.projectKey}
@@ -561,6 +571,9 @@ function ProjectRowTrailingActions({
             projectPath={localProjectPath}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
+            onFocus={onFocus}
+            onBlur={onBlur}
+            onOpenChange={onMenuOpenChange}
           />
         </View>
       ) : null}
@@ -589,12 +602,18 @@ function ProjectKebabMenu({
   projectPath,
   onRemoveProject,
   removeProjectStatus,
+  onFocus,
+  onBlur,
+  onOpenChange,
 }: {
   projectKey: string;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  onFocus: NonNullable<PressableProps["onFocus"]>;
+  onBlur: () => void;
+  onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -618,13 +637,15 @@ function ProjectKebabMenu({
       });
   }, [projectPath, t, toast]);
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger
         hitSlop={8}
         style={projectKebabStyle}
         accessibilityRole={platformIsWeb ? undefined : "button"}
         accessibilityLabel={t("sidebar.project.actions.menu")}
         testID={`sidebar-project-kebab-${projectKey}`}
+        onFocus={onFocus}
+        onBlur={onBlur}
       >
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
@@ -882,6 +903,8 @@ function NewWorktreeButton({
   loading = false,
   testID,
   showShortcutHint = false,
+  onFocus,
+  onBlur,
 }: {
   displayName: string;
   onPress: () => void;
@@ -889,6 +912,8 @@ function NewWorktreeButton({
   loading?: boolean;
   testID: string;
   showShortcutHint?: boolean;
+  onFocus: NonNullable<PressableProps["onFocus"]>;
+  onBlur: () => void;
 }) {
   const { t } = useTranslation();
   const newWorktreeKeys = useShortcutKeys("new-worktree");
@@ -912,8 +937,8 @@ function NewWorktreeButton({
 
   return (
     <View style={styles.projectTrailingControlSlot} pointerEvents={visible ? "auto" : "none"}>
-      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
-        <TooltipTrigger asChild disabled={!visible}>
+      <Tooltip delayDuration={0} enabledOnDesktop={visible} enabledOnMobile={false}>
+        <TooltipTrigger asChild>
           <Pressable
             style={pressableStyle}
             onPress={handlePress}
@@ -923,6 +948,8 @@ function NewWorktreeButton({
               projectName: displayName,
             })}
             testID={testID}
+            onFocus={onFocus}
+            onBlur={onBlur}
           >
             {({ hovered, pressed }) =>
               loading ? (
@@ -1042,7 +1069,46 @@ function ProjectHeaderRow({
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [actionsFocused, setActionsFocused] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const {
+    isHovered: actionsHovered,
+    hoverHandlers: actionHoverHandlers,
+    revalidateHover: revalidateActionsHover,
+  } = useSidebarRowHover();
   const isMobileBreakpoint = useIsCompactFormFactor();
+  const actionsVisible = shouldShowSidebarProjectActions({
+    actionAreaHovered: actionsHovered,
+    focused: actionsFocused,
+    menuOpen: actionsMenuOpen,
+    native: platformIsNative,
+    compact: isMobileBreakpoint,
+    pending: removeProjectStatus === "pending",
+  });
+  const actionCount = Number(worktreeTarget !== null) + Number(onRemoveProject !== undefined);
+  const actionWidth =
+    actionCount * PROJECT_ACTION_SIZE + Math.max(0, actionCount - 1) * PROJECT_ACTION_GAP;
+  const projectRowLeftStyle = useMemo(
+    () => [styles.projectRowLeft, styles.projectActionsClearance(actionsVisible ? actionWidth : 0)],
+    [actionWidth, actionsVisible],
+  );
+  const actionZoneStyle = useMemo(
+    () => [styles.projectActionsHoverZone, { width: actionWidth }],
+    [actionWidth],
+  );
+  const handleActionsFocus = useCallback<NonNullable<PressableProps["onFocus"]>>((event) => {
+    if (!platformIsWeb) return;
+    const target = event.currentTarget;
+    if (target instanceof HTMLElement) setActionsFocused(target.matches(":focus-visible"));
+  }, []);
+  const handleActionsBlur = useCallback(() => setActionsFocused(false), []);
+  const handleActionsMenuOpenChange = useCallback(
+    (open: boolean) => {
+      setActionsMenuOpen(open);
+      if (!open) revalidateActionsHover();
+    },
+    [revalidateActionsHover],
+  );
   const { rowVerticalPadding, sessionSpacing } = useSidebarListSpacing();
   const effectiveVerticalPadding = isMobileBreakpoint
     ? Math.max(8, rowVerticalPadding)
@@ -1101,7 +1167,7 @@ function ProjectHeaderRow({
 
   const rowChildren = (
     <>
-      <View style={styles.projectRowLeft}>
+      <View style={projectRowLeftStyle}>
         <ProjectLeadingVisual
           displayName={displayName}
           iconDataUri={iconDataUri}
@@ -1128,17 +1194,27 @@ function ProjectHeaderRow({
           ) : null}
         </View>
       </View>
-      <ProjectRowTrailingActions
-        project={project}
-        displayName={displayName}
-        worktreeTarget={worktreeTarget}
-        isHovered={isHovered}
-        isMobileBreakpoint={isMobileBreakpoint}
-        isProjectActive={isProjectActive}
-        onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
-        onRemoveProject={onRemoveProject}
-        removeProjectStatus={removeProjectStatus}
-      />
+      {actionCount > 0 ? (
+        <View
+          style={actionZoneStyle}
+          {...actionHoverHandlers}
+          testID={`sidebar-project-actions-${project.projectKey}`}
+        >
+          <ProjectRowTrailingActions
+            project={project}
+            displayName={displayName}
+            worktreeTarget={worktreeTarget}
+            visible={actionsVisible}
+            isProjectActive={isProjectActive}
+            onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
+            onRemoveProject={onRemoveProject}
+            removeProjectStatus={removeProjectStatus}
+            onFocus={handleActionsFocus}
+            onBlur={handleActionsBlur}
+            onMenuOpenChange={handleActionsMenuOpenChange}
+          />
+        </View>
+      ) : null}
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
           <SidebarWorkspaceShortcutBadge number={shortcutNumber} />
@@ -3043,10 +3119,10 @@ const styles = StyleSheet.create((theme) => ({
   projectHostLabel: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sidebar,
-    maxWidth: "50%",
     flexShrink: 1,
     minWidth: 0,
-    marginLeft: theme.spacing[1],
+    marginLeft: "auto",
+    textAlign: "right",
   },
   projectActionButton: {
     flexDirection: "row",
@@ -3065,8 +3141,8 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sidebar,
   },
   projectIconActionButton: {
-    width: 24,
-    height: 24,
+    width: PROJECT_ACTION_SIZE,
+    height: PROJECT_ACTION_SIZE,
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
     justifyContent: "center",
@@ -3081,12 +3157,12 @@ const styles = StyleSheet.create((theme) => ({
   projectTrailingActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
+    gap: PROJECT_ACTION_GAP,
     flexShrink: 0,
   },
   projectKebabButton: {
-    width: 24,
-    height: 24,
+    width: PROJECT_ACTION_SIZE,
+    height: PROJECT_ACTION_SIZE,
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
     justifyContent: "center",
@@ -3099,12 +3175,22 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
   },
   projectTrailingControlSlot: {
-    width: 24,
-    height: 24,
+    width: PROJECT_ACTION_SIZE,
+    height: PROJECT_ACTION_SIZE,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
+  projectActionsHoverZone: {
+    position: "absolute",
+    right: theme.spacing[2],
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+  },
+  projectActionsClearance: (width: number) => ({
+    paddingRight: width > 0 ? width + theme.spacing[2] : 0,
+  }),
   projectActionTooltipRow: {
     flexDirection: "row",
     alignItems: "center",

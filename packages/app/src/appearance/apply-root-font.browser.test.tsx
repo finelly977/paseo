@@ -101,7 +101,7 @@ it("工作区侧栏比内容区小一级，调整字号即时生效且不影响�
     applyRootUiFont("Arial", fontSize);
     expect(getComputedStyle(node("ordinary-label")).fontSize).toBe(`${fontSize}px`);
     for (const id of ["sidebar-project-label", "sidebar-workspace-label"]) {
-      expect(getComputedStyle(node(id)).fontSize).toBe(`${fontSize - 2}px`);
+      expect(getComputedStyle(node(id)).fontSize).toBe(`${fontSize - 1}px`);
       expect(getComputedStyle(node(id)).fontFamily).toBe("Arial");
     }
     expect(getComputedStyle(node("modal-label")).fontSize).toBe(`${fontSize}px`);

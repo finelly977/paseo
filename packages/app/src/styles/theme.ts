@@ -607,7 +607,7 @@ export const SPACING = {
 // 普通界面文字统一字号，代码另有独立设置。
 export const FONT_SIZE = {
   xs: 16,
-  sidebar: 14,
+  sidebar: 15,
   code: 12,
   sm: 16,
   base: 16,

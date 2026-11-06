@@ -7,7 +7,28 @@ import {
   buildSidebarProjectRowModel,
   resolveSidebarProjectIconTarget,
   resolveSidebarProjectLocalPath,
+  shouldShowSidebarProjectActions,
 } from "./sidebar-project-row-model";
+
+describe("目录行右侧操作显示", () => {
+  const idle = {
+    actionAreaHovered: false,
+    focused: false,
+    menuOpen: false,
+    native: false,
+    compact: false,
+    pending: false,
+  };
+  it("桌面未进入操作区时不占据主机文字空间", () => {
+    expect(shouldShowSidebarProjectActions(idle)).toBe(false);
+  });
+  it.each(["actionAreaHovered", "focused", "menuOpen", "native", "compact", "pending"] as const)(
+    "%s 时显示操作并为其让位",
+    (key) => {
+      expect(shouldShowSidebarProjectActions({ ...idle, [key]: true })).toBe(true);
+    },
+  );
+});
 
 function workspace(overrides: Partial<SidebarWorkspaceEntry> = {}): SidebarWorkspaceEntry {
   return {

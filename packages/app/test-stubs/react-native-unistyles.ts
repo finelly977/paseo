@@ -28,7 +28,7 @@ const testTheme = {
   spacing: [0, 4, 8, 12, 16, 20, 24, 28, 32],
   fontSize: {
     xs: 12,
-    sidebar: 14,
+    sidebar: 15,
     sm: 14,
     base: 16,
   },

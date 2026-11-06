@@ -61,7 +61,7 @@ function makeFakeTheme(): FakeTheme {
     fontFamily: { ui: "seed-ui-stack", mono: "seed-mono-stack" },
     fontSize: {
       xs: 12,
-      sidebar: 14,
+      sidebar: 15,
       code: 12,
       sm: 14,
       base: 16,
@@ -168,7 +168,7 @@ describe("applyAppearance", () => {
     applyAppearance(makeInput({ uiFontSize: 18, codeFontSize: 12 }));
     expect(runCapturedUpdater().fontSize).toEqual({
       xs: 18,
-      sidebar: 16,
+      sidebar: 17,
       sm: 18,
       base: 18,
       lg: 18,

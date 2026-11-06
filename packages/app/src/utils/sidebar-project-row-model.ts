@@ -18,6 +18,26 @@ export interface SidebarProjectSectionRowModel {
 
 export type SidebarProjectRowModel = SidebarProjectSectionRowModel;
 
+interface SidebarProjectActionVisibility {
+  actionAreaHovered: boolean;
+  focused: boolean;
+  menuOpen: boolean;
+  native: boolean;
+  compact: boolean;
+  pending: boolean;
+}
+
+export function shouldShowSidebarProjectActions(input: SidebarProjectActionVisibility): boolean {
+  return (
+    input.actionAreaHovered ||
+    input.focused ||
+    input.menuOpen ||
+    input.native ||
+    input.compact ||
+    input.pending
+  );
+}
+
 const EMPTY_MULTIPLICITY_MAP: ReadonlyMap<string, boolean> = new Map();
 function hostTarget(input: {
   serverId: string;
