@@ -64,6 +64,7 @@ import {
 } from "@/utils/host-routes";
 import {
   resolveSidebarHostLabel,
+  resolveSidebarProjectHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
@@ -98,6 +99,7 @@ import {
   type CodexProviderInjectionMenuItem,
 } from "@/components/sidebar/sidebar-workspace-menu";
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
@@ -269,6 +271,7 @@ interface SidebarWorkspaceListProps {
 interface ProjectHeaderRowProps {
   project: SidebarProjectEntry;
   displayName: string;
+  hostLabel: string | null;
   iconDataUri: string | null;
   workspace: SidebarWorkspaceEntry | null;
   selected?: boolean;
@@ -1018,6 +1021,7 @@ function NewWorkspaceGhostRow({
 function ProjectHeaderRow({
   project,
   displayName,
+  hostLabel,
   iconDataUri,
   workspace,
   selected = false,
@@ -1112,6 +1116,16 @@ function ProjectHeaderRow({
           <Text style={styles.projectTitle} numberOfLines={1}>
             {displayName}
           </Text>
+          {hostLabel ? (
+            <Text
+              style={styles.projectHostLabel}
+              numberOfLines={1}
+              accessibilityLabel={hostLabel}
+              testID={`sidebar-project-host-${project.projectKey}`}
+            >
+              {hostLabel}
+            </Text>
+          ) : null}
         </View>
       </View>
       <ProjectRowTrailingActions
@@ -2000,6 +2014,16 @@ function ProjectBlock({
     project,
     enabled: selectionEnabled,
   });
+  const hostLabel = useMemo(
+    () =>
+      resolveSidebarProjectHostLabel({
+        project,
+        localDaemonServerId,
+        showHostLabels,
+        hostLabelByServerId,
+      }),
+    [project, localDaemonServerId, showHostLabels, hostLabelByServerId],
+  );
 
   const renderWorkspaceRow = useCallback(
     (
@@ -2014,12 +2038,6 @@ function ProjectBlock({
         <MemoWorkspaceRowItem
           workspace={item}
           workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
-          subtitle={resolveSidebarHostLabel({
-            serverId: item.serverId,
-            localDaemonServerId,
-            showHostLabels,
-            hostLabelByServerId,
-          })}
           shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
           showShortcutBadge={showShortcutBadges}
           canCopyBranchName={project.projectKind === "git"}
@@ -2039,11 +2057,8 @@ function ProjectBlock({
       project.projectKind,
       onToggleWorkspacePin,
       supportsPinningByServerId,
-      showHostLabels,
       activeWorkspaceSelection,
       creatingWorkspaceIds,
-      hostLabelByServerId,
-      localDaemonServerId,
       onWorkspacePress,
       selectionEnabled,
       shortcutIndexByWorkspaceKey,
@@ -2180,6 +2195,7 @@ function ProjectBlock({
       <ProjectHeaderRow
         project={project}
         displayName={displayName}
+        hostLabel={hostLabel}
         iconDataUri={iconDataUri}
         workspace={null}
         selected={false}
@@ -2848,7 +2864,7 @@ function ProjectModeList({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
       {platformIsNative ? (
         <NestableScrollContainer
           {...nativeScrollGestureProps}
@@ -2921,12 +2937,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   newWorkspaceGhostText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     minWidth: 0,
     flexShrink: 1,
   },
   newWorkspaceGhostTextHovered: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     minWidth: 0,
     flexShrink: 1,
     color: theme.colors.foregroundSidebar,
@@ -2944,13 +2960,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   emptyTitle: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.medium,
     textAlign: "center",
   },
   emptyText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     textAlign: "center",
   },
   projectRow: {
@@ -3019,10 +3035,18 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectTitle: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: "400",
     minWidth: 0,
     flexShrink: 1,
+  },
+  projectHostLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sidebar,
+    maxWidth: "50%",
+    flexShrink: 1,
+    minWidth: 0,
+    marginLeft: theme.spacing[1],
   },
   projectActionButton: {
     flexDirection: "row",
@@ -3038,7 +3062,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectActionButtonText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
   },
   projectIconActionButton: {
     width: 24,
@@ -3179,12 +3203,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceArchivingText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: "600",
   },
   workspaceBranchText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: "400",
     lineHeight: 20,
     flex: 1,
@@ -3198,7 +3222,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceCreatingText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     flexShrink: 0,
   },
   statusDotNeedsInput: {

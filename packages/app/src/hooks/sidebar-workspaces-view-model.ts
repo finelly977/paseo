@@ -432,6 +432,27 @@ export function resolveSidebarHostLabel(input: {
   return input.hostLabelByServerId.get(input.serverId) ?? input.serverId;
 }
 
+export function resolveSidebarProjectHostLabel(
+  input: Omit<Parameters<typeof resolveSidebarHostLabel>[0], "serverId"> & {
+    project: Pick<SidebarProjectEntry, "hosts">;
+  },
+): string | null {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const host of input.project.hosts) {
+    if (seen.has(host.serverId)) continue;
+    seen.add(host.serverId);
+    const label = resolveSidebarHostLabel({
+      serverId: host.serverId,
+      localDaemonServerId: input.localDaemonServerId,
+      showHostLabels: input.showHostLabels,
+      hostLabelByServerId: input.hostLabelByServerId,
+    });
+    if (label !== null) labels.push(label);
+  }
+  return labels.length > 0 ? labels.join(" · ") : null;
+}
+
 export function applyStoredOrdering<T>(input: {
   items: T[];
   storedOrder: string[];

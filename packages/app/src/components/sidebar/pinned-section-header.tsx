@@ -59,7 +59,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   title: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
   },
 }));

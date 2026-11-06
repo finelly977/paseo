@@ -467,7 +467,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceCreatingText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     flexShrink: 0,
   },
 }));

@@ -6,6 +6,7 @@ import { afterEach, expect, it } from "vitest";
 import { applyRootUiFont } from "./apply-root-font.web";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 import { PlanCard } from "@/components/plan-card";
 import { createInstance } from "i18next";
 import { I18nextProvider } from "react-i18next";
@@ -25,6 +26,7 @@ afterEach(() => {
   document.getElementById("paseo-ui-font")?.remove();
   document.documentElement.style.removeProperty("--paseo-ui-font");
   document.documentElement.style.removeProperty("--paseo-ui-font-size");
+  document.documentElement.style.removeProperty("--paseo-sidebar-font-size");
 });
 
 function mountFontSurfaces() {
@@ -45,6 +47,14 @@ function mountFontSurfaces() {
       <Text style={compactStyle} dataSet={COMPACT_LABEL_DATASET} testID="compact-label">
         17
       </Text>
+      <View dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
+        <Text style={labelStyle} testID="sidebar-project-label">
+          CLIProxyAPI
+        </Text>
+        <Text style={labelStyle} testID="sidebar-workspace-label">
+          检查9:48至9:54的5.6 sol
+        </Text>
+      </View>
       {createPortal(<Text testID="overlay-label">权限卡片</Text>, overlay)}
       <Modal visible transparent>
         <View>
@@ -79,6 +89,23 @@ it("界面字体覆盖主界面、浮层与独立 Modal，代码区域保持等�
   for (const id of ["inline-code", "modal-code"]) {
     expect(getComputedStyle(node(id)).fontFamily).toBe("Consolas");
     expect(getComputedStyle(node(id)).fontSize).toBe("12px");
+  }
+});
+
+it("工作区侧栏比内容区小一级，调整字号即时生效且不影响弹窗和代码", async () => {
+  mountFontSurfaces();
+  await expect
+    .poll(() => document.querySelector('[data-testid="sidebar-workspace-label"]'))
+    .not.toBeNull();
+  for (const fontSize of [16, 20, 14]) {
+    applyRootUiFont("Arial", fontSize);
+    expect(getComputedStyle(node("ordinary-label")).fontSize).toBe(`${fontSize}px`);
+    for (const id of ["sidebar-project-label", "sidebar-workspace-label"]) {
+      expect(getComputedStyle(node(id)).fontSize).toBe(`${fontSize - 2}px`);
+      expect(getComputedStyle(node(id)).fontFamily).toBe("Arial");
+    }
+    expect(getComputedStyle(node("modal-label")).fontSize).toBe(`${fontSize}px`);
+    expect(getComputedStyle(node("inline-code")).fontSize).toBe("12px");
   }
 });
 

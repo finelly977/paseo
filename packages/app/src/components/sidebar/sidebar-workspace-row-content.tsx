@@ -410,7 +410,7 @@ const prBadgeStyles = StyleSheet.create((theme) => ({
     opacity: 0.82,
   },
   text: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 14,
     color: theme.colors.foregroundSidebar,
@@ -427,7 +427,7 @@ const checksBadgeStyles = StyleSheet.create((theme) => ({
     gap: 2,
   },
   text: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 14,
     color: theme.colors.palette.red[500],
@@ -455,7 +455,7 @@ export const sidebarWorkspaceRowStyles = StyleSheet.create((theme) => ({
   },
   shortcutBadgeText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.medium,
     lineHeight: 14,
   },
@@ -550,7 +550,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.palette.green[500],
   },
   workspaceBranchText: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: "400",
     lineHeight: 20,
     minWidth: 0,
@@ -587,7 +587,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceSubtitle: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     lineHeight: 14,
   },
   workspacePrBadgeRow: {

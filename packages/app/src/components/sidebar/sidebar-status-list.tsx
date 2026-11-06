@@ -50,6 +50,7 @@ import { useSidebarListSpacing } from "@/components/sidebar/sidebar-list-spacing
 import { resolveSidebarHostLabel } from "@/hooks/use-sidebar-workspaces-list";
 import { useSessionStore } from "@/stores/session-store";
 import { useCodexProviderInjections } from "@/codex-provider-injections/use-codex-provider-injections";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 
 // Themed icon wrappers
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -179,7 +180,7 @@ export function SidebarStatusWorkspaceList({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
       {platformIsNative ? (
         <NestableScrollContainer
           style={styles.list}
@@ -1011,7 +1012,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   statusGroupTitle: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: "400",
     minWidth: 0,
     flexShrink: 1,

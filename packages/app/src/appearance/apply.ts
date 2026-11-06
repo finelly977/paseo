@@ -3,6 +3,7 @@ import { resolveSyntaxColors, type SyntaxThemeId } from "@getpaseo/highlight";
 import { DEFAULT_UI_FONT_STACK, DEFAULT_MONO_FONT_STACK, type Theme } from "@/styles/theme";
 import { applyRootUiFont } from "./apply-root-font";
 import { resolveTextBrightness } from "./text-brightness";
+import { resolveSidebarFontSize } from "@/styles/sidebar-typography";
 
 // 所有已注册的 Unistyles 主题键；插件槽也必须叠加用户的字体、字号与语法主题。
 // The `as const` element types are exactly `keyof UnistylesThemes`, so each key
@@ -27,10 +28,11 @@ export interface AppearanceInput {
   syntaxTheme: SyntaxThemeId;
 }
 
-// 所有普通界面文字共用一个字号；层级由字重、颜色和间距表达。
+// 正文与控件统一字号；工作区侧栏小一级，代码字号独立。
 function resolveFontSize(uiSize: number, codeSize: number): Theme["fontSize"] {
   return {
     xs: uiSize,
+    sidebar: resolveSidebarFontSize(uiSize),
     sm: uiSize,
     base: uiSize,
     lg: uiSize,

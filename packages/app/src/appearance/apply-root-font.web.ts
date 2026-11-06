@@ -8,10 +8,13 @@
 // on stylesheet order. Modal 可能直接挂到 body 下，必须与主界面共用字体规则。
 // Code/diff/terminal surfaces carry `data-pmono` (and have their
 // subtree excluded via `:not([data-pmono] *)`) so they keep their monospace font.
+import { resolveSidebarFontSize } from "@/styles/sidebar-typography";
+
 const STYLE_ID = "paseo-ui-font";
 const UI_SELECTOR = ":is(body, #root, #overlay-root) *:not([data-pmono]):not([data-pmono] *)";
 // 紧凑徽标的字号由组件持有，不能为避开字号覆盖而误标成代码区域。
-const RULE = `${UI_SELECTOR}{font-family:var(--paseo-ui-font);}
+const RULE = `[data-psidebar]{--paseo-ui-font-size:var(--paseo-sidebar-font-size);}
+${UI_SELECTOR}{font-family:var(--paseo-ui-font);}
 ${UI_SELECTOR}:not([data-pcompact]):not([data-pcompact] *){font-size:var(--paseo-ui-font-size)!important;}`;
 
 export function applyRootUiFont(uiFontStack: string, uiFontSize: number): void {
@@ -27,6 +30,10 @@ export function applyRootUiFont(uiFontStack: string, uiFontSize: number): void {
   document.documentElement.style.setProperty("--paseo-ui-font", value);
 
   document.documentElement.style.setProperty("--paseo-ui-font-size", `${uiFontSize}px`);
+  document.documentElement.style.setProperty(
+    "--paseo-sidebar-font-size",
+    `${resolveSidebarFontSize(uiFontSize)}px`,
+  );
 
   // The rule itself is static (references the variable); inject it once.
   let style = document.getElementById(STYLE_ID);

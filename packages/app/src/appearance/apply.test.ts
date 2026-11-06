@@ -32,6 +32,7 @@ interface FakeTheme {
   fontFamily: { ui: string; mono: string };
   fontSize: {
     xs: number;
+    sidebar: number;
     code: number;
     sm: number;
     base: number;
@@ -60,6 +61,7 @@ function makeFakeTheme(): FakeTheme {
     fontFamily: { ui: "seed-ui-stack", mono: "seed-mono-stack" },
     fontSize: {
       xs: 12,
+      sidebar: 14,
       code: 12,
       sm: 14,
       base: 16,
@@ -162,10 +164,11 @@ describe("applyAppearance", () => {
     expect(runCapturedUpdater().fontFamily.ui).toBe("Menlo");
   });
 
-  it("所有非代码字号统一跟随界面字号，代码字号独立", () => {
+  it("侧栏比界面字号小一级，其余普通文字统一，代码字号独立", () => {
     applyAppearance(makeInput({ uiFontSize: 18, codeFontSize: 12 }));
     expect(runCapturedUpdater().fontSize).toEqual({
       xs: 18,
+      sidebar: 16,
       sm: 18,
       base: 18,
       lg: 18,

@@ -22,6 +22,7 @@ export {
   computeSidebarOrderUpdates,
   deriveSidebarLoadingState,
   resolveSidebarHostLabel,
+  resolveSidebarProjectHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarLoadingState,
   type SidebarOrderUpdates,

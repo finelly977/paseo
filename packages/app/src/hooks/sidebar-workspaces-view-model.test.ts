@@ -11,6 +11,7 @@ import {
   createSidebarWorkspaceEntry,
   deriveSidebarLoadingState,
   resolveSidebarHostLabel,
+  resolveSidebarProjectHostLabel,
   shouldShowSidebarHostLabels,
   type SidebarProjectEntry,
 } from "./sidebar-workspaces-view-model";
@@ -552,6 +553,54 @@ describe("resolveSidebarHostLabel", () => {
         hostLabelByServerId: hostLabels,
       }),
     ).toBe("Build server");
+  });
+});
+
+describe("resolveSidebarProjectHostLabel", () => {
+  const hostLabelByServerId = new Map([
+    ["local", "AE86"],
+    ["remote", "VM-0-7-ubuntu"],
+    ["build", "Build server"],
+  ]);
+  const defaults = { localDaemonServerId: "local", showHostLabels: true, hostLabelByServerId };
+  const hosts = (serverIds: string[]) =>
+    serverIds.map((serverId) => ({
+      serverId,
+      projectId: "project",
+      iconWorkingDir: "/repo",
+      canCreateWorktree: true,
+    }));
+
+  it("目录下多个会话共用同一个主机标识，不按会话重复显示", () => {
+    expect(
+      resolveSidebarProjectHostLabel({
+        ...defaults,
+        project: { hosts: hosts(["remote", "remote"]) },
+      }),
+    ).toBe("VM-0-7-ubuntu");
+  });
+  it("合并目录仅列出不同远程主机，省略本机", () => {
+    expect(
+      resolveSidebarProjectHostLabel({
+        ...defaults,
+        project: { hosts: hosts(["local", "remote", "build"]) },
+      }),
+    ).toBe("VM-0-7-ubuntu · Build server");
+  });
+  it("单主机筛选及本机目录不增加主机标识，空目录仍可展示所属远程主机", () => {
+    expect(
+      resolveSidebarProjectHostLabel({ ...defaults, project: { hosts: hosts(["local"]) } }),
+    ).toBeNull();
+    expect(
+      resolveSidebarProjectHostLabel({
+        ...defaults,
+        showHostLabels: false,
+        project: { hosts: hosts(["remote"]) },
+      }),
+    ).toBeNull();
+    expect(
+      resolveSidebarProjectHostLabel({ ...defaults, project: { hosts: hosts(["remote"]) } }),
+    ).toBe("VM-0-7-ubuntu");
   });
 });
 

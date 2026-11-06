@@ -88,13 +88,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   text: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     minWidth: 0,
     flexShrink: 1,
   },
   textHovered: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     minWidth: 0,
     flexShrink: 1,
   },

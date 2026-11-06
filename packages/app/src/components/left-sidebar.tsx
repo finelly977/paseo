@@ -1011,7 +1011,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspacesSectionTitle: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
   },
   workspacesSectionActions: {
