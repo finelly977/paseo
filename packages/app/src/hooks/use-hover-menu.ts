@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { View } from "react-native";
 import { useHoverSafeZone } from "./use-hover-safe-zone";
+import { isWeb } from "@/constants/platform";
 
 interface HoverMenuInput {
   enabled: boolean;
@@ -55,10 +56,22 @@ export function useHoverMenu({
     if (!open || closeTimer.current !== null) return;
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null;
+      // 模型筛选会改变菜单边界，输入法候选窗也可能使指针暂时离开；输入仍聚焦时不按悬停退出关闭。
+      if (isWeb) {
+        const content = contentRef.current as unknown as HTMLElement | null;
+        const active = document.activeElement;
+        if (
+          content &&
+          active &&
+          content.contains(active) &&
+          active.matches("input,textarea,[contenteditable=true]")
+        )
+          return;
+      }
       closedByHover.current = true;
       onOpenChange(false);
     }, 160);
-  }, [clearOpen, open, onOpenChange]);
+  }, [clearOpen, contentRef, open, onOpenChange]);
   useHoverSafeZone({
     enabled,
     triggerRef,

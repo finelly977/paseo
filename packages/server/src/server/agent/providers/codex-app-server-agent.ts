@@ -3646,6 +3646,7 @@ function buildCodexCustomProviderConfig(
 
 interface CodexSubAgentCallState {
   callId: string;
+  parentTurn: { kind: "history" } | { kind: "live"; turnId: string | null };
   toolCall: ToolCallTimelineItem;
   parentCallId: string | null;
   activityItemIds: Set<string>;
@@ -3871,6 +3872,7 @@ export class CodexAppServerAgentSession implements AgentSession {
                   timelineItem: item,
                   rawItem: raw,
                   parentCallId: null,
+                  parentTurn: { kind: "history" },
                 });
               return item;
             },
@@ -4277,6 +4279,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         timelineItem: next.route.toolCall,
         rawItem: { agentThreadId: next.route.childThreadId },
         parentCallId: next.parentCallId,
+        parentTurn: { kind: "history" },
       });
       try {
         const childHistory = await loadCodexThreadHistoryTimeline({
@@ -5795,7 +5798,27 @@ export class CodexAppServerAgentSession implements AgentSession {
     return await codexAppServerTurnInputFromPrompt(prompt, this.logger);
   }
 
-  private emitEvent(event: AgentStreamEvent): void {
+  private resolveParentSubagentEvent(event: AgentStreamEvent): AgentStreamEvent | null {
+    if (
+      event.type === "timeline" &&
+      event.item.type === "tool_call" &&
+      event.item.detail.type === "sub_agent"
+    ) {
+      const state = this.subAgentCallsByCallId.get(event.item.callId);
+      // 历史子任务的列表核对和迟到活动只更新轨道，不能借当前回合重新插入一条父工具。
+      if (state) {
+        if (state.parentTurn.kind === "history") return null;
+        if (state.parentTurn.turnId !== null) return { ...event, turnId: state.parentTurn.turnId };
+        // 自主活动没有 Paseo 前台身份时，也不能在下一次发送后借用新身份。
+        if (this.activeForegroundTurnId !== null) return null;
+      }
+    }
+    return event;
+  }
+
+  private emitEvent(incoming: AgentStreamEvent): void {
+    const event = this.resolveParentSubagentEvent(incoming);
+    if (event === null) return;
     if (
       event.type === "turn_completed" ||
       event.type === "turn_failed" ||
@@ -5828,6 +5851,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (
       this.activeForegroundTurnId &&
       event.type === "timeline" &&
+      (event.turnId === undefined || event.turnId === this.activeForegroundTurnId) &&
       this.isSubstantiveCurrentTurnTimelineItem(event.item)
     ) {
       this.currentTurnHasSubstantiveTimelineOutput = true;
@@ -5855,7 +5879,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId = this.activeForegroundTurnId;
-    const tagged = turnId ? { ...event, turnId } : event;
+    const tagged =
+      turnId && getAgentStreamEventTurnId(event) === undefined ? { ...event, turnId } : event;
     this.logger.trace(
       {
         agentId: this.agentId,
@@ -6102,6 +6127,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     timelineItem: ToolCallTimelineItem;
     rawItem: { [key: string]: unknown };
     parentCallId: string | null;
+    parentTurn: CodexSubAgentCallState["parentTurn"];
   }): string[] {
     const { timelineItem, rawItem, parentCallId } = params;
     if (timelineItem.detail.type !== "sub_agent") {
@@ -6113,6 +6139,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       existing ??
       ({
         callId: timelineItem.callId,
+        parentTurn: params.parentTurn,
         toolCall: timelineItem,
         parentCallId,
         activityItemIds: new Set<string>(),
@@ -7124,6 +7151,7 @@ export class CodexAppServerAgentSession implements AgentSession {
             timelineItem,
             rawItem: parsed.item,
             parentCallId: childSubAgentCallId,
+            parentTurn: { kind: "live", turnId: this.activeForegroundTurnId },
           })
         : [];
     const imageItems = mcpToolResultImagesToTimeline(parsed.item);
@@ -7341,6 +7369,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       timelineItem,
       rawItem: parsed.item,
       parentCallId: childSubAgentCallId,
+      parentTurn: { kind: "live", turnId: this.activeForegroundTurnId },
     });
     if (childSubAgentCallId) {
       this.emitStartedProviderSubagentItem(parsed.threadId, timelineItem);

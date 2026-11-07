@@ -764,20 +764,6 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     setMenuOpen(false);
     onDropdownClose?.();
   }, [onDropdownClose]);
-  const handleModelSelect = useCallback(
-    (providerId: string, modelId: string) => {
-      handleDesktopModelSelect(providerId, modelId);
-      closeMenu();
-    },
-    [handleDesktopModelSelect, closeMenu],
-  );
-  const handleApplyProfile = useCallback(
-    (profileId: string) => {
-      onApplyAgentProfile?.(profileId);
-      closeMenu();
-    },
-    [onApplyAgentProfile, closeMenu],
-  );
   const handleEditProfiles = useCallback(() => {
     closeMenu();
     onEditAgentProfiles?.();
@@ -838,7 +824,12 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
 
   return (
     <>
-      <DropdownMenu compact open={menuOpen} onOpenChange={handleMenuOpenChange}>
+      <DropdownMenu
+        compact
+        open={menuOpen}
+        onOpenChange={handleMenuOpenChange}
+        selectionCloseScope="current"
+      >
         <DropdownMenuTrigger
           disabled={props.disabled}
           accessibilityRole="button"
@@ -896,9 +887,9 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
               providers={props.modelSelectorProviders}
               selectedProvider={props.provider}
               selectedModel={props.selectedModelId ?? ""}
-              onSelect={handleModelSelect}
+              onSelect={handleDesktopModelSelect}
               profiles={props.agentProfiles}
-              onApplyProfile={props.onApplyAgentProfile ? handleApplyProfile : undefined}
+              onApplyProfile={onApplyAgentProfile}
               onEditProfiles={editProfilesAction}
               isLoading={props.isModelLoading}
               disabled={props.modelDisabled}
@@ -939,7 +930,6 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
               selectedInjectionId={props.selectedCodexProviderInjectionId}
               selectedModelId={props.selectedModelId ?? ""}
               onSelect={props.onSelectCodexProviderInjection}
-              onClose={closeMenu}
               disabled={props.disabled}
               surface="sheet"
             />

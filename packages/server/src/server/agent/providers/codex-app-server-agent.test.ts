@@ -284,6 +284,183 @@ function deferred<T>() {
 }
 
 describe("Codex active-turn steering admission", () => {
+  test("原生自主派发的子任务在新发送后也不会借用新回合身份", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+      "thread/turns/list": () => ({
+        data: [{ id: "child-turn", status: "completed", items: [] }],
+        nextCursor: null,
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      null,
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      { connectDesktopTools: async () => null },
+    );
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      await session.connect();
+      const announced = waitForProviderSubagent(session, "autonomous-child");
+      appServer.startsSubAgent({
+        callId: "autonomous-spawn",
+        threadId: "autonomous-child",
+        agentPath: "/root/process_layout_review",
+      });
+      await announced;
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "timeline",
+          item: expect.objectContaining({ callId: "autonomous-spawn" }),
+        }),
+      );
+      await session.startTurn("新的用户消息");
+      events.length = 0;
+      await session.refreshProviderSubagentStatuses();
+      expect(events.filter((event) => event.type === "timeline")).toEqual([]);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "provider_subagent",
+          event: expect.objectContaining({ id: "autonomous-child", status: "completed" }),
+        }),
+      );
+    } finally {
+      unsubscribe();
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
+
+  test("新回合核对旧子任务和迟到输出时，父工具始终属于派发它的原回合", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { historyMode: "paginated" } }),
+      "thread/turns/list": () => ({
+        data: [{ id: "child-turn", status: "completed", items: [] }],
+        nextCursor: null,
+      }),
+    });
+    const { session, paseoTurnId } = await startPublicSteeringSession(appServer);
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      const announced = waitForProviderSubagent(session, "old-child");
+      appServer.startsSubAgent({
+        callId: "old-spawn",
+        threadId: "old-child",
+        agentPath: "/root/process_layout_review",
+      });
+      await announced;
+      const finished = new Promise<void>((resolve) => {
+        const stop = session.subscribe((event) => {
+          if (event.type === "turn_completed") {
+            stop();
+            resolve();
+          }
+        });
+      });
+      appServer.completeTurn();
+      await finished;
+      const next = await session.startTurn("新的用户消息");
+      events.length = 0;
+      if (!session.refreshProviderSubagentStatuses) throw new Error("缺少状态核对接口");
+      await session.refreshProviderSubagentStatuses();
+      const childMessage = waitForProviderSubagent(session, "old-child");
+      appServer.says({ threadId: "old-child", itemId: "late", text: "旧任务的迟到结果" });
+      await childMessage;
+      const updates = events.filter(
+        (event) => event.type === "timeline" && event.item.type === "tool_call",
+      );
+      expect(updates.length).toBeGreaterThan(0);
+      expect(updates.map((event) => event.turnId)).toEqual(updates.map(() => paseoTurnId));
+      expect(updates.some((event) => event.turnId === next.turnId)).toBe(false);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "provider_subagent",
+          event: expect.objectContaining({ id: "old-child" }),
+        }),
+      );
+      const newChild = waitForProviderSubagent(session, "new-child");
+      appServer.startsSubAgent({
+        callId: "new-spawn",
+        threadId: "new-child",
+        agentPath: "/root/process_layout_review",
+      });
+      await newChild;
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "timeline",
+          turnId: next.turnId,
+          item: expect.objectContaining({ type: "tool_call", callId: "new-spawn" }),
+        }),
+      );
+    } finally {
+      unsubscribe();
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
+
+  test("只读历史恢复的子任务在新发送期间核对终态时不重新插入父回复", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({ thread: { id: "parent", historyMode: "paginated" } }),
+      "thread/turns/list": () => ({
+        data: [{ id: "child-turn", status: "completed", items: [] }],
+        nextCursor: null,
+      }),
+      "thread/items/list": () => ({
+        data: [
+          {
+            turnId: "old-parent-turn",
+            item: {
+              type: "subAgentActivity",
+              id: "old-spawn",
+              kind: "started",
+              agentThreadId: "child",
+              agentPath: "/root/process_layout_review",
+            },
+          },
+        ],
+        nextCursor: null,
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "parent" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+      { connectDesktopTools: async () => null },
+      false,
+      false,
+      false,
+      undefined,
+      "interactive",
+      false,
+      true,
+    );
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+    try {
+      await session.connect();
+      if (!session.nativeHistory) throw new Error("缺少原生历史接口");
+      await session.nativeHistory.readTurn("old-parent-turn", null);
+      await session.startTurn("新消息");
+      events.length = 0;
+      await session.refreshProviderSubagentStatuses();
+      expect(events.filter((event) => event.type === "timeline")).toEqual([]);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "provider_subagent",
+          event: expect.objectContaining({ id: "child", status: "completed" }),
+        }),
+      );
+    } finally {
+      unsubscribe();
+      await session.close();
+      appServer.assertNoErrors();
+    }
+  });
   test.each(["started", "completed"] as const)(
     "父列表核对期间收到子任务 %s 事件时舍弃旧状态",
     async (edge) => {
@@ -5631,13 +5808,17 @@ describe("Codex app-server provider", () => {
     const liveToolCalls = liveEvents.flatMap((event) =>
       event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
     );
-    expect(new Set(liveToolCalls.map((item) => item.callId))).toEqual(
-      new Set(["v2-spawn-history"]),
+    expect(liveToolCalls).toEqual([]);
+    expect(liveEvents).toContainEqual(
+      expect.objectContaining({
+        type: "provider_subagent",
+        event: expect.objectContaining({
+          type: "timeline",
+          id: "v2-child-thread",
+          item: expect.objectContaining({ text: "More findings after resume." }),
+        }),
+      }),
     );
-    expect(liveToolCalls.at(-1)).toMatchObject({
-      status: "running",
-      detail: { type: "sub_agent", log: "[Assistant] More findings after resume." },
-    });
 
     liveEvents.length = 0;
     asInternals(session).handleNotification("turn/started", {
@@ -5649,14 +5830,17 @@ describe("Codex app-server provider", () => {
       itemId: "legacy-child-message-after-resume",
       delta: "Legacy findings after resume.",
     });
-    expect(liveEvents.at(-1)).toMatchObject({
-      type: "timeline",
-      item: {
-        callId: "legacy-spawn-history",
-        status: "running",
-        detail: { type: "sub_agent", log: "[Assistant] Legacy findings after resume." },
-      },
-    });
+    expect(liveEvents.filter((event) => event.type === "timeline")).toEqual([]);
+    expect(liveEvents).toContainEqual(
+      expect.objectContaining({
+        type: "provider_subagent",
+        event: expect.objectContaining({
+          type: "timeline",
+          id: "legacy-child-thread",
+          item: expect.objectContaining({ text: "Legacy findings after resume." }),
+        }),
+      }),
+    );
   });
 
   test("coalesces persisted MultiAgentV2 activity for one child into one terminal card", async () => {

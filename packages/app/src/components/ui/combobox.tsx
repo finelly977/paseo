@@ -44,6 +44,7 @@ import {
   useFloating,
 } from "@floating-ui/react-native";
 import { getNextActiveIndex } from "./combobox-keyboard";
+import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import {
   buildVisibleComboboxOptions,
   getComboboxFallbackIndex,
@@ -889,6 +890,7 @@ function useWebKeyboardListener(
     if (!IS_WEB || !isOpen) return;
 
     const handler = (event: KeyboardEvent) => {
+      if (isImeComposingKeyboardEvent(event)) return;
       if (!isDesktopKey(event.key)) return;
       handleDesktopKey(event.key, event);
     };

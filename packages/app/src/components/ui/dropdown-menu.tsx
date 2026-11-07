@@ -39,6 +39,7 @@ import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
 import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
 import { MOTION_DURATION } from "@/styles/motion";
 import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
+import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 
 // Action status for menu items with loading/success feedback
 export type ActionStatus = "idle" | "pending" | "success";
@@ -61,6 +62,7 @@ interface Size {
 }
 
 interface DropdownMenuContextValue {
+  selectionCloseScope: "all" | "current";
   open: boolean;
   setOpen: (open: boolean) => void;
   activateTrigger: () => void;
@@ -262,6 +264,7 @@ export function DropdownMenu({
   open,
   defaultOpen,
   onOpenChange,
+  selectionCloseScope: scopeProp,
   children,
 }: PropsWithChildren<{
   compact?: boolean;
@@ -269,10 +272,13 @@ export function DropdownMenu({
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** 选项可只关闭当前层，子菜单继承该设置；导航类菜单默认关闭整条链。 */
+  selectionCloseScope?: "all" | "current";
 }>): ReactElement {
   const parentCloseAll = useContext(DropdownMenuDismissContext);
   const isCompact = useIsCompactFormFactor();
   const parentMenu = useContext(DropdownMenuContext);
+  const selectionCloseScope = scopeProp ?? parentMenu?.selectionCloseScope ?? "all";
   const compact = compactProp ?? parentMenu?.compact ?? false;
   const passThroughBackdrop = openOnHover && parentMenu !== null;
   const contentRef = useRef<View>(null);
@@ -283,7 +289,7 @@ export function DropdownMenu({
     defaultOpen,
     onOpenChange,
   });
-  useDismissKeyboardOnOpen(isOpen);
+  useDismissKeyboardOnOpen(isOpen, !isWeb || isCompact);
   const activateTrigger = useHoverMenu({
     enabled: openOnHover && !isCompact,
     open: isOpen,
@@ -321,18 +327,21 @@ export function DropdownMenu({
 
       if (Platform.OS === "ios") {
         pendingSelectRef.current = onSelect ?? null;
-        closeAll();
+        if (selectionCloseScope === "current") setIsOpen(false);
+        else closeAll();
         return;
       }
 
-      closeAll();
+      if (selectionCloseScope === "current") setIsOpen(false);
+      else closeAll();
       onSelect?.();
     },
-    [closeAll],
+    [closeAll, selectionCloseScope, setIsOpen],
   );
 
   const value = useMemo<DropdownMenuContextValue>(
     () => ({
+      selectionCloseScope,
       open: isOpen,
       setOpen: setIsOpen,
       activateTrigger,
@@ -351,6 +360,7 @@ export function DropdownMenu({
       setIsOpen,
       compact,
       passThroughBackdrop,
+      selectionCloseScope,
     ],
   );
 
@@ -657,6 +667,7 @@ export function DropdownMenuContent({
   useEffect(() => {
     if (!isWeb || !modalVisible || typeof window === "undefined") return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isImeComposingKeyboardEvent(event)) return;
       if (event.key !== "Escape") return;
       event.stopPropagation();
       handleClose();
