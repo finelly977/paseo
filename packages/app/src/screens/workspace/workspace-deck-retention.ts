@@ -1,8 +1,9 @@
 import type { ActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import { isWorkspaceOverlayRoute } from "@/navigation/workspace-overlay-route";
 
 export const WORKSPACE_DECK_MAX_MOUNTED_WORKSPACES = 3;
 
-// 仅桌面设置浮层保留背景，不能让其他全局路由误激活旧工作区。
+// 仅桌面全局浮层保留背景，不能让其他全局路由误激活旧工作区。
 export function resolveWorkspaceDeckDisplaySelection(input: {
   activeSelection: ActiveWorkspaceSelection | null;
   lastSelection: ActiveWorkspaceSelection | null;
@@ -11,7 +12,7 @@ export function resolveWorkspaceDeckDisplaySelection(input: {
 }): ActiveWorkspaceSelection | null {
   return (
     input.activeSelection ??
-    (!input.isCompact && input.pathname.startsWith("/settings") ? input.lastSelection : null)
+    (!input.isCompact && isWorkspaceOverlayRoute(input.pathname) ? input.lastSelection : null)
   );
 }
 

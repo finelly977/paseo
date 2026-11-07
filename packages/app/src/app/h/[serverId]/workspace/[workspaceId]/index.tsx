@@ -209,7 +209,7 @@ function WorkspaceDeck({
   const lastSelection = useLastWorkspaceSelection();
   const pathname = usePathname();
   const isCompact = useIsCompactFormFactor();
-  // 设置浮层下展示既有工作区，但不将它重新标记为当前路由或启用快捷键。
+  // 全局浮层下展示既有工作区，但不将它重新标记为当前路由或启用快捷键。
   const displayedSelection = resolveWorkspaceDeckDisplaySelection({
     activeSelection,
     lastSelection,
@@ -313,7 +313,7 @@ function WorkspaceDeckEntry({
         serverId={selection.serverId}
         workspaceId={selection.workspaceId}
         isRouteFocused={isActive && routeFocused}
-        isSettingsBackground={isActive && !routeFocused}
+        isOverlayBackground={isActive && !routeFocused}
         recoveryRequested={isActive && recoveryRequested}
         recoveryAgentId={isActive ? recoveryAgentId : null}
       />

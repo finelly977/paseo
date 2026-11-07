@@ -1,12 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { Blocks, ChevronDown } from "lucide-react-native";
+import { Blocks, ChevronDown, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { MenuHeader } from "@/components/headers/menu-header";
+import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
+import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
+import { ScreenHeader } from "@/components/headers/screen-header";
+import { HeaderIconBadge } from "@/components/headers/header-icon-badge";
+import { ScreenTitle } from "@/components/headers/screen-title";
+import { Button } from "@/components/ui/button";
 import { HostPicker } from "@/components/hosts/host-picker";
 import { HostCodexPluginsPage } from "@/codex-plugins/marketplace-page";
 import { useHosts } from "@/runtime/host-runtime";
 import { useTranslation } from "react-i18next";
+import { useIsCompactFormFactor } from "@/constants/layout";
+import { WindowChromeRegion } from "@/utils/desktop-window";
+import { navigateToLastWorkspace } from "@/stores/navigation-active-workspace-store";
 
 const MutedBlocks = withUnistyles(Blocks);
 const MutedChevron = withUnistyles(ChevronDown);
@@ -14,6 +23,13 @@ const muted = (theme: import("@/styles/theme").Theme) => ({ color: theme.colors.
 
 export function CodexPluginCenterScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
+  const isFocused = useIsFocused();
+  const isCompact = useIsCompactFormFactor();
+  const close = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else if (!navigateToLastWorkspace()) router.replace("/open-project");
+  }, [router]);
   const hosts = useHosts();
   const [serverId, setServerId] = useState("");
   const [open, setOpen] = useState(false);
@@ -76,10 +92,36 @@ export function CodexPluginCenterScreen() {
       selectedHost,
     ],
   );
-  const header = <MenuHeader title={title} rightContent={hostPicker} />;
-  return (
+  const headerLeft = useMemo(
+    () => (
+      <>
+        <HeaderIconBadge>
+          <MutedBlocks size={18} uniProps={muted} />
+        </HeaderIconBadge>
+        <ScreenTitle>{title}</ScreenTitle>
+      </>
+    ),
+    [title],
+  );
+  const headerRight = useMemo(
+    () => (
+      <>
+        {hostPicker}
+        <Button
+          size="sm"
+          variant="ghost"
+          leftIcon={X}
+          onPress={close}
+          accessibilityLabel="关闭插件中心"
+          testID="codex-plugins-close"
+        />
+      </>
+    ),
+    [hostPicker, close],
+  );
+  const content = (
     <View style={styles.screen}>
-      {header}
+      <ScreenHeader left={headerLeft} right={headerRight} />
       {serverId ? (
         <HostCodexPluginsPage serverId={serverId} />
       ) : (
@@ -91,10 +133,27 @@ export function CodexPluginCenterScreen() {
       )}
     </View>
   );
+  if (isCompact) return content;
+  return (
+    <AdaptiveModalSheet
+      header={null}
+      visible={isFocused}
+      onClose={close}
+      desktopMaxWidth={1280}
+      desktopCardStyle={styles.dialog}
+      contentContainerStyle={styles.dialogContent}
+      scrollable={false}
+      testID="codex-plugins-dialog"
+    >
+      <WindowChromeRegion corners="none">{content}</WindowChromeRegion>
+    </AdaptiveModalSheet>
+  );
 }
 
 const styles = StyleSheet.create((theme) => ({
   screen: { flex: 1, backgroundColor: theme.colors.surface0 },
+  dialog: { height: "94%", maxHeight: "94%", overflow: "hidden" },
+  dialogContent: { flex: 1, padding: 0, gap: 0 },
   hostTrigger: {
     minHeight: 32,
     maxWidth: 220,

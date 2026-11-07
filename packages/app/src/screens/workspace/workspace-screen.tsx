@@ -293,7 +293,7 @@ interface WorkspaceScreenProps {
   serverId: string;
   workspaceId: string;
   isRouteFocused?: boolean;
-  isSettingsBackground?: boolean;
+  isOverlayBackground?: boolean;
   recoveryRequested?: boolean;
   recoveryAgentId?: string | null;
 }
@@ -929,7 +929,7 @@ export const WorkspaceScreen = memo(function WorkspaceScreen({
   serverId,
   workspaceId,
   isRouteFocused,
-  isSettingsBackground = false,
+  isOverlayBackground = false,
   recoveryRequested,
   recoveryAgentId,
 }: WorkspaceScreenProps) {
@@ -939,7 +939,7 @@ export const WorkspaceScreen = memo(function WorkspaceScreen({
       serverId={serverId}
       workspaceId={workspaceId}
       isRouteFocused={isRouteFocused ?? navigationFocused}
-      isSettingsBackground={isSettingsBackground}
+      isOverlayBackground={isOverlayBackground}
       recoveryRequested={recoveryRequested ?? false}
       recoveryAgentId={recoveryAgentId ?? null}
     />
@@ -1761,7 +1761,7 @@ function WorkspaceScreenContent({
   serverId,
   workspaceId,
   isRouteFocused,
-  isSettingsBackground,
+  isOverlayBackground,
   recoveryRequested,
   recoveryAgentId,
 }: WorkspaceScreenContentProps) {
@@ -3637,11 +3637,11 @@ function WorkspaceScreenContent({
   const showExplorerSidebar = useMemo(
     () =>
       shouldShowWorkspaceExplorerSidebar({
-        isRouteFocused: isRouteFocused || isSettingsBackground === true,
+        isRouteFocused: isRouteFocused || isOverlayBackground === true,
         isFocusModeEnabled,
         isMobile,
       }),
-    [isRouteFocused, isSettingsBackground, isFocusModeEnabled, isMobile],
+    [isRouteFocused, isOverlayBackground, isFocusModeEnabled, isMobile],
   );
   const createTerminalDisabled = useMemo(
     () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,

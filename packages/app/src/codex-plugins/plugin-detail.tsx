@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { PluginIcon } from "./plugin-icon";
+import { DetailLoading } from "./marketplace-loading";
 import type { MarketClient, PluginSelection } from "./marketplace-page";
 
 export function PluginDetail({
@@ -119,7 +120,7 @@ export function PluginDetail({
       <Text style={styles.description}>
         {detail.data?.description || plugin.description || "此插件未提供介绍"}
       </Text>
-      {detail.isPending ? <Text style={styles.muted}>正在读取应用、技能和工具...</Text> : null}
+      {detail.isPending ? <DetailLoading /> : null}
       {detail.data ? <Components detail={detail.data} /> : null}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>信息</Text>

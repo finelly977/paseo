@@ -76,9 +76,11 @@ only use local param fallback during cold mount (`/` or empty pathname), or a
 hidden workspace can overwrite the remembered workspace before Settings or
 History returns.
 
-## 桌面设置浮层
+## 桌面全局浮层
 
 宽屏设置路由使用 `transparentModal`，保留原工作区路由作为背景；紧凑布局仍使用普通全屏路由。通用分类、项目和主机设置由根 Stack 注册，设置分类之间使用原有 replace，不新增隐藏工作区历史。
+
+独立插件中心 `/codex-plugins` 使用同一呈现策略，不嵌入设置。`isWorkspaceOverlayRoute()` 统一声明设置与插件中心的背景保留范围，应用侧栏宽度计算与工作区 Deck 共用该判断；关闭插件浮层优先返回来时页面，无返回历史时回到最近工作区或添加项目页。插件详情在浮层内部切换，不新增工作区路由。
 
 设置浮层仅在自身路由获得焦点时显示。工作区 Deck 可以在桌面设置下展示最近工作区，但真实活动工作区仍为空，不把设置导航误记为工作区选择。背景保留右侧 Explorer 与原尺寸，快捷键、输入聚焦和路由副作用仍由真实焦点控制。直接打开设置深链接时没有此前工作面，因此不额外新建一个工作区背景。
 

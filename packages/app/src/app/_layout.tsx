@@ -71,6 +71,7 @@ import {
 } from "@/navigation/host-runtime-bootstrap";
 import { registerWorkspaceRouteNavigationRef } from "@/navigation/workspace-route-navigation";
 import { ThemedStack } from "@/navigation/themed-stack";
+import { isWorkspaceOverlayRoute } from "@/navigation/workspace-overlay-route";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { AgentNavigationListener } from "@/desktop/agent-navigation";
 import { WorkspacePreviewBridge } from "@/file-explorer/open-in-browser";
@@ -483,8 +484,8 @@ function AppContainer({
   useCompactWebViewportZoomLock(isCompactLayout);
   const pathname = usePathname();
   const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(pathname) !== null;
-  const isDesktopSettingsRoute = !isCompactLayout && pathname.startsWith("/settings");
-  const isWorkspaceBackgroundRoute = isWorkspaceRoute || isDesktopSettingsRoute;
+  const isDesktopOverlayRoute = !isCompactLayout && isWorkspaceOverlayRoute(pathname);
+  const isWorkspaceBackgroundRoute = isWorkspaceRoute || isDesktopOverlayRoute;
   const isWorkspaceFocusModeEnabled = isWorkspaceBackgroundRoute && isFocusModeEnabled;
   const chromeEnabled = chromeEnabledOverride ?? daemons.length > 0;
   const toggleAgentList = isCompactLayout ? toggleMobileAgentList : toggleDesktopAgentList;
@@ -521,7 +522,7 @@ function AppContainer({
   useGlobalNewWorkspaceAction();
 
   const appContentMinimumWidth = resolveDesktopAppContentMinimum({
-    // 设置已由全窗口浮层承载，不再挤占工作区与应用侧栏的共享宽度。
+    // 全局弹窗由全窗口浮层承载，不再挤占工作区与应用侧栏的共享宽度。
     isWorkspaceExplorerOpen: isWorkspaceBackgroundRoute && isDesktopFileExplorerOpen,
     requestedExplorerWidth: explorerWidth,
     viewportWidth,
@@ -884,10 +885,10 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/codex-plugins" ||
       (!isCompact && pathname.startsWith("/settings")) ||
       routeHasKnownHost);
-  const isSettingsRoute = pathname.startsWith("/settings");
+  const retainsWorkspace = isWorkspaceOverlayRoute(pathname);
 
   return (
-    <AppContainer chromeEnabled={shouldShowAppChrome} retainDesktopSidebar={isSettingsRoute}>
+    <AppContainer chromeEnabled={shouldShowAppChrome} retainDesktopSidebar={retainsWorkspace}>
       {children}
     </AppContainer>
   );
@@ -902,7 +903,7 @@ const ROOT_STACK_SCREEN_OPTIONS = {
   headerShown: false,
   animation: "none" as const,
 };
-const DESKTOP_SETTINGS_SCREEN_OPTIONS = {
+const DESKTOP_OVERLAY_SCREEN_OPTIONS = {
   presentation: "transparentModal" as const,
   contentStyle: { backgroundColor: "transparent" },
 };
@@ -910,7 +911,7 @@ const DESKTOP_SETTINGS_SCREEN_OPTIONS = {
 function RootStack() {
   const storeReady = useStoreReady();
   const isCompact = useIsCompactFormFactor();
-  const settingsScreenOptions = isCompact ? undefined : DESKTOP_SETTINGS_SCREEN_OPTIONS;
+  const settingsScreenOptions = isCompact ? undefined : DESKTOP_OVERLAY_SCREEN_OPTIONS;
   return (
     <ThemedStack screenOptions={ROOT_STACK_SCREEN_OPTIONS}>
       <Stack.Screen name="index" />
@@ -927,7 +928,7 @@ function RootStack() {
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
-        <Stack.Screen name="codex-plugins" />
+        <Stack.Screen name="codex-plugins" options={settingsScreenOptions} />
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />

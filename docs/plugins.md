@@ -316,6 +316,8 @@ attachment-source example, `plugin-examples/timeline-items` for timeline project
 
 Codex 插件与本文的 Paseo 受信任本地扩展是两套独立系统。Codex 插件中心位于全局侧栏“插件”，以所选主机为操作边界；不会把 Codex 包当作 Paseo 客户端扩展运行。
 
+桌面入口复用设置的居中浮层，插件中心扩大为最大宽度 1280 像素、高度 94%，可从右上角、Esc 或遮罩关闭；原工作区与 Explorer 继续作为背景显示，不改变其尺寸、阅读位置或真实路由焦点。紧凑布局使用全屏页面并保留关闭按钮，直接打开链接时没有背景也不额外创建工作区。内部列表依据浮层实际宽度选择单双栏，目录图标 36 像素、详情图标 64 像素，列表收紧内边距与行间距但保持界面字号。目录、已安装列表与详情加载时使用结构占位及轻微透明度呼吸，减少动态效果时保持静态，不虚构加载百分比或安装数据。
+
 服务端通过该主机的 Codex app-server 插件管理接口读取与修改原生状态，已用 Codex CLI 0.167.0 的协议生成器、真实目录读取和隔离原生安装验证。`plugin/list`、`plugin/read`、`plugin/install` 和 `plugin/uninstall` 仍属于官方开发中的接口，协议变化应显式报错并要求更新，不能用空目录掩盖失败。插件市场的 RPC 为 `codex.plugins.get_catalog`、`codex.plugins.get_detail` 和 `codex.plugins.manage`，统一要求主机管理权限。
 
 市场进程只负责目录、详情和管理，不创建对话或启动桌面工具。它保留提供方实际启动命令和环境中的 `CODEX_HOME`，仅启动参数临时选择内置 `openai` 服务商，去掉 `OPENAI_API_KEY`、`CODEX_API_KEY` 覆盖，让原生认证管理读取已有官方账号。第三方模型的 `requires_openai_auth = false` 不再阻断此进程读取官方市场；全局配置与正文运行时不变。有效 ChatGPT 登录和服务端账号策略仍是官方在线目录的前提，本地市场不需要伪造凭据。Windows 沿用显式代理，未设置时读取系统代理。

@@ -15,26 +15,47 @@ function mountedWorkspaceIds(selections: ActiveWorkspaceSelection[]): string[] {
   return selections.map((selection) => selection.workspaceId);
 }
 
-describe("设置浮层下的工作区展示", () => {
-  it("宽屏设置使用最近工作区作背景，不修改真实活动工作区", () => {
-    const lastSelection = workspace("A");
+describe("全局浮层下的工作区展示", () => {
+  it.each(["/settings/appearance", "/codex-plugins"])(
+    "宽屏 %s 保留背景，不修改活动工作区",
+    (pathname) => {
+      const lastSelection = workspace("A");
+      expect(
+        resolveWorkspaceDeckDisplaySelection({
+          activeSelection: null,
+          lastSelection,
+          pathname,
+          isCompact: false,
+        }),
+      ).toBe(lastSelection);
+      const activeSelection = workspace("B");
+      expect(
+        resolveWorkspaceDeckDisplaySelection({
+          activeSelection,
+          lastSelection,
+          pathname,
+          isCompact: false,
+        }),
+      ).toBe(activeSelection);
+    },
+  );
+  it("紧凑插件页与无背景的插件深链接不创建背景工作区", () => {
     expect(
       resolveWorkspaceDeckDisplaySelection({
         activeSelection: null,
-        lastSelection,
-        pathname: "/settings/appearance",
-        isCompact: false,
+        lastSelection: workspace("A"),
+        pathname: "/codex-plugins",
+        isCompact: true,
       }),
-    ).toBe(lastSelection);
-    const activeSelection = workspace("B");
+    ).toBeNull();
     expect(
       resolveWorkspaceDeckDisplaySelection({
-        activeSelection,
-        lastSelection,
-        pathname: "/settings/appearance",
+        activeSelection: null,
+        lastSelection: null,
+        pathname: "/codex-plugins",
         isCompact: false,
       }),
-    ).toBe(activeSelection);
+    ).toBeNull();
   });
   it("紧凑设置和其他全局页面不展示背景工作区", () => {
     const lastSelection = workspace("A");

@@ -1,10 +1,10 @@
-import { useCallback, useDeferredValue, useMemo, useReducer, useRef } from "react";
+import { useCallback, useDeferredValue, useMemo, useReducer, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
   Text,
   View,
-  useWindowDimensions,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -32,6 +32,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { PluginIcon } from "./plugin-icon";
 import { PluginDetail } from "./plugin-detail";
+import { CatalogLoading, InstalledLoading } from "./marketplace-loading";
 
 export type MarketClient = Pick<
   DaemonClient,
@@ -215,10 +216,16 @@ export function CodexPluginMarketplacePanel({
   }, [catalog.data]);
   const busy = action.isPending || refresh.isPending;
   const error = action.error ?? refresh.error ?? catalog.error;
-  const { width } = useWindowDimensions();
+  const [width, setWidth] = useState(0);
+  const measure = useCallback(
+    (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width),
+    [],
+  );
+  const showRail = width >= 1000;
+  const twoColumns = width - (showRail ? 200 : 0) >= 760;
   return (
-    <View style={styles.center} testID="codex-plugin-market">
-      {width >= 1280 ? (
+    <View style={styles.center} onLayout={measure} testID="codex-plugin-market">
+      {showRail ? (
         <InstalledRail client={client} serverId={serverId} onOpen={select} onView={changeView} />
       ) : null}
       <ScrollView
@@ -278,7 +285,7 @@ export function CodexPluginMarketplacePanel({
                 busy={busy}
                 onAction={run}
                 onOpen={select}
-                twoColumns={width >= 1160}
+                twoColumns={twoColumns}
               />
               {sourceView ? (
                 <View style={styles.sourceForm}>
@@ -401,12 +408,7 @@ function CatalogBody({
   onOpen(value: PluginSelection): void;
   twoColumns: boolean;
 }) {
-  if (pending)
-    return (
-      <View style={styles.state}>
-        <Text style={styles.muted}>正在加载插件目录...</Text>
-      </View>
-    );
+  if (pending) return <CatalogLoading twoColumns={twoColumns} sources={sources} />;
   if (!data) return null;
   if (sources)
     return (
@@ -574,10 +576,15 @@ function InstalledRail({
         {entries.slice(0, 30).map((entry) => (
           <InstalledItem key={entry.plugin.id} selection={entry} onOpen={onOpen} />
         ))}
-        {entries.length === 0 ? (
-          <Text style={styles.muted}>
-            {local.isPending || official.isPending ? "正在读取..." : "暂无已安装插件"}
-          </Text>
+        {entries.length === 0 && (local.isPending || official.isPending) ? (
+          <InstalledLoading />
+        ) : null}
+        {entries.length === 0 &&
+        !local.isPending &&
+        !official.isPending &&
+        !local.error &&
+        !official.error ? (
+          <Text style={styles.muted}>暂无已安装插件</Text>
         ) : null}
         {local.error || official.error ? (
           <Text style={settingsStyles.rowError}>部分插件读取失败，请刷新目录</Text>
@@ -713,13 +720,13 @@ const styles = StyleSheet.create((theme) => ({
   headingActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   search: { width: 220 },
   authHint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
-  category: { gap: theme.spacing[4] },
+  category: { gap: theme.spacing[3] },
   categoryTitle: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", columnGap: "4%", rowGap: theme.spacing[4] },
+  grid: { flexDirection: "row", flexWrap: "wrap", columnGap: "4%", rowGap: theme.spacing[2] },
   card: { width: "100%", flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
   cardTwo: { width: "48%" },
   cardMain: {
@@ -727,8 +734,8 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[3],
-    paddingVertical: theme.spacing[3],
+    gap: theme.spacing[2],
+    paddingVertical: theme.spacing[2],
     paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
   },

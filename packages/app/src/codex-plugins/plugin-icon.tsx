@@ -7,7 +7,7 @@ import type { Theme } from "@/styles/theme";
 
 const ThemedBlocks = withUnistyles(Blocks);
 const muted = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const sizes = { tiny: 22, list: 44, hero: 72 } as const;
+const sizes = { tiny: 22, list: 36, hero: 64 } as const;
 
 function IconView({
   plugin,
