@@ -90,6 +90,23 @@ export function formatMessageTimestamp(date: Date, now: Date = new Date()): stri
 }
 
 /**
+ * Format the end timestamp shown in an assistant turn footer.
+ * Same-day turns keep the compact time; older turns use numeric date parts,
+ * never a localized weekday name.
+ */
+export function formatTurnEndTimestamp(date: Date, now: Date = new Date()): string {
+  const time = getTimeFormatter().format(date);
+  if (isSameLocalDay(date, now)) return time;
+
+  const dateLabel = date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  return `${dateLabel}, ${time}`;
+}
+
+/**
  * Format a duration as a compact human-readable string.
  * - 0-60s: whole seconds ("47s")
  * - Minutes/hours: integers only ("2m 12s", "1h 5m")

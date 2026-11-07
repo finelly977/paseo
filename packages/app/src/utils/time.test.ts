@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { formatDuration, formatMessageTimestamp, formatTimeAgo } from "./time";
+import {
+  formatDuration,
+  formatMessageTimestamp,
+  formatTimeAgo,
+  formatTurnEndTimestamp,
+} from "./time";
 
 describe("formatTimeAgo", () => {
   const now = new Date("2026-07-16T12:00:00.000Z");
@@ -57,7 +62,8 @@ describe("formatMessageTimestamp", () => {
     const now = new Date(2026, 4, 14, 17, 30);
     const date = new Date(2026, 4, 11, 22, 12);
     const formatted = formatMessageTimestamp(date, now);
-    expect(formatted).toMatch(/Monday/);
+    const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
+    expect(formatted).toContain(weekday);
     expect(formatted).toMatch(/10:12 PM|22:12/);
   });
 
@@ -65,7 +71,27 @@ describe("formatMessageTimestamp", () => {
     const now = new Date(2026, 4, 14, 17, 30);
     const date = new Date(2026, 3, 1, 9, 5);
     const formatted = formatMessageTimestamp(date, now);
-    expect(formatted).toMatch(/Apr|April/);
+    const dateLabel = date.toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    expect(formatted).toContain(dateLabel);
     expect(formatted).toMatch(/2026/);
+  });
+});
+
+describe("formatTurnEndTimestamp", () => {
+  it("keeps same-day end times compact", () => {
+    const now = new Date(2026, 4, 14, 17, 30);
+    expect(formatTurnEndTimestamp(new Date(2026, 4, 14, 12, 23), now)).toMatch(/12:23/);
+  });
+
+  it("uses numeric date parts instead of a weekday for older turns", () => {
+    const now = new Date(2026, 4, 14, 17, 30);
+    const formatted = formatTurnEndTimestamp(new Date(2026, 4, 11, 22, 12), now);
+    expect(formatted).toMatch(/2026|05|5/);
+    expect(formatted).toMatch(/22:12|10:12 PM/);
+    expect(formatted).not.toMatch(/Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday/);
   });
 });

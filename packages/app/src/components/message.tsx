@@ -84,7 +84,7 @@ import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { colorMarkdownLinkChildren } from "@/components/markdown/link-children";
-import { formatDuration, formatMessageTimestamp } from "@/utils/time";
+import { formatDuration, formatMessageTimestamp, formatTurnEndTimestamp } from "@/utils/time";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
 import {
@@ -834,7 +834,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
     [durationMs],
   );
   const timestampLabel = useMemo(
-    () => (completedAt ? formatMessageTimestamp(completedAt) : ""),
+    () => (completedAt ? formatTurnEndTimestamp(completedAt) : ""),
     [completedAt],
   );
 
