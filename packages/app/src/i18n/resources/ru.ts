@@ -1109,6 +1109,7 @@ export const ru: TranslationResources = {
     sections: {
       sessions: "История",
       schedules: "Расписания",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "Настройки отображения",

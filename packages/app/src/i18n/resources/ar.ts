@@ -1087,6 +1087,7 @@ export const ar: TranslationResources = {
     sections: {
       sessions: "السجل",
       schedules: "الجداول",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "تفضيلات العرض",

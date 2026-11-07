@@ -1111,6 +1111,7 @@ export const ptBR: TranslationResources = {
     sections: {
       sessions: "Histórico",
       schedules: "Agendamentos",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "Preferências de exibição",

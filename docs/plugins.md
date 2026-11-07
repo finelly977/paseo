@@ -311,3 +311,15 @@ preference instead of painting the reserved slot's placeholder colors.
 See `plugin-examples/local-plugin` for a native surface, `plugin-examples/linear` for a complete
 attachment-source example, `plugin-examples/timeline-items` for timeline projection, and
 `plugin-examples/catppuccin` for a theme.
+
+## Codex 原生插件中心
+
+Codex 插件与本文的 Paseo 受信任本地扩展是两套独立系统。Codex 插件中心位于全局侧栏“插件”，以所选主机为操作边界；不会把 Codex 包当作 Paseo 客户端扩展运行。
+
+服务端通过该主机的 Codex app-server 插件管理接口读取与修改原生状态，已用 Codex CLI 0.167.0 的协议生成器、真实目录读取和隔离原生安装验证。`plugin/list`、`plugin/read`、`plugin/install` 和 `plugin/uninstall` 仍属于官方开发中的接口，协议变化应显式报错并要求更新，不能用空目录掩盖失败。插件市场的 RPC 为 `codex.plugins.get_catalog`、`codex.plugins.get_detail` 和 `codex.plugins.manage`，统一要求主机管理权限。
+
+市场进程只负责目录、详情和管理，不创建对话或启动桌面工具。它保留提供方实际启动命令和环境中的 `CODEX_HOME`，仅启动参数临时选择内置 `openai` 服务商，去掉 `OPENAI_API_KEY`、`CODEX_API_KEY` 覆盖，让原生认证管理读取已有官方账号。第三方模型的 `requires_openai_auth = false` 不再阻断此进程读取官方市场；全局配置与正文运行时不变。有效 ChatGPT 登录和服务端账号策略仍是官方在线目录的前提，本地市场不需要伪造凭据。Windows 沿用显式代理，未设置时读取系统代理。
+
+目录缓存只保留成功快照一分钟，按主机上的提供方实例持有；本地与官方目录分开读取、超时和报错。界面搜索与分页每次最多交付 50 项，详情按点击读取完整介绍、应用、技能与工具。插件变更串行执行并使缓存代际失效，旧读取不得恢复已失效快照。安装后按原生结果提供后续授权链接，客户端不转发或记录账号令牌。已有运行会话不自动重启；新会话读取新配置，旧会话由用户明确重新加载。
+
+品牌图标来自原生元数据；本地图标只读取原生返回的文件路径，限定图片类型及 512 KiB 大小，转成图像数据交付远端客户端。原生没有图标时使用通用扩展占位，不伪造品牌图标。官网、隐私政策和条款链接只允许 HTTP/HTTPS 外部打开。

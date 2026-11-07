@@ -1120,6 +1120,7 @@ export const fr: TranslationResources = {
     sections: {
       sessions: "Historique",
       schedules: "Planifications",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "Préférences d’affichage",

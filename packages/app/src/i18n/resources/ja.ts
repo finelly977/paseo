@@ -1097,6 +1097,7 @@ export const ja: TranslationResources = {
     sections: {
       sessions: "履歴",
       schedules: "スケジュール",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "表示設定",

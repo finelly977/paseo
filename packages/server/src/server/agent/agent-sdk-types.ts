@@ -766,6 +766,7 @@ export interface RenameNativeSessionTitleInput {
 }
 
 export interface AgentClient {
+  codexPlugins?: import("@getpaseo/protocol/codex-plugins").CodexPluginService;
   getNativeSessionTitle?(handle: AgentPersistenceHandle): Promise<string | null>;
   renameNativeSessionTitle?(input: RenameNativeSessionTitleInput): Promise<void>;
   readonly provider: AgentProvider;

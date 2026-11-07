@@ -1,5 +1,6 @@
 import { router, usePathname } from "expo-router";
 import {
+  Blocks,
   CalendarClock,
   FolderPlus,
   History,
@@ -126,6 +127,7 @@ interface SidebarLabels {
   searchHosts: string;
   sessions: string;
   schedules: string;
+  plugins: string;
   closeSidebar: string;
 }
 
@@ -248,6 +250,7 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
       searchHosts: t("sidebar.host.searchPlaceholder"),
       sessions: t("sidebar.sections.sessions"),
       schedules: t("sidebar.sections.schedules"),
+      plugins: t("sidebar.sections.plugins"),
       closeSidebar: t("sidebar.actions.closeSidebar"),
     }),
     [t],
@@ -641,6 +644,10 @@ function MobileSidebar({
     closeSidebar();
     handleViewSchedulesNavigate();
   }, [closeSidebar, handleViewSchedulesNavigate]);
+  const handleViewPlugins = useCallback(() => {
+    closeSidebar();
+    router.push("/codex-plugins");
+  }, [closeSidebar]);
 
   const handleWorkspacePress = useCallback(() => {
     closeSidebar();
@@ -680,6 +687,14 @@ function MobileSidebar({
             onPress={handleViewSchedules}
             isActive={isSchedulesActive}
             testID="sidebar-schedules"
+            variant="compact"
+          />
+          <SidebarHeaderRow
+            icon={Blocks}
+            label={labels.plugins}
+            onPress={handleViewPlugins}
+            isActive={pathname.includes("/codex-plugins")}
+            testID="sidebar-codex-plugins"
             variant="compact"
           />
           <PluginSidebarItems onBeforeNavigate={closeSidebar} />
@@ -772,6 +787,7 @@ function DesktopSidebar({
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const isSessionsActive = pathname.includes("/sessions");
   const isSchedulesActive = pathname.includes("/schedules");
+  const handleViewPlugins = useCallback(() => router.push("/codex-plugins"), []);
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
   const setSidebarWidth = usePanelStore((state) => state.setSidebarWidth);
   const { width: viewportWidth } = useWindowDimensions();
@@ -866,6 +882,14 @@ function DesktopSidebar({
               onPress={handleViewSchedules}
               isActive={isSchedulesActive}
               testID="sidebar-schedules"
+              variant="compact"
+            />
+            <SidebarHeaderRow
+              icon={Blocks}
+              label={labels.plugins}
+              onPress={handleViewPlugins}
+              isActive={pathname.includes("/codex-plugins")}
+              testID="sidebar-codex-plugins"
               variant="compact"
             />
             <PluginSidebarItems />

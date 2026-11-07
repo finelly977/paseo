@@ -1916,6 +1916,10 @@ export class Session {
     return this.authorization.listPermissions();
   }
 
+  public supportsCodexPlugins(): boolean {
+    return this.agentManager.supportsCodexPlugins();
+  }
+
   public allowsInbound(message: SessionInboundMessage): boolean {
     return this.authorization.allowsInbound(message);
   }
@@ -2038,6 +2042,46 @@ export class Session {
           this.emit({
             type: "plugin.rpc.invoke.response",
             payload: { requestId: msg.requestId, output },
+          });
+          return undefined;
+        });
+    }
+    return undefined;
+  }
+
+  private dispatchCodexPluginsMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type === "codex.plugins.get_detail.request") {
+      return this.agentManager
+        .getCodexPlugins()
+        .detail(msg.target)
+        .then((detail) => {
+          this.emit({
+            type: "codex.plugins.get_detail.response",
+            payload: { requestId: msg.requestId, detail },
+          });
+          return undefined;
+        });
+    }
+    if (msg.type === "codex.plugins.get_catalog.request") {
+      return this.agentManager
+        .getCodexPlugins()
+        .catalog(msg)
+        .then((catalog) => {
+          this.emit({
+            type: "codex.plugins.get_catalog.response",
+            payload: { requestId: msg.requestId, catalog },
+          });
+          return undefined;
+        });
+    }
+    if (msg.type === "codex.plugins.manage.request") {
+      return this.agentManager
+        .getCodexPlugins()
+        .manage(msg.action)
+        .then((result) => {
+          this.emit({
+            type: "codex.plugins.manage.response",
+            payload: { requestId: msg.requestId, result },
           });
           return undefined;
         });
@@ -2537,6 +2581,10 @@ export class Session {
 
   private dispatchProviderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "codex.plugins.get_catalog.request":
+      case "codex.plugins.manage.request":
+      case "codex.plugins.get_detail.request":
+        return this.dispatchCodexPluginsMessage(msg);
       case "list_provider_models_request":
         return this.providerCatalogSession.handleListProviderModelsRequest(msg);
       case "list_provider_modes_request":

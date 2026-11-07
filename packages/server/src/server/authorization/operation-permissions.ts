@@ -5,6 +5,9 @@ type InboundOperation = SessionInboundMessage["type"];
 type OutboundOperation = SessionOutboundMessage["type"];
 
 const INBOUND_PERMISSION = {
+  "codex.plugins.get_catalog.request": "daemon.manage",
+  "codex.plugins.get_detail.request": "daemon.manage",
+  "codex.plugins.manage.request": "daemon.manage",
   "agent.conversations.search.request": "workspace.read",
   "agent.history.read_turn.request": "workspace.read",
   "agent.message.schedule.request": "workspace.write",
@@ -202,6 +205,9 @@ const INBOUND_PERMISSION = {
 } as const satisfies Record<InboundOperation, DaemonPermission | null>;
 
 const OUTBOUND_PERMISSION = {
+  "codex.plugins.get_catalog.response": "daemon.manage",
+  "codex.plugins.get_detail.response": "daemon.manage",
+  "codex.plugins.manage.response": "daemon.manage",
   "agent.conversations.search.response": "workspace.read",
   "agent.history.read_turn.response": "workspace.read",
   "agent.message.schedule.response": "workspace.write",

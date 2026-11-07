@@ -263,6 +263,15 @@ async function resolveWindowsSystemProxy(): Promise<SystemProxySettings | null> 
   return parseWindowsProxyServer(server.groups.value);
 }
 
+export async function resolveCodexNetworkEnvironment(
+  env: NodeJS.ProcessEnv,
+  logger: Logger,
+): Promise<NodeJS.ProcessEnv> {
+  if (process.platform !== "win32") return env;
+  const proxy = await applyDesktopNetworkEnvironment({}, env, resolveWindowsSystemProxy, logger);
+  return { ...env, ...proxy };
+}
+
 const PROXY_ENV_NAMES = [
   "HTTP_PROXY",
   "HTTPS_PROXY",

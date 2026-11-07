@@ -955,6 +955,16 @@ export class AgentManager {
     this.clients.set(provider, client);
   }
 
+  supportsCodexPlugins(): boolean {
+    return this.clients.get("codex")?.codexPlugins !== undefined;
+  }
+
+  getCodexPlugins() {
+    const service = this.clients.get("codex")?.codexPlugins;
+    if (!service) throw new Error("当前主机没有可用的 Codex 插件市场，请启用并更新 Codex");
+    return service;
+  }
+
   updateProviderRegistry(input: {
     providerDefinitions: ProviderEnabledMap;
     clients: ProviderClientMap;

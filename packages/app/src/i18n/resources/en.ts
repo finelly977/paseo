@@ -1097,6 +1097,7 @@ export const en = {
     sections: {
       sessions: "History",
       schedules: "Schedules",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "Display preferences",

@@ -1077,6 +1077,7 @@ export const zhCN: TranslationResources = {
     sections: {
       sessions: "历史",
       schedules: "计划",
+      plugins: "插件",
     },
     displayPreferences: {
       ariaLabel: "显示偏好",

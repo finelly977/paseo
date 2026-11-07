@@ -1,3 +1,11 @@
+import {
+  CodexPluginDetailRequestSchema,
+  CodexPluginDetailResponseSchema,
+  CodexPluginCatalogRequestSchema,
+  CodexPluginCatalogResponseSchema,
+  CodexPluginManageRequestSchema,
+  CodexPluginManageResponseSchema,
+} from "./codex-plugins.js";
 import { z } from "zod";
 import { TerminalActivitySchema } from "./terminal-activity.js";
 import { CLIENT_CAPS } from "./client-capabilities.js";
@@ -3217,6 +3225,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PluginDisableRequestSchema,
   PluginRemoveRequestSchema,
   PluginRpcInvokeRequestSchema,
+  CodexPluginCatalogRequestSchema,
+  CodexPluginManageRequestSchema,
+  CodexPluginDetailRequestSchema,
   GetDaemonConfigRequestMessageSchema,
   SetDaemonConfigRequestMessageSchema,
   ReadProjectConfigRequestMessageSchema,
@@ -3674,6 +3685,7 @@ export const ServerInfoStatusPayloadSchema = z
         agentConfigApply: z.boolean().optional(),
         // COMPAT(codexProviderInjection): 二开于 2026-09-17 新增，2027-03-17 后移除能力门控。
         codexProviderInjection: z.boolean().optional(),
+        codexPluginMarket: z.boolean().optional(),
       })
       .optional(),
   })
@@ -6433,6 +6445,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   PluginDisableResponseSchema,
   PluginRemoveResponseSchema,
   PluginRpcInvokeResponseSchema,
+  CodexPluginCatalogResponseSchema,
+  CodexPluginManageResponseSchema,
+  CodexPluginDetailResponseSchema,
   ActivityLogMessageSchema,
   AssistantChunkMessageSchema,
   AudioOutputMessageSchema,

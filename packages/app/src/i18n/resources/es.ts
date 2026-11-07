@@ -1121,6 +1121,7 @@ export const es: TranslationResources = {
     sections: {
       sessions: "Historial",
       schedules: "Horarios",
+      plugins: "Plugins",
     },
     displayPreferences: {
       ariaLabel: "Preferencias de visualización",

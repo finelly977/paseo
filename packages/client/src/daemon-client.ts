@@ -135,6 +135,11 @@ import type {
   MutableDaemonConfigPatch,
 } from "@getpaseo/protocol/messages";
 import { isRelayClientWebSocketUrl } from "@getpaseo/protocol/daemon-endpoints";
+import type {
+  CodexPluginAction,
+  CodexPluginCatalogInput,
+  CodexPluginTarget,
+} from "@getpaseo/protocol/codex-plugins";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
 import {
   asUint8Array,
@@ -5246,6 +5251,39 @@ export class DaemonClient {
       responseType: "plugin.logs.get.response",
     });
     return payload.entries;
+  }
+
+  async getCodexPluginCatalog(input: CodexPluginCatalogInput) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "codex.plugins.get_catalog.request", requestId, ...input },
+      responseType: "codex.plugins.get_catalog.response",
+      timeout: 60_000,
+    });
+    return payload.catalog;
+  }
+
+  async getCodexPluginDetail(target: CodexPluginTarget) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "codex.plugins.get_detail.request", requestId, target },
+      responseType: "codex.plugins.get_detail.response",
+      timeout: 60_000,
+    });
+    return payload.detail;
+  }
+
+  async manageCodexPlugin(action: CodexPluginAction) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "codex.plugins.manage.request", requestId, action },
+      responseType: "codex.plugins.manage.response",
+      timeout: 150_000,
+    });
+    return payload.result;
   }
 
   async installDirectoryPlugin(path: string, id?: string): Promise<PluginListItem> {

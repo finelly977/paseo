@@ -420,6 +420,7 @@ export function wrapClientProvider(
   return {
     provider,
     capabilities: inner.capabilities,
+    codexPlugins: inner.codexPlugins,
     createSession: async (config, launchContext, options) =>
       wrapSessionProvider(
         provider,

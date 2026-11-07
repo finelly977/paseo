@@ -102,6 +102,8 @@ import {
 } from "./codex/thread-history.js";
 import { connectCodexDesktopTools, type CodexDesktopTools } from "./codex/desktop-tools.js";
 import { CodexLaunchProbe } from "./codex/launch-probe.js";
+import { createCodexPluginMarketplaceService } from "./codex/plugin-marketplace.js";
+import { resolveCodexNetworkEnvironment } from "./codex/desktop-tools.js";
 import {
   CODEX_MODEL_CAPACITY_MESSAGE,
   isCodexModelCapacityMessage,
@@ -7781,12 +7783,21 @@ export class CodexAppServerAgentClient implements AgentClient {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
   private catalog: Promise<ProviderCatalog> | null = null;
+  readonly codexPlugins;
 
   constructor(
     private readonly logger: Logger,
     private readonly runtimeSettings?: ProviderRuntimeSettings,
     private readonly deps: CodexAppServerAgentDeps = {},
-  ) {}
+  ) {
+    this.codexPlugins = createCodexPluginMarketplaceService({
+      openClient: async () =>
+        new CodexAppServerClient(
+          await this.spawnAppServer(undefined, { marketplaceAuth: true }),
+          this.logger,
+        ),
+    });
+  }
 
   private sessionDeps(): CodexAppServerAgentDeps {
     return {
@@ -7831,11 +7842,19 @@ export class CodexAppServerAgentClient implements AgentClient {
 
   private async spawnAppServer(
     launchEnv?: Record<string, string>,
-    options?: { goalsEnabled?: boolean; agentId?: string },
+    options?: { goalsEnabled?: boolean; agentId?: string; marketplaceAuth?: boolean },
   ): Promise<ChildProcessWithoutNullStreams> {
     if (this.deps.spawnAppServer) return this.deps.spawnAppServer(launchEnv, options);
     const launchPrefix = await resolveCodexLaunchPrefix(this.runtimeSettings);
     const args = [...launchPrefix.args, "app-server"];
+    const env = buildCodexAppServerEnv(this.runtimeSettings, launchEnv);
+    if (options?.marketplaceAuth) {
+      // 市场认证与正文模型配置分开；不改用户配置，不向官方市场投递中转 API Key。
+      args.push("-c", 'model_provider="openai"');
+      delete env.OPENAI_API_KEY;
+      delete env.CODEX_API_KEY;
+      Object.assign(env, await resolveCodexNetworkEnvironment(env, this.logger));
+    }
     if (options?.goalsEnabled) {
       args.push("--enable", "goals");
     }
@@ -7851,10 +7870,9 @@ export class CodexAppServerAgentClient implements AgentClient {
     const child = spawnProcess(launchPrefix.command, args, {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
-      ...createProviderEnvSpec({
-        runtimeSettings: this.runtimeSettings,
-        overlays: [launchEnv],
-      }),
+      ...(options?.marketplaceAuth
+        ? { envMode: "internal" as const, env }
+        : createProviderEnvSpec({ runtimeSettings: this.runtimeSettings, overlays: [launchEnv] })),
     });
     assertChildWithPipes(child);
     return child;
