@@ -19,6 +19,7 @@ test("真实 WebSocket 往返插件目录、安装及原生错误，不启动对
             {
               id: "demo@test",
               name: "demo",
+              remotePluginId: "plugin_asdk_demo",
               installed,
               enabled: installed,
               installPolicy: "AVAILABLE",
@@ -67,10 +68,12 @@ test("真实 WebSocket 往返插件目录、安装及原生错误，不启动对
     expect(client.getLastServerInfoMessage()?.features?.codexPluginMarket).toBe(true);
     const first = await client.getCodexPluginCatalog({ scope: "official", force: false });
     expect(first.marketplaces[0].plugins[0].installed).toBe(false);
+    expect(first.marketplaces[0].plugins[0].remotePluginId).toBe("plugin_asdk_demo");
     const detail = await client.getCodexPluginDetail({
       marketplaceName: "test",
       marketplacePath: null,
       pluginName: "demo",
+      remotePluginId: "plugin_asdk_demo",
     });
     expect(detail.description).toBe("测试插件详情");
     expect(detail.skills).toEqual([{ name: "test-skill", description: "测试技能" }]);
@@ -80,6 +83,7 @@ test("真实 WebSocket 往返插件目录、安装及原生错误，不启动对
         marketplacePath: null,
         marketplaceName: "test",
         pluginName: "demo",
+        remotePluginId: "plugin_asdk_demo",
       }),
     ).toEqual({ authApps: [], restartRequired: true });
     const next = await client.getCodexPluginCatalog({
@@ -89,6 +93,18 @@ test("真实 WebSocket 往返插件目录、安装及原生错误，不启动对
     });
     expect(next.total).toBe(1);
     expect(next.marketplaces[0].plugins[0].installed).toBe(true);
+    expect(native.requests()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          method: "plugin/read",
+          params: { remoteMarketplaceName: "test", pluginName: "plugin_asdk_demo" },
+        }),
+        expect.objectContaining({
+          method: "plugin/install",
+          params: { remoteMarketplaceName: "test", pluginName: "plugin_asdk_demo" },
+        }),
+      ]),
+    );
     await expect(
       client.manageCodexPlugin({ kind: "uninstall", pluginId: "demo@test" }),
     ).rejects.toThrow("原生插件卸载失败");

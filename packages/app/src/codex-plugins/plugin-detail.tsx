@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Text, View } from "react-native";
-import { ArrowLeft, ExternalLink, Plus, Check } from "lucide-react-native";
+import { ExternalLink, Plus, Check } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useMutation } from "@tanstack/react-query";
 import type { CodexPluginAction, CodexPluginDetail } from "@getpaseo/protocol/codex-plugins";
@@ -16,14 +16,12 @@ export function PluginDetail({
   selection,
   client,
   serverId,
-  onBack,
   onAction,
   busy,
 }: {
   selection: PluginSelection;
   client: MarketClient;
   serverId: string;
-  onBack(): void;
   onAction(action: CodexPluginAction): void;
   busy: boolean;
 }) {
@@ -32,6 +30,7 @@ export function PluginDetail({
       marketplaceName: selection.marketplace.name,
       marketplacePath: selection.marketplace.path,
       pluginName: selection.plugin.name,
+      remotePluginId: selection.plugin.remotePluginId,
     }),
     [selection],
   );
@@ -58,21 +57,6 @@ export function PluginDetail({
   const unavailable = plugin.disabledReason !== null || plugin.installPolicy === "NOT_AVAILABLE";
   return (
     <View style={styles.detail} testID="codex-plugin-detail">
-      <View style={styles.breadcrumb}>
-        <Button
-          size="sm"
-          variant="ghost"
-          leftIcon={ArrowLeft}
-          onPress={onBack}
-          testID="codex-plugin-back"
-        >
-          插件
-        </Button>
-        <Text style={styles.muted}>/</Text>
-        <Text style={styles.muted} numberOfLines={1}>
-          {plugin.title}
-        </Text>
-      </View>
       <View style={styles.hero}>
         <PluginIcon key={plugin.id} plugin={plugin} size="hero" />
         <View style={styles.heroText}>
@@ -226,7 +210,6 @@ function PluginLink({ label, url }: { label: string; url: string | null }) {
 }
 const styles = StyleSheet.create((theme) => ({
   detail: { gap: theme.spacing[8], maxWidth: 880, width: "100%", alignSelf: "center" },
-  breadcrumb: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   hero: { flexDirection: "row", alignItems: "center", gap: theme.spacing[4], flexWrap: "wrap" },
   heroText: { flex: 1, minWidth: 160, gap: theme.spacing[2] },
   title: {

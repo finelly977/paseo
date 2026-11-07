@@ -1,10 +1,9 @@
-import { useCallback, useDeferredValue, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useReducer, useRef, type ReactNode } from "react";
 import {
   Pressable,
   ScrollView,
   Text,
   View,
-  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
@@ -33,6 +32,8 @@ import { openExternalUrl } from "@/utils/open-external-url";
 import { PluginIcon } from "./plugin-icon";
 import { PluginDetail } from "./plugin-detail";
 import { CatalogLoading, InstalledLoading } from "./marketplace-loading";
+import { PluginCenterHeader } from "./center-header";
+import { PLUGIN_CENTER_RAIL_WIDTH, type PluginCenterLayout } from "./center-layout";
 
 export type MarketClient = Pick<
   DaemonClient,
@@ -78,24 +79,43 @@ function reducer(state: ViewState, action: ViewAction): ViewState {
   }
 }
 
-export function HostCodexPluginsPage({ serverId }: { serverId: string }) {
+export function HostCodexPluginsPage({
+  serverId,
+  layout,
+  headerActions,
+}: {
+  serverId: string;
+  layout: PluginCenterLayout;
+  headerActions: ReactNode;
+}) {
   const client = useHostRuntimeClient(serverId);
   const connected = useHostRuntimeIsConnected(serverId);
   // COMPAT(codexPluginMarket): 2026-11-07 新增，2027-05-07 后移除旧主机门控。
   const supported = useHostFeature(serverId, "codexPluginMarket");
-  if (!client || !connected)
+  if (!client || !connected || !supported)
     return (
-      <View style={styles.state}>
-        <Alert title="连接主机后管理 Codex 插件" />
+      <View style={styles.panel}>
+        <PluginCenterHeader navigation={null} actions={headerActions} />
+        <View style={styles.state}>
+          <Alert
+            title={
+              !client || !connected
+                ? "连接主机后管理 Codex 插件"
+                : "请启用并更新主机的 Codex 和 Paseo 后使用插件市场"
+            }
+          />
+        </View>
       </View>
     );
-  if (!supported)
-    return (
-      <View style={styles.state}>
-        <Alert title="请启用并更新主机的 Codex 和 Paseo 后使用插件市场" />
-      </View>
-    );
-  return <CodexPluginMarketplacePanel key={serverId} serverId={serverId} client={client} />;
+  return (
+    <CodexPluginMarketplacePanel
+      key={serverId}
+      serverId={serverId}
+      client={client}
+      layout={layout}
+      headerActions={headerActions}
+    />
+  );
 }
 async function confirmAction(action: CodexPluginAction): Promise<boolean> {
   if (action.kind === "install" || action.kind === "add_marketplace")
@@ -119,9 +139,13 @@ async function confirmAction(action: CodexPluginAction): Promise<boolean> {
 export function CodexPluginMarketplacePanel({
   serverId,
   client,
+  layout,
+  headerActions,
 }: {
   serverId: string;
   client: MarketClient;
+  layout: PluginCenterLayout;
+  headerActions: ReactNode;
 }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const queryClient = useQueryClient();
@@ -216,129 +240,153 @@ export function CodexPluginMarketplacePanel({
   }, [catalog.data]);
   const busy = action.isPending || refresh.isPending;
   const error = action.error ?? refresh.error ?? catalog.error;
-  const [width, setWidth] = useState(0);
-  const measure = useCallback(
-    (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width),
-    [],
+  const navigation = useMemo(
+    () => (state.selection ? { title: state.selection.plugin.title, onBack: back } : null),
+    [state.selection, back],
   );
-  const showRail = width >= 1000;
-  const twoColumns = width - (showRail ? 200 : 0) >= 760;
+  const { showRail, twoColumns } = layout;
   return (
-    <View style={styles.center} onLayout={measure} testID="codex-plugin-market">
-      {showRail ? (
-        <InstalledRail client={client} serverId={serverId} onOpen={select} onView={changeView} />
-      ) : null}
-      <ScrollView
-        ref={scroll}
-        onScroll={trackScroll}
-        scrollEventThrottle={80}
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.canvas}>
-          {error ? (
-            <Alert
-              variant="error"
-              title="操作未完成"
-              description={error.message}
-              testID="codex-market-error"
-            >
-              <Button size="sm" variant="outline" onPress={retry} disabled={busy}>
-                重试
-              </Button>
-            </Alert>
-          ) : null}
-          {action.isPending ? <Text style={styles.muted}>正在处理，请稍候...</Text> : null}
-          {action.data ? <ActionResult result={action.data} /> : null}
-          {state.selection ? (
-            <PluginDetail
-              selection={state.selection}
-              client={client}
-              serverId={serverId}
-              onBack={back}
-              onAction={run}
-              busy={busy}
-            />
-          ) : (
-            <>
-              <MarketHeading
-                query={state.query}
-                onQuery={changeQuery}
-                onRefresh={doRefresh}
-                disabled={busy || catalog.isFetching}
-              />
-              <SegmentedControl
-                options={views}
-                value={state.view}
-                onValueChange={changeView}
-                size="sm"
-                testID="codex-market-views"
-              />
-              <Text style={styles.authHint}>
-                安装到当前主机 · 市场使用独立 ChatGPT 登录，正文可继续使用第三方模型
-              </Text>
-              <CatalogBody
-                data={catalog.data}
-                pending={catalog.isPending}
-                sources={sourceView}
-                busy={busy}
+    <View style={styles.panel}>
+      <PluginCenterHeader navigation={navigation} actions={headerActions} />
+      <View style={styles.center} testID="codex-plugin-market">
+        {showRail ? (
+          <InstalledRail client={client} serverId={serverId} onOpen={select} onView={changeView} />
+        ) : null}
+        <ScrollView
+          ref={scroll}
+          onScroll={trackScroll}
+          scrollEventThrottle={80}
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.canvas}>
+            {error ? (
+              <Alert
+                variant="error"
+                title="操作未完成"
+                description={error.message}
+                testID="codex-market-error"
+              >
+                <Button size="sm" variant="outline" onPress={retry} disabled={busy}>
+                  重试
+                </Button>
+              </Alert>
+            ) : null}
+            {action.isPending ? <Text style={styles.muted}>正在处理，请稍候...</Text> : null}
+            {action.data ? <ActionResult result={action.data} /> : null}
+            {state.selection ? (
+              <PluginDetail
+                selection={state.selection}
+                client={client}
+                serverId={serverId}
                 onAction={run}
-                onOpen={select}
-                twoColumns={twoColumns}
+                busy={busy}
               />
-              {sourceView ? (
-                <View style={styles.sourceForm}>
-                  <Field label="添加市场来源">
-                    <FormTextInput
-                      initialValue={state.source}
-                      resetKey={action.status}
-                      onChangeText={changeSource}
-                      editable={!busy}
-                      placeholder="owner/repo 或主机本地目录"
+            ) : (
+              <>
+                <MarketHeading
+                  query={state.query}
+                  onQuery={changeQuery}
+                  onRefresh={doRefresh}
+                  disabled={busy || catalog.isFetching}
+                />
+                <SegmentedControl
+                  options={views}
+                  value={state.view}
+                  onValueChange={changeView}
+                  size="sm"
+                  testID="codex-market-views"
+                />
+                <Text style={styles.authHint}>
+                  安装到当前主机 · 市场使用独立 ChatGPT 登录，正文可继续使用第三方模型
+                </Text>
+                <CatalogBody
+                  data={catalog.data}
+                  pending={catalog.isPending}
+                  sources={sourceView}
+                  busy={busy}
+                  onAction={run}
+                  onOpen={select}
+                  twoColumns={twoColumns}
+                />
+                {sourceView ? (
+                  <MarketSourceForm
+                    source={state.source}
+                    resetKey={action.status}
+                    onChange={changeSource}
+                    onAdd={add}
+                    busy={busy}
+                  />
+                ) : null}
+                {catalog.data && !sourceView ? (
+                  <View style={styles.pager}>
+                    <Text
+                      style={styles.muted}
+                    >{`共 ${catalog.data.total} 项 · 第 ${Math.floor(state.offset / 50) + 1} 页`}</Text>
+                    <Button
                       size="sm"
-                      testID="codex-market-source"
-                    />
-                  </Field>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    leftIcon={Plus}
-                    onPress={add}
-                    disabled={busy || !state.source.trim()}
-                    testID="codex-market-add-source"
-                  >
-                    添加来源
-                  </Button>
-                </View>
-              ) : null}
-              {catalog.data && !sourceView ? (
-                <View style={styles.pager}>
-                  <Text
-                    style={styles.muted}
-                  >{`共 ${catalog.data.total} 项 · 第 ${Math.floor(state.offset / 50) + 1} 页`}</Text>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onPress={previous}
-                    disabled={catalog.isFetching || state.offset === 0}
-                  >
-                    上一页
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onPress={next}
-                    disabled={catalog.isFetching || catalog.data.nextOffset === null}
-                  >
-                    下一页
-                  </Button>
-                </View>
-              ) : null}
-            </>
-          )}
-        </View>
-      </ScrollView>
+                      variant="ghost"
+                      onPress={previous}
+                      disabled={catalog.isFetching || state.offset === 0}
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onPress={next}
+                      disabled={catalog.isFetching || catalog.data.nextOffset === null}
+                    >
+                      下一页
+                    </Button>
+                  </View>
+                ) : null}
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function MarketSourceForm({
+  source,
+  resetKey,
+  onChange,
+  onAdd,
+  busy,
+}: {
+  source: string;
+  resetKey: string;
+  onChange(value: string): void;
+  onAdd(): void;
+  busy: boolean;
+}) {
+  return (
+    <View style={styles.sourceForm}>
+      <Field label="添加市场来源">
+        <FormTextInput
+          initialValue={source}
+          resetKey={resetKey}
+          onChangeText={onChange}
+          editable={!busy}
+          placeholder="owner/repo 或主机本地目录"
+          size="sm"
+          testID="codex-market-source"
+        />
+      </Field>
+      <Button
+        size="sm"
+        variant="outline"
+        leftIcon={Plus}
+        onPress={onAdd}
+        disabled={busy || !source.trim()}
+        testID="codex-market-add-source"
+      >
+        添加来源
+      </Button>
     </View>
   );
 }
@@ -495,8 +543,9 @@ function PluginCard({
         marketplaceName: marketplace.name,
         marketplacePath: marketplace.path,
         pluginName: plugin.name,
+        remotePluginId: plugin.remotePluginId,
       }),
-    [onAction, marketplace, plugin.name],
+    [onAction, marketplace, plugin.name, plugin.remotePluginId],
   );
   const cardStyle = useMemo(() => [styles.card, twoColumns && styles.cardTwo], [twoColumns]);
   const unavailable = plugin.installPolicy === "NOT_AVAILABLE" || plugin.disabledReason !== null;
@@ -692,6 +741,7 @@ function AuthApp({ name, url }: { name: string; url: string | null }) {
   );
 }
 const styles = StyleSheet.create((theme) => ({
+  panel: { flex: 1, minHeight: 0 },
   center: { flex: 1, flexDirection: "row", minHeight: 0 },
   scroll: { flex: 1 },
   content: { flexGrow: 1, padding: theme.spacing[6] },
@@ -748,7 +798,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   hover: { backgroundColor: theme.colors.surface2 },
   rail: {
-    width: 200,
+    width: PLUGIN_CENTER_RAIL_WIDTH,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
     padding: theme.spacing[3],

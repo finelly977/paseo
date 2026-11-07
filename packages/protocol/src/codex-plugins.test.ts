@@ -1,6 +1,28 @@
 import { expect, test } from "vitest";
 import { SessionInboundMessageSchema, SessionOutboundMessageSchema } from "./messages.js";
 
+test("远程后端标识经详情与安装协议保留，未提供标识的请求仍可解析", () => {
+  const target = {
+    marketplaceName: "official",
+    marketplacePath: null,
+    pluginName: "app-example",
+    remotePluginId: "plugin_asdk_app_example",
+  };
+  const request = { type: "codex.plugins.get_detail.request", requestId: "detail", target };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const install = {
+    type: "codex.plugins.manage.request",
+    requestId: "install",
+    action: { kind: "install", ...target },
+  };
+  expect(SessionInboundMessageSchema.parse(install)).toEqual(install);
+  const oldTarget = { marketplaceName: "official", marketplacePath: null, pluginName: "remotion" };
+  expect(SessionInboundMessageSchema.parse({ ...request, target: oldTarget })).toEqual({
+    ...request,
+    target: oldTarget,
+  });
+});
+
 test("Codex 市场目录和管理消息通过会话协议", () => {
   const request = {
     type: "codex.plugins.get_catalog.request",

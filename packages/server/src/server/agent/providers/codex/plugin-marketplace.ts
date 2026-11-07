@@ -10,6 +10,7 @@ import {
   type CodexPluginCatalogInput,
   type CodexPluginService,
   type CodexPlugin,
+  type CodexPluginTarget,
 } from "@getpaseo/protocol/codex-plugins";
 import { CodexAppServerClient } from "./app-server-transport.js";
 
@@ -34,6 +35,7 @@ const InterfaceSchema = z.object({
 const NativePluginSchema = z.object({
   id: z.string(),
   name: z.string(),
+  remotePluginId: z.string().nullish(),
   installed: z.boolean(),
   enabled: z.boolean(),
   installPolicy: z.enum(["AVAILABLE", "NOT_AVAILABLE", "INSTALLED_BY_DEFAULT"]),
@@ -92,6 +94,7 @@ async function toPlugin(plugin: z.infer<typeof NativePluginSchema>): Promise<Cod
   return {
     id: plugin.id,
     name: plugin.name,
+    remotePluginId: plugin.remotePluginId ?? null,
     title: ui?.displayName ?? plugin.name,
     description: ui?.shortDescription ?? ui?.longDescription ?? "",
     version: plugin.localVersion ?? plugin.version ?? null,
@@ -122,6 +125,16 @@ function pluginMetadata(ui: z.infer<typeof InterfaceSchema> | null | undefined) 
 const InstallResultSchema = z.object({
   appsNeedingAuth: z.array(z.object({ name: z.string(), installUrl: z.string().nullable() })),
 });
+
+function nativePluginTarget(target: CodexPluginTarget) {
+  // 远程名称和后端 ID 可以不同；详情、安装共用原生目录返回的 ID。
+  return target.marketplacePath === null
+    ? {
+        remoteMarketplaceName: target.marketplaceName,
+        pluginName: target.remotePluginId ?? target.pluginName,
+      }
+    : { marketplacePath: target.marketplacePath, pluginName: target.pluginName };
+}
 
 interface MarketplaceOptions {
   openClient(): Promise<CodexAppServerClient>;
@@ -197,16 +210,8 @@ export function createCodexPluginMarketplaceService(
     const result: CodexPluginActionResult = { authApps: [], restartRequired: true };
     switch (action.kind) {
       case "install": {
-        const target =
-          action.marketplacePath === null
-            ? { remoteMarketplaceName: action.marketplaceName }
-            : { marketplacePath: action.marketplacePath };
         const installed = InstallResultSchema.parse(
-          await client.request(
-            "plugin/install",
-            { ...target, pluginName: action.pluginName },
-            WRITE_TIMEOUT_MS,
-          ),
+          await client.request("plugin/install", nativePluginTarget(action), WRITE_TIMEOUT_MS),
         );
         result.authApps = installed.appsNeedingAuth.map((app) => ({
           name: app.name,
@@ -257,16 +262,8 @@ export function createCodexPluginMarketplaceService(
   return {
     detail(target) {
       return withClient(async (client) => {
-        const source =
-          target.marketplacePath === null
-            ? { remoteMarketplaceName: target.marketplaceName }
-            : { marketplacePath: target.marketplacePath };
         const raw = DetailSchema.parse(
-          await client.request(
-            "plugin/read",
-            { ...source, pluginName: target.pluginName },
-            READ_TIMEOUT_MS,
-          ),
+          await client.request("plugin/read", nativePluginTarget(target), READ_TIMEOUT_MS),
         ).plugin;
         return {
           plugin: await toPlugin(raw.summary),

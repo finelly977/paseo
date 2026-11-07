@@ -6,6 +6,7 @@ const PluginIdSchema = z.string().regex(/^[\w.-]+@[\w.-]+$/);
 export const CodexPluginSchema = z.object({
   id: PluginIdSchema,
   name: NameSchema,
+  remotePluginId: z.string().min(1).nullable().optional(),
   title: z.string(),
   description: z.string(),
   version: z.string().nullable(),
@@ -47,6 +48,7 @@ export const CodexPluginActionSchema = z.discriminatedUnion("kind", [
     marketplaceName: NameSchema,
     marketplacePath: z.string().nullable(),
     pluginName: NameSchema,
+    remotePluginId: z.string().min(1).nullable().optional(),
   }),
   z.object({ kind: z.literal("uninstall"), pluginId: PluginIdSchema }),
   z.object({ kind: z.literal("set_enabled"), pluginId: PluginIdSchema, enabled: z.boolean() }),
@@ -71,6 +73,7 @@ export const CodexPluginTargetSchema = z.object({
   marketplaceName: NameSchema,
   marketplacePath: z.string().nullable(),
   pluginName: NameSchema,
+  remotePluginId: z.string().min(1).nullable().optional(),
 });
 export type CodexPluginTarget = z.infer<typeof CodexPluginTargetSchema>;
 export const CodexPluginDetailSchema = z.object({

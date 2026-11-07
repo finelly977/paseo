@@ -1,18 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import { Blocks, ChevronDown, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
-import { ScreenHeader } from "@/components/headers/screen-header";
-import { HeaderIconBadge } from "@/components/headers/header-icon-badge";
-import { ScreenTitle } from "@/components/headers/screen-title";
 import { Button } from "@/components/ui/button";
 import { HostPicker } from "@/components/hosts/host-picker";
 import { HostCodexPluginsPage } from "@/codex-plugins/marketplace-page";
 import { useHosts } from "@/runtime/host-runtime";
-import { useTranslation } from "react-i18next";
+import { PluginCenterHeader } from "@/codex-plugins/center-header";
+import { PLUGIN_CENTER_MAX_WIDTH, resolvePluginCenterLayout } from "@/codex-plugins/center-layout";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { WindowChromeRegion } from "@/utils/desktop-window";
 import { navigateToLastWorkspace } from "@/stores/navigation-active-workspace-store";
@@ -22,27 +20,24 @@ const MutedChevron = withUnistyles(ChevronDown);
 const muted = (theme: import("@/styles/theme").Theme) => ({ color: theme.colors.foregroundMuted });
 
 export function CodexPluginCenterScreen() {
-  const { t } = useTranslation();
   const router = useRouter();
   const isFocused = useIsFocused();
   const isCompact = useIsCompactFormFactor();
+  const { width } = useWindowDimensions();
+  const layout = useMemo(() => resolvePluginCenterLayout(width, isCompact), [width, isCompact]);
   const close = useCallback(() => {
     if (router.canGoBack()) router.back();
     else if (!navigateToLastWorkspace()) router.replace("/open-project");
   }, [router]);
   const hosts = useHosts();
-  const [serverId, setServerId] = useState("");
+  const [selectedServerId, setServerId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<View>(null);
-  useEffect(() => {
-    if (!serverId || !hosts.some((host) => host.serverId === serverId)) {
-      setServerId(hosts[0]?.serverId ?? "");
-    }
-  }, [hosts, serverId]);
   const selectedHost = useMemo(
-    () => hosts.find((host) => host.serverId === serverId),
-    [hosts, serverId],
+    () => hosts.find((host) => host.serverId === selectedServerId) ?? hosts[0],
+    [hosts, selectedServerId],
   );
+  const serverId = selectedHost?.serverId ?? "";
   const selectHost = useCallback((next: string) => setServerId(next), []);
   const openPicker = useCallback(() => setOpen(true), []);
   const setPicker = useCallback((next: boolean) => setOpen(next), []);
@@ -50,7 +45,6 @@ export function CodexPluginCenterScreen() {
     () => hosts.map((host) => ({ serverId: host.serverId, label: host.label })),
     [hosts],
   );
-  const title = t("sidebar.sections.plugins");
   const hostPicker = useMemo(
     () => (
       <HostPicker
@@ -92,17 +86,6 @@ export function CodexPluginCenterScreen() {
       selectedHost,
     ],
   );
-  const headerLeft = useMemo(
-    () => (
-      <>
-        <HeaderIconBadge>
-          <MutedBlocks size={18} uniProps={muted} />
-        </HeaderIconBadge>
-        <ScreenTitle>{title}</ScreenTitle>
-      </>
-    ),
-    [title],
-  );
   const headerRight = useMemo(
     () => (
       <>
@@ -121,15 +104,17 @@ export function CodexPluginCenterScreen() {
   );
   const content = (
     <View style={styles.screen}>
-      <ScreenHeader left={headerLeft} right={headerRight} />
       {serverId ? (
-        <HostCodexPluginsPage serverId={serverId} />
+        <HostCodexPluginsPage serverId={serverId} layout={layout} headerActions={headerRight} />
       ) : (
-        <View style={styles.empty}>
-          <MutedBlocks size={28} uniProps={muted} />
-          <Text style={styles.emptyTitle}>还没有可用主机</Text>
-          <Text style={styles.emptyText}>先连接一个 Paseo 主机，再浏览 Codex 插件市场。</Text>
-        </View>
+        <>
+          <PluginCenterHeader navigation={null} actions={headerRight} />
+          <View style={styles.empty}>
+            <MutedBlocks size={28} uniProps={muted} />
+            <Text style={styles.emptyTitle}>还没有可用主机</Text>
+            <Text style={styles.emptyText}>先连接一个 Paseo 主机，再浏览 Codex 插件市场。</Text>
+          </View>
+        </>
       )}
     </View>
   );
@@ -139,7 +124,7 @@ export function CodexPluginCenterScreen() {
       header={null}
       visible={isFocused}
       onClose={close}
-      desktopMaxWidth={1280}
+      desktopMaxWidth={PLUGIN_CENTER_MAX_WIDTH}
       desktopCardStyle={styles.dialog}
       contentContainerStyle={styles.dialogContent}
       scrollable={false}

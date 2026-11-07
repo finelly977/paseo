@@ -41,6 +41,43 @@ function catalog(count = 1) {
   };
 }
 
+test("远程目录保留后端 ID，详情使用后端 ID 而非展示名称", async () => {
+  const item = {
+    ...plugin(0),
+    name: "app-example",
+    id: "app-example@test",
+    remotePluginId: "plugin_asdk_app_example",
+  };
+  const native = createFakeCodexAppServer({
+    "plugin/list": () => ({
+      marketplaces: [{ name: "test", path: null, plugins: [item] }],
+      marketplaceLoadErrors: [],
+    }),
+    "plugin/read": () => ({
+      plugin: { summary: item, description: "完整远程介绍", apps: [], skills: [], mcpServers: [] },
+    }),
+  });
+  const market = service(native);
+  const result = await market.catalog({ scope: "official", force: false });
+  expect(result.marketplaces[0].plugins[0]).toMatchObject({
+    remotePluginId: "plugin_asdk_app_example",
+  });
+  const detail = await market.detail({
+    marketplaceName: "test",
+    marketplacePath: null,
+    pluginName: "app-example",
+    remotePluginId: "plugin_asdk_app_example",
+  });
+  expect(detail.description).toBe("完整远程介绍");
+  expect(native.requests()).toContainEqual(
+    expect.objectContaining({
+      method: "plugin/read",
+      params: { remoteMarketplaceName: "test", pluginName: "plugin_asdk_app_example" },
+    }),
+  );
+  native.assertNoErrors();
+});
+
 test("插件详情保留官方品牌图标与元数据，应用、技能和工具分别展示", async () => {
   const item = {
     ...plugin(0),
@@ -176,6 +213,17 @@ test("原生读取失败和非法状态明确报错，不缓存为空目录", as
 });
 
 const actions: Array<{ action: CodexPluginAction; method: string; params: object }> = [
+  {
+    action: {
+      kind: "install",
+      marketplaceName: "remote",
+      marketplacePath: null,
+      pluginName: "app-example",
+      remotePluginId: "plugin_asdk_app_example",
+    },
+    method: "plugin/install",
+    params: { remoteMarketplaceName: "remote", pluginName: "plugin_asdk_app_example" },
+  },
   {
     action: {
       kind: "install",
