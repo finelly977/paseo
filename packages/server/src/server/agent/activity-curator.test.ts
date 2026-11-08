@@ -38,6 +38,27 @@ function row(seq: number, item: AgentTimelineItem): AgentTimelineRow {
   };
 }
 
+it("按原生回合末尾分叉中断记录，保留工具并排除后续回合", () => {
+  const result = buildAgentForkContextAttachment({
+    nativeTurnBoundary: { turnId: "stopped", timelineEpoch: "epoch" },
+    rows: [
+      { ...row(1, { type: "user_message", text: "检查问题" }), turnId: "stopped" },
+      { ...row(2, { type: "assistant_message", text: "正在检查" }), turnId: "stopped" },
+      { ...row(3, toolCallItem({ callId: "image", name: "view_image" })), turnId: "stopped" },
+      { ...row(4, { type: "user_message", text: "后续独立问题" }), turnId: "next" },
+    ],
+  });
+  expect(result.boundaryCursor).toEqual({ epoch: "epoch", seq: 3 });
+  expect(result.attachment.text).toContain("正在检查");
+  expect(result.attachment.text).not.toContain("后续独立问题");
+  expect(() =>
+    buildAgentForkContextAttachment({
+      rows: [],
+      nativeTurnBoundary: { turnId: "missing", timelineEpoch: "epoch" },
+    }),
+  ).toThrow("Selected turn is no longer available.");
+});
+
 describe("curateAgentActivity", () => {
   it("renders user/assistant/reasoning entries", () => {
     const timeline: AgentTimelineItem[] = [

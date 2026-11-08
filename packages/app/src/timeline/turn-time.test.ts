@@ -22,6 +22,37 @@ function assistant(id: string, timestamp: Date): StreamItem {
 }
 
 describe("deriveStreamTurnTiming", () => {
+  it("中断历史的末尾预览使用原生回合耗时，不依赖单条操作时间", () => {
+    const start = new Date("2026-05-15T00:00:00.000Z");
+    const process: StreamItem = {
+      kind: "native_history_process",
+      id: "process",
+      turnId: "turn",
+      timestamp: start,
+      status: "interrupted",
+      durationMs: 7000,
+      summaryMessageIds: [],
+      summaryRevision: "r",
+      error: null,
+    };
+    const preview: StreamItem = {
+      ...assistant("preview", start),
+      turnId: "turn",
+      nativeTurnId: "turn",
+      timestampUnknown: true,
+    };
+    const timing = deriveStreamTurnTiming({
+      agentStatus: "idle",
+      tail: [process, preview],
+      head: [],
+    });
+    assert.deepEqual(timing.byAssistantId.get("preview"), {
+      startedAt: start,
+      completedAt: new Date(start.getTime() + 7000),
+      durationMs: 7000,
+    });
+    assert.equal(preview.timestampUnknown, true);
+  });
   it("reserves a running footer for an optimistic prompt before the host starts the turn", () => {
     const optimisticPrompt = {
       ...user("optimistic", new Date("2026-05-15T00:00:00.000Z")),

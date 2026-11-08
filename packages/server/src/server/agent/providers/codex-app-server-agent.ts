@@ -583,6 +583,7 @@ interface CodexModelCatalogRequest {
 interface PersistedTimelineEntry {
   item: AgentTimelineItem;
   timestamp?: string;
+  turnId?: string;
 }
 
 interface PersistedSubAgentRoute {
@@ -2464,6 +2465,7 @@ async function loadCodexThreadHistoryTimeline(params: {
         timeline.push({
           item: restored.item,
           timestamp: timestamp ?? undefined,
+          turnId: turn.id,
         });
         for (const childThreadId of readCodexHistoricalSubAgentThreadIds(item)) {
           subAgentTimelineIndexByThreadId.set(childThreadId, timeline.length - 1);
@@ -4916,6 +4918,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         provider: CODEX_PROVIDER,
         item: entry.item,
         timestamp: entry.timestamp,
+        turnId: entry.turnId,
       };
     }
   }

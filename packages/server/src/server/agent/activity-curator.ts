@@ -223,6 +223,7 @@ interface ForkCursorBoundary {
 
 function selectForkContextRows(input: {
   rows: readonly AgentTimelineRow[];
+  nativeTurnBoundary?: { turnId: string; timelineEpoch: string };
   cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
 }): {
@@ -232,6 +233,24 @@ function selectForkContextRows(input: {
 } {
   const boundaryCursor = input.cursorBoundary?.cursor ?? null;
   const boundaryMessageId = input.boundaryMessageId?.trim() || null;
+  const nativeBoundary = input.nativeTurnBoundary;
+  if (nativeBoundary) {
+    if (boundaryCursor || boundaryMessageId)
+      throw new Error("Only one fork boundary may be selected.");
+    const boundaryIndex = input.rows.findLastIndex((row) => row.turnId === nativeBoundary.turnId);
+    if (boundaryIndex < 0) throw new Error("Selected turn is no longer available.");
+    return {
+      items: projectTimelineRows({
+        rows: input.rows.slice(0, boundaryIndex + 1),
+        mode: "projected",
+      }).map((row) => row.item),
+      boundaryCursor: {
+        epoch: nativeBoundary.timelineEpoch,
+        seq: input.rows[boundaryIndex].seq,
+      },
+      boundaryMessageId: null,
+    };
+  }
   if (!boundaryCursor && !boundaryMessageId) {
     const projected = projectTimelineRows({ rows: input.rows, mode: "projected" });
     return {
@@ -293,6 +312,7 @@ function buildForkContextText(input: {
 
 export function buildAgentForkContextAttachment(input: {
   rows: readonly AgentTimelineRow[];
+  nativeTurnBoundary?: { turnId: string; timelineEpoch: string };
   cursorBoundary?: ForkCursorBoundary | null;
   boundaryMessageId?: string | null;
   agentTitle?: string | null;
@@ -305,6 +325,7 @@ export function buildAgentForkContextAttachment(input: {
 } {
   const selected = selectForkContextRows({
     rows: input.rows,
+    nativeTurnBoundary: input.nativeTurnBoundary,
     cursorBoundary: input.cursorBoundary,
     boundaryMessageId: input.boundaryMessageId,
   });

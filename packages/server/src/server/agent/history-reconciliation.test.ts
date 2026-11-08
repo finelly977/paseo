@@ -16,6 +16,19 @@ const assistant = (text: string, messageId: string) => ({
 });
 
 describe("reconcileProviderHistory", () => {
+  test("完整原生历史提供的回合身份同时写入新行和既有匹配行", () => {
+    const item = assistant("相同内容", "message");
+    const canonical: AgentTimelineRow[] = [{ seq: 1, timestamp: "2026-11-08T00:00:00.000Z", item }];
+    expect(reconcileProviderHistory([], [{ item, turnId: "native-turn" }])[0].turnId).toBe(
+      "native-turn",
+    );
+    expect(reconcileProviderHistory(canonical, [{ item, turnId: "native-turn" }])[0].turnId).toBe(
+      "native-turn",
+    );
+    expect(
+      reconcileProviderHistory([{ ...canonical[0], turnId: "existing" }], [{ item }])[0].turnId,
+    ).toBe("existing");
+  });
   test("提供方顺序与旧规范顺序不一致时不把后续已匹配记录作为前缀再次输出", () => {
     const canonical: AgentTimelineRow[] = [
       {

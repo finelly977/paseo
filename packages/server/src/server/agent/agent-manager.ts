@@ -3495,7 +3495,11 @@ export class AgentManager {
     );
     const rows = reconcileProviderHistory(
       seed,
-      timeline.map((event) => ({ item: event.item, timestamp: event.timestamp })),
+      timeline.map((event) => ({
+        item: event.item,
+        timestamp: event.timestamp,
+        turnId: event.turnId,
+      })),
       { mode: "force" },
     );
     if (this.agents.get(agent.id) !== agent) throw new Error("原生历史提交前会话已释放。");

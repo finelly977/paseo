@@ -174,6 +174,7 @@ function renderStreamItemWithTurnFooter(input: {
   layoutItem: StreamLayoutItem;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
+  supportsNativeTurn: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }): ReactNode {
   const footerHost = input.layoutItem.completedFooter;
@@ -188,6 +189,7 @@ function renderStreamItemWithTurnFooter(input: {
       timing={footerHost.timing}
       startIndex={footerHost.startIndex}
       supportsTimelineCursor={input.supportsTimelineCursor}
+      supportsNativeTurn={input.supportsNativeTurn}
       onForkAssistantTurn={input.onForkAssistantTurn}
     />
   ) : null;
@@ -522,6 +524,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const supportsAgentForkContextCursor = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextCursor === true,
+    );
+    // COMPAT(agentForkContextNativeTurn): 2026-11-08 新增，2027-05-08 后移除门控。
+    const supportsAgentForkContextNativeTurn = useSessionStore(
+      (state) =>
+        state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextNativeTurn === true,
     );
 
     const workspaceRoot = context.cwd?.trim() || "";
@@ -1280,18 +1287,34 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             ? useSessionStore.getState().sessions[resolvedServerId]?.agentNativeHistory.get(agentId)
             : undefined;
           if (!native || !resolvedServerId) return null;
+          const host = layoutItem.completedFooter;
           return (
-            <NativeHistoryProcess
-              key={`${native.readId}:${layoutItem.item.turnId}`}
-              item={layoutItem.item}
-              agentId={agentId}
-              serverId={resolvedServerId}
-              readId={native.readId}
-              client={client}
-              viewport={viewportRef}
-              expanded={nativeProcesses.expandedTurnIds.has(layoutItem.item.turnId)}
-              onToggle={nativeProcesses.toggle}
-            />
+            <>
+              <NativeHistoryProcess
+                key={`${native.readId}:${layoutItem.item.turnId}`}
+                item={layoutItem.item}
+                gapAbove={layoutItem.gapAbove}
+                gapBelow={layoutItem.gapBelow}
+                agentId={agentId}
+                serverId={resolvedServerId}
+                readId={native.readId}
+                client={client}
+                viewport={viewportRef}
+                expanded={nativeProcesses.expandedTurnIds.has(layoutItem.item.turnId)}
+                onToggle={nativeProcesses.toggle}
+              />
+              {host ? (
+                <CompletedTurnFooterRow
+                  strategy={streamRenderStrategy}
+                  items={host.items}
+                  timing={host.timing}
+                  startIndex={host.startIndex}
+                  supportsTimelineCursor={supportsAgentForkContextCursor}
+                  supportsNativeTurn={supportsAgentForkContextNativeTurn}
+                  onForkAssistantTurn={readOnly ? undefined : handleForkAssistantTurn}
+                />
+              ) : null}
+            </>
           );
         }
         const processTurnId = completedTurnProcess.turnIdByProcessItemId.get(layoutItem.item.id);
@@ -1303,6 +1326,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           layoutItem,
           strategy: streamRenderStrategy,
           supportsTimelineCursor: supportsAgentForkContextCursor,
+          supportsNativeTurn: supportsAgentForkContextNativeTurn,
           onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
         });
         const toggle = completedTurnProcess.toggleByItemId.get(layoutItem.item.id);
@@ -1336,6 +1360,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderStreamItemContent,
         streamRenderStrategy,
         supportsAgentForkContextCursor,
+        supportsAgentForkContextNativeTurn,
         toggleCompletedTurnProcess,
         registerCompletedProcessAnchor,
       ],
@@ -1364,6 +1389,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             host={bottomTurnFooterHost}
             strategy={streamRenderStrategy}
             supportsTimelineCursor={supportsAgentForkContextCursor}
+            supportsNativeTurn={supportsAgentForkContextNativeTurn}
             onForkAssistantTurn={readOnly ? undefined : handleForkAssistantTurn}
           />
         ) : null,
@@ -1375,6 +1401,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         bottomTurnFooterHost,
         streamRenderStrategy,
         supportsAgentForkContextCursor,
+        supportsAgentForkContextNativeTurn,
       ],
     );
     const renderModel = useMemo<AgentStreamRenderModel>(() => {

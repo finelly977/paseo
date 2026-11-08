@@ -6,6 +6,7 @@ import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 export interface ProviderHistoryTimelineEntry {
   item: AgentTimelineItem;
   timestamp?: string;
+  turnId?: string;
 }
 
 interface CanonicalCandidate {
@@ -97,9 +98,10 @@ export function reconcileProviderHistory(
       for (const canonicalIndex of match.canonicalIndexes) {
         if (emittedCanonicalIndexes.has(canonicalIndex)) continue;
         const matchedRow = remaining[canonicalIndex]!.row;
-        rows.push(
-          match.transferProviderIdentity ? mergeMatchedRow(matchedRow, entry) : { ...matchedRow },
-        );
+        rows.push({
+          ...(match.transferProviderIdentity ? mergeMatchedRow(matchedRow, entry) : matchedRow),
+          ...(entry.turnId !== undefined ? { turnId: entry.turnId } : {}),
+        });
         emittedCanonicalIndexes.add(canonicalIndex);
       }
       continue;
@@ -108,6 +110,7 @@ export function reconcileProviderHistory(
       seq: 0,
       timestamp: entry.timestamp ?? new Date(0).toISOString(),
       item: entry.item,
+      ...(entry.turnId !== undefined ? { turnId: entry.turnId } : {}),
     });
   }
 

@@ -63,6 +63,7 @@ async function world() {
           yield {
             type: "timeline",
             provider: "codex",
+            turnId: "turn",
             item,
             timestamp: "2026-11-01T00:00:00.000Z",
           };
@@ -137,6 +138,7 @@ test("浏览不读旧副本到规范内存，不提交摘要；完整上下文�
     expect(w.calls()).toBe(1);
     w.gate.resolve();
     expect((await first).map((row) => row.item)).toEqual(w.full);
+    expect((await first).map((row) => row.turnId)).toEqual(["turn", "turn"]);
     expect((await second).map((row) => row.item)).toEqual(w.full);
     expect((await w.durable.getCommittedSnapshot(w.agent.id)).rows.map((row) => row.item)).toEqual(
       w.full,

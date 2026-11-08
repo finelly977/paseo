@@ -203,7 +203,7 @@ export function SidebarHostFilterMenu() {
     [filtered],
   );
   return (
-    <DropdownMenu>
+    <DropdownMenu compact={platformIsWeb}>
       <DropdownMenuTrigger
         style={triggerStyle}
         accessibilityLabel={
@@ -216,14 +216,11 @@ export function SidebarHostFilterMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        width={220}
-        maxHeight={360}
-        scrollable
+        width={200}
+        maxHeight={280}
+        scrollable={hosts.length > 5}
         testID="sidebar-host-filter-content"
       >
-        <View style={styles.menuHeader}>
-          <Text style={styles.menuHeaderLabel}>显示哪些主机</Text>
-        </View>
         <DropdownMenuItem
           testID="sidebar-host-filter-all"
           selected={!filtered}
@@ -327,7 +324,9 @@ function HostFilterItem({
       leading={leading}
       onSelect={handleSelect}
     >
-      {label}
+      <Text style={styles.optionLabel} numberOfLines={1}>
+        {label}
+      </Text>
     </DropdownMenuItem>
   );
 }

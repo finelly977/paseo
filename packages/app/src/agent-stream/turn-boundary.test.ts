@@ -30,6 +30,25 @@ function assistantMessage(
 }
 
 describe("resolveAssistantTurnForkBoundary", () => {
+  it("无消息 ID 的原生中断预览使用回合边界，不借用其他回复", () => {
+    const preview = { ...assistantMessage("preview", 2), nativeTurnId: "interrupted-turn" };
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [preview],
+        startIndex: 0,
+        supportsTimelineCursor: true,
+        supportsNativeTurn: true,
+      }),
+    ).toEqual({ boundaryTurnId: "interrupted-turn" });
+    expect(
+      resolveAssistantTurnForkBoundary({
+        items: [preview],
+        startIndex: 0,
+        supportsTimelineCursor: true,
+        supportsNativeTurn: false,
+      }),
+    ).toBeUndefined();
+  });
   it("forks a failed assistant turn from its Paseo timeline cursor without a provider message id", () => {
     const failedTurn = {
       ...assistantMessage("assistant-error", 2),

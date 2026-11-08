@@ -764,6 +764,7 @@ export const UserMessage = memo(function UserMessage({
 });
 
 interface AssistantTurnFooterProps {
+  showCopy?: boolean;
   getContent: () => string;
   completedAt?: Date;
   durationMs?: number;
@@ -811,6 +812,7 @@ const TIMESTAMP_REVEAL_MS = 3000;
  * visible text swaps.
  */
 export const AssistantTurnFooter = memo(function AssistantTurnFooter({
+  showCopy = true,
   getContent,
   completedAt,
   durationMs,
@@ -864,10 +866,12 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
 
   return (
     <View style={assistantTurnFooterStylesheet.container}>
-      <TurnCopyButton
-        getContent={getContent}
-        containerStyle={assistantTurnFooterStylesheet.copyButton}
-      />
+      {showCopy ? (
+        <TurnCopyButton
+          getContent={getContent}
+          containerStyle={assistantTurnFooterStylesheet.copyButton}
+        />
+      ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
       {durationLabel ? (
         <Pressable

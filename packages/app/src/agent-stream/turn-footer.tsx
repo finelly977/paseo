@@ -35,6 +35,7 @@ export const TurnFooter = memo(function TurnFooter({
   host,
   strategy,
   supportsTimelineCursor,
+  supportsNativeTurn,
   onForkAssistantTurn,
 }: {
   isRunning: boolean;
@@ -42,6 +43,7 @@ export const TurnFooter = memo(function TurnFooter({
   host: TurnFooterHost | null;
   strategy: TurnContentStrategy;
   supportsTimelineCursor: boolean;
+  supportsNativeTurn?: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
   if (isRunning) {
@@ -61,6 +63,7 @@ export const TurnFooter = memo(function TurnFooter({
       timing={host.timing}
       startIndex={host.startIndex}
       supportsTimelineCursor={supportsTimelineCursor}
+      supportsNativeTurn={supportsNativeTurn}
       onForkAssistantTurn={onForkAssistantTurn}
     />
   );
@@ -72,6 +75,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   timing,
   startIndex,
   supportsTimelineCursor,
+  supportsNativeTurn,
   onForkAssistantTurn,
 }: {
   strategy: TurnContentStrategy;
@@ -79,6 +83,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   timing?: TurnTiming;
   startIndex: number;
   supportsTimelineCursor: boolean;
+  supportsNativeTurn?: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
   return (
@@ -89,6 +94,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
         timing={timing}
         startIndex={startIndex}
         supportsTimelineCursor={supportsTimelineCursor}
+        supportsNativeTurn={supportsNativeTurn}
         onForkAssistantTurn={onForkAssistantTurn}
       />
     </TurnFooterRow>
@@ -132,6 +138,7 @@ function CompletedTurnFooter({
   timing,
   startIndex,
   supportsTimelineCursor,
+  supportsNativeTurn,
   onForkAssistantTurn,
 }: {
   strategy: TurnContentStrategy;
@@ -139,6 +146,7 @@ function CompletedTurnFooter({
   timing?: TurnTiming;
   startIndex: number;
   supportsTimelineCursor: boolean;
+  supportsNativeTurn?: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
   const getContent = useCallback(
@@ -154,6 +162,7 @@ function CompletedTurnFooter({
     items,
     startIndex,
     supportsTimelineCursor,
+    supportsNativeTurn,
   });
   const handleFork = useCallback(
     (target: AssistantForkTarget) => {
@@ -168,6 +177,7 @@ function CompletedTurnFooter({
     <View style={stylesheet.turnFooterSlot}>
       <AssistantTurnFooter
         getContent={getContent}
+        showCopy={items[startIndex]?.kind === "assistant_message"}
         completedAt={timing?.completedAt}
         durationMs={timing?.durationMs}
         onFork={boundary && onForkAssistantTurn ? handleFork : undefined}

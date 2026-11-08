@@ -77,6 +77,32 @@ export function deriveStreamTurnTiming(params: {
     flushCompletedTurn();
   }
 
+  // 原生条目分页没有操作级时间；使用已结束回合自身的起点与耗时，不能伪造条目时间。
+  const nativeTimings = new Map<string, TurnTiming>();
+  for (const segment of [params.tail, params.head])
+    for (const item of segment) {
+      if (
+        item.kind !== "native_history_process" ||
+        item.status === "inProgress" ||
+        item.timestampUnknown ||
+        item.durationMs === null
+      )
+        continue;
+      const timing = {
+        startedAt: item.timestamp,
+        completedAt: new Date(item.timestamp.getTime() + item.durationMs),
+        durationMs: item.durationMs,
+      };
+      nativeTimings.set(item.turnId, timing);
+      byAssistantId.set(item.id, timing);
+    }
+  for (const segment of [params.tail, params.head])
+    for (const item of segment) {
+      if (item.kind !== "assistant_message" || item.nativeTurnId === undefined) continue;
+      const timing = nativeTimings.get(item.nativeTurnId);
+      if (timing) byAssistantId.set(item.id, timing);
+    }
+
   return {
     byAssistantId,
     runningStartedAt,

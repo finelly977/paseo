@@ -11,7 +11,7 @@ import { continuesTurn, isTurnBoundary } from "./turn-membership";
 export type StreamToolSequence = "single" | "first" | "middle" | "last" | "none";
 
 export interface TurnFooterHost {
-  kind: "assistant" | "partial";
+  kind: "assistant" | "partial" | "native";
   itemId: string;
   items: StreamItem[];
   timing?: TurnTiming;
@@ -243,7 +243,15 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
     boundaryAboveIndex,
   });
   if (!assistant) {
-    return null;
+    return resolveNativeTurnFooter({
+      strategy: input.strategy,
+      item: footerItems[latestIndex],
+      items: footerItems,
+      index: latestIndex,
+      boundaryAboveItems,
+      boundaryAboveIndex,
+      timingByAssistantId: input.timingByAssistantId,
+    });
   }
 
   return createTurnFooterHost({
@@ -261,6 +269,53 @@ function resolveAuxiliaryTurnFooter(input: StreamLayoutInput): TurnFooterHost | 
     allowPartialBoundary: true,
     timingByAssistantId: input.timingByAssistantId,
   });
+}
+
+/** 没有最终助手消息的原生中断回合也拥有操作栏，以回合本身作为边界。 */
+function resolveNativeTurnFooter(input: {
+  strategy: StreamStrategy;
+  index: number;
+  item: StreamItem;
+  items: StreamItem[];
+  boundaryAboveItems: StreamItem[] | null;
+  boundaryAboveIndex: number | null;
+  timingByAssistantId: Map<string, TurnTiming>;
+}): TurnFooterHost | null {
+  if (input.item.kind === "user_message") return null;
+  const turnId =
+    input.item.kind === "native_history_process" ? input.item.turnId : input.item.nativeTurnId;
+  if (turnId === undefined) return null;
+  let items = input.items;
+  let index = input.index;
+  let canCrossBoundary = true;
+  let later: StreamItem | null = null;
+  while (true) {
+    for (
+      ;
+      index >= 0 && index < items.length;
+      index = input.strategy.getNeighborIndex(index, "above")
+    ) {
+      const item = items[index];
+      if (item.kind === "user_message" || (later && !continuesTurn(item, later))) return null;
+      if (item.kind === "native_history_process") {
+        if (item.turnId !== turnId || item.status === "inProgress") return null;
+        return {
+          kind: "native",
+          itemId: item.id,
+          items,
+          startIndex: index,
+          timing: input.timingByAssistantId.get(item.id),
+          processItemIds: [],
+        };
+      }
+      later = item;
+    }
+    if (!canCrossBoundary || !input.boundaryAboveItems || input.boundaryAboveIndex === null)
+      return null;
+    items = input.boundaryAboveItems;
+    index = input.boundaryAboveIndex;
+    canCrossBoundary = false;
+  }
 }
 
 function resolveCompletedFooter(input: {
@@ -286,7 +341,11 @@ function resolveCompletedFooter(input: {
     boundaryAboveItems: input.boundaryAboveItems,
     boundaryAboveIndex: input.boundaryAboveIndex,
   });
-  if (!assistant || input.auxiliaryTurnFooter?.itemId === assistant.item.id) {
+  if (!assistant) {
+    const native = resolveNativeTurnFooter(input);
+    return native && native.itemId !== input.auxiliaryTurnFooter?.itemId ? native : null;
+  }
+  if (input.auxiliaryTurnFooter?.itemId === assistant.item.id) {
     return null;
   }
   return createTurnFooterHost({

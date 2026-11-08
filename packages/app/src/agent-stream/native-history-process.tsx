@@ -30,12 +30,16 @@ export function NativeHistoryProcess({
   onToggle,
   viewport,
   serverId,
+  gapAbove,
+  gapBelow,
 }: {
   item: Extract<StreamItem, { kind: "native_history_process" }>;
   client: DaemonClient | null;
   agentId: string;
   serverId: string;
   readId: string;
+  gapAbove: number;
+  gapBelow: number;
   expanded: boolean;
   onToggle(turnId: string): void;
   viewport: React.RefObject<StreamViewportHandle | null>;
@@ -104,17 +108,16 @@ export function NativeHistoryProcess({
       ? t("agentStream.completedTurn.processed")
       : t("agentStream.completedTurn.processedFor", { duration });
   const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
+  const rootStyle = useMemo(
+    () => [styles.root, { paddingTop: gapAbove, marginBottom: gapBelow }],
+    [gapAbove, gapBelow],
+  );
   const loadMore = useCallback(() => {
     void load();
   }, [load]);
   if (item.status === "inProgress") return null;
   return (
-    <View
-      ref={root}
-      collapsable={false}
-      testID={`native-process-${item.turnId}`}
-      style={styles.root}
-    >
+    <View ref={root} collapsable={false} testID={`native-process-${item.turnId}`} style={rootStyle}>
       <View style={styles.process}>
         <Pressable
           onPress={toggle}

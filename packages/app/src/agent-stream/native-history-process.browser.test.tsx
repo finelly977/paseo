@@ -58,6 +58,8 @@ function Harness({ item }: { item: NativeHistoryProcessItem }) {
       expanded={expanded}
       onToggle={toggle}
       viewport={viewport}
+      gapAbove={0}
+      gapBelow={12}
     />
   );
 }
@@ -116,6 +118,14 @@ test("过程入口只切换状态，不创建包住文字与命令的内部滚�
   await vi.waitFor(() =>
     expect(host.querySelector('[role="button"]')?.getAttribute("aria-expanded")).toBe("false"),
   );
+});
+
+test("过程分割线之后保留消息布局给定的间距", async () => {
+  mount(PROCESS);
+  await vi.waitFor(() => expect(host.textContent).toBe("用时 11s"));
+  const process = host.querySelector<HTMLElement>('[data-testid="native-process-turn"]');
+  if (!process) throw new Error("缺少过程行");
+  expect(getComputedStyle(process).marginBottom).toBe("12px");
 });
 test("没有原生耗时的回合不补造零秒", async () => {
   mount({ ...PROCESS, durationMs: null, status: "interrupted" });

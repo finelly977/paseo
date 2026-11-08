@@ -32,7 +32,6 @@ import { MaterialFileIcon } from "@/components/material-file-icon";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import { getScmStatusDecoration, splitScmPath } from "@/git/scm-model";
-import { ThemedChevron, chevronColorMapping } from "@/git/themed-chevron";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { COMPACT_LABEL_DATASET, COMPACT_LABEL_SCALE } from "@/styles/compact-label";
 import { ForgeBrandIcon } from "@/git/forge-icon";
@@ -444,15 +443,9 @@ export const CommitRow = memo(function CommitRow({
   const handlePress = useCallback(() => {
     onToggleExpanded(commit.sha);
   }, [commit.sha, onToggleExpanded]);
+  const rowAccessibilityState = useMemo(() => ({ expanded: isExpanded }), [isExpanded]);
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
   const handleHoverOut = useCallback(() => setIsHovered(false), []);
-  const handleToggleExpanded = useCallback(
-    (event: GestureResponderEvent) => {
-      event.stopPropagation();
-      onToggleExpanded(commit.sha);
-    },
-    [commit.sha, onToggleExpanded],
-  );
   const handleOpenCommitDiff = useCallback(
     (event?: GestureResponderEvent) => {
       event?.stopPropagation();
@@ -472,6 +465,7 @@ export const CommitRow = memo(function CommitRow({
             enabledOnMobile
             accessibilityRole="button"
             accessibilityLabel={`${commit.subject}, ${commit.authorName}, ${authoredAt}`}
+            accessibilityState={rowAccessibilityState}
             testID={`commit-row-${commit.shortSha}`}
             onHoverIn={handleHoverIn}
             onHoverOut={handleHoverOut}
@@ -509,27 +503,6 @@ export const CommitRow = memo(function CommitRow({
                 <ThemedFileDiff size={13} uniProps={mutedIconMapping} />
               </Pressable>
             ) : null}
-            {commit.files.length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={
-                  isExpanded
-                    ? t("workspace.git.diff.commits.collapseFiles")
-                    : t("workspace.git.diff.commits.expandFiles")
-                }
-                hitSlop={4}
-                onPress={handleToggleExpanded}
-                style={styles.caret}
-              >
-                <ThemedChevron
-                  size={13}
-                  uniProps={chevronColorMapping}
-                  style={isExpanded ? styles.caretExpanded : undefined}
-                />
-              </Pressable>
-            ) : (
-              <View style={styles.caret} />
-            )}
           </ContextMenuTrigger>
         </TooltipTrigger>
         <CommitTooltip
@@ -665,16 +638,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   inlineButtonHovered: {
     backgroundColor: theme.colors.surface3,
-  },
-  caret: {
-    width: 22,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  caretExpanded: {
-    transform: [{ rotate: "90deg" }],
   },
   fileRow: {
     height: 22,

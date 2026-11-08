@@ -7445,6 +7445,9 @@ export class Session {
       });
       const forkContext = buildAgentForkContextAttachment({
         rows: timeline.rows,
+        nativeTurnBoundary: msg.boundaryTurnId
+          ? { turnId: msg.boundaryTurnId, timelineEpoch: timeline.epoch }
+          : undefined,
         cursorBoundary: msg.boundaryCursor
           ? { timelineEpoch: timeline.epoch, cursor: msg.boundaryCursor }
           : null,

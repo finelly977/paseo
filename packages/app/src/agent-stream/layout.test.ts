@@ -14,6 +14,47 @@ function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }
 
+it.each(["web", "android"] as const)(
+  "%s 无助手正文的已结束原生回合仍有且只有一个底部操作栏",
+  (platform) => {
+    const process: StreamItem = {
+      kind: "native_history_process",
+      id: "process",
+      turnId: "stopped",
+      nativeTurnId: "stopped",
+      timestamp: timestamp(1),
+      status: "interrupted",
+      durationMs: 8000,
+      summaryMessageIds: [],
+      summaryRevision: "r",
+      error: null,
+    };
+    const atEnd = layoutFor({ platform, tail: [process], timingIds: ["process"] });
+    expect(atEnd.auxiliaryTurnFooter).toMatchObject({
+      kind: "native",
+      itemId: "process",
+      timing: { durationMs: 8000 },
+    });
+    expect(footerOwners(atEnd)).toEqual(["process"]);
+    const beforeNext = layoutFor({
+      platform,
+      tail: [process, userMessage("next", 12)],
+      timingIds: ["process"],
+    });
+    expect(findLayoutItem(beforeNext, "process").completedFooter).toMatchObject({
+      kind: "native",
+      itemId: "process",
+    });
+    expect(footerOwners(beforeNext)).toEqual(["process"]);
+    const running = layoutFor({
+      platform,
+      tail: [{ ...process, status: "inProgress" }],
+      isTurnActive: true,
+    });
+    expect(footerOwners(running)).toEqual([]);
+  },
+);
+
 function userMessage(id: string, seed: number): Extract<StreamItem, { kind: "user_message" }> {
   return {
     kind: "user_message",

@@ -2431,6 +2431,60 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("中断回合的说明和工具在完整历史中保留原生回合标识", async () => {
+    const appServer = createFakeCodexAppServer({
+      "thread/read": () => ({
+        thread: {
+          id: "thread-1",
+          historyMode: "legacy",
+          turns: [
+            {
+              id: "stopped-turn",
+              status: "interrupted",
+              items: [
+                { id: "commentary", type: "agentMessage", text: "中断前的说明" },
+                {
+                  id: "command",
+                  type: "commandExecution",
+                  command: "git status --short",
+                  status: "completed",
+                  exitCode: 0,
+                  aggregatedOutput: "",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+    const session = new CodexAppServerAgentSession(
+      createConfig(),
+      { sessionId: "thread-1" },
+      createTestLogger(),
+      () => appServer.spawnChild(),
+    );
+    try {
+      await session.connect();
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) history.push(event);
+      expect(history).toEqual([
+        expect.objectContaining({
+          type: "timeline",
+          turnId: "stopped-turn",
+          item: expect.objectContaining({ type: "assistant_message", text: "中断前的说明" }),
+        }),
+        expect.objectContaining({
+          type: "timeline",
+          turnId: "stopped-turn",
+          item: expect.objectContaining({ type: "tool_call", callId: "command" }),
+        }),
+      ]);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
   test("单进程恢复后完整读取官方历史，所有分页完成前不发布就绪", async () => {
     const resume = Promise.withResolvers<unknown>();
     const lastPage = Promise.withResolvers<unknown>();
@@ -3206,10 +3260,12 @@ describe("Codex app-server provider", () => {
       expect(history).toEqual([
         expect.objectContaining({
           type: "timeline",
+          turnId: "turn-first",
           item: expect.objectContaining({ type: "user_message", text: "第一轮" }),
         }),
         expect.objectContaining({
           type: "timeline",
+          turnId: "turn-first",
           item: expect.objectContaining({ type: "assistant_message", text: "第一轮答复" }),
         }),
       ]);
