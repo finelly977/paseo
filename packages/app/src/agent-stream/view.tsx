@@ -28,7 +28,7 @@ import { MAX_CHAT_CONTENT_WIDTH, useIsCompactFormFactor } from "@/constants/layo
 import { MOTION_DURATION } from "@/styles/motion";
 import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
-import { ArrowDown, Check, ChevronDown, X } from "lucide-react-native";
+import { ArrowDown, Check, ChevronDown, Layers, X } from "lucide-react-native";
 import { usePanelStore } from "@/stores/panel-store";
 import {
   AssistantMessage,
@@ -311,6 +311,7 @@ const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
 const ThemedProcessToggleChevron = withUnistyles(ChevronDown);
+const ThemedProcessToggleLayers = withUnistyles(Layers);
 
 function CompletedTurnProcessToggle({
   model,
@@ -371,6 +372,7 @@ function CompletedTurnProcessToggle({
         onPress={handlePress}
         style={stylesheet.completedTurnProcessToggle}
       >
+        <ThemedProcessToggleLayers size={16} aria-hidden uniProps={processToggleIconColorMapping} />
         <Text style={stylesheet.completedTurnProcessToggleText}>{label}</Text>
         <DisclosureChevron
           expanded={expanded}

@@ -325,3 +325,27 @@ Codex 插件与本文的 Paseo 受信任本地扩展是两套独立系统。Code
 目录缓存只保留成功快照一分钟，按主机上的提供方实例持有；本地与官方目录分开读取、超时和报错。界面搜索与分页每次最多交付 50 项，详情按点击读取完整介绍、应用、技能与工具。目录项、详情目标与安装请求保留可选 `remotePluginId`；远程 `plugin/read` 与 `plugin/install` 的原生 `pluginName` 参数优先使用这个后端 ID，本地市场仍用原名称和目录路径，启停与卸载仍使用配置中的 `name@marketplace` 标识。实际验证过 Exa 的名称 `app-…` 与后端 `plugin_asdk_app_…` 不同，混用会返回 404；不能靠捕获异常后返回目录摘要冒充完整详情。插件变更串行执行并使缓存代际失效，旧读取不得恢复已失效快照。安装后按原生结果提供后续授权链接，客户端不转发或记录账号令牌。已有运行会话不自动重启；新会话读取新配置，旧会话由用户明确重新加载。
 
 品牌图标来自原生元数据；本地图标只读取原生返回的文件路径，限定图片类型及 512 KiB 大小，转成图像数据交付远端客户端。原生没有图标时使用通用扩展占位，不伪造品牌图标。官网、隐私政策和条款链接只允许 HTTP/HTTPS 外部打开。
+
+## Claude Code 与 Pi 市场接入评估
+
+2026-11-09 核对官方文档、本机 CLI 与当前提供方实现：两者都可以接入，但目前插件中心仍只实现 Codex。以下为实现边界，不代表已经提供这些入口。
+
+### Claude Code
+
+- 本机 Claude Code 2.1.319 已只读验证 `claude plugin marketplace list --json` 和 `claude plugin list --json --available`，能取得市场、已安装状态与可安装目录；安装、卸载、启停和更新交给原生 `claude plugin` 命令执行，保留用户、项目、本机覆盖的安装范围。
+- 详情应结合市场条目、插件清单和 README，不把 `plugin details` 的组件与成本输出冒充完整介绍。品牌图标只使用清单提供的图片，缺失时保留通用图标。
+- 当前 Paseo 使用 Agent SDK，已启用用户、项目与本机设置来源。接入时仍须核对初始化返回的插件、技能和错误，不能把 CLI 安装成功直接视作会话加载成功；显式加载使用启用项的真实安装路径，排除停用项及重复路径。当前仓库 SDK 0.3.246 提供无参数 `reloadPlugins()`，不能照搬更新版的 `addPlugins` 参数。
+
+依据：[原生插件命令](https://code.claude.com/docs/en/plugins/cli-reference)、[Agent SDK 插件加载](https://code.claude.com/docs/en/agent-sdk/plugins)、[插件清单与图标](https://code.claude.com/docs/en/plugins-reference)。
+
+### Pi
+
+- Pi 的官方入口是 [Package Catalog](https://pi.dev/packages)。包通过 npm 的 `pi-package` 关键词参与发现，管理使用 `pi install`、`pi remove`、`pi update`；内容可包含扩展、技能、提示词和主题。npm 的公开搜索接口已只读验证可返回名称、版本、介绍及仓库链接。
+- 本机 Pi 1.5.0 的 `pi list` 已验证可读取现有包，但没有 JSON 输出选项。结构化已安装信息应读取原生设置中的包声明，保留个人与项目作用域、版本固定、资源过滤和项目信任语义，不解析彩色终端输出，也不以自动批准跳过项目授权。
+- Paseo 通过 Pi RPC 驱动会话。工具、技能和部分扩展问答可以沿用现有适配；终端主题、自定义组件、页头页脚及部分小组件不等于 Paseo 界面扩展，不能承诺安装后原样展示。目录预览使用包实际声明的图片，不将预览图字段当作人人都有的品牌图标。
+
+依据：[Pi 包格式与作用域](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md)、[RPC 扩展界面的限制](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-extension-ui.md)。
+
+### 接入现有插件中心
+
+建议在现有浮层增加 Codex、Claude Code、Pi 切换，继续以所选主机为安装边界；先提供浏览、详情、安装、卸载和明确的生效状态。不同提供方使用各自原生命令及协议，不将这些包加载为 Paseo 本地扩展。管理操作串行执行，真实失败保留错误与重试；安装可能执行第三方代码，必须由用户明确触发。首期新会话读取更新配置，已有运行会话不自动重启，后续再分别验证安全的显式重新加载。

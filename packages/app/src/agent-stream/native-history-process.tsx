@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
-import { ChevronDown } from "lucide-react-native";
+import { ChevronDown, Layers } from "lucide-react-native";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { DisclosureChevron } from "@/components/ui/disclosure";
 import { Button } from "@/components/ui/button";
@@ -126,9 +126,10 @@ export function NativeHistoryProcess({
           aria-expanded={expanded}
           style={styles.toggle}
         >
+          <ThemedLayers size={16} aria-hidden uniProps={processIconColor} />
           <Text style={styles.label}>{label}</Text>
           <DisclosureChevron expanded={expanded} collapsedRotation={-90} expandedRotation={0}>
-            <ThemedChevron size={12} uniProps={chevronColor} />
+            <ThemedChevron size={12} uniProps={processIconColor} />
           </DisclosureChevron>
         </Pressable>
         {item.error !== null && (
@@ -172,4 +173,5 @@ const styles = StyleSheet.create((theme) => ({
 }));
 
 const ThemedChevron = withUnistyles(ChevronDown);
-const chevronColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const ThemedLayers = withUnistyles(Layers);
+const processIconColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
