@@ -1,4 +1,12 @@
 import {
+  ClaudePluginCatalogRequestSchema,
+  ClaudePluginCatalogResponseSchema,
+  ClaudePluginDetailRequestSchema,
+  ClaudePluginDetailResponseSchema,
+  ClaudePluginManageRequestSchema,
+  ClaudePluginManageResponseSchema,
+} from "./claude-plugins.js";
+import {
   CodexPluginDetailRequestSchema,
   CodexPluginDetailResponseSchema,
   CodexPluginCatalogRequestSchema,
@@ -3227,8 +3235,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PluginRemoveRequestSchema,
   PluginRpcInvokeRequestSchema,
   CodexPluginCatalogRequestSchema,
+  ClaudePluginCatalogRequestSchema,
   CodexPluginManageRequestSchema,
+  ClaudePluginManageRequestSchema,
   CodexPluginDetailRequestSchema,
+  ClaudePluginDetailRequestSchema,
   GetDaemonConfigRequestMessageSchema,
   SetDaemonConfigRequestMessageSchema,
   ReadProjectConfigRequestMessageSchema,
@@ -3689,6 +3700,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(codexProviderInjection): 二开于 2026-09-17 新增，2027-03-17 后移除能力门控。
         codexProviderInjection: z.boolean().optional(),
         codexPluginMarket: z.boolean().optional(),
+        claudePluginMarket: z.boolean().optional(),
       })
       .optional(),
   })
@@ -6449,8 +6461,11 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   PluginRemoveResponseSchema,
   PluginRpcInvokeResponseSchema,
   CodexPluginCatalogResponseSchema,
+  ClaudePluginCatalogResponseSchema,
   CodexPluginManageResponseSchema,
+  ClaudePluginManageResponseSchema,
   CodexPluginDetailResponseSchema,
+  ClaudePluginDetailResponseSchema,
   ActivityLogMessageSchema,
   AssistantChunkMessageSchema,
   AudioOutputMessageSchema,

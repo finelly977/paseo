@@ -1761,6 +1761,7 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(codexProviderInjection): 二开于 2026-09-17 新增，2027-03-17 后移除能力门控。
         codexProviderInjection: true,
         codexPluginMarket: session.supportsCodexPlugins(),
+        claudePluginMarket: session.supportsClaudePlugins(),
       },
     };
   }

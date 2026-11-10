@@ -1,4 +1,8 @@
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
+import {
+  createClaudePluginMarketplaceService,
+  createClaudePluginRunner,
+} from "./plugin-marketplace.js";
 import { accessClaudeSessionTitle } from "./session-title.js";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -1450,6 +1454,7 @@ export function readEventIdentifiers(message: SDKMessage): EventIdentifiers {
 }
 
 export class ClaudeAgentClient implements AgentClient {
+  readonly claudePlugins;
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
 
@@ -1470,6 +1475,13 @@ export class ClaudeAgentClient implements AgentClient {
     this.resolveVersion =
       options.resolveVersion ?? (() => resolveClaudeCodeVersion(this.runtimeSettings));
     this.configDir = options.configDir;
+    this.claudePlugins = createClaudePluginMarketplaceService({
+      run: createClaudePluginRunner({
+        runtimeSettings: this.runtimeSettings,
+        configDir: this.configDir,
+        logger: this.logger,
+      }),
+    });
   }
 
   async getNativeSessionTitle(handle: AgentPersistenceHandle): Promise<string | null> {

@@ -1,3 +1,7 @@
+import type {
+  ClaudePluginAction,
+  ClaudePluginCatalogInput,
+} from "@getpaseo/protocol/claude-plugins";
 import type { z } from "zod";
 import {
   MAX_EDITABLE_FILE_BYTES,
@@ -5253,6 +5257,39 @@ export class DaemonClient {
       responseType: "plugin.logs.get.response",
     });
     return payload.entries;
+  }
+
+  async getClaudePluginCatalog(input: ClaudePluginCatalogInput) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "claude.plugins.get_catalog.request", requestId, ...input },
+      responseType: "claude.plugins.get_catalog.response",
+      timeout: 60_000,
+    });
+    return payload.catalog;
+  }
+
+  async getClaudePluginDetail(pluginId: string, cwd?: string) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "claude.plugins.get_detail.request", requestId, pluginId, cwd },
+      responseType: "claude.plugins.get_detail.response",
+      timeout: 60_000,
+    });
+    return payload.detail;
+  }
+
+  async manageClaudePlugin(action: ClaudePluginAction, cwd?: string) {
+    const requestId = this.createRequestId();
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "claude.plugins.manage.request", requestId, action, cwd },
+      responseType: "claude.plugins.manage.response",
+      timeout: 150_000,
+    });
+    return payload.result;
   }
 
   async getCodexPluginCatalog(input: CodexPluginCatalogInput) {

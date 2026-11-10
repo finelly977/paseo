@@ -1916,6 +1916,10 @@ export class Session {
     return this.authorization.listPermissions();
   }
 
+  public supportsClaudePlugins(): boolean {
+    return this.agentManager.supportsClaudePlugins();
+  }
+
   public supportsCodexPlugins(): boolean {
     return this.agentManager.supportsCodexPlugins();
   }
@@ -2042,6 +2046,46 @@ export class Session {
           this.emit({
             type: "plugin.rpc.invoke.response",
             payload: { requestId: msg.requestId, output },
+          });
+          return undefined;
+        });
+    }
+    return undefined;
+  }
+
+  private dispatchClaudePluginsMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (msg.type === "claude.plugins.get_detail.request") {
+      return this.agentManager
+        .getClaudePlugins()
+        .detail(msg.pluginId, msg.cwd)
+        .then((detail) => {
+          this.emit({
+            type: "claude.plugins.get_detail.response",
+            payload: { requestId: msg.requestId, detail },
+          });
+          return undefined;
+        });
+    }
+    if (msg.type === "claude.plugins.get_catalog.request") {
+      return this.agentManager
+        .getClaudePlugins()
+        .catalog(msg)
+        .then((catalog) => {
+          this.emit({
+            type: "claude.plugins.get_catalog.response",
+            payload: { requestId: msg.requestId, catalog },
+          });
+          return undefined;
+        });
+    }
+    if (msg.type === "claude.plugins.manage.request") {
+      return this.agentManager
+        .getClaudePlugins()
+        .manage(msg.action, msg.cwd)
+        .then((result) => {
+          this.emit({
+            type: "claude.plugins.manage.response",
+            payload: { requestId: msg.requestId, result },
           });
           return undefined;
         });
@@ -2581,6 +2625,10 @@ export class Session {
 
   private dispatchProviderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "claude.plugins.get_catalog.request":
+      case "claude.plugins.manage.request":
+      case "claude.plugins.get_detail.request":
+        return this.dispatchClaudePluginsMessage(msg);
       case "codex.plugins.get_catalog.request":
       case "codex.plugins.manage.request":
       case "codex.plugins.get_detail.request":

@@ -955,6 +955,16 @@ export class AgentManager {
     this.clients.set(provider, client);
   }
 
+  supportsClaudePlugins(): boolean {
+    return this.clients.get("claude")?.claudePlugins !== undefined;
+  }
+  getClaudePlugins() {
+    const service = this.clients.get("claude")?.claudePlugins;
+    if (!service)
+      throw new Error("当前主机没有可用的 Claude Code 插件市场，请启用并更新 Claude Code");
+    return service;
+  }
+
   supportsCodexPlugins(): boolean {
     return this.clients.get("codex")?.codexPlugins !== undefined;
   }

@@ -259,3 +259,4 @@ const styles = StyleSheet.create((theme) => ({
   },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
 }));
+export { styles as pluginDetailStyles };

@@ -14,7 +14,7 @@ function IconView({
   size = "list",
   dark,
 }: {
-  plugin: CodexPlugin;
+  plugin: Pick<CodexPlugin, "id" | "title" | "iconUrl" | "iconUrlDark">;
   size?: keyof typeof sizes;
   dark: boolean;
 }) {
@@ -26,7 +26,7 @@ function IconView({
   const frame = useMemo(() => [styles.frame, { width: sizes[size], height: sizes[size] }], [size]);
   const handleError = useCallback(
     (event: NativeSyntheticEvent<ImageErrorEventData>) => {
-      console.error("Codex 插件图标加载失败", plugin.id, event.nativeEvent.error);
+      console.error("插件图标加载失败", plugin.id, event.nativeEvent.error);
       setFailed(true);
     },
     [plugin.id],

@@ -8,6 +8,26 @@ import {
 } from "./index.js";
 
 describe("SessionAuthorization", () => {
+  test("Claude 插件市场只允许主机管理权限读取和修改", () => {
+    const viewer = new SessionAuthorization(["daemon.read", "workspace.read"]);
+    const manager = new SessionAuthorization(["daemon.manage"]);
+    const message = {
+      type: "claude.plugins.manage.request" as const,
+      requestId: "plugins",
+      action: { kind: "install" as const, pluginId: "demo@test", scope: "user" as const },
+    };
+    expect(viewer.allowsInbound(message)).toBe(false);
+    expect(manager.allowsInbound(message)).toBe(true);
+    const response = {
+      type: "claude.plugins.get_catalog.response" as const,
+      payload: {
+        requestId: "plugins",
+        catalog: { plugins: [], marketplaces: [], total: 0, nextOffset: null },
+      },
+    };
+    expect(viewer.allowsOutbound(response)).toBe(false);
+    expect(manager.allowsOutbound(response)).toBe(true);
+  });
   test("owner authority contains every semantic permission", () => {
     const authorization = new SessionAuthorization(OWNER_PERMISSIONS);
 

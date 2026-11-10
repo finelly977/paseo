@@ -845,3 +845,4 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
   },
 }));
+export { styles as pluginMarketStyles };

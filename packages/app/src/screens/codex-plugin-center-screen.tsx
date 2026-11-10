@@ -8,6 +8,13 @@ import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 import { HostPicker } from "@/components/hosts/host-picker";
 import { HostCodexPluginsPage } from "@/codex-plugins/marketplace-page";
+import { HostClaudePluginsPage } from "@/claude-plugins/marketplace-page";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { useHosts } from "@/runtime/host-runtime";
 import { PluginCenterHeader } from "@/codex-plugins/center-header";
 import { PLUGIN_CENTER_MAX_WIDTH, resolvePluginCenterLayout } from "@/codex-plugins/center-layout";
@@ -32,6 +39,9 @@ export function CodexPluginCenterScreen() {
   const hosts = useHosts();
   const [selectedServerId, setServerId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState<"codex" | "claude">("codex");
+  const selectCodex = useCallback(() => setProvider("codex"), []);
+  const selectClaude = useCallback(() => setProvider("claude"), []);
   const anchorRef = useRef<View>(null);
   const selectedHost = useMemo(
     () => hosts.find((host) => host.serverId === selectedServerId) ?? hosts[0],
@@ -89,6 +99,24 @@ export function CodexPluginCenterScreen() {
   const headerRight = useMemo(
     () => (
       <>
+        <DropdownMenu compact>
+          <DropdownMenuTrigger
+            style={styles.providerTrigger}
+            accessibilityLabel="选择插件提供方"
+            testID="plugin-center-provider"
+          >
+            <Text style={styles.hostLabel}>{provider === "codex" ? "Codex" : "Claude Code"}</Text>
+            <MutedChevron size={12} uniProps={muted} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent width={180}>
+            <DropdownMenuItem selected={provider === "codex"} onSelect={selectCodex}>
+              Codex
+            </DropdownMenuItem>
+            <DropdownMenuItem selected={provider === "claude"} onSelect={selectClaude}>
+              Claude Code
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {hostPicker}
         <Button
           size="sm"
@@ -100,19 +128,25 @@ export function CodexPluginCenterScreen() {
         />
       </>
     ),
-    [hostPicker, close],
+    [hostPicker, close, provider, selectCodex, selectClaude],
   );
+  const marketplace =
+    provider === "codex" ? (
+      <HostCodexPluginsPage serverId={serverId} layout={layout} headerActions={headerRight} />
+    ) : (
+      <HostClaudePluginsPage serverId={serverId} layout={layout} headerActions={headerRight} />
+    );
   const content = (
     <View style={styles.screen}>
       {serverId ? (
-        <HostCodexPluginsPage serverId={serverId} layout={layout} headerActions={headerRight} />
+        marketplace
       ) : (
         <>
           <PluginCenterHeader navigation={null} actions={headerRight} />
           <View style={styles.empty}>
             <MutedBlocks size={28} uniProps={muted} />
             <Text style={styles.emptyTitle}>还没有可用主机</Text>
-            <Text style={styles.emptyText}>先连接一个 Paseo 主机，再浏览 Codex 插件市场。</Text>
+            <Text style={styles.emptyText}>先连接一个 Paseo 主机，再浏览原生插件市场。</Text>
           </View>
         </>
       )}
@@ -141,7 +175,7 @@ const styles = StyleSheet.create((theme) => ({
   dialogContent: { flex: 1, padding: 0, gap: 0 },
   hostTrigger: {
     minHeight: 32,
-    maxWidth: 220,
+    maxWidth: { xs: 80, md: 110 },
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
@@ -149,7 +183,22 @@ const styles = StyleSheet.create((theme) => ({
     borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.surface2,
   },
-  hostLabel: { maxWidth: 180, color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  hostLabel: {
+    minWidth: 0,
+    flexShrink: 1,
+    maxWidth: 180,
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.sm,
+  },
+  providerTrigger: {
+    minHeight: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface2,
+  },
   empty: {
     flex: 1,
     alignItems: "center",
