@@ -9,6 +9,32 @@ import {
 } from "./timeline-projection.js";
 
 describe("projectTimelineRows", () => {
+  test("压缩按原生标识匹配乱序结束和重放，同轮不同压缩不互相覆盖", () => {
+    const changes = [
+      ["first", "loading"],
+      ["second", "loading"],
+      ["second", "completed"],
+      ["first", "completed"],
+      ["second", "completed"],
+      ["second", "loading"],
+    ] as const;
+    const rows: AgentTimelineRow[] = changes.map(([compactionId, status], index) => ({
+      seq: index + 1,
+      turnId: "turn",
+      timestamp: new Date(index).toISOString(),
+      item: { type: "compaction", compactionId, status },
+    }));
+    const projected = projectTimelineRows({ rows, mode: "projected" });
+    expect(projected.map((entry) => entry.item)).toEqual([
+      { type: "compaction", compactionId: "first", status: "completed" },
+      { type: "compaction", compactionId: "second", status: "completed" },
+    ]);
+    expect(projected.map((entry) => entry.seqEnd)).toEqual([4, 6]);
+    expect(projected[0].sourceSeqRanges).toEqual([
+      { startSeq: 1, endSeq: 1 },
+      { startSeq: 4, endSeq: 4 },
+    ]);
+  });
   test("迟到的运行中快照不覆盖命令退出状态和输出", () => {
     const rows: AgentTimelineRow[] = [
       {

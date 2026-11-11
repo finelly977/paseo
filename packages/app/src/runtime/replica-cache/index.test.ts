@@ -262,6 +262,30 @@ describe("ReplicaCache", () => {
     expect(session?.agentTimelineHasOlder.get("agent-1")).toBe(true);
   });
 
+  it("缓存恢复保留压缩的原生标识，后续核对不会重新追加同次压缩", async () => {
+    const storage = new MemoryStorage();
+    const writer = new ReplicaCache(storage);
+    writer.setHosts([SERVER_ID]);
+    seedSession();
+    const compacted: StreamItem = {
+      kind: "compaction",
+      id: "compact",
+      turnId: "turn",
+      compactionId: "native-compact",
+      status: "completed",
+      timestamp: new Date(1000),
+    };
+    useSessionStore.getState().setAgentStreamTail(SERVER_ID, new Map([["agent-1", [compacted]]]));
+    await writer.flush();
+    useSessionStore.getState().clearSession(SERVER_ID);
+    const reader = new ReplicaCache(storage);
+    reader.setHosts([SERVER_ID]);
+    await reader.restore();
+    expect(useSessionStore.getState().sessions[SERVER_ID].agentStreamTail.get("agent-1")).toEqual([
+      compacted,
+    ]);
+  });
+
   it("restores canonical turn membership without downgrading tagged rows", async () => {
     const storage = new MemoryStorage();
     const writer = new ReplicaCache(storage);

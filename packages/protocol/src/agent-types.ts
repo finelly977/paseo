@@ -335,6 +335,7 @@ export interface CompactionTimelineItem {
   [key: string]: unknown;
   type: "compaction";
   status: "loading" | "completed";
+  compactionId?: string;
   trigger?: "auto" | "manual";
   preTokens?: number;
 }

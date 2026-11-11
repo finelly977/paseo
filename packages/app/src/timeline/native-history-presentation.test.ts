@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import type { NativeHistoryProcessItem, StreamItem } from "@/types/stream";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import {
+  hydrateNativeHistoryDetails,
   nativeHistoryInterruptedReply,
   presentNativeHistoryActiveTurn,
   presentNativeHistoryProcesses,
@@ -11,6 +12,66 @@ import {
   prepareToolCallHistory,
   projectToolCallDetailLevel,
 } from "@/tool-calls/detail-level/projection";
+
+test("当前轮后台补载同一次压缩时只显示一个标记，保留两次不同压缩", () => {
+  const process: NativeHistoryProcessItem = {
+    kind: "native_history_process",
+    id: "process",
+    turnId: "native-turn",
+    status: "inProgress",
+    timestamp: new Date(1000),
+    durationMs: null,
+    error: null,
+    summaryMessageIds: [],
+    summaryRevision: "summary",
+  };
+  const details: AgentTimelineItem[] = [
+    { type: "compaction", compactionId: "first", status: "completed" },
+    { type: "compaction", compactionId: "second", status: "completed" },
+  ];
+  const live = hydrateNativeHistoryDetails(process, details);
+  for (const [index, entry] of live.entries()) {
+    entry.id = `live:${index}`;
+    entry.turnId = "live-turn";
+  }
+  const shown = presentNativeHistoryActiveTurn({
+    tail: [process],
+    head: live,
+    process,
+    details,
+    activeTurnId: "live-turn",
+  });
+  expect([...shown.tail, ...shown.head].filter((entry) => entry.kind === "compaction")).toEqual(
+    live,
+  );
+  const old = Object.assign({}, live[0], { id: "old", turnId: "older-turn" });
+  const native = Object.assign({}, live[0], {
+    id: "native-summary",
+    turnId: "native-turn",
+    nativeTurnId: "native-turn",
+  });
+  const mixed = presentNativeHistoryActiveTurn({
+    tail: [old, process, native],
+    head: live,
+    process,
+    details,
+    activeTurnId: "live-turn",
+  });
+  expect([...mixed.tail, ...mixed.head]).toEqual([old, ...live]);
+  const loading = hydrateNativeHistoryDetails(process, [
+    { type: "compaction", compactionId: "first", status: "loading" },
+  ]);
+  const completed = presentNativeHistoryActiveTurn({
+    tail: [process],
+    head: loading,
+    process,
+    details: [details[0]],
+    activeTurnId: "native-turn",
+  });
+  expect([...completed.tail, ...completed.head]).toMatchObject([
+    { kind: "compaction", compactionId: "first", status: "completed", id: loading[0].id },
+  ]);
+});
 
 test("展开历史过程后文字和命令进入外层流，每段命令保留独立可折叠分组", () => {
   const process: NativeHistoryProcessItem = {

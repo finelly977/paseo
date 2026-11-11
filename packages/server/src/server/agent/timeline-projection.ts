@@ -194,27 +194,51 @@ function collapseToolLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[]
 function collapseCompactionLifecycle(entries: readonly WorkingEntry[]): WorkingEntry[] {
   const output: WorkingEntry[] = [];
   const pendingByTurn = new Map<string | undefined, number[]>();
+  const indexByIdentity = new Map<string, number>();
   for (const entry of entries) {
     if (entry.item.type !== "compaction") {
       output.push(entry);
       continue;
     }
     const pending = pendingByTurn.get(entry.turnId) ?? [];
-    if (entry.item.status === "loading") {
-      pending.push(output.length);
+    const identity =
+      entry.item.compactionId === undefined
+        ? null
+        : JSON.stringify([entry.turnId ?? null, entry.item.compactionId]);
+    let index = identity === null ? undefined : indexByIdentity.get(identity);
+    if (index === undefined && entry.item.status === "completed") {
+      const completedId = entry.item.compactionId;
+      const pendingIndex = pending.findIndex((position) => {
+        const candidate = output[position].item;
+        return (
+          candidate.type === "compaction" &&
+          (completedId === undefined ||
+            candidate.compactionId === undefined ||
+            candidate.compactionId === completedId)
+        );
+      });
+      if (pendingIndex >= 0) index = pending.splice(pendingIndex, 1)[0];
+    }
+    const existing = index === undefined ? undefined : output[index];
+    if (index === undefined || !existing || existing.item.type !== "compaction") {
+      if (identity !== null) indexByIdentity.set(identity, output.length);
+      if (entry.item.status === "loading") pending.push(output.length);
       pendingByTurn.set(entry.turnId, pending);
       output.push(entry);
       continue;
     }
-    const index = pending.shift();
-    const existing = index === undefined ? undefined : output[index];
-    if (index === undefined || !existing || existing.item.type !== "compaction") {
-      output.push(entry);
-      continue;
+    if (identity !== null) indexByIdentity.set(identity, index);
+    if (entry.item.status === "completed") {
+      const pendingIndex = pending.indexOf(index);
+      if (pendingIndex >= 0) pending.splice(pendingIndex, 1);
     }
     output[index] = {
       ...existing,
-      item: { ...existing.item, ...entry.item },
+      item: {
+        ...existing.item,
+        ...entry.item,
+        status: existing.item.status === "completed" ? "completed" : entry.item.status,
+      },
       seqEnd: entry.seqEnd,
       sourceSeqRanges: mergeSeqRanges(existing.sourceSeqRanges, entry.sourceSeqRanges),
     };

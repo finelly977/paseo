@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
-import { reduceStreamUpdate, type StreamItem } from "./stream";
+import { applyStreamEvent, reduceStreamUpdate, type StreamItem } from "./stream";
 
 function command(
   callId: string,
@@ -38,6 +38,48 @@ function compaction(
 }
 
 describe("运行中操作的权威结束状态", () => {
+  it("同次压缩的重复开始、完成和迟到快照只更新原行，不合并另一压缩", () => {
+    let tail: StreamItem[] = [];
+    let head: StreamItem[] = [];
+    const changes = [
+      ["first", "loading"],
+      ["first", "completed"],
+      ["first", "completed"],
+      ["first", "loading"],
+      ["second", "loading"],
+      ["second", "completed"],
+    ] as const;
+    for (const [index, [compactionId, status]] of changes.entries()) {
+      const next = applyStreamEvent({
+        tail,
+        head,
+        timestamp: new Date(index),
+        timelineCursor: { epoch: "e", seq: index + 1 },
+        event: {
+          type: "timeline",
+          provider: "codex",
+          turnId: "turn",
+          item: { type: "compaction", compactionId, status },
+        },
+      });
+      tail = next.tail;
+      head = next.head;
+    }
+    expect([...tail, ...head]).toMatchObject([
+      {
+        kind: "compaction",
+        compactionId: "first",
+        status: "completed",
+        timelineCursor: { seq: 4 },
+      },
+      {
+        kind: "compaction",
+        compactionId: "second",
+        status: "completed",
+        timelineCursor: { seq: 6 },
+      },
+    ]);
+  });
   it("另一回合的压缩完成不会结束当前压缩", () => {
     const current = reduceStreamUpdate([], compaction("loading"), new Date(0));
     const ended = reduceStreamUpdate(

@@ -6344,6 +6344,14 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
+  test("Codex compaction 标识在当前通知和历史转换中保持一致", () => {
+    expect(threadItemToTimeline({ type: "contextCompaction", id: "compact-identity" })).toEqual({
+      type: "compaction",
+      status: "completed",
+      compactionId: "compact-identity",
+    });
+  });
+
   test("emits Codex context compaction markers from live thread items", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
@@ -6372,6 +6380,7 @@ describe("Codex app-server provider", () => {
         item: {
           type: "compaction",
           status: "loading",
+          compactionId: "compact-live",
         },
       },
       {
@@ -6381,6 +6390,7 @@ describe("Codex app-server provider", () => {
         item: {
           type: "compaction",
           status: "completed",
+          compactionId: "compact-live",
         },
       },
     ]);
@@ -6473,6 +6483,59 @@ describe("Codex app-server provider", () => {
           event.type === "timeline" ? `${event.item.type}:${event.item.status}` : event.type,
         ),
       ).toEqual(["compaction:loading", "compaction:completed", terminalType]);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("compaction 双通道先收到线程完成时，开始与完成保留相同的逻辑回合和原生标识", async () => {
+    const { appServer, session, events, terminalEvent } = await startCompactionTurnTest();
+    try {
+      appServer.startsCompaction({ threadId: "thread-1", itemId: "dual-channel-compact" });
+      appServer.child.stdout.write(
+        `${JSON.stringify({
+          method: "thread/compacted",
+          params: { threadId: "thread-1", turnId: "codex-turn-1" },
+        })}\n`,
+      );
+      appServer.completesCompaction({ threadId: "thread-1", itemId: "dual-channel-compact" });
+      appServer.completeTurn();
+      await terminalEvent;
+      const markers = events.filter((event) => event.type === "timeline");
+      expect(markers).toHaveLength(2);
+      expect(markers.map((event) => event.item)).toEqual([
+        { type: "compaction", compactionId: "dual-channel-compact", status: "loading" },
+        { type: "compaction", compactionId: "dual-channel-compact", status: "completed" },
+      ]);
+      expect(markers[0].turnId).toBe(markers[1].turnId);
+      appServer.assertNoErrors();
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("compaction 的旧回合迟到通知不认领当前回合的压缩", async () => {
+    const { appServer, session, events, terminalEvent } = await startCompactionTurnTest();
+    try {
+      appServer.startsCompaction({ threadId: "thread-1", itemId: "current-compact" });
+      appServer.child.stdout.write(
+        `${JSON.stringify({
+          method: "thread/compacted",
+          params: { threadId: "thread-1", turnId: "older-native-turn" },
+        })}\n`,
+      );
+      appServer.completesCompaction({ threadId: "thread-1", itemId: "current-compact" });
+      appServer.completeTurn();
+      await terminalEvent;
+      const markers = events.filter((event) => event.type === "timeline");
+      expect(markers.map((event) => event.item)).toEqual([
+        { type: "compaction", compactionId: "current-compact", status: "loading" },
+        { type: "compaction", status: "completed" },
+        { type: "compaction", compactionId: "current-compact", status: "completed" },
+      ]);
+      expect(markers[0].turnId).toBe(markers[2].turnId);
+      expect(markers[1].turnId).toBe("older-native-turn");
       appServer.assertNoErrors();
     } finally {
       await session.close();
@@ -6576,12 +6639,12 @@ describe("Codex app-server provider", () => {
       {
         type: "timeline",
         provider: "codex",
-        item: { type: "compaction", status: "loading" },
+        item: { type: "compaction", status: "loading", compactionId: "new-compact-item" },
       },
       {
         type: "timeline",
         provider: "codex",
-        item: { type: "compaction", status: "completed" },
+        item: { type: "compaction", status: "completed", compactionId: "new-compact-item" },
       },
     ]);
   });
@@ -6717,6 +6780,7 @@ describe("Codex app-server provider", () => {
           type: "compaction",
           status: "loading",
           trigger: "manual",
+          compactionId: "manual-compact",
         },
       },
       {
@@ -6727,6 +6791,7 @@ describe("Codex app-server provider", () => {
           type: "compaction",
           status: "completed",
           trigger: "manual",
+          compactionId: "manual-compact",
         },
       },
     ]);

@@ -104,6 +104,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     ...TimelineItemBaseShape,
     kind: z.literal("compaction"),
     status: z.enum(["loading", "completed"]),
+    compactionId: z.string().optional(),
     trigger: z.enum(["auto", "manual"]).optional(),
     preTokens: z.number().nonnegative().optional(),
   }),
@@ -338,6 +339,7 @@ function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
         ...base,
         kind: item.kind,
         status: item.status,
+        ...(item.compactionId ? { compactionId: item.compactionId } : {}),
         ...(item.trigger ? { trigger: item.trigger } : {}),
         ...(item.preTokens !== undefined ? { preTokens: item.preTokens } : {}),
       };
@@ -403,6 +405,7 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
         ...base,
         kind: item.kind,
         status: item.status,
+        ...(item.compactionId ? { compactionId: item.compactionId } : {}),
         ...(item.trigger ? { trigger: item.trigger } : {}),
         ...(item.preTokens !== undefined ? { preTokens: item.preTokens } : {}),
       };

@@ -554,10 +554,8 @@ function mergeRetainedLifecycleItem(tail: StreamItem[], retained: StreamItem): S
     };
     return next;
   }
-  if (retained.kind === "compaction" && retained.status === "completed") {
-    const tailIndex = tail.findIndex(
-      (item) => item.kind === "compaction" && item.status === "loading",
-    );
+  if (retained.kind === "compaction") {
+    const tailIndex = findCompactionIndex(tail, retained);
     const existing = tail[tailIndex];
     if (tailIndex < 0 || !existing || existing.kind !== "compaction") {
       return null;
@@ -566,7 +564,9 @@ function mergeRetainedLifecycleItem(tail: StreamItem[], retained: StreamItem): S
     next[tailIndex] = {
       ...existing,
       timelineCursor: retained.timelineCursor,
-      status: "completed",
+      ...(retained.turnId ? { turnId: retained.turnId } : {}),
+      ...(retained.compactionId ? { compactionId: retained.compactionId } : {}),
+      status: existing.status === "completed" ? "completed" : retained.status,
       trigger: retained.trigger ?? existing.trigger,
       preTokens: retained.preTokens ?? existing.preTokens,
     };
@@ -852,6 +852,7 @@ export interface CompactionItem {
   turnId?: string;
   timestamp: Date;
   status: "loading" | "completed";
+  compactionId?: string;
   trigger?: "auto" | "manual";
   preTokens?: number;
 }
@@ -1711,6 +1712,24 @@ function reduceTimelineToolCall(
   );
 }
 
+function findCompactionIndex(
+  state: StreamItem[],
+  incoming: Pick<CompactionItem, "compactionId" | "turnId" | "status">,
+): number {
+  return state.findIndex((entry) => {
+    if (entry.kind !== "compaction") return false;
+    if (
+      incoming.turnId !== undefined &&
+      entry.turnId !== undefined &&
+      incoming.turnId !== entry.turnId
+    )
+      return false;
+    if (incoming.compactionId !== undefined && entry.compactionId !== undefined)
+      return incoming.compactionId === entry.compactionId;
+    return incoming.status === "completed" && entry.status === "loading";
+  });
+}
+
 function reduceTimelineCompaction(
   state: StreamItem[],
   item: Extract<
@@ -1721,28 +1740,19 @@ function reduceTimelineCompaction(
   timelineCursor?: TimelinePosition,
   turnId?: string,
 ): StreamItem[] {
-  if (item.status === "completed") {
-    const loadingIdx = state.findIndex(
-      (s) =>
-        s.kind === "compaction" &&
-        s.status === "loading" &&
-        (turnId === undefined || s.turnId === undefined || s.turnId === turnId),
-    );
-    const existing = loadingIdx >= 0 ? state[loadingIdx] : undefined;
-    if (loadingIdx >= 0 && existing && existing.kind === "compaction") {
-      const updated: CompactionItem = {
-        ...existing,
-        ...(timelineCursor ? { timelineCursor } : {}),
-        ...(turnId ? { turnId } : {}),
-        status: "completed",
-        trigger: item.trigger ?? existing.trigger,
-        preTokens: item.preTokens ?? existing.preTokens,
-      };
-      return [...state.slice(0, loadingIdx), updated, ...state.slice(loadingIdx + 1)];
-    }
-    if (loadingIdx >= 0) {
-      return state;
-    }
+  const existingIdx = findCompactionIndex(state, { ...item, turnId });
+  const existing = state[existingIdx];
+  if (existing?.kind === "compaction") {
+    const updated: CompactionItem = {
+      ...existing,
+      ...(timelineCursor ? { timelineCursor } : {}),
+      ...(turnId ? { turnId } : {}),
+      ...(item.compactionId ? { compactionId: item.compactionId } : {}),
+      status: existing.status === "completed" ? "completed" : item.status,
+      trigger: item.trigger ?? existing.trigger,
+      preTokens: item.preTokens ?? existing.preTokens,
+    };
+    return [...state.slice(0, existingIdx), updated, ...state.slice(existingIdx + 1)];
   }
   const compaction: CompactionItem = {
     kind: "compaction",
@@ -1751,6 +1761,7 @@ function reduceTimelineCompaction(
     ...(timelineCursor ? { timelineCursor } : {}),
     ...(turnId ? { turnId } : {}),
     status: item.status,
+    ...(item.compactionId ? { compactionId: item.compactionId } : {}),
     trigger: item.trigger,
     preTokens: item.preTokens,
   };

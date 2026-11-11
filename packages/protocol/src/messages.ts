@@ -859,6 +859,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
   z.object({
     type: z.literal("compaction"),
     status: z.enum(["loading", "completed"]),
+    compactionId: z.string().optional(),
     trigger: z.enum(["auto", "manual"]).optional(),
     preTokens: z.number().optional(),
   }),

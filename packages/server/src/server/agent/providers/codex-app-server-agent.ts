@@ -2324,6 +2324,7 @@ export function threadItemToTimeline(
       return {
         type: "compaction",
         status: "completed",
+        compactionId: z.string().min(1).optional().parse(normalizedItem.id),
       };
     default:
       return null;
@@ -6937,6 +6938,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     return {
       type: "compaction",
       status,
+      ...(itemId ? { compactionId: itemId } : {}),
       ...(trigger ? { trigger } : {}),
     };
   }
@@ -6967,17 +6969,30 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (parsed.threadId !== this.currentThreadId) {
       return;
     }
+    const belongsToCurrentTurn =
+      parsed.turnId === null || this.currentTurnId === null || parsed.turnId === this.currentTurnId;
+    if (!belongsToCurrentTurn) {
+      this.emitEvent({
+        type: "timeline",
+        provider: CODEX_PROVIDER,
+        item: { type: "compaction", status: "completed" },
+        ...(parsed.turnId ? { turnId: parsed.turnId } : {}),
+      });
+      return;
+    }
     if (this.unpairedCompactionItemCompletions > 0) {
       this.unpairedCompactionItemCompletions -= 1;
       return;
     }
-    const pendingItemId = this.consumePendingRootCompaction()?.itemId;
+    const pending = this.consumePendingRootCompaction();
+    const turnId =
+      pending && this.activeForegroundTurnId ? this.activeForegroundTurnId : parsed.turnId;
     this.unpairedCompactionNotificationCompletions += 1;
     this.emitEvent({
       type: "timeline",
       provider: CODEX_PROVIDER,
-      item: this.createContextCompactionTimelineItem("completed", pendingItemId),
-      ...(parsed.turnId ? { turnId: parsed.turnId } : {}),
+      item: this.createContextCompactionTimelineItem("completed", pending?.itemId),
+      ...(turnId ? { turnId } : {}),
     });
   }
 
