@@ -310,7 +310,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
-const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 48;
+const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 25;
 const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -370,7 +370,7 @@ function CompletedTurnProcessToggle({
           style={stylesheet.completedTurnProcessToggle}
         >
           <ThemedProcessToggleLayers
-            size={16}
+            size={12}
             aria-hidden
             uniProps={processToggleIconColorMapping}
           />

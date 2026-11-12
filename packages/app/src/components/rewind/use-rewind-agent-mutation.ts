@@ -11,6 +11,7 @@ import { clearOptimisticUserMessages } from "@/types/stream";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import type { UserMessageImageAttachment } from "@/types/stream";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
+import { runConversationRewind } from "./rewind-operation";
 
 interface UseRewindAgentMutationInput {
   serverId?: string;
@@ -33,34 +34,36 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
   const { t } = useTranslation();
   const composerRestore = useRewindComposerRestore();
   const { isPending, mutateAsync } = useMutation({
-    mutationFn: async ({ mode }: RewindAgentInput) => {
-      if (!input.client || !input.agentId || !input.messageId) {
+    mutationFn: async ({ mode, rewoundText, rewoundImages }: RewindAgentInput) => {
+      const { client, agentId, messageId, serverId } = input;
+      if (!client || !agentId || !messageId) {
         throw new Error(t("common.errors.daemonClientUnavailable"));
       }
-      await input.client.rewindAgent(input.agentId, input.messageId, mode);
-      if (mode !== "files") {
-        if (input.serverId) {
-          const session = useSessionStore.getState().sessions[input.serverId];
-          useSessionStore.getState().setAgentStreamState(input.serverId, input.agentId, {
-            tail: clearOptimisticUserMessages(session?.agentStreamTail.get(input.agentId) ?? []),
-            head: clearOptimisticUserMessages(session?.agentStreamHead.get(input.agentId) ?? []),
-          });
-        }
-        if (!input.serverId) throw new Error(t("common.errors.daemonClientUnavailable"));
-        await getHostRuntimeStore().fetchAgentTimeline(
-          input.serverId,
-          input.agentId,
-          planTimelineTailFetch(),
-        );
-      }
-    },
-    onSuccess: (_data, variables) => {
-      if (!shouldRestoreComposerForRewindMode(variables.mode)) {
+      if (!shouldRestoreComposerForRewindMode(mode)) {
+        await client.rewindAgent(agentId, messageId, mode);
         return;
       }
-      composerRestore?.restoreDraftIfComposerEmpty({
-        text: variables.rewoundText,
-        attachments: variables.rewoundImages.map((metadata) => ({ kind: "image", metadata })),
+      if (!serverId) throw new Error(t("common.errors.daemonClientUnavailable"));
+      await runConversationRewind({
+        rewind: () => client.rewindAgent(agentId, messageId, mode),
+        apply: () => {
+          const store = useSessionStore.getState();
+          const session = store.sessions[serverId];
+          store.setAgentStreamState(serverId, agentId, {
+            tail: clearOptimisticUserMessages(session?.agentStreamTail.get(agentId) ?? []),
+            head: clearOptimisticUserMessages(session?.agentStreamHead.get(agentId) ?? []),
+          });
+          composerRestore?.restoreDraftIfComposerEmpty({
+            text: rewoundText,
+            attachments: rewoundImages.map((metadata) => ({ kind: "image", metadata })),
+          });
+        },
+        refreshTimeline: () =>
+          getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, planTimelineTailFetch()),
+        onRefreshError: (error) => {
+          console.error("消息已撤回，刷新历史失败", error);
+          toast.error("消息已撤回，输入框内容已保留；历史刷新失败，请重新加载会话。");
+        },
       });
     },
     onError: (error) => {

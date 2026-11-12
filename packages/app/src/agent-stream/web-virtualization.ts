@@ -101,7 +101,7 @@ export function estimateStreamItemHeight(
     case "compaction":
       return 72;
     case "native_history_process":
-      return 72;
+      return 49;
     default:
       return 120;
   }

@@ -227,7 +227,7 @@ describe("estimateStreamItemHeight", () => {
       summaryMessageIds: [],
       summaryRevision: "revision",
     };
-    expect(estimateStreamItemHeight(item)).toBe(72);
+    expect(estimateStreamItemHeight(item)).toBe(49);
   });
   it("uses compact estimates for collapsed tool sequence rows", () => {
     expect(estimateStreamItemHeight(toolCall("tool", 1))).toBe(40);

@@ -35,8 +35,8 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: labelPosition === "center" ? "center" : "stretch",
     gap: labelPosition === "center" ? theme.spacing[2] : spacing,
   }),
-  // 标签分割线与无标签横线共用一个文字行高，避免实际横线两侧留白相差半行。
-  track: { height: theme.fontSize.base * 1.5, justifyContent: "center" },
+  // 横线只占自身高度；压缩标签保留自然行高，不能给无标签横线再塞入半行空白。
+  track: { justifyContent: "center" },
   line: { height: 1, width: "100%", backgroundColor: theme.colors.border },
   flexLine: { flex: 1 },
   fullLine: { flexShrink: 0, width: "100%" },

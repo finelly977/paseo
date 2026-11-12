@@ -78,8 +78,9 @@ export const RewindMenu = memo(function RewindMenu({
       setPendingMode(mode);
       try {
         await onRewind({ mode, rewoundText, rewoundImages });
-      } catch {
-        // useRewindAgentMutation owns the toast; the menu only owns flow state.
+      } catch (error) {
+        // 提示由撤回操作持有，菜单记录完整错误并释放自身等待状态。
+        console.error("撤回消息失败", error);
       } finally {
         setPendingMode(null);
         setIsOpen(false);

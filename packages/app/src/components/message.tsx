@@ -2813,25 +2813,8 @@ function ExpandableBadgeLabelRow({
   );
 }
 
-// HACK: lucide ships every icon inside a 24×24 viewBox where the path
-// doesn't touch the edges — there's per-icon internal padding. The layout
-// already places the SVG element's box on the rail, but the visible glyph
-// inside the SVG sits inset by a few pixels (and the inset amount differs
-// per icon — chevron-right paints only in the right half of its viewBox,
-// regular tool icons paint roughly the full viewBox minus ~1 unit margin).
-//
-// Lucide has no viewBox knob, so the only way to nudge the visible glyph
-// flush with the rail is a per-icon negative margin. Cosmetic; not exact —
-// every lucide icon has slightly different padding and we're not measuring
-// each one. Two buckets is the compromise:
-//   - LUCIDE_TOOL_ICON_NUDGE_LEFT: regular tool icons (path mostly fills
-//     the viewBox); needs ~1px left shift.
-//   - LUCIDE_CHEVRON_NUDGE_LEFT: chevron-right (path in right half of
-//     viewBox, and we scale it 1.3×); needs ~4px left shift.
-// If we ever want this exact, the principled fix is a custom <Svg> wrapper
-// with a tight viewBox per icon — see option (2) in the design discussion.
+// 与图像入口沿用相同的小图标尺寸和轻微左移，不额外放大展开箭头。
 const LUCIDE_TOOL_ICON_NUDGE_LEFT: ViewStyle = { marginLeft: -1 };
-const LUCIDE_CHEVRON_NUDGE_LEFT: ViewStyle = { marginLeft: -4 };
 
 function renderExpandableBadgeIcon({
   isError,
@@ -2845,7 +2828,7 @@ function renderExpandableBadgeIcon({
   if (isError) {
     return (
       <View style={LUCIDE_TOOL_ICON_NUDGE_LEFT}>
-        <ThemedTriangleAlertIcon size={16} uniProps={destructiveColorMapping} />
+        <ThemedTriangleAlertIcon size={12} uniProps={destructiveColorMapping} />
       </View>
     );
   }
@@ -2853,7 +2836,7 @@ function renderExpandableBadgeIcon({
     return (
       <View style={LUCIDE_TOOL_ICON_NUDGE_LEFT}>
         <ThemedIcon
-          size={16}
+          size={12}
           uniProps={isActive ? foregroundColorMapping : mutedForegroundColorMapping}
         />
       </View>
@@ -3225,23 +3208,12 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     [shimmerSecondaryStyle],
   );
 
-  const chevronStyle = useMemo(
-    () => [
-      expandableBadgeStylesheet.chevron,
-      LUCIDE_CHEVRON_NUDGE_LEFT,
-      inlineUnistylesStyle({
-        transform: [{ scale: 1.3 }],
-      }),
-    ],
-    [],
-  );
-
   const ThemedIcon = useMemo(() => (icon ? withUnistyles(icon) : null), [icon]);
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
     expanded: isExpanded,
     showChevron: isInteractive && (isHovered || isExpanded),
-    chevronStyle,
+    chevronStyle: expandableBadgeStylesheet.chevron,
     iconNode,
   });
 

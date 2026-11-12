@@ -7,6 +7,7 @@ import { ConversationDivider } from "@/components/conversation-divider";
 import { DisclosureContent } from "@/components/ui/disclosure";
 
 const CONTENT_STYLE = { height: 120 };
+const DIVIDER_LABEL_STYLE = { lineHeight: "24px" };
 function Harness() {
   const expansion = useProcessExpansion("conversation");
   const toggleExpansion = expansion.toggle;
@@ -77,62 +78,70 @@ test("用时过程逐行展开和收起，关闭后释放正文，快速重开�
   }
 });
 
-test.each([390, 738])("%s 像素宽度下用时与压缩分割线共用正文边界和上下留白", async (width) => {
-  const host = document.createElement("div");
-  Object.assign(host.style, { width: `${width}px`, padding: "0 8px", boxSizing: "border-box" });
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  try {
-    root.render(
-      <>
-        <ConversationDivider spacing={12} labelPosition="above">
-          <span>用时 2m 8s</span>
-        </ConversationDivider>
-        <ConversationDivider spacing={12} labelPosition="center">
-          <span>上下文已压缩</span>
-        </ConversationDivider>
-      </>,
-    );
-    await expect
-      .poll(() => host.querySelectorAll('[data-testid="conversation-divider"]').length)
-      .toBe(2);
-    const dividers = Array.from(
-      host.querySelectorAll<HTMLElement>('[data-testid="conversation-divider"]'),
-    );
-    const lines = dividers.map((divider) =>
-      Array.from(
-        divider.querySelectorAll<HTMLElement>('[data-testid="conversation-divider-line"]'),
-      ),
-    );
-    expect(lines[0][0].getBoundingClientRect().left).toBe(lines[1][0].getBoundingClientRect().left);
-    expect(lines[0][0].getBoundingClientRect().right).toBe(
-      lines[1][1].getBoundingClientRect().right,
-    );
-    for (const divider of dividers) {
-      expect(getComputedStyle(divider).paddingTop).toBe("12px");
-      expect(getComputedStyle(divider).paddingBottom).toBe("12px");
+test.each([390, 738].flatMap((width) => [0, 4, 12].map((spacing) => ({ width, spacing }))))(
+  "分割线尊重实际留白设置：%j",
+  async ({ width, spacing }) => {
+    const host = document.createElement("div");
+    Object.assign(host.style, { width: `${width}px`, padding: "0 8px", boxSizing: "border-box" });
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      root.render(
+        <>
+          <ConversationDivider spacing={spacing} labelPosition="above">
+            <span style={DIVIDER_LABEL_STYLE}>用时 2m 8s</span>
+          </ConversationDivider>
+          <ConversationDivider spacing={spacing} labelPosition="center">
+            <span style={DIVIDER_LABEL_STYLE}>上下文已压缩</span>
+          </ConversationDivider>
+        </>,
+      );
+      await expect
+        .poll(() => host.querySelectorAll('[data-testid="conversation-divider"]').length)
+        .toBe(2);
+      const dividers = Array.from(
+        host.querySelectorAll<HTMLElement>('[data-testid="conversation-divider"]'),
+      );
+      const lines = dividers.map((divider) =>
+        Array.from(
+          divider.querySelectorAll<HTMLElement>('[data-testid="conversation-divider-line"]'),
+        ),
+      );
+      expect(lines[0][0].getBoundingClientRect().left).toBe(
+        lines[1][0].getBoundingClientRect().left,
+      );
+      expect(lines[0][0].getBoundingClientRect().right).toBe(
+        lines[1][1].getBoundingClientRect().right,
+      );
+      for (const divider of dividers) {
+        expect(getComputedStyle(divider).paddingTop).toBe(`${spacing}px`);
+        expect(getComputedStyle(divider).paddingBottom).toBe(`${spacing}px`);
+      }
+      const aboveLabel = dividers[0].querySelector("span");
+      const centerLabel = dividers[1].querySelector("span");
+      if (!aboveLabel || !centerLabel) throw new Error("缺少分割线标签");
+      expect(
+        lines[0][0].getBoundingClientRect().top - aboveLabel.getBoundingClientRect().bottom,
+      ).toBe(spacing);
+      expect(
+        dividers[0].getBoundingClientRect().bottom - lines[0][0].getBoundingClientRect().bottom,
+      ).toBe(spacing);
+      expect(dividers[0].getBoundingClientRect().height).toBe(25 + spacing * 3);
+      expect(dividers[1].getBoundingClientRect().height).toBe(
+        centerLabel.getBoundingClientRect().height + spacing * 2,
+      );
+      for (const group of lines)
+        for (const line of group) {
+          expect(line.getBoundingClientRect().height).toBe(1);
+          if (!line.parentElement) throw new Error("缺少横线容器");
+          expect(line.parentElement.getBoundingClientRect().height).toBe(1);
+        }
+    } finally {
+      root.unmount();
+      host.remove();
     }
-    const lineBottomGaps = lines.map(
-      (group, index) =>
-        dividers[index].getBoundingClientRect().bottom - group[0].getBoundingClientRect().bottom,
-    );
-    expect(lineBottomGaps[0]).toBe(lineBottomGaps[1]);
-    expect(lineBottomGaps[0]).toBe(12 + (24 - 1) / 2);
-    const label = dividers[0].querySelector("span");
-    if (!label) throw new Error("缺少用时文字");
-    const aboveProcessLine =
-      lines[0][0].getBoundingClientRect().top - label.getBoundingClientRect().bottom;
-    const aboveCompactionLine =
-      lines[1][0].getBoundingClientRect().top - dividers[1].getBoundingClientRect().top;
-    expect(aboveProcessLine).toBe(aboveCompactionLine);
-    expect(aboveProcessLine).toBe(lineBottomGaps[0]);
-    for (const group of lines)
-      for (const line of group) expect(line.getBoundingClientRect().height).toBe(1);
-  } finally {
-    root.unmount();
-    host.remove();
-  }
-});
+  },
+);
 
 test("收起时新进入虚拟窗口的过程行只保留高度，不挂载工具正文", async () => {
   const host = document.createElement("div");

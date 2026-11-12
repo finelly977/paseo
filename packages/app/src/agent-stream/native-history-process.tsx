@@ -130,7 +130,7 @@ export function NativeHistoryProcess({
             aria-expanded={expanded}
             style={styles.toggle}
           >
-            <ThemedLayers size={16} aria-hidden uniProps={processIconColor} />
+            <ThemedLayers size={12} aria-hidden uniProps={processIconColor} />
             <Text style={styles.label}>{label}</Text>
             <DisclosureChevron expanded={expanded} collapsedRotation={-90} expandedRotation={0}>
               <ThemedChevron size={12} uniProps={processIconColor} />
