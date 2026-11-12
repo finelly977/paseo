@@ -2436,6 +2436,7 @@ const compactionStylesheet = StyleSheet.create((theme) => ({
   text: {
     fontFamily: theme.fontFamily.ui,
     fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.5,
     color: theme.colors.foregroundMuted,
   },
 }));

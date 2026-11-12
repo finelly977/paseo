@@ -145,12 +145,11 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
   );
 });
 
-const styles = StyleSheet.create((theme) => ({
+const styles = StyleSheet.create({
   scroll: {
     maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
   },
   content: {
-    paddingTop: theme.spacing[1],
     paddingHorizontal: 13,
   },
-}));
+});

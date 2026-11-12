@@ -14,13 +14,14 @@ export function ConversationDivider({
   return (
     <View style={styles.root(spacing, labelPosition)} testID="conversation-divider">
       {labelPosition === "center" && (
-        <View style={[styles.line, styles.flexLine]} testID="conversation-divider-line" />
+        <View style={[styles.track, styles.flexLine]}>
+          <View style={styles.line} testID="conversation-divider-line" />
+        </View>
       )}
       {children}
-      <View
-        style={[styles.line, labelPosition === "above" ? styles.fullLine : styles.flexLine]}
-        testID="conversation-divider-line"
-      />
+      <View style={[styles.track, labelPosition === "above" ? styles.fullLine : styles.flexLine]}>
+        <View style={styles.line} testID="conversation-divider-line" />
+      </View>
     </View>
   );
 }
@@ -34,7 +35,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: labelPosition === "center" ? "center" : "stretch",
     gap: labelPosition === "center" ? theme.spacing[2] : spacing,
   }),
-  line: { height: 1, backgroundColor: theme.colors.border },
+  // 标签分割线与无标签横线共用一个文字行高，避免实际横线两侧留白相差半行。
+  track: { height: theme.fontSize.base * 1.5, justifyContent: "center" },
+  line: { height: 1, width: "100%", backgroundColor: theme.colors.border },
   flexLine: { flex: 1 },
   fullLine: { flexShrink: 0, width: "100%" },
 }));

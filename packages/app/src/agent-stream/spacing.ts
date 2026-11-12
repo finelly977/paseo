@@ -36,14 +36,12 @@ export function getAssistantBlockSpacing(params: {
 
 const isUserMessageItem = (item?: StreamItem | null) => item?.kind === "user_message";
 const isToolSequenceItem = (item?: StreamItem | null) =>
-  item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
+  item?.kind === "tool_call" ||
+  item?.kind === "thought" ||
+  item?.kind === "todo_list" ||
+  (item?.kind === "assistant_message" && getStandaloneMarkdownImages(item.text) !== null);
 const isStreamDivider = (item: StreamItem) =>
   item.kind === "compaction" || item.kind === "native_history_process";
-const isProviderImagePair = (item: StreamItem, belowItem: StreamItem) =>
-  item.kind === "assistant_message" &&
-  belowItem.kind === "assistant_message" &&
-  getStandaloneMarkdownImages(item.text) !== null &&
-  getStandaloneMarkdownImages(belowItem.text) !== null;
 
 function hasAssistantDividerAtEdge(item: StreamItem, edge: "first" | "last"): boolean {
   if (item.kind !== "assistant_message") return false;
@@ -90,7 +88,6 @@ export function getGapBetweenStreamItems(
   if (isStreamDivider(item) || isStreamDivider(belowItem)) {
     return 0;
   }
-  if (isProviderImagePair(item, belowItem)) return 0;
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
     return compactSpacing;
   }

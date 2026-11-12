@@ -117,6 +117,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.5,
   },
   labelActive: {
     color: theme.colors.foreground,

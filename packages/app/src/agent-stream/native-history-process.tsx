@@ -170,7 +170,11 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: theme.spacing[2],
   },
-  label: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base, lineHeight: 22 },
+  label: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.5,
+  },
 }));
 
 const ThemedChevron = withUnistyles(ChevronDown);

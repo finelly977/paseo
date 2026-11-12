@@ -101,7 +101,7 @@ export function estimateStreamItemHeight(
     case "compaction":
       return 72;
     case "native_history_process":
-      return COLLAPSED_TOOL_SEQUENCE_ROW_HEIGHT_ESTIMATE;
+      return 72;
     default:
       return 120;
   }

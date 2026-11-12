@@ -27,7 +27,7 @@ import type { CheckoutGitActionStatus } from "@/git/actions-store";
 import type { GitActions } from "@/git/policy";
 import type { CheckoutStatusResponse } from "@getpaseo/protocol/messages";
 import { GitActionsSplitButton } from "@/git/actions-split-button";
-import { COMPACT_LABEL_DATASET, COMPACT_LABEL_SCALE } from "@/styles/compact-label";
+import { GitChangeCountBadge } from "./change-count-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -164,11 +164,7 @@ export function SourceControlSectionHeader({
           {title}
         </Text>
         {count !== undefined && count !== null ? (
-          <View style={styles.countBadge} accessibilityLabel={`${title}: ${count}`}>
-            <Text style={styles.countText} dataSet={COMPACT_LABEL_DATASET}>
-              {count}
-            </Text>
-          </View>
+          <GitChangeCountBadge count={count} label={title} />
         ) : null}
       </Pressable>
       {children ? <View style={styles.changesHeadingActions}>{children}</View> : null}
@@ -726,7 +722,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   changesHeading: {
-    height: 22,
+    minHeight: Math.max(22, Math.round(theme.fontSize.base * 1.5)),
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -746,23 +742,6 @@ const styles = StyleSheet.create((theme) => ({
     width: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  countBadge: {
-    minWidth: Math.max(16, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2),
-    minHeight: Math.max(16, Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2),
-    paddingHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.scmBadgeBackground,
-  },
-  countText: {
-    fontSize: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE),
-    lineHeight: Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE) + 2,
-    fontVariant: ["tabular-nums"],
-    textAlign: "center",
-    includeFontPadding: false,
-    color: theme.colors.scmBadgeForeground,
   },
   changesHeadingActions: {
     flex: 1,

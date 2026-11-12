@@ -112,8 +112,20 @@ test.each([390, 738])("%s 像素宽度下用时与压缩分割线共用正文边
       expect(getComputedStyle(divider).paddingTop).toBe("12px");
       expect(getComputedStyle(divider).paddingBottom).toBe("12px");
     }
-    const processLine = lines[0][0].getBoundingClientRect();
-    expect(dividers[0].getBoundingClientRect().bottom - processLine.bottom).toBe(12);
+    const lineBottomGaps = lines.map(
+      (group, index) =>
+        dividers[index].getBoundingClientRect().bottom - group[0].getBoundingClientRect().bottom,
+    );
+    expect(lineBottomGaps[0]).toBe(lineBottomGaps[1]);
+    expect(lineBottomGaps[0]).toBe(12 + (24 - 1) / 2);
+    const label = dividers[0].querySelector("span");
+    if (!label) throw new Error("缺少用时文字");
+    const aboveProcessLine =
+      lines[0][0].getBoundingClientRect().top - label.getBoundingClientRect().bottom;
+    const aboveCompactionLine =
+      lines[1][0].getBoundingClientRect().top - dividers[1].getBoundingClientRect().top;
+    expect(aboveProcessLine).toBe(aboveCompactionLine);
+    expect(aboveProcessLine).toBe(lineBottomGaps[0]);
     for (const group of lines)
       for (const line of group) expect(line.getBoundingClientRect().height).toBe(1);
   } finally {

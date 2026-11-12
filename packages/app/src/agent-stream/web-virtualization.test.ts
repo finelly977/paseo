@@ -215,6 +215,20 @@ describe("shouldAutoLoadOlderHistory", () => {
 });
 
 describe("estimateStreamItemHeight", () => {
+  it("原生用时入口同时估算标题行与分割线轨道，不再只按一条命令高度定位", () => {
+    const item: StreamItem = {
+      kind: "native_history_process",
+      id: "process",
+      turnId: "turn",
+      status: "completed",
+      timestamp: new Date(0),
+      durationMs: 1000,
+      error: null,
+      summaryMessageIds: [],
+      summaryRevision: "revision",
+    };
+    expect(estimateStreamItemHeight(item)).toBe(72);
+  });
   it("uses compact estimates for collapsed tool sequence rows", () => {
     expect(estimateStreamItemHeight(toolCall("tool", 1))).toBe(40);
     expect(estimateStreamItemHeight(thought("thought", 2))).toBe(40);

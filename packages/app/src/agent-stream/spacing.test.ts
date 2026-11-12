@@ -148,7 +148,30 @@ describe("getGapBetweenStreamItems", () => {
         assistantBlock({ id: "text", blockGroupId: "text", blockIndex: 0, text: "说明正文" }),
         24,
       ),
-    ).toBe(24);
+    ).toBe(8);
+  });
+
+  it("查看图像、命令和命令组共用过程行间距，前后正文沿用紧凑段落间距", () => {
+    const image = assistantBlock({
+      id: "image",
+      blockGroupId: "images",
+      blockIndex: 0,
+      text: "![图](file:///one.png)",
+    });
+    const command = toolCallBlock("shell");
+    const prose = assistantBlock({
+      id: "prose",
+      blockGroupId: "prose",
+      blockIndex: 0,
+      text: "过程说明",
+    });
+    for (const first of [image, command]) {
+      for (const second of [image, command]) {
+        expect(getGapBetweenStreamItems(first, second, 12)).toBe(0);
+      }
+      expect(getGapBetweenStreamItems(prose, first, 12)).toBe(4);
+      expect(getGapBetweenStreamItems(first, prose, 12)).toBe(4);
+    }
   });
 
   it("用户卡片与回复边界始终保留消息间距，即使回复以横线开头或结尾", () => {
