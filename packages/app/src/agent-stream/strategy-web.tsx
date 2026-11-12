@@ -342,6 +342,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     setHasPendingHistoryAnchor(false);
   }, []);
   const committedHistoryAnchorRef = useRef<HistoryAnchor | null>(null);
+  const toggleAnchorItemIdRef = useRef<string | null>(null);
   const recordHistoryAnchor = useCallback((anchor: HistoryAnchor) => {
     historyAnchoringRef.current = true;
     committedHistoryAnchorRef.current = anchor;
@@ -455,6 +456,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     estimateSize,
     rangeExtractor: useCallback(
       (range: Parameters<typeof defaultRangeExtractor>[0]) => {
+        const toggleItemId = toggleAnchorItemIdRef.current;
+        if (toggleItemId !== null) {
+          const index = segments.historyVirtualized.findIndex((item) => item.id === toggleItemId);
+          if (index >= 0 && (index < range.startIndex || index > range.endIndex)) {
+            const endIndex = Math.min(range.count - 1, index + range.endIndex - range.startIndex);
+            return defaultRangeExtractor({ ...range, startIndex: index, endIndex });
+          }
+        }
         const pending = hasPendingHistoryAnchor ? pendingHistoryAnchorRef.current : null;
         if (!pending || pending.firstItemId === sourceFirstItemId)
           return defaultRangeExtractor(range);
@@ -543,7 +552,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const {
     active: isToggleAnchoring,
     preserve: preserveToggleAnchor,
-    cancel: cancelToggleAnchor,
+    cancel: cancelContentToggleAnchor,
+    restore: restoreToggleAnchor,
   } = useContentToggleAnchor({
     inverted: false,
     getOffset: () => {
@@ -568,6 +578,28 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
     },
   });
+  const cancelToggleAnchor = useCallback(() => {
+    toggleAnchorItemIdRef.current = null;
+    cancelContentToggleAnchor();
+  }, [cancelContentToggleAnchor]);
+  useLayoutEffect(() => {
+    if (!isToggleAnchoring) toggleAnchorItemIdRef.current = null;
+  }, [isToggleAnchoring]);
+  useLayoutEffect(() => {
+    restoreToggleAnchor();
+  });
+  const preserveProcessAnchor = useCallback<StreamViewportHandle["preserveScrollAnchor"]>(
+    (request) =>
+      preserveToggleAnchor({
+        ...request,
+        applyChange: () => {
+          // 展开可能把入口从常驻区移入虚拟区，首个提交就保留该行，不能等它离屏后再测量。
+          toggleAnchorItemIdRef.current = request.itemId;
+          request.applyChange();
+        },
+      }),
+    [preserveToggleAnchor],
+  );
 
   const scrollMessagesToBottom = useCallback(
     (behavior: ScrollBehaviorLike = "auto") => {
@@ -962,9 +994,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       minHeight: 0,
       overflowX: "hidden",
       overflowY: scrollEnabled ? "auto" : "hidden",
+      overflowAnchor: isToggleAnchoring ? "none" : "auto",
       overscrollBehaviorY: "contain",
     };
-  }, [scrollEnabled]);
+  }, [scrollEnabled, isToggleAnchoring]);
   const virtualRowsContainerStyle = useMemo((): CSSProperties => {
     const virtualPaddingTop = virtualRows[0]?.start ?? 0;
     const virtualPaddingBottom = Math.max(0, virtualTotalSize - (virtualRows.at(-1)?.end ?? 0));
@@ -1160,7 +1193,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   useEffect(() => {
     const handle: StreamViewportHandle = {
       prepareForHistoryPrepend,
-      preserveScrollAnchor: preserveToggleAnchor,
+      preserveScrollAnchor: preserveProcessAnchor,
       scrollToBottom: () => {
         cancelToggleAnchor();
         cancelPendingHistoryAnchor();
@@ -1191,7 +1224,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     scrollToItem,
     viewportRef,
     cancelToggleAnchor,
-    preserveToggleAnchor,
+    preserveProcessAnchor,
     prepareForHistoryPrepend,
   ]);
   const historyStartSlot = useMemo(() => {

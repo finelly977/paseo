@@ -26,6 +26,9 @@ const PROCESS: NativeHistoryProcessItem = {
   summaryRevision: "summary",
 };
 const viewport = createRef<StreamViewportHandle>();
+function registerAnchor() {
+  return () => undefined;
+}
 const i18n = createInstance();
 beforeAll(async () => {
   await i18n.init({
@@ -57,6 +60,7 @@ function Harness({ item }: { item: NativeHistoryProcessItem }) {
       readId="read"
       expanded={expanded}
       onToggle={toggle}
+      registerAnchor={registerAnchor}
       viewport={viewport}
       gapAbove={0}
       gapBelow={12}

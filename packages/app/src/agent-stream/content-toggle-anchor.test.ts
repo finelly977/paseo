@@ -38,6 +38,21 @@ function setup(inverted: boolean) {
 }
 
 describe("展开过程的阅读位置", () => {
+  it("网页提交绘制前可立即校正，布局提交次数不提前结束稳定帧等待", () => {
+    const test = setup(false);
+    test.anchor.preserve({
+      itemId: "process",
+      measure: test.measure,
+      applyChange: () => test.shift(800),
+    });
+    test.anchor.restore();
+    expect(test.getTop()).toBe(120);
+    expect(test.getOffset()).toBe(1000);
+    for (let commit = 0; commit < 10; commit++) test.anchor.restore();
+    expect(test.active).toHaveBeenLastCalledWith(true);
+    vi.advanceTimersByTime(80);
+    expect(test.active).toHaveBeenLastCalledWith(false);
+  });
   it.each([true, false])("倒置=%s 时按入口位置校正，而不是跳到回复或底部", (inverted) => {
     const test = setup(inverted);
     const change = vi.fn(() => test.shift(inverted ? -360 : 360));

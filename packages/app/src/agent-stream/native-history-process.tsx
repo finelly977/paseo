@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
@@ -28,6 +28,7 @@ export function NativeHistoryProcess({
   readId,
   expanded,
   onToggle,
+  registerAnchor,
   viewport,
   serverId,
   gapAbove,
@@ -41,12 +42,18 @@ export function NativeHistoryProcess({
   gapAbove: number;
   gapBelow: number;
   expanded: boolean;
-  onToggle(turnId: string): void;
+  onToggle(input: { turnId: string; itemId: string }): void;
+  registerAnchor(input: { turnId: string; node: View }): () => void;
   viewport: React.RefObject<StreamViewportHandle | null>;
 }) {
   const { t } = useTranslation();
   const [localError, setLocalError] = useState<string | null>(null);
-  const root = useRef<View>(null);
+  const anchorRef = useCallback(
+    (node: View | null) => {
+      if (node) return registerAnchor({ turnId: item.turnId, node });
+    },
+    [item.turnId, registerAnchor],
+  );
   const key = nativeHistoryDetailKey(serverId, agentId, readId, item.turnId);
   useEffect(() => {
     if (expanded) return registerExpandedNativeHistoryDetails(key);
@@ -91,17 +98,9 @@ export function NativeHistoryProcess({
     }
   }, [client, serverId, agentId, readId, item, viewport]);
   const toggle = useCallback(() => {
-    const change = () => onToggle(item.turnId);
-    const node = root.current;
-    if (node && viewport.current)
-      viewport.current.preserveScrollAnchor({
-        itemId: item.id,
-        measure: (callback) => node.measureInWindow((_x, top) => callback(top)),
-        applyChange: change,
-      });
-    else change();
+    onToggle({ turnId: item.turnId, itemId: item.id });
     if (!expanded && !complete) void load();
-  }, [expanded, item.id, item.turnId, complete, load, viewport, onToggle]);
+  }, [expanded, item.id, item.turnId, complete, load, onToggle]);
   const duration = item.durationMs === null ? null : formatCompletedTurnDuration(item.durationMs);
   const label =
     duration === null
@@ -117,9 +116,10 @@ export function NativeHistoryProcess({
   }, [load]);
   if (item.status === "inProgress") return null;
   return (
-    <View ref={root} collapsable={false} testID={`native-process-${item.turnId}`} style={rootStyle}>
+    <View testID={`native-process-${item.turnId}`} style={rootStyle}>
       <View style={styles.process}>
         <Pressable
+          ref={anchorRef}
           onPress={toggle}
           accessibilityRole="button"
           accessibilityState={accessibilityState}

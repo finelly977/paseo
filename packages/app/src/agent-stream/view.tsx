@@ -851,8 +851,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [],
     );
-    const toggleCompletedTurnProcess = useCallback(
-      ({ turnId, itemId }: { turnId: string; itemId: string }) => {
+    const preserveProcessAnchor = useCallback(
+      ({
+        turnId,
+        itemId,
+        applyChange,
+      }: {
+        turnId: string;
+        itemId: string;
+        applyChange(): void;
+      }) => {
         viewportRef.current?.preserveScrollAnchor({
           itemId,
           measure: (callback) => {
@@ -861,21 +869,44 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               callback(null);
               return;
             }
+            if (isWeb && node instanceof HTMLElement) {
+              const bounds = node.getBoundingClientRect();
+              callback(bounds.height > 0 ? bounds.top : null);
+              return;
+            }
             node.measureInWindow((_x, top, _width, height) => callback(height > 0 ? top : null));
           },
+          applyChange,
+        });
+      },
+      [],
+    );
+    const toggleCompletedTurnProcess = useCallback(
+      (input: { turnId: string; itemId: string }) => {
+        preserveProcessAnchor({
+          ...input,
           applyChange: () =>
             setExpandedCompletedTurnIds((previous) => {
               const next = new Set(previous);
-              if (next.has(turnId)) {
-                next.delete(turnId);
+              if (next.has(input.turnId)) {
+                next.delete(input.turnId);
               } else {
-                next.add(turnId);
+                next.add(input.turnId);
               }
               return next;
             }),
         });
       },
-      [],
+      [preserveProcessAnchor],
+    );
+    const toggleNativeProcess = nativeProcesses.toggle;
+    const toggleNativeHistoryProcess = useCallback(
+      (input: { turnId: string; itemId: string }) =>
+        preserveProcessAnchor({
+          ...input,
+          applyChange: () => toggleNativeProcess(input.turnId),
+        }),
+      [toggleNativeProcess, preserveProcessAnchor],
     );
     const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
@@ -1303,7 +1334,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                 client={client}
                 viewport={viewportRef}
                 expanded={nativeProcesses.expandedTurnIds.has(layoutItem.item.turnId)}
-                onToggle={nativeProcesses.toggle}
+                onToggle={toggleNativeHistoryProcess}
+                registerAnchor={registerCompletedProcessAnchor}
               />
               {host ? (
                 <CompletedTurnFooterRow
@@ -1358,7 +1390,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         handleForkAssistantTurn,
         readOnly,
         nativeProcesses.expandedTurnIds,
-        nativeProcesses.toggle,
+        toggleNativeHistoryProcess,
         renderStreamItemContent,
         streamRenderStrategy,
         supportsAgentForkContextCursor,

@@ -17,12 +17,14 @@ export function createContentToggleAnchor(port: ContentToggleAnchorPort) {
   let revision = 0;
   let frame: number | null = null;
   let timeout: ReturnType<typeof setTimeout> | null = null;
+  let restorePending: (() => void) | null = null;
   const cancel = () => {
     revision += 1;
     if (frame !== null) cancelAnimationFrame(frame);
     if (timeout !== null) clearTimeout(timeout);
     frame = null;
     timeout = null;
+    restorePending = null;
     port.setActive(false);
   };
   const preserve = (request: ContentToggleRequest) => {
@@ -41,11 +43,8 @@ export function createContentToggleAnchor(port: ContentToggleAnchorPort) {
       request.applyChange();
       let measurement = 0;
       let lastAppliedMeasurement = 0;
-      const restore = () => {
-        frame = null;
+      const correctPosition = (countStableFrame: boolean) => {
         const currentMeasurement = ++measurement;
-        // 卸载的原生单元可能不再返回回调，不能让一次测量阻断恢复。
-        frame = requestAnimationFrame(restore);
         request.measure((nextTop) => {
           if (revision !== currentRevision || currentMeasurement <= lastAppliedMeasurement) return;
           lastAppliedMeasurement = currentMeasurement;
@@ -56,14 +55,21 @@ export function createContentToggleAnchor(port: ContentToggleAnchorPort) {
           if (Math.abs(delta) > 0.5) {
             port.setOffset(Math.max(0, port.getOffset() + (port.inverted ? -delta : delta)));
             stableFrames = 0;
-          } else {
+          } else if (countStableFrame) {
             stableFrames += 1;
           }
           if (stableFrames >= 4) cancel();
         });
       };
+      const restore = () => {
+        frame = null;
+        // 卸载的原生单元可能不再返回回调，不能让一次测量阻断恢复。
+        frame = requestAnimationFrame(restore);
+        correctPosition(true);
+      };
+      restorePending = () => correctPosition(false);
       frame = requestAnimationFrame(restore);
     });
   };
-  return { preserve, cancel };
+  return { preserve, cancel, restore: () => restorePending?.() };
 }
