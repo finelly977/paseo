@@ -50,54 +50,63 @@ test("后台过程里的用户记录即使标识不同，也不新增用户气�
   ).toEqual(["summary-user"]);
 });
 
-test("同一时刻的不同压缩拥有独立身份，历史过程收起后压缩线仍然可见", () => {
-  const process: NativeHistoryProcessItem = {
-    kind: "native_history_process",
-    id: "process",
-    turnId: "turn",
-    status: "completed",
-    timestamp: new Date(1000),
-    durationMs: 4000,
-    error: null,
-    summaryMessageIds: [],
-    summaryRevision: "r",
-  };
-  const items: AgentTimelineItem[] = [
-    { type: "compaction", compactionId: "one", status: "completed" },
-    { type: "compaction", compactionId: "two", status: "completed" },
-  ];
-  expect(new Set(hydrateNativeHistoryDetails(process, items).map((item) => item.id)).size).toBe(2);
-  const detailsByTurn = new Map([
-    [
-      "turn",
-      {
-        serverId: "host",
-        agentId: "agent",
-        turnId: "turn",
-        revision: "r",
-        items,
-        nextCursor: null,
-        complete: true,
-        loading: false,
-        error: null,
-      },
-    ],
-  ]);
-  const closed = presentNativeHistoryProcesses({
-    tail: [process],
-    expandedTurnIds: new Set(),
-    detailsByTurn,
-  });
-  const opened = presentNativeHistoryProcesses({
-    tail: [process],
-    expandedTurnIds: new Set(["turn"]),
-    detailsByTurn,
-  });
-  expect(closed.filter((item) => item.kind === "compaction").map((item) => item.id)).toEqual(
-    opened.filter((item) => item.kind === "compaction").map((item) => item.id),
-  );
-  expect(closed.filter((item) => item.kind === "compaction")).toHaveLength(2);
-});
+test.each(["completed", "interrupted", "failed"] as const)(
+  "%s 回合的压缩线随过程收起，展开后保留不同压缩的独立身份",
+  (status) => {
+    const process: NativeHistoryProcessItem = {
+      kind: "native_history_process",
+      id: "process",
+      turnId: "turn",
+      status,
+      timestamp: new Date(1000),
+      durationMs: 4000,
+      error: null,
+      summaryMessageIds: [],
+      summaryRevision: "r",
+    };
+    const items: AgentTimelineItem[] = [
+      { type: "compaction", compactionId: "one", status: "completed" },
+      { type: "compaction", compactionId: "two", status: "completed" },
+    ];
+    expect(new Set(hydrateNativeHistoryDetails(process, items).map((item) => item.id)).size).toBe(
+      2,
+    );
+    const detailsByTurn = new Map([
+      [
+        "turn",
+        {
+          serverId: "host",
+          agentId: "agent",
+          turnId: "turn",
+          revision: "r",
+          items,
+          nextCursor: null,
+          complete: true,
+          loading: false,
+          error: null,
+        },
+      ],
+    ]);
+    const closed = presentNativeHistoryProcesses({
+      tail: [process],
+      expandedTurnIds: new Set(),
+      detailsByTurn,
+    });
+    const opened = presentNativeHistoryProcesses({
+      tail: [process],
+      expandedTurnIds: new Set(["turn"]),
+      detailsByTurn,
+    });
+    expect(closed).toEqual([process]);
+    const compactions = opened.filter((item) => item.kind === "compaction");
+    expect(compactions).toHaveLength(2);
+    expect(new Set(compactions.map((item) => item.id)).size).toBe(2);
+    expect(compactions.every((item) => item.nativeProcessDetail === true)).toBe(true);
+    expect(
+      presentNativeHistoryProcesses({ tail: [process], expandedTurnIds: new Set(), detailsByTurn }),
+    ).toEqual([process]);
+  },
+);
 
 test("当前轮后台补载同一次压缩时只显示一个标记，保留两次不同压缩", () => {
   const process: NativeHistoryProcessItem = {

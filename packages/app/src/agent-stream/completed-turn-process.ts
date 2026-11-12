@@ -34,7 +34,11 @@ export function buildCompletedTurnProcessModel(input: {
   const assistantById = new Map<string, AssistantMessageItem>();
   const firstAssistantByBlockGroupId = new Map<string, AssistantMessageItem>();
   const indexByItemId = new Map<string, number>();
-  const itemById = new Map(input.chronologicalItems.map((item) => [item.id, item]));
+  const loadingCompactionIds = new Set(
+    input.chronologicalItems.flatMap((item) =>
+      item.kind === "compaction" && item.status === "loading" ? [item.id] : [],
+    ),
+  );
   for (const [index, item] of input.chronologicalItems.entries()) {
     indexByItemId.set(item.id, index);
     if (item.kind !== "assistant_message") continue;
@@ -47,9 +51,7 @@ export function buildCompletedTurnProcessModel(input: {
   }
 
   for (const host of input.hosts) {
-    const processItemIds = host.processItemIds.filter(
-      (id) => itemById.get(id)?.kind !== "compaction",
-    );
+    const processItemIds = host.processItemIds.filter((id) => !loadingCompactionIds.has(id));
     if (processItemIds.length === 0) {
       continue;
     }

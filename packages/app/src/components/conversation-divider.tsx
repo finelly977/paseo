@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 
@@ -11,16 +11,8 @@ export function ConversationDivider({
   spacing: number;
   labelPosition: "above" | "center";
 }) {
-  const style = useMemo(
-    () => [
-      styles.root,
-      { paddingVertical: spacing },
-      labelPosition === "center" ? styles.center : { gap: spacing },
-    ],
-    [labelPosition, spacing],
-  );
   return (
-    <View style={style} testID="conversation-divider">
+    <View style={styles.root(spacing, labelPosition)} testID="conversation-divider">
       {labelPosition === "center" && (
         <View style={[styles.line, styles.flexLine]} testID="conversation-divider-line" />
       )}
@@ -34,8 +26,14 @@ export function ConversationDivider({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  root: { width: "100%" },
-  center: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  root: (spacing: number, labelPosition: "above" | "center") => ({
+    width: "100%",
+    paddingTop: spacing,
+    paddingBottom: spacing,
+    flexDirection: labelPosition === "center" ? "row" : "column",
+    alignItems: labelPosition === "center" ? "center" : "stretch",
+    gap: labelPosition === "center" ? theme.spacing[2] : spacing,
+  }),
   line: { height: 1, backgroundColor: theme.colors.border },
   flexLine: { flex: 1 },
   fullLine: { flexShrink: 0, width: "100%" },

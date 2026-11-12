@@ -16,7 +16,12 @@ import type { DisclosureChevronProps, DisclosureContentProps } from "./disclosur
 const easing = Easing.bezier(...MOTION_BEZIER.standard);
 
 /** 只过渡显式展开操作；初次挂载、流式更新与内容重测不播放入场动画。 */
-export function DisclosureContent({ expanded, children, testID }: DisclosureContentProps) {
+export function DisclosureContent({
+  expanded,
+  children,
+  testID,
+  animateLayout = true,
+}: DisclosureContentProps) {
   const reducedMotion = useReducedMotion();
   const active = useRetainedPanelActive();
   const [retained, setRetained] = useState(expanded);
@@ -54,21 +59,28 @@ export function DisclosureContent({ expanded, children, testID }: DisclosureCont
     }
 
     const duration = expanded ? MOTION_DURATION.base : MOTION_DURATION.fast;
-    progress.value = withTiming(expanded ? 1 : 0, { duration, easing });
-    height.value = withTiming(
-      expanded ? contentHeight.value : 0,
-      { duration, easing },
-      (finished) => {
-        if (finished && !expanded) {
-          scheduleOnRN(finishClosing);
-        }
-      },
-    );
+    progress.value = withTiming(expanded ? 1 : 0, { duration, easing }, (finished) => {
+      if (finished && !expanded) {
+        scheduleOnRN(finishClosing);
+      }
+    });
+    if (animateLayout) {
+      height.value = withTiming(expanded ? contentHeight.value : 0, { duration, easing });
+    }
     return () => {
       cancelAnimation(height);
       cancelAnimation(progress);
     };
-  }, [active, contentHeight, expanded, finishClosing, height, progress, reducedMotion]);
+  }, [
+    active,
+    animateLayout,
+    contentHeight,
+    expanded,
+    finishClosing,
+    height,
+    progress,
+    reducedMotion,
+  ]);
 
   const onLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -89,7 +101,7 @@ export function DisclosureContent({ expanded, children, testID }: DisclosureCont
   );
 
   const animatedStyle = useAnimatedStyle(() => ({
-    height: measured.value || !initiallyExpanded ? height.value : undefined,
+    height: animateLayout && (measured.value || !initiallyExpanded) ? height.value : undefined,
     opacity: progress.value,
   }));
 
@@ -103,7 +115,7 @@ export function DisclosureContent({ expanded, children, testID }: DisclosureCont
       importantForAccessibility={expanded ? "auto" : "no-hide-descendants"}
       aria-hidden={!expanded}
     >
-      <View style={styles.content} onLayout={onLayout}>
+      <View style={styles.content} onLayout={animateLayout ? onLayout : undefined}>
         {content}
       </View>
     </Animated.View>

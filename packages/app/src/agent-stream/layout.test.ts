@@ -10,7 +10,7 @@ import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { layoutStream, type StreamLayout, type StreamLayoutItem } from "./layout";
 import { buildCompletedTurnProcessModel } from "./completed-turn-process";
 
-it("已结束回合中的压缩标记不进入可收起的过程正文", () => {
+it("正在压缩的标记不进入可收起的过程正文", () => {
   const compact: StreamItem = {
     kind: "compaction",
     id: "compact",

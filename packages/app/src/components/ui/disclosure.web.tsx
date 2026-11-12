@@ -28,7 +28,12 @@ const subscribeReducedMotion = (notify: () => void) => {
 const contentStyle: CSSProperties = { minHeight: 0, overflow: "hidden" };
 
 // CSS Grid 自然测量内容，组件不逐帧设置高度或触发 React 渲染。
-export function DisclosureContent({ expanded, children, testID }: DisclosureContentProps) {
+export function DisclosureContent({
+  expanded,
+  children,
+  testID,
+  animateLayout = true,
+}: DisclosureContentProps) {
   const reducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     readReducedMotion,
@@ -54,6 +59,9 @@ export function DisclosureContent({ expanded, children, testID }: DisclosureCont
   const transition = reducedMotion
     ? "none"
     : `grid-template-rows ${duration}ms ${MOTION_EASING_CSS.standard}, opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
+  const opacityTransition = reducedMotion
+    ? "none"
+    : `opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
   const finishClosing = useCallback(
     (event: TransitionEvent<HTMLDivElement>) => {
       if (
@@ -71,9 +79,9 @@ export function DisclosureContent({ expanded, children, testID }: DisclosureCont
       gridTemplateRows: expanded ? "1fr" : "0fr",
       opacity: expanded ? 1 : 0,
       overflow: "hidden",
-      transition,
+      transition: animateLayout ? transition : opacityTransition,
     }),
-    [expanded, transition],
+    [animateLayout, expanded, opacityTransition, transition],
   );
   return (
     <div

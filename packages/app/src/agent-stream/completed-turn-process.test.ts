@@ -37,6 +37,35 @@ function processItem(id: string): StreamItem {
 }
 
 describe("完成回合过程收起展示", () => {
+  it.each(["loading", "completed"] as const)(
+    "普通时间线的 %s 压缩只在完成后纳入用时过程",
+    (status) => {
+      const compaction: StreamItem = {
+        kind: "compaction",
+        id: "compact",
+        status,
+        timestamp: timestamp(2),
+      };
+      const answer = assistantBlock({
+        id: "answer",
+        text: "最终结论",
+        blockGroupId: "answer",
+        blockIndex: 0,
+        seconds: 8,
+      });
+      const items = [compaction, answer];
+      const host: TurnFooterHost = {
+        kind: "assistant",
+        itemId: answer.id,
+        items,
+        startIndex: 1,
+        processItemIds: [compaction.id],
+      };
+      const model = buildCompletedTurnProcessModel({ hosts: [host], chronologicalItems: items });
+      expect(model.turnIdByProcessItemId.has("compact")).toBe(status === "completed");
+      expect([...model.toggleByItemId.keys()]).toEqual(status === "completed" ? ["compact"] : []);
+    },
+  );
   it("耗时使用统一的英文短单位，不把未知耗时当作零", () => {
     expect(formatCompletedTurnDuration(128_000)).toBe("2m 8s");
     expect(formatCompletedTurnDuration(6_692_000)).toBe("1h 51m");

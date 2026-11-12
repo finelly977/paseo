@@ -129,6 +129,7 @@ import {
 import { useSessionStore } from "@/stores/session-store";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { isWeb, isNative } from "@/constants/platform";
+import { resolveUserMessageFooterVisibility } from "./user-message-footer";
 import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
@@ -627,7 +628,12 @@ export const UserMessage = memo(function UserMessage({
   const hasAttachments = attachments.length > 0;
   const shouldCollapse = useMemo(() => shouldCollapseUserMessage(message), [message]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const showTrailingRow = hasText && (isCompact || isNative || isHovered);
+  const footerVisibility = resolveUserMessageFooterVisibility({
+    hasText,
+    touchLayout: isCompact || isNative,
+    hovered: isHovered,
+  });
+  const showTrailingRow = footerVisibility.actions;
   const formattedTimestamp = useMemo(
     () => (timestamp === null ? null : formatMessageTimestamp(new Date(timestamp))),
     [timestamp],
@@ -745,7 +751,9 @@ export const UserMessage = memo(function UserMessage({
         </View>
         {hasText ? (
           <View style={trailingRowStyle} pointerEvents={showTrailingRow ? "auto" : "none"}>
-            <Text style={userMessageStylesheet.timestampText}>{formattedTimestamp}</Text>
+            {footerVisibility.timestamp && (
+              <Text style={userMessageStylesheet.timestampText}>{formattedTimestamp}</Text>
+            )}
             {capabilities ? (
               <RewindMenu
                 capabilities={capabilities}

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { View } from "react-native";
 import { DisclosureContent } from "@/components/ui/disclosure";
+import { isWeb } from "@/constants/platform";
 const CONTENT_ROW_STYLE = { width: "100%" as const, alignItems: "center" as const };
 
 export function ProcessDisclosure({
@@ -30,7 +31,11 @@ export function ProcessDisclosure({
     return <View style={placeholderStyle} pointerEvents="none" aria-hidden />;
   }
   return (
-    <DisclosureContent expanded={expanded && ready} testID="process-disclosure">
+    <DisclosureContent
+      expanded={expanded && ready}
+      animateLayout={isWeb}
+      testID="process-disclosure"
+    >
       {() => <View style={CONTENT_ROW_STYLE}>{children()}</View>}
     </DisclosureContent>
   );

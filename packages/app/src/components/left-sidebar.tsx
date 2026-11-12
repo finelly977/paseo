@@ -666,13 +666,35 @@ function MobileSidebar({
       <View style={[styles.sidebarContent, mobileSidebarInsetStyle]} pointerEvents="auto">
         <WindowChromeSafeArea placement="below" />
         <View style={styles.sidebarHeaderGroup}>
-          <SidebarNewWorkspaceHeaderRow
-            label={labels.newWorkspace}
-            testID="sidebar-global-new-workspace"
-            variant="compact"
-            shortcutKeys={newWorkspaceKeys}
-            onBeforeNavigate={closeSidebar}
-          />
+          <WindowChromeSafeArea placement="inline" style={styles.mobileHeaderRow}>
+            <View style={styles.mobileHeaderTitle}>
+              <SidebarNewWorkspaceHeaderRow
+                label={labels.newWorkspace}
+                testID="sidebar-global-new-workspace"
+                variant="compact"
+                shortcutKeys={newWorkspaceKeys}
+                onBeforeNavigate={closeSidebar}
+              />
+            </View>
+            <Pressable
+              style={styles.mobileCloseButton}
+              onPress={closeSidebar}
+              testID="sidebar-close"
+              nativeID="sidebar-close"
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={labels.closeSidebar}
+            >
+              {({ hovered, pressed }) => (
+                <ThemedSidebarIcon
+                  icon={X}
+                  size={ICON_SIZE.md}
+                  tone={hovered || pressed ? "foreground" : "muted"}
+                  uniProps={sidebarIconColorMapping}
+                />
+              )}
+            </Pressable>
+          </WindowChromeSafeArea>
           <SidebarHeaderRow
             icon={History}
             label={labels.sessions}
@@ -699,27 +721,6 @@ function MobileSidebar({
           />
           <PluginSidebarItems onBeforeNavigate={closeSidebar} />
         </View>
-        <WindowChromeSafeArea placement="inline" style={styles.mobileCloseButtonRow}>
-          <Pressable
-            style={styles.mobileCloseButton}
-            onPress={closeSidebar}
-            testID="sidebar-close"
-            nativeID="sidebar-close"
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={labels.closeSidebar}
-            hitSlop={8}
-          >
-            {({ hovered, pressed }) => (
-              <ThemedSidebarIcon
-                icon={X}
-                size={ICON_SIZE.md}
-                tone={hovered || pressed ? "foreground" : "muted"}
-                uniProps={sidebarIconColorMapping}
-              />
-            )}
-          </Pressable>
-        </WindowChromeSafeArea>
 
         {isInitialLoad && !hasActiveHostFilter ? (
           <SidebarAgentListSkeleton />
@@ -1058,19 +1059,18 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
     backgroundColor: theme.colors.surfaceSidebar,
   },
-  mobileCloseButtonRow: {
-    position: "absolute",
-    top: theme.spacing[3],
-    left: 0,
-    right: 0,
-    zIndex: 2,
-    alignItems: "flex-end",
-    pointerEvents: "box-none",
+  mobileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  mobileHeaderTitle: {
+    flex: 1,
+    minWidth: 0,
   },
   mobileCloseButton: {
-    marginRight: theme.spacing[4],
-    width: 32,
-    height: 32,
+    marginRight: theme.spacing[2],
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.lg,

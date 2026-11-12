@@ -308,7 +308,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         request.applyChange();
       },
       measure: (callback) => {
-        if (captured) revealProcessAnchor(true);
         request.measure((top) => {
           if (captured || top === null) {
             const target = toggleTargetRef.current;
@@ -316,6 +315,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
               callback(null);
               return;
             }
+            if (captured && top === null) revealProcessAnchor(true);
             if (captured && target && !target.contentChanged) {
               callback(null);
               return;
@@ -366,7 +366,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       },
     });
   });
-  const revealProcessAnchor = useStableEvent((force = false) => {
+  const revealProcessAnchor = useStableEvent((unmeasured = false) => {
     const target = toggleTargetRef.current;
     if (!isToggleAnchoring || !target || target.resolved) return;
     const index = historyRows.findIndex((item) => item.id === target.itemId);
@@ -375,9 +375,12 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         itemId: target.itemId,
         count: historyRows.length,
       });
-    if (index < 0 || index === target.previousIndex || (!force && index === target.revealedIndex))
+    if (
+      index < 0 ||
+      (!unmeasured && (index === target.previousIndex || index === target.revealedIndex))
+    )
       return;
-    // 展开会把同一个入口移到较大的虚拟下标，先让其重新进入渲染窗口，再精确校正屏幕坐标。
+    // 只在入口仍未挂载时重试粗定位；已可测量后反复按下标滚动会覆盖精确校正，造成闪动。
     target.revealedIndex = index;
     flatListRef.current?.scrollToIndex({
       index,
@@ -681,7 +684,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       previousContentHeight,
       contentHeight: nextContentHeight,
     });
-    revealProcessAnchor(true);
+    revealProcessAnchor();
     loadHistoryAtOldestEdge();
   });
 

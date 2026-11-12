@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { ProcessDisclosure } from "./process-disclosure";
 import { useProcessExpansion } from "./process-expansion";
 import { ConversationDivider } from "@/components/conversation-divider";
+import { DisclosureContent } from "@/components/ui/disclosure";
 
 const CONTENT_STYLE = { height: 120 };
 function Harness() {
@@ -76,9 +77,9 @@ test("用时过程逐行展开和收起，关闭后释放正文，快速重开�
   }
 });
 
-test("用时与压缩分割线共用正文边界和上下留白", async () => {
+test.each([390, 738])("%s 像素宽度下用时与压缩分割线共用正文边界和上下留白", async (width) => {
   const host = document.createElement("div");
-  Object.assign(host.style, { width: "738px", padding: "0 8px", boxSizing: "border-box" });
+  Object.assign(host.style, { width: `${width}px`, padding: "0 8px", boxSizing: "border-box" });
   document.body.appendChild(host);
   const root = createRoot(host);
   try {
@@ -111,6 +112,8 @@ test("用时与压缩分割线共用正文边界和上下留白", async () => {
       expect(getComputedStyle(divider).paddingTop).toBe("12px");
       expect(getComputedStyle(divider).paddingBottom).toBe("12px");
     }
+    const processLine = lines[0][0].getBoundingClientRect();
+    expect(dividers[0].getBoundingClientRect().bottom - processLine.bottom).toBe(12);
     for (const group of lines)
       for (const line of group) expect(line.getBoundingClientRect().height).toBe(1);
   } finally {
@@ -131,6 +134,39 @@ test("收起时新进入虚拟窗口的过程行只保留高度，不挂载工�
     );
     await expect.poll(() => host.getBoundingClientRect().height).toBe(64);
     expect(host.querySelector('[data-testid="unseen-tool"]')).toBeNull();
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+});
+
+test("不逐帧过渡布局时仍淡入淡出，快速重开不卸载正文", async () => {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const render = (expanded: boolean) =>
+    root.render(
+      <DisclosureContent expanded={expanded} animateLayout={false} testID="atomic-disclosure">
+        {() => <div style={CONTENT_STYLE}>过程正文</div>}
+      </DisclosureContent>,
+    );
+  try {
+    render(false);
+    await nextFrame();
+    render(true);
+    await expect.poll(() => host.textContent).toBe("过程正文");
+    const viewport = host.querySelector<HTMLElement>('[data-testid="atomic-disclosure"]');
+    if (!viewport) throw new Error("缺少过程视口");
+    expect(getComputedStyle(viewport).transitionProperty).toBe("opacity");
+    await expect.poll(() => viewport.getBoundingClientRect().height).toBe(120);
+    render(false);
+    await nextFrame();
+    render(true);
+    for (let frame = 0; frame < 24; frame++) await nextFrame();
+    expect(host.textContent).toBe("过程正文");
+    expect(viewport.getBoundingClientRect().height).toBe(120);
+    render(false);
+    await expect.poll(() => host.textContent).toBe("");
   } finally {
     root.unmount();
     host.remove();
