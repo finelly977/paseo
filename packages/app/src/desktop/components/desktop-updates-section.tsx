@@ -1,3 +1,4 @@
+import { PASEO_LINKS } from "@/constants/product-links";
 import React, { type ReactElement, useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Text, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -468,7 +469,7 @@ export function LocalDaemonSection() {
   );
 }
 
-const ADVANCED_DAEMON_SETTINGS_URL = "https://paseo.sh/docs/configuration";
+const ADVANCED_DAEMON_SETTINGS_URL = PASEO_LINKS.configuration;
 
 const styles = StyleSheet.create((theme) => ({
   actionGroup: {

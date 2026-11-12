@@ -1,14 +1,9 @@
 import type { StreamItem } from "@/types/stream";
-import {
-  isStandaloneMarkdownHorizontalRule,
-  splitMarkdownBlocks,
-} from "@/utils/split-markdown-blocks";
 import type { TurnFooterHost } from "./layout";
 
 export interface CompletedTurnProcessToggleModel {
   turnId: string;
   durationMs: number | undefined;
-  isFollowedByDivider: boolean;
 }
 
 export interface CompletedTurnProcessModel {
@@ -39,6 +34,7 @@ export function buildCompletedTurnProcessModel(input: {
   const assistantById = new Map<string, AssistantMessageItem>();
   const firstAssistantByBlockGroupId = new Map<string, AssistantMessageItem>();
   const indexByItemId = new Map<string, number>();
+  const itemById = new Map(input.chronologicalItems.map((item) => [item.id, item]));
   for (const [index, item] of input.chronologicalItems.entries()) {
     indexByItemId.set(item.id, index);
     if (item.kind !== "assistant_message") continue;
@@ -51,13 +47,16 @@ export function buildCompletedTurnProcessModel(input: {
   }
 
   for (const host of input.hosts) {
-    if (host.processItemIds.length === 0) {
+    const processItemIds = host.processItemIds.filter(
+      (id) => itemById.get(id)?.kind !== "compaction",
+    );
+    if (processItemIds.length === 0) {
       continue;
     }
-    for (const itemId of host.processItemIds) {
+    for (const itemId of processItemIds) {
       turnIdByProcessItemId.set(itemId, host.itemId);
     }
-    const firstProcessItemId = host.processItemIds.at(-1);
+    const firstProcessItemId = processItemIds.at(-1);
     if (!firstProcessItemId) {
       continue;
     }
@@ -77,14 +76,9 @@ export function buildCompletedTurnProcessModel(input: {
       firstFinalIndex < firstProcessIndex
         ? firstFinalBlock.id
         : firstProcessItemId;
-    const firstMarkdownBlock = firstFinalBlock
-      ? splitMarkdownBlocks(firstFinalBlock.text)[0]
-      : undefined;
     toggleByItemId.set(toggleItemId, {
       turnId: host.itemId,
       durationMs: host.timing?.durationMs,
-      isFollowedByDivider:
-        firstMarkdownBlock !== undefined && isStandaloneMarkdownHorizontalRule(firstMarkdownBlock),
     });
   }
 

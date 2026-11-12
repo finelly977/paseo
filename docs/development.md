@@ -456,6 +456,14 @@ Use `npm run build:server` whenever you have changed any daemon/server-facing pa
 
 本二开不从原作者 npm 最新版获取私有改动。源码、链接安装或自行打包的部署应继续沿用原安装方式更新，不能用 `npm install -g @getpaseo/cli@latest` 或官方 npm 自更新按钮替换二开。尚未推送的本地提交也无法通过远端 `git pull` 获取。
 
+二开运行时已拒绝执行原作者 npm 包的更新安装，并返回二开下载与构建提示；桌面自动更新继续使用本仓库的 Releases。
+
+### 二开站点与反馈入口
+
+应用外部链接集中维护于 `packages/app/src/constants/product-links.ts`，问题反馈、文档和下载均属于 `finelly977/paseo`。不要在新增界面里硬编码原作者的反馈、赞助或官网链接。原项目及第三方来源说明保留在 `NOTICE`、许可证与历史记录中；内部 npm workspace 名称和应用安装标识不是对外发布来源，不在入口清理时改名。
+
+配套网站不绑定原作者域名、Cloudflare 账户或统计脚本。自行部署时设置自己的 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN`；需要绝对地址的站点元信息与站点地图时设置 `VITE_SITE_URL`。GitHub 网站工作流仅手动运行，站点地址从仓库变量 `PASEO_WEBSITE_URL` 读取。未绑定 KV 时直接读取二开 GitHub 数据；需要跨请求缓存时，部署者自行添加 `WEBSITE_CACHE` 绑定。中继 Worker 的部署配置同样不绑定原作者账户、域名或 Fly 代理；默认使用自身 Durable Object 实现，只有显式设置 `PASEO_RELAY_UPSTREAM` 才启用迁移代理。既有用户的中继、配对和允许来源配置不自动迁移。
+
 源码部署在已发布改动后，从二开 `origin` 拉取目标分支，检查工作区无未保存改动，再在 Ubuntu 上运行 `npm ci`、`npm run build:server`；主机同时提供网页界面时再运行 `npm run build:daemon-web-ui`。必须在 Ubuntu 上安装依赖和构建，不能直接拷贝 Windows 的 `node_modules`。
 
 构建完成后，按原来的 supervisor、systemd 或容器方式重启对应实例，保留实际 `PASEO_HOME`。只有原本从该源码目录启动的 CLI 管理实例，才用 `node packages/cli/dist/index.js --home "$HOME/.paseo" daemon restart`，并按实际 Home 替换路径；systemd 用原服务，Docker 用二开的新镜像，不临时起第二个进程抢占端口。重启会中断该主机正在运行的智能体，应先结束任务；更新后在客户端核对远端版本与功能能力。

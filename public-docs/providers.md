@@ -25,4 +25,4 @@ Either way, **you install the underlying CLI**. Paseo runs it.
 
 - [Supported providers](/docs/supported-providers), the full list with install links.
 - [Custom providers](/docs/custom-providers), add your own provider, point an existing one at a different endpoint, run multiple profiles, or override the binary in `~/.paseo/config.json`.
-- [paseo.sh/agents](/agents), per-agent landing page for each supported provider.
+- [支持的智能体](/agents)，查看各提供方的介绍与使用方式。

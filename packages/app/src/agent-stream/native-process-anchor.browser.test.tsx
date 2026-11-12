@@ -128,6 +128,7 @@ function Harness({ detail }: { detail: typeof DETAIL }) {
         readId="read"
         gapAbove={0}
         gapBelow={12}
+        dividerSpacing={8}
       />
     ) : (
       <div style={ROW_STYLE}>{item.id}</div>

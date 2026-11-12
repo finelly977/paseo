@@ -1,34 +1,30 @@
 import * as React from "react";
+import type { ReleaseInfo } from "./latest-release";
 
-export function releaseBase(version: string) {
-  return `https://github.com/getpaseo/paseo/releases/download/v${version}`;
+export function releaseBase(tag: string) {
+  return `https://github.com/finelly977/paseo/releases/download/${encodeURIComponent(tag)}`;
 }
 
-export interface ReleaseAssetInfo {
-  version: string;
-  linuxAppImageAsset: string;
-  windowsX64Asset: string | null;
-  windowsArm64Asset: string | null;
-}
+export type ReleaseAssetInfo = ReleaseInfo;
 
 export function downloadUrls(release: ReleaseAssetInfo) {
   const { version, linuxAppImageAsset, windowsX64Asset, windowsArm64Asset } = release;
-  const base = releaseBase(version);
+  const base = releaseBase(release.tag);
+  const assetUrl = (name: string | null) =>
+    name !== null && release.assets.includes(name) ? `${base}/${name}` : null;
   return {
-    macAppleSilicon: `${base}/Paseo-${version}-arm64.dmg`,
-    macIntel: `${base}/Paseo-${version}-x64.dmg`,
-    linuxAppImage: `${base}/${linuxAppImageAsset}`,
-    linuxDeb: `${base}/Paseo-${version}-amd64.deb`,
-    linuxRpm: `${base}/Paseo-${version}-x86_64.rpm`,
-    windowsExeX64: `${base}/${windowsX64Asset ?? `Paseo-Setup-${version}.exe`}`,
-    windowsExeArm64: windowsArm64Asset ? `${base}/${windowsArm64Asset}` : null,
-    androidApk: `${base}/paseo-v${version}-android.apk`,
+    macAppleSilicon: assetUrl(`Paseo-${version}-arm64.dmg`),
+    macIntel: assetUrl(`Paseo-${version}-x64.dmg`),
+    linuxAppImage: assetUrl(linuxAppImageAsset),
+    linuxDeb: assetUrl(`Paseo-${version}-amd64.deb`),
+    linuxRpm: assetUrl(`Paseo-${version}-x86_64.rpm`),
+    windowsExeX64: assetUrl(windowsX64Asset),
+    windowsExeArm64: assetUrl(windowsArm64Asset),
+    androidApk: assetUrl(`paseo-v${version}-android.apk`),
   };
 }
 
-export const appStoreUrl = "https://apps.apple.com/app/paseo-pocket-engineer/id6758887924";
-export const playStoreUrl = "https://play.google.com/store/apps/details?id=sh.paseo";
-export const webAppUrl = "https://app.paseo.sh";
+export const webAppUrl = "/docs/web-ui";
 
 type Platform = "mac-silicon" | "mac-intel" | "windows" | "linux";
 
@@ -41,7 +37,7 @@ export interface DownloadOption {
 
 export function getDownloadOptions(release: ReleaseAssetInfo): DownloadOption[] {
   const urls = downloadUrls(release);
-  return [
+  const options: (Omit<DownloadOption, "href"> & { href: string | null })[] = [
     {
       platform: "mac-silicon",
       label: "Mac",
@@ -67,6 +63,7 @@ export function getDownloadOptions(release: ReleaseAssetInfo): DownloadOption[] 
       icon: LinuxIcon,
     },
   ];
+  return options.filter((option): option is DownloadOption => option.href !== null);
 }
 
 export function useDetectedPlatform(): Platform {

@@ -5,6 +5,12 @@ const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const appVariant = process.env.APP_VARIANT ?? "production";
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isLocalApkBuild = process.env.PASEO_LOCAL_APK === "1";
+const easProjectId = process.env.PASEO_EAS_PROJECT_ID;
+const easOwner = process.env.PASEO_EAS_OWNER;
+
+if (Boolean(easProjectId) !== Boolean(easOwner)) {
+  throw new Error("PASEO_EAS_PROJECT_ID and PASEO_EAS_OWNER must be configured together");
+}
 
 const buildProfile = isFdroidBuild
   ? {
@@ -16,7 +22,6 @@ const buildProfile = isFdroidBuild
       cameraPlugins: [],
       fdroidPlugins: [withFdroidAutolinking],
       notificationPlugins: [],
-      updates: { enabled: false },
     }
   : {
       androidPermissions: [
@@ -45,7 +50,6 @@ const buildProfile = isFdroidBuild
           },
         ],
       ],
-      updates: {},
     };
 
 function getNativeBuildVersionCode(version) {
@@ -129,11 +133,10 @@ export default {
     runtimeVersion: {
       policy: "appVersion",
     },
-    updates: {
-      url: "https://u.expo.dev/0e7f65ce-0367-46c8-a238-2b65963d235a",
-      ...buildProfile.updates,
-      ...(isLocalApkBuild ? { enabled: false } : {}),
-    },
+    updates:
+      easProjectId && !isFdroidBuild && !isLocalApkBuild
+        ? { url: `https://u.expo.dev/${easProjectId}` }
+        : { enabled: false },
     ios: {
       icon: "./assets/images/ios-icon.png",
       supportsTablet: true,
@@ -214,10 +217,8 @@ export default {
     extra: {
       fdroidBuild: isFdroidBuild,
       router: {},
-      eas: {
-        projectId: "0e7f65ce-0367-46c8-a238-2b65963d235a",
-      },
+      ...(easProjectId ? { eas: { projectId: easProjectId } } : {}),
     },
-    owner: "getpaseo",
+    ...(easOwner ? { owner: easOwner } : {}),
   },
 };

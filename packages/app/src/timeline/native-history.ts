@@ -48,6 +48,7 @@ export function mergeNativeHistoryPage(
   older: boolean,
   cursor: string | null,
   localPresentation: readonly StreamItem[] = current,
+  activeTurnId?: string | null,
 ): StreamItem[] {
   const incoming = nativeHistoryItems(page, cursor);
   const byClient = new Map<string, UserMessageItem>();
@@ -94,7 +95,7 @@ export function mergeNativeHistoryPage(
   const kept = current.filter(
     (item) => item.nativeTurnId !== undefined && !incomingTurns.has(item.nativeTurnId),
   );
-  const live = retainNativeHistoryLiveItems(current, page);
+  const live = retainNativeHistoryLiveItems(current, page, undefined, activeTurnId);
   if (older) return [...stable, ...kept, ...live];
   const overlap = current.findIndex(
     (item) => item.nativeTurnId !== undefined && incomingTurns.has(item.nativeTurnId),
@@ -110,6 +111,20 @@ interface NativeReadBoundary {
   activeTurnId: string | null | undefined;
   coveredStart: number | null;
   emptyThread: boolean;
+}
+
+function isActiveCompaction(
+  item: StreamItem,
+  page: NativeHistoryPage,
+  activeTurnId: string | null | undefined,
+): boolean {
+  return (
+    item.kind === "compaction" &&
+    item.status === "loading" &&
+    item.turnId !== undefined &&
+    (item.turnId === activeTurnId ||
+      page.turns.some((turn) => turn.id === item.turnId && turn.status === "inProgress"))
+  );
 }
 
 function wasRemovedBeforeNativeRead(item: UserMessageItem, boundary: NativeReadBoundary): boolean {
@@ -169,6 +184,10 @@ export function retainNativeHistoryLiveItems(
   const emptyThread = page.turns.length === 0 && page.nextCursor === null;
   let coveredGroup = false;
   for (const item of items) {
+    if (isActiveCompaction(item, page, activeTurnId)) {
+      live.push(item);
+      continue;
+    }
     if (item.kind === "user_message") {
       const matchedClient = clientIds.has(item.clientMessageId ?? item.id);
       const matchedMessage = item.messageId !== undefined && summaryIds.has(item.messageId);
@@ -229,6 +248,7 @@ export function planNativeHistoryPage(input: {
   const hasNativeItems = items.some((item) => item.nativeTurnId !== undefined);
   const sameRead = previous?.readId === page.readId && hasNativeItems && (older || hasOverlap);
   const keepAcrossReset = (item: StreamItem) =>
+    isActiveCompaction(item, page, input.activeTurnId) ||
     (item.kind === "user_message" &&
       (item.optimistic === true || isUnreconciledLocalUserMessage(item))) ||
     (input.activeTurnId != null && item.turnId === input.activeTurnId) ||
@@ -250,7 +270,14 @@ export function planNativeHistoryPage(input: {
       ? item.nativeTurnId !== undefined || survivingLive.has(item)
       : survivingLive.has(item) && keepAcrossReset(item),
   );
-  const tail = mergeNativeHistoryPage(retained, page, older, page.cursor, [...items, ...head]);
+  const tail = mergeNativeHistoryPage(
+    retained,
+    page,
+    older,
+    page.cursor,
+    [...items, ...head],
+    input.activeTurnId,
+  );
   const nativeState =
     sameRead && previous && !older
       ? previous

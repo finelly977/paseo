@@ -13,7 +13,9 @@ export interface GitHubRelease {
 
 export interface ReleaseInfo {
   version: string;
-  linuxAppImageAsset: string;
+  tag: string;
+  assets: string[];
+  linuxAppImageAsset: string | null;
   windowsX64Asset: string | null;
   windowsArm64Asset: string | null;
 }
@@ -21,20 +23,15 @@ export interface ReleaseInfo {
 const LINUX_APPIMAGE_ASSET_PATTERN =
   /^Paseo-(?:\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)-)?x86_64\.AppImage$/;
 
-const REQUIRED_ASSET_PATTERNS = [
-  /Paseo-.*-arm64\.dmg$/,
-  LINUX_APPIMAGE_ASSET_PATTERN,
-  /Paseo-Setup-.*\.exe$/,
-];
+const DOWNLOAD_ASSET_PATTERN =
+  /^(?:Paseo-[\w.-]+\.(?:dmg|AppImage|deb|rpm|exe)|paseo-v[\w.-]+-android\.apk)$/;
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/getpaseo/paseo/releases?per_page=10";
-const RELEASE_CACHE_KEY = "github-release:v1";
-const ANDROID_RELEASE_CACHE_KEY = "github-android-release:v1";
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/finelly977/paseo/releases?per_page=10";
+const RELEASE_CACHE_KEY = "github-release:finelly977:v1";
+const ANDROID_RELEASE_CACHE_KEY = "github-android-release:finelly977:v1";
 
-function hasRequiredAssets(release: GitHubRelease): boolean {
-  return REQUIRED_ASSET_PATTERNS.every((pattern) =>
-    release.assets.some((asset) => pattern.test(asset.name)),
-  );
+function hasDownloadAssets(release: GitHubRelease): boolean {
+  return release.assets.some((asset) => DOWNLOAD_ASSET_PATTERN.test(asset.name));
 }
 
 function pickWindowsAssets(assets: GitHubAsset[]) {
@@ -57,7 +54,7 @@ function pickLinuxAppImageAsset(assets: GitHubAsset[]) {
 }
 
 function versionFromTag(tag: string): string {
-  return tag.replace(/^v/, "");
+  return tag.replace(/^(?:windows-installer-|android-apk-)?v/, "");
 }
 
 async function fetchGitHubReleases(): Promise<GitHubRelease[]> {
@@ -69,7 +66,7 @@ async function fetchGitHubReleases(): Promise<GitHubRelease[]> {
     cf: {
       cacheEverything: true,
       cacheTtl: 60,
-      cacheKey: "github-releases-latest",
+      cacheKey: "finelly977-releases-latest",
     },
   } as RequestInit);
   if (!response.ok) throw new Error(`github releases ${response.status}`);
@@ -80,16 +77,20 @@ async function fetchGitHubReleases(): Promise<GitHubRelease[]> {
 async function fetchLatestReadyRelease(): Promise<ReleaseInfo> {
   const releases = await fetchGitHubReleases();
   const ready = releases.find(
-    (release) => !release.prerelease && !release.draft && hasRequiredAssets(release),
+    (release) =>
+      !release.prerelease &&
+      !release.draft &&
+      /^\d+\.\d+\.\d+$/.test(versionFromTag(release.tag_name)) &&
+      hasDownloadAssets(release),
   );
   if (!ready) throw new Error("no ready GitHub release found");
 
   const windowsAssets = pickWindowsAssets(ready.assets);
   const linuxAppImageAsset = pickLinuxAppImageAsset(ready.assets);
-  if (!linuxAppImageAsset) throw new Error("ready release missing Linux AppImage asset");
-
   return {
     version: versionFromTag(ready.tag_name),
+    tag: ready.tag_name,
+    assets: ready.assets.map((asset) => asset.name),
     linuxAppImageAsset,
     windowsX64Asset: windowsAssets.x64,
     windowsArm64Asset: windowsAssets.arm64,
@@ -123,11 +124,13 @@ function isReleaseInfo(value: unknown): value is ReleaseInfo {
   return (
     typeof record.version === "string" &&
     /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(record.version) &&
-    typeof record.linuxAppImageAsset === "string" &&
-    (record.linuxAppImageAsset === "Paseo-x86_64.AppImage" ||
-      new RegExp(`^Paseo-${record.version.replaceAll(".", "\\.")}-x86_64\\.AppImage$`).test(
-        record.linuxAppImageAsset,
-      )) &&
+    typeof record.tag === "string" &&
+    record.tag.length > 0 &&
+    Array.isArray(record.assets) &&
+    record.assets.every((asset) => typeof asset === "string") &&
+    (record.linuxAppImageAsset === null ||
+      (typeof record.linuxAppImageAsset === "string" &&
+        LINUX_APPIMAGE_ASSET_PATTERN.test(record.linuxAppImageAsset))) &&
     (typeof record.windowsX64Asset === "string" || record.windowsX64Asset === null) &&
     (typeof record.windowsArm64Asset === "string" || record.windowsArm64Asset === null) &&
     (record.windowsX64Asset === null ||

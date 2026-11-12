@@ -1,3 +1,4 @@
+import { PASEO_LINKS } from "@/constants/product-links";
 import { useCallback, useMemo } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -17,8 +18,8 @@ import {
 } from "@/desktop/daemon/desktop-daemon";
 import { useCliInstall, useSkillsStatus } from "@/desktop/hooks/use-install-status";
 
-const CLI_DOCS_URL = "https://paseo.sh/docs/cli";
-const SKILLS_DOCS_URL = "https://paseo.sh/docs/skills";
+const CLI_DOCS_URL = PASEO_LINKS.cli;
+const SKILLS_DOCS_URL = PASEO_LINKS.skills;
 const OP_KIND_ORDER: Record<SkillOp["kind"], number> = { add: 0, update: 1, delete: 2 };
 const OP_KIND_LABEL_KEY: Record<SkillOp["kind"], string> = {
   add: "settings.integrations.operations.add",

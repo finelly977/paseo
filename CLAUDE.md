@@ -16,7 +16,7 @@ Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移�
 - `packages/cli` — Docker 风格命令行工具（`paseo run/ls/logs/wait`）
 - `packages/relay` — 端到端加密的远程中继
 - `packages/desktop` — Electron 桌面端外壳
-- `packages/website` — 营销网站（paseo.sh）
+- `packages/website` — 可独立部署的介绍、下载与文档网站
 
 ## 文档
 

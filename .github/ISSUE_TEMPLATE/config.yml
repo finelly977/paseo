@@ -1,5 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: Discord
-    url: https://discord.gg/jz8T2uahpH
-    about: Urgent or blocking issues, quick questions, sharing a video of a bug, or anything that's better as a chat.
+  - name: 二开版使用文档
+    url: https://github.com/finelly977/paseo/tree/main/public-docs
+    about: 安装、配置与常见问题。

@@ -151,7 +151,7 @@ buildNpmPackage rec {
 
   meta = {
     description = "Paseo desktop app (Electron wrapper)";
-    homepage = "https://github.com/getpaseo/paseo";
+    homepage = "https://github.com/finelly977/paseo";
     license = lib.licenses.agpl3Plus;
     mainProgram = "paseo-desktop";
     platforms = lib.platforms.linux;

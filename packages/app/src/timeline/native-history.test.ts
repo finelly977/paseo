@@ -34,6 +34,33 @@ const page: NativeHistoryPage = {
   ],
 };
 
+test("运行中的压缩不被滞后的完成摘要清掉，明确结束当前回合后才归入历史", () => {
+  const compact: StreamItem = {
+    kind: "compaction",
+    id: "compact",
+    compactionId: "compress",
+    turnId: "live-turn",
+    timestamp: new Date(3000),
+    status: "loading",
+  };
+  const items = mergeNativeHistoryPage([], page, false, null);
+  const pending = planNativeHistoryPage({
+    items: [...items, compact],
+    previous: { readId: "thread", firstTurnId: "turn", nextCursor: "older" },
+    page,
+    older: false,
+    activeTurnId: "live-turn",
+  });
+  expect(pending?.tail.filter((item) => item.kind === "compaction")).toEqual([compact]);
+  const finished = retainNativeHistoryLiveItems(
+    [...items, compact],
+    { ...page, turns: [{ ...page.turns[0], id: "live-turn" }] },
+    undefined,
+    null,
+  );
+  expect(finished.filter((item) => item.kind === "compaction")).toEqual([]);
+});
+
 test("摘要保留原生消息、过程入口与真实耗时，不伪造规范序号或工具事件", () => {
   const items = mergeNativeHistoryPage([], page, false, null);
   expect(items.map((item) => item.kind)).toEqual([

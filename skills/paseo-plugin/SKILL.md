@@ -11,12 +11,12 @@ Build or manage the requested plugin directly. Use the current public docs to ca
 
 ## Check current documentation
 
-Fetch [https://paseo.sh/llms.txt](https://paseo.sh/llms.txt) first. Select and fetch the current plugin Markdown pages from that index before changing a plugin:
+优先以当前二开仓库的代码和文档为准：
 
-- [Plugin quickstart](https://paseo.sh/docs/plugins.md) ([browser page](https://paseo.sh/docs/plugins))
-- [Plugin reference](https://paseo.sh/docs/plugins/reference.md) ([browser page](https://paseo.sh/docs/plugins/reference))
+- [插件快速开始](https://github.com/finelly977/paseo/blob/main/public-docs/plugins/index.md)
+- [插件参考](https://github.com/finelly977/paseo/blob/main/public-docs/plugins/reference.md)
 
-Use the deployed docs when they disagree with this skill. Do not send the user away to read them instead of completing the work.
+需要抓取 Markdown 时，使用对应文件的 `raw.githubusercontent.com/finelly977/paseo/main/` 地址，不要从原作者网站加载不同版本的契约。
 
 When working in the Paseo repository, also read `docs/plugins.md` and the relevant example under `plugin-examples/`.
 
@@ -214,7 +214,7 @@ function PullRequestAction() {
 }
 ```
 
-The API covers workspaces, agents, providers, and daemon config. It omits connection lifecycle because Paseo owns the connection. Consult the current [SDK reference](https://paseo.sh/docs/sdk/reference.md) for method details.
+The API covers workspaces, agents, providers, and daemon config. It omits connection lifecycle because Paseo owns the connection. Consult the current [SDK reference](https://github.com/finelly977/paseo/blob/main/public-docs/sdk/reference.md) for method details.
 
 ### Add daemon-side behavior
 

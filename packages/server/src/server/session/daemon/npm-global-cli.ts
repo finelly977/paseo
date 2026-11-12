@@ -5,7 +5,6 @@ import { execCommand } from "../../../utils/spawn.js";
 export const PASEO_CLI_PACKAGE = "@getpaseo/cli";
 
 const NPM_PROBE_TIMEOUT_MS = 10_000;
-const NPM_INSTALL_TIMEOUT_MS = 300_000;
 const NPM_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
 
 const NpmGlobalListSchema = z
@@ -136,11 +135,10 @@ export class DefaultNpmGlobalPaseoCli implements NpmGlobalPaseoCli {
     return install;
   }
 
-  installLatest(): Promise<CommandResult> {
-    return this.runCommand("npm", ["install", "-g", `${PASEO_CLI_PACKAGE}@latest`], {
-      timeout: NPM_INSTALL_TIMEOUT_MS,
-      maxBuffer: NPM_MAX_BUFFER_BYTES,
-    });
+  async installLatest(): Promise<CommandResult> {
+    throw new Error(
+      "二开版不通过原作者的 npm 包更新。请从 https://github.com/finelly977/paseo/releases 下载二开版本，或在二开仓库中重新构建。",
+    );
   }
 }
 

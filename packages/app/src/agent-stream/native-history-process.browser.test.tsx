@@ -64,6 +64,7 @@ function Harness({ item }: { item: NativeHistoryProcessItem }) {
       viewport={viewport}
       gapAbove={0}
       gapBelow={12}
+      dividerSpacing={8}
     />
   );
 }

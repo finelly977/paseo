@@ -56,7 +56,7 @@ describe("DefaultNpmGlobalPaseoCli", () => {
     ]);
   });
 
-  test("runs the global install command for the latest cli", async () => {
+  test("二开版拒绝通过原作者的 npm 包更新，且不执行安装命令", async () => {
     const calls: CommandCall[] = [];
     const cli = new DefaultNpmGlobalPaseoCli(async (command, args, options) => {
       calls.push({
@@ -68,19 +68,10 @@ describe("DefaultNpmGlobalPaseoCli", () => {
       return { exitCode: 0, stdout: "changed 42 packages", stderr: "" };
     });
 
-    await expect(cli.installLatest()).resolves.toEqual({
-      exitCode: 0,
-      stdout: "changed 42 packages",
-      stderr: "",
-    });
-    expect(calls).toEqual([
-      {
-        command: "npm",
-        args: ["install", "-g", "@getpaseo/cli@latest"],
-        timeout: 300_000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    ]);
+    await expect(cli.installLatest()).rejects.toThrow(
+      "https://github.com/finelly977/paseo/releases",
+    );
+    expect(calls).toEqual([]);
   });
 
   test("reports missing npm when npm exits without JSON", async () => {

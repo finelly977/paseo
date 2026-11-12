@@ -110,6 +110,10 @@ import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tab
 import { toErrorMessage } from "@/utils/error-messages";
 import { AgentFailure } from "@/components/agent-failure";
 import { NativeHistoryProcess } from "./native-history-process";
+import { ConversationDivider } from "@/components/conversation-divider";
+import { ProcessDisclosure } from "./process-disclosure";
+import { useProcessExpansion } from "./process-expansion";
+import { estimateStreamItemHeight } from "./web-virtualization";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
   buildCompletedTurnProcessModel,
@@ -119,6 +123,7 @@ import {
 import { ConversationHistoryIndex } from "./history-index";
 import {
   buildConversationHistoryIndex,
+  buildHistoryIndexItemOwners,
   buildConversationHistoryIndexFromSummaries,
   matchesHistoryIndexEntry,
   getStreamItemDomId,
@@ -305,8 +310,7 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
 
 const EMPTY_STREAM_HEAD: StreamItem[] = [];
 const EMPTY_CONVERSATION_INDEX: AgentConversationIndexEntry[] = [];
-const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 39;
-const COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE = 26;
+const COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE = 23;
 const processToggleIconColorMapping = (theme: Theme) => ({
   color: theme.colors.foregroundMuted,
 });
@@ -319,12 +323,14 @@ function CompletedTurnProcessToggle({
   onToggle,
   registerAnchor,
   anchorItemId,
+  dividerSpacing,
 }: {
   model: CompletedTurnProcessToggleModel;
   expanded: boolean;
   onToggle: (input: { turnId: string; itemId: string }) => void;
   registerAnchor: (input: { turnId: string; node: View }) => () => void;
   anchorItemId: string;
+  dividerSpacing: number;
 }) {
   const { t } = useTranslation();
   const handlePress = useCallback(
@@ -348,41 +354,37 @@ function CompletedTurnProcessToggle({
     const duration = formatCompletedTurnDuration(model.durationMs);
     return t("agentStream.completedTurn.processedFor", { duration });
   }, [model.durationMs, t]);
-  const rowStyle = useMemo(
-    () => [
-      stylesheet.completedTurnProcessToggleRow,
-      !expanded &&
-        model.isFollowedByDivider &&
-        stylesheet.completedTurnProcessToggleRowBeforeDivider,
-    ],
-    [expanded, model.isFollowedByDivider],
-  );
-
   return (
     <View
       ref={anchorRef}
       collapsable={false}
-      style={rowStyle}
+      style={stylesheet.completedTurnProcessToggleRow}
       testID={`completed-process-${model.turnId}`}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel}
-        accessibilityState={accessibilityState}
-        onPress={handlePress}
-        style={stylesheet.completedTurnProcessToggle}
-      >
-        <ThemedProcessToggleLayers size={16} aria-hidden uniProps={processToggleIconColorMapping} />
-        <Text style={stylesheet.completedTurnProcessToggleText}>{label}</Text>
-        <DisclosureChevron
-          expanded={expanded}
-          collapsedRotation={-90}
-          expandedRotation={0}
-          style={stylesheet.completedTurnProcessToggleIcon}
+      <ConversationDivider spacing={dividerSpacing} labelPosition="above">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          accessibilityState={accessibilityState}
+          onPress={handlePress}
+          style={stylesheet.completedTurnProcessToggle}
         >
-          <ThemedProcessToggleChevron size={12} uniProps={processToggleIconColorMapping} />
-        </DisclosureChevron>
-      </Pressable>
+          <ThemedProcessToggleLayers
+            size={16}
+            aria-hidden
+            uniProps={processToggleIconColorMapping}
+          />
+          <Text style={stylesheet.completedTurnProcessToggleText}>{label}</Text>
+          <DisclosureChevron
+            expanded={expanded}
+            collapsedRotation={-90}
+            expandedRotation={0}
+            style={stylesheet.completedTurnProcessToggleIcon}
+          >
+            <ThemedProcessToggleChevron size={12} uniProps={processToggleIconColorMapping} />
+          </DisclosureChevron>
+        </Pressable>
+      </ConversationDivider>
     </View>
   );
 }
@@ -494,9 +496,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
       new Set(),
     );
-    const [expandedCompletedTurnIds, setExpandedCompletedTurnIds] = useState<Set<string>>(
-      new Set(),
-    );
+    const {
+      expandedTurnIds: expandedCompletedTurnIds,
+      retainedTurnIds: retainedCompletedTurnIds,
+      transitioningTurnIds: transitioningCompletedTurnIds,
+      toggle: toggleCompletedProcess,
+    } = useProcessExpansion(agentId);
     const [pendingHistoryNavigation, setPendingHistoryNavigation] =
       useState<ConversationHistoryIndexEntry | null>(null);
     const openFileExplorerForCheckout = usePanelStore((state) => state.openFileExplorerForCheckout);
@@ -570,7 +575,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
       setExpandedToolCallGroupIds(new Set());
-      setExpandedCompletedTurnIds(new Set());
       setPendingHistoryNavigation(null);
     }, [agentId]);
 
@@ -885,19 +889,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       (input: { turnId: string; itemId: string }) => {
         preserveProcessAnchor({
           ...input,
-          applyChange: () =>
-            setExpandedCompletedTurnIds((previous) => {
-              const next = new Set(previous);
-              if (next.has(input.turnId)) {
-                next.delete(input.turnId);
-              } else {
-                next.add(input.turnId);
-              }
-              return next;
-            }),
+          applyChange: () => toggleCompletedProcess(input.turnId),
         });
       },
-      [preserveProcessAnchor],
+      [preserveProcessAnchor, toggleCompletedProcess],
     );
     const toggleNativeProcess = nativeProcesses.toggle;
     const toggleNativeHistoryProcess = useCallback(
@@ -911,15 +906,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
       const seen = new Set<string>();
-      for (const layoutItem of [...streamLayout.history, ...streamLayout.liveHead]) {
-        if (seen.has(layoutItem.item.id)) {
+      for (const item of [...retainedStreamItems, ...(retainedStreamHead ?? EMPTY_STREAM_HEAD)]) {
+        if (seen.has(item.id)) {
           continue;
         }
-        seen.add(layoutItem.item.id);
-        items.push(layoutItem.item);
+        seen.add(item.id);
+        items.push(item);
       }
       return buildConversationHistoryIndex(items);
-    }, [streamLayout.history, streamLayout.liveHead]);
+    }, [retainedStreamItems, retainedStreamHead]);
     const historyIndexSummaries = useMemo(
       () => buildConversationHistoryIndexFromSummaries(conversationIndexSummaries),
       [conversationIndexSummaries],
@@ -930,6 +925,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         loaded: loadedHistoryIndexEntries,
       });
     }, [historyIndexSummaries, loadedHistoryIndexEntries]);
+    const historyIndexItemOwners = useMemo(
+      () =>
+        buildHistoryIndexItemOwners(
+          [...effectiveStreamItems, ...(effectiveStreamHead ?? EMPTY_STREAM_HEAD)],
+          historyIndexEntries,
+        ),
+      [effectiveStreamItems, effectiveStreamHead, historyIndexEntries],
+    );
 
     const findLoadedHistoryAnchorId = useCallback(
       (entry: ConversationHistoryIndexEntry): string | null => {
@@ -1328,6 +1331,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                 item={layoutItem.item}
                 gapAbove={layoutItem.gapAbove}
                 gapBelow={layoutItem.gapBelow}
+                dividerSpacing={conversationDividerSpacing}
                 agentId={agentId}
                 serverId={resolvedServerId}
                 readId={native.readId}
@@ -1352,10 +1356,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           );
         }
         const processTurnId = completedTurnProcess.turnIdByProcessItemId.get(layoutItem.item.id);
-        const processExpanded = processTurnId ? expandedCompletedTurnIds.has(processTurnId) : false;
+        const processExpanded = processTurnId ? retainedCompletedTurnIds.has(processTurnId) : false;
         const content =
           processTurnId && !processExpanded ? null : renderStreamItemContent(layoutItem);
-        const renderedItem = renderStreamItemWithTurnFooter({
+        const itemContent = renderStreamItemWithTurnFooter({
           content,
           layoutItem,
           strategy: streamRenderStrategy,
@@ -1363,6 +1367,29 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           supportsNativeTurn: supportsAgentForkContextNativeTurn,
           onForkAssistantTurn: readOnly ? undefined : handleForkAssistantTurn,
         });
+        const nativeTurnId = layoutItem.item.nativeProcessDetail
+          ? layoutItem.item.nativeTurnId
+          : undefined;
+        const disclosureTurnId = processTurnId ?? nativeTurnId;
+        const renderedItem = disclosureTurnId ? (
+          <ProcessDisclosure
+            estimatedHeight={estimateStreamItemHeight(layoutItem.item, messageParagraphSpacing)}
+            expanded={
+              processTurnId
+                ? expandedCompletedTurnIds.has(processTurnId)
+                : nativeProcesses.expandedTurnIds.has(disclosureTurnId)
+            }
+            transitioning={
+              processTurnId
+                ? transitioningCompletedTurnIds.has(processTurnId)
+                : nativeProcesses.transitioningTurnIds.has(disclosureTurnId)
+            }
+          >
+            {() => itemContent}
+          </ProcessDisclosure>
+        ) : (
+          itemContent
+        );
         const toggle = completedTurnProcess.toggleByItemId.get(layoutItem.item.id);
         if (!toggle) {
           return renderedItem;
@@ -1377,6 +1404,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               onToggle={toggleCompletedTurnProcess}
               registerAnchor={registerCompletedProcessAnchor}
               anchorItemId={layoutItem.item.id}
+              dividerSpacing={conversationDividerSpacing}
             />
           ),
         });
@@ -1387,9 +1415,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         agentId,
         resolvedServerId,
         expandedCompletedTurnIds,
+        retainedCompletedTurnIds,
+        transitioningCompletedTurnIds,
+        messageParagraphSpacing,
+        conversationDividerSpacing,
         handleForkAssistantTurn,
         readOnly,
         nativeProcesses.expandedTurnIds,
+        nativeProcesses.transitioningTurnIds,
         toggleNativeHistoryProcess,
         renderStreamItemContent,
         streamRenderStrategy,
@@ -1577,24 +1610,22 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
-        if (!expandedCompletedTurnIds.has(turnId)) {
+        if (!retainedCompletedTurnIds.has(turnId)) {
           heights.set(itemId, 0);
         }
       }
       for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
         // 入口也可能承载最终正文，不能把整条正文的高度误估为单独一个按钮。
         if (!completedTurnProcess.turnIdByProcessItemId.has(itemId)) continue;
-        if (!expandedCompletedTurnIds.has(toggle.turnId)) {
+        if (!retainedCompletedTurnIds.has(toggle.turnId)) {
           heights.set(
             itemId,
-            toggle.isFollowedByDivider
-              ? COLLAPSED_PROCESS_TOGGLE_BEFORE_DIVIDER_HEIGHT_ESTIMATE
-              : COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE,
+            COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE + conversationDividerSpacing * 3,
           );
         }
       }
       return heights;
-    }, [completedTurnProcess, expandedCompletedTurnIds]);
+    }, [completedTurnProcess, retainedCompletedTurnIds, conversationDividerSpacing]);
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
@@ -1623,6 +1654,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           {isWeb && !isMobile ? (
             <ConversationHistoryIndex
               entries={historyIndexEntries}
+              itemOwners={historyIndexItemOwners}
               viewportRef={viewportRef}
               onNavigate={navigateHistoryIndex}
             />
@@ -2189,15 +2221,6 @@ const stylesheet = StyleSheet.create((theme) => ({
     maxWidth: MAX_CHAT_CONTENT_WIDTH,
     alignSelf: "center",
     paddingHorizontal: theme.spacing[2],
-    paddingBottom: theme.spacing[2],
-    marginBottom: theme.spacing[2],
-    borderBottomWidth: theme.borderWidth[1],
-    borderBottomColor: theme.colors.border,
-  },
-  completedTurnProcessToggleRowBeforeDivider: {
-    paddingBottom: 0,
-    marginBottom: theme.spacing[1],
-    borderBottomWidth: 0,
   },
   completedTurnProcessToggle: {
     minHeight: 20,

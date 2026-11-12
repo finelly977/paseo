@@ -128,6 +128,29 @@ describe("getAssistantBlockSpacing", () => {
 });
 
 describe("getGapBetweenStreamItems", () => {
+  it("相邻已查看图像沿用命令行的紧凑间距，不叠加普通段落间距", () => {
+    const first = assistantBlock({
+      id: "image-one",
+      blockGroupId: "one",
+      blockIndex: 0,
+      text: "![一](file:///one.png)",
+    });
+    const second = assistantBlock({
+      id: "image-two",
+      blockGroupId: "two",
+      blockIndex: 0,
+      text: "![二](file:///two.png)",
+    });
+    expect(getGapBetweenStreamItems(first, second, 24)).toBe(0);
+    expect(
+      getGapBetweenStreamItems(
+        first,
+        assistantBlock({ id: "text", blockGroupId: "text", blockIndex: 0, text: "说明正文" }),
+        24,
+      ),
+    ).toBe(24);
+  });
+
   it("用户卡片与回复边界始终保留消息间距，即使回复以横线开头或结尾", () => {
     const user = { kind: "user_message", id: "user", text: "继续", timestamp: new Date() } as const;
     for (const text of ["---", "正文\n\n---", "---\n\n正文"]) {

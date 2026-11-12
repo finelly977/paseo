@@ -1,188 +1,47 @@
-<p align="center">
-  <img src="packages/website/public/logo.svg" width="64" height="64" alt="Paseo logo">
-</p>
+# Paseo 独立二开版
 
-<h1 align="center">Paseo</h1>
+本仓库是 **[finelly977/paseo](https://github.com/finelly977/paseo)**，独立维护桌面、网页、服务端和 Android 构建。反馈、下载与更新均以本仓库为准。
 
-<p align="center">
-  <a href="README.md">English</a> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a>
-</p>
+- [下载二开版本](https://github.com/finelly977/paseo/releases)
+- [问题反馈](https://github.com/finelly977/paseo/issues)
+- [使用文档](public-docs/index.md)
+- [二开功能清单](docs/fork-features.md)
+- [开发指南](docs/development.md)
 
-<p align="center">
-  <a href="https://github.com/getpaseo/paseo/stargazers">
-    <img src="https://img.shields.io/github/stars/getpaseo/paseo?style=flat&logo=github" alt="GitHub stars">
-  </a>
-  <a href="https://github.com/getpaseo/paseo/releases">
-    <img src="https://img.shields.io/github/v/release/getpaseo/paseo?style=flat&logo=github" alt="GitHub release">
-  </a>
-  <a href="https://x.com/moboudra">
-    <img src="https://img.shields.io/badge/%40moboudra-555?logo=x" alt="X">
-  </a>
-  <a href="https://discord.gg/jz8T2uahpH">
-    <img src="https://img.shields.io/badge/Discord-555?logo=discord" alt="Discord">
-  </a>
-  <a href="https://www.reddit.com/r/PaseoAI/">
-    <img src="https://img.shields.io/badge/Reddit-555?logo=reddit" alt="Reddit">
-  </a>
-</p>
+## 功能
 
-<p align="center">One interface for Claude Code, Codex, Copilot, OpenCode, and Pi agents.</p>
+Paseo 连接你自己的开发环境，管理 Claude Code、Codex、OpenCode、Pi 等编程智能体。支持工作区、对话历史、文件编辑、Git 面板、终端、计划任务和插件。
 
-<p align="center">
-  <img src="https://paseo.sh/hero-mockup.png" alt="Paseo app screenshot" width="100%">
-</p>
+本二开版提供原生会话同步与分页、独立插件中心、多主机工作区及桌面显示优化等能力。当前有效行为与适用边界见[二开功能清单](docs/fork-features.md)。
 
-<p align="center">
-  <img src="https://paseo.sh/mobile-mockup.png" alt="Paseo mobile app" width="100%">
-</p>
+## 安装与连接
 
-> [!NOTE]
-> I'm a solo maintainer and don't always keep up with GitHub Issues daily.
-> If something is urgent or blocking you, [Discord](https://discord.gg/jz8T2uahpH) is the fastest place to reach me.
+桌面端和 Android APK 从[本仓库 Releases](https://github.com/finelly977/paseo/releases)下载。不使用原作者的应用商店、Homebrew 或 npm 包作为二开版安装来源。
 
----
+网页端可以由自己的守护进程直接提供，见[自托管网页端](public-docs/web-ui.md)。反向代理到域名后，客户端直连该域名及对外端口；配对和中继配置见[配置文档](public-docs/configuration.md)。
 
-Run agents in parallel on your own machines. Ship from your phone or your desk.
+Docker 使用本仓库源码构建或本仓库工作流发布的镜像，见[Docker 指南](docs/docker.md)。
 
-- **Self-hosted:** Agents run on your machine with your full dev environment. Use your tools, your configs, and your skills.
-- **Multi-provider:** Claude Code, Codex, Copilot, OpenCode, and Pi through the same interface. Pick the right model for each job.
-- **Voice control:** Dictate tasks or talk through problems in voice mode. Hands-free when you need it.
-- **Cross-device:** iOS, Android, desktop, web, and CLI. Start work at your desk, check in from your phone, script it from the terminal.
-- **Privacy-first:** Paseo doesn't have any telemetry, tracking, or forced log-ins.
+## 本地开发
 
-## Getting Started
+在仓库根目录使用 PowerShell：
 
-Paseo runs a local server called the daemon that manages your coding agents. Clients like the desktop app, mobile app, web app, and CLI connect to it.
-
-### Prerequisites
-
-You need at least one agent CLI installed and configured with your credentials:
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- [Codex](https://github.com/openai/codex)
-- [GitHub Copilot](https://github.com/features/copilot/cli/)
-- [OpenCode](https://github.com/anomalyco/opencode)
-- [Pi](https://pi.dev)
-
-### Desktop app (recommended)
-
-Download it from [paseo.sh/download](https://paseo.sh/download) or the [GitHub releases page](https://github.com/getpaseo/paseo/releases). Open the app and the daemon starts automatically. Nothing else to install.
-
-To connect from your phone, open **Settings → your host → Connections → Pair a device**.
-
-### CLI / headless
-
-Install the CLI and start Paseo:
-
-```bash
-npm install -g @getpaseo/cli
-paseo
-```
-
-This shows a QR code in the terminal. Connect from any client. This path is useful for servers and remote machines.
-
-For full setup and configuration, see:
-
-- [Docs](https://paseo.sh/docs)
-- [Configuration reference](https://paseo.sh/docs/configuration)
-
-### Docker
-
-Run the Paseo daemon and self-hosted web UI in Docker:
-
-```bash
-docker run -d --name paseo \
-  -p 6767:6767 \
-  -e PASEO_PASSWORD=change-me \
-  -v "$PWD/paseo-home:/home/paseo" \
-  -v "$PWD:/workspace" \
-  ghcr.io/getpaseo/paseo:latest
-```
-
-Open `http://localhost:6767` after it starts. Extend the base image with the agent CLIs you use, then provide credentials through environment variables or the persistent `/home/paseo` volume. See the [Docker documentation](docs/docker.md) for full setup details.
-
-## CLI
-
-Everything you can do in the app, you can do from the terminal.
-
-```bash
-paseo run --provider claude/opus-4.6 "implement user authentication"
-paseo run --provider codex/gpt-5.4 --worktree feature-x "implement feature X"
-
-paseo ls                           # list running agents
-paseo attach abc123                # stream live output
-paseo send abc123 "also add tests" # follow-up task
-
-# run on a remote daemon
-paseo --host workstation.local:6767 run "run the full test suite"
-```
-
-See the [full CLI reference](https://paseo.sh/docs/cli) for more.
-
-## Skills
-
-Skills teach your agent to use Paseo to orchestrate other agents.
-
-```bash
-npx skills add getpaseo/paseo
-```
-
-Then use them in any agent conversation:
-
-- `/paseo-handoff` — hand off work between agents. I use this to plan with Claude and then handoff to Codex to implement.
-- `/paseo-loop` — loop an agent against clear acceptance criteria (aka Ralph loops), optionally with a verifier.
-- `/paseo-advisor` — spin up a single agent as an advisor for a second opinion, without delegating the work itself.
-- `/paseo-committee` — form a committee of two contrasting agents to step back, do root cause analysis, and produce a plan.
-
-## Development
-
-Quick monorepo package map:
-
-- `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, MCP server)
-- `packages/app`: Expo client (iOS, Android, web)
-- `packages/cli`: `paseo` CLI for daemon and agent workflows
-- `packages/desktop`: Electron desktop app
-- `packages/relay`: Relay package for remote connectivity
-- `packages/website`: Marketing site and documentation (`paseo.sh`)
-
-Common commands:
-
-```bash
-# run all local dev services
-npm run dev
-
-# run individual surfaces
-npm run dev:server
-npm run dev:app
-npm run dev:desktop
-npm run dev:website
-
-# build the server stack
+```powershell
+git clone https://github.com/finelly977/paseo.git
+Set-Location -LiteralPath '.\paseo'
+npm ci
 npm run build:server
-
-# repo-wide checks
-npm run typecheck
+npm run dev
 ```
 
-## Community
+另开终端，在仓库根目录启动网页客户端：
 
-- [paseo-relay](https://github.com/zenghongtu/paseo-relay) — self-hosted relay in Go
-- [paseo-vscode](https://marketplace.visualstudio.com/items?itemName=hinnes.paseo-vscode) — VS Code extension
+```powershell
+npm run dev:app
+```
 
----
+开发环境使用仓库内的独立数据目录，不要重启正在管理会话的生产守护进程。桌面构建、测试和发布说明见 [CLAUDE.md](CLAUDE.md) 与 [docs/](docs/)。
 
-<p align="center">
-  <a href="https://star-history.com/#getpaseo/paseo&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=getpaseo/paseo&type=Date&theme=dark">
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=getpaseo/paseo&type=Date">
-      <img src="https://api.star-history.com/svg?repos=getpaseo/paseo&type=Date" alt="Star history chart for getpaseo/paseo" width="600" style="max-width: 100%;">
-    </picture>
-  </a>
-</p>
+## 许可证与来源
 
-## License
-
-Apache-2.0
+代码采用 [Apache License 2.0](LICENSE)。原项目来源与版权说明保留在 [NOTICE](NOTICE)，历史发布记录和第三方许可证不作删除。

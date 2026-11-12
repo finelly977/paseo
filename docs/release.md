@@ -128,9 +128,9 @@ done
 Verify both npm tags now resolve to `PASEO_VERSION` before considering the
 stable release complete.
 
-The Docker workflow builds images from the checked-out source tree on pull requests and on `main` as non-publishing checks. Stable `vX.Y.Z` tag pushes publish `ghcr.io/getpaseo/paseo:X.Y.Z` and `ghcr.io/getpaseo/paseo:latest`; beta `vX.Y.Z-beta.N` tag pushes publish only `ghcr.io/getpaseo/paseo:X.Y.Z-beta.N` and never move `latest`.
+The Docker workflow builds images from the checked-out source tree on pull requests and on `main` as non-publishing checks. Stable `vX.Y.Z` tag pushes publish `ghcr.io/finelly977/paseo:X.Y.Z` and `ghcr.io/finelly977/paseo:latest`; beta `vX.Y.Z-beta.N` tag pushes publish only `ghcr.io/finelly977/paseo:X.Y.Z-beta.N` and never move `latest`.
 
-Relay deployment is manual-only while `relay.paseo.sh` bridges traffic to the Fly deployment. Releases and pushes to `main` do not deploy the Cloudflare relay worker. Deploy it explicitly with `gh workflow run deploy-relay.yml` only when the production bridge should change.
+自托管中继仅支持手动部署：先设置自己的 Cloudflare 账户、令牌与域名，再显式运行 `gh workflow run deploy-relay.yml`。默认部署配置不绑定原作者的账户、域名或 Fly 上游代理；这不会改写已安装守护进程的连接配置。
 
 **Stable means stable.** If the user says "stable" or "ship stable", do not ask whether they want a beta first. They picked stable; treat it as a direct stable release. Only run the beta flow when the user explicitly says "beta".
 
@@ -367,7 +367,7 @@ gh workflow run docker.yml \
   -f publish=true
 ```
 
-This replaces `ghcr.io/getpaseo/paseo:X.Y.Z-beta.N` in place without touching
+This replaces `ghcr.io/finelly977/paseo:X.Y.Z-beta.N` in place without touching
 desktop, APK, or EAS release builders. The Docker exception is safe because the
 dispatch runs from `--ref main` and uses the explicit `paseo_version`; it does
 not check out or move the `v*` release tag.
@@ -482,19 +482,19 @@ Every bullet must be scannable at a glance. The changelog is not release documen
 
 Every changelog bullet must credit contributors and link to the PR(s) that delivered the change. This is not one-PR-per-line — a single bullet describes a user-facing change and may reference multiple PRs.
 
-Format: append `([#123](https://github.com/getpaseo/paseo/pull/123) by [@user](https://github.com/user))` at the end of each bullet. For changes spanning multiple PRs or contributors:
+Format: append `([#123](https://github.com/finelly977/paseo/pull/123) by [@user](https://github.com/user))` at the end of each bullet. For changes spanning multiple PRs or contributors:
 
 ```markdown
-- Voice mode now works on tablets with proper microphone permissions. ([#210](https://github.com/getpaseo/paseo/pull/210), [#215](https://github.com/getpaseo/paseo/pull/215) by [@alice](https://github.com/alice), [@bob](https://github.com/bob))
+- Voice mode now works on tablets with proper microphone permissions. ([#210](https://github.com/finelly977/paseo/pull/210), [#215](https://github.com/finelly977/paseo/pull/215) by [@alice](https://github.com/alice), [@bob](https://github.com/bob))
 ```
 
 Rules:
 
-- **Always link the PR number** as `[#N](https://github.com/getpaseo/paseo/pull/N)`.
+- **Always link the PR number** as `[#N](https://github.com/finelly977/paseo/pull/N)`.
 - **Always link the contributor's GitHub profile** as `[@user](https://github.com/user)`.
 - **One bullet = one user-facing change**, regardless of how many PRs went into it. Group related PRs on the same bullet.
 - **De-duplicate contributors.** If the same person authored multiple PRs in one bullet, list them once.
-- **Only credit external contributors.** Skip attribution for [@boudra](https://github.com/boudra). The changelog credits community contributions — core team work is the default.
+- **按真实贡献署名。** 引用本仓库实际合入的 PR 与提交作者，不把原作者的账户当作二开维护者，也不将历史贡献重新归给当前维护者。
 - **Credit the commit author, not the PR opener.** A maintainer often opens a PR that lands work authored by someone else (cherry-pick, rebase of a contributor's branch, manual extraction from a stacked PR). The squash commit preserves the original commit's author, but `gh pr view N --json author` returns the PR opener — using that field will silently mis-credit the work to the maintainer (and then the "skip @boudra" rule drops the attribution entirely). Always resolve attribution from commit authors.
 
   Use this command to get the GitHub logins for each PR:

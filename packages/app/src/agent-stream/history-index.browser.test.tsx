@@ -3,8 +3,56 @@ import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { ConversationHistoryIndex } from "./history-index.web";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
+import { getStreamItemDomId } from "./history-index-model";
 
 const VIEWPORT_REF = { current: null };
+const BODY_STYLE = { height: 2000 };
+const SCROLL_STYLE = { height: 500, overflowY: "auto" as const };
+
+test("用户气泡离开虚拟窗口后，正文仍维持所属轮次的高亮", async () => {
+  const host = document.createElement("div");
+  Object.assign(host.style, { position: "relative", width: "900px", height: "500px" });
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const entries: ConversationHistoryIndexEntry[] = [
+    { id: "first", title: "第一轮", preview: "", sourceIndex: 0 },
+    { id: "second", title: "第二轮", preview: "", sourceIndex: 1 },
+  ];
+  const owners = new Map([["long-process", entries[0]]]);
+  try {
+    root.render(
+      <>
+        <ConversationHistoryIndex
+          entries={entries}
+          itemOwners={owners}
+          viewportRef={VIEWPORT_REF}
+        />
+        <div data-testid="agent-chat-scroll" style={SCROLL_STYLE}>
+          <div id={getStreamItemDomId("long-process")} style={BODY_STYLE}>
+            第一轮的长过程
+          </div>
+        </div>
+      </>,
+    );
+    await expect
+      .poll(() => host.querySelectorAll("[data-history-index]").length, { timeout: 5000 })
+      .toBe(2);
+    await expect
+      .poll(() => host.querySelector('[data-history-index="0"][aria-current="step"]'))
+      .not.toBeNull();
+    const scroll = host.querySelector<HTMLElement>('[data-testid="agent-chat-scroll"]');
+    if (!scroll) throw new Error("缺少滚动视口");
+    scroll.scrollTop = 600;
+    scroll.dispatchEvent(new Event("scroll"));
+    await expect
+      .poll(() => host.querySelector('[data-history-index="0"][aria-current="step"]'))
+      .not.toBeNull();
+    expect(host.querySelectorAll('[aria-current="step"]').length).toBe(1);
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+});
 
 test("长会话只挂载可见刻度，滚动和键盘仍能访问全部历史", async () => {
   const host = document.createElement("div");

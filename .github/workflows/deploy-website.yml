@@ -1,24 +1,12 @@
 name: Deploy Website
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "CHANGELOG.md"
-      - "public-docs/**"
-      - "packages/website/**"
-      - "package.json"
-      - "package-lock.json"
-      - "patches/**"
-      - ".github/workflows/deploy-website.yml"
-  release:
-    types: [published]
   workflow_dispatch:
 
 jobs:
   deploy:
-    # 二开 APK 发布不能部署原作者的网站。
-    if: ${{ github.repository == 'getpaseo/paseo' && (github.event_name != 'release' || (!github.event.release.prerelease && !github.event.release.draft)) }}
+    # 仅在维护者配置自己的 Cloudflare 凭据后手动部署。
+    if: ${{ github.repository == 'finelly977/paseo' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -39,3 +27,5 @@ jobs:
         run: npm run deploy --workspace=@getpaseo/website
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VITE_SITE_URL: ${{ vars.PASEO_WEBSITE_URL }}

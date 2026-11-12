@@ -13,6 +13,8 @@ EAS profiles: `development`, `production`, and `production-apk` in `packages/app
 
 `development` uses Android `debug`.
 
+二开版不默认绑定原作者的 Expo 账户、项目或热更新地址。仅在维护者同时设置 `PASEO_EAS_PROJECT_ID` 与 `PASEO_EAS_OWNER` 后，构建才使用该自有项目；缺少其中任一项会明确报错。未配置时不启用 Expo 热更新，本地 APK 与 F-Droid 构建始终关闭热更新。`sh.paseo` 等安装标识不随本次归属清理变化。
+
 ## Version codes
 
 `packages/app/app.config.js` derives Android `versionCode` from the package version with:

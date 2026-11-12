@@ -10,15 +10,18 @@
     "voice",
     "voice-assistant"
   ],
-  "homepage": "https://paseo.sh",
+  "homepage": "https://github.com/finelly977/paseo",
+  "bugs": {
+    "url": "https://github.com/finelly977/paseo/issues"
+  },
   "license": "Apache-2.0",
   "author": {
-    "name": "Mohamed Boudra",
-    "email": "hello@moboudra.com"
+    "name": "finelly977",
+    "url": "https://github.com/finelly977"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/getpaseo/paseo.git"
+    "url": "https://github.com/finelly977/paseo.git"
   },
   "workspaces": [
     "packages/expo-two-way-audio",

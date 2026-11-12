@@ -32,13 +32,9 @@ import { CursorFieldProvider } from "~/components/butterfly";
 import { CommandDialog } from "~/components/command-dialog";
 import { AGENT_PAGES } from "~/data/agent-pages";
 import {
-  appStoreUrl,
-  playStoreUrl,
   webAppUrl,
   getDownloadOptions,
   useDetectedPlatform,
-  AppleIcon,
-  PlayStoreIcon,
   TerminalIcon,
   GlobeIcon,
 } from "~/downloads";
@@ -97,7 +93,6 @@ export function LandingPage({ title, subtitle }: LandingPageProps) {
             <LocalVoiceSection />
             <CLISection />
             <FAQ />
-            <SponsorCTA />
           </div>
         </main>
         <SiteFooter />
@@ -1214,25 +1209,7 @@ function GetStarted() {
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 transition-colors"
         >
           <GlobeIcon className="h-4 w-4" />
-          Web App
-        </a>
-        <a
-          href={appStoreUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-2 text-white hover:bg-white/10 transition-colors"
-          aria-label="App Store"
-        >
-          <AppleIcon className="h-5 w-5" />
-        </a>
-        <a
-          href={playStoreUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center rounded-lg border border-white/20 px-3 py-2 text-white hover:bg-white/10 transition-colors"
-          aria-label="Google Play"
-        >
-          <PlayStoreIcon className="h-5 w-5" />
+          自托管网页端
         </a>
         <ServerInstallButton />
       </div>
@@ -1267,7 +1244,15 @@ function GetStarted() {
 function DownloadButton() {
   const release = useRelease();
   const detectedPlatform = useDetectedPlatform();
-  const primary = getDownloadOptions(release).find((o) => o.platform === detectedPlatform)!;
+  const options = getDownloadOptions(release);
+  const primary = options.find((option) => option.platform === detectedPlatform) ?? options[0];
+  if (!primary) {
+    return (
+      <a href="/download" className="underline">
+        查看可用下载
+      </a>
+    );
+  }
   const PrimaryIcon = primary.icon;
 
   return (
@@ -1291,8 +1276,8 @@ const SERVER_INSTALL_TRIGGER = (
 
 const SERVER_INSTALL_FOOTNOTE = (
   <>
-    Requires Node.js 18+. Run <span className="font-mono text-white/40">paseo</span> to start the
-    daemon.
+    需要 Node.js 与 npm。进入克隆后的仓库，运行 npm ci、npm run
+    build:server，再按部署指南启动守护进程。
   </>
 );
 
@@ -1300,9 +1285,9 @@ function ServerInstallButton() {
   return (
     <CommandDialog
       trigger={SERVER_INSTALL_TRIGGER}
-      title="Run agents on a remote machine"
-      description="For headless machines you want to connect to from the Paseo apps. The desktop app already includes a built-in daemon."
-      command="npm install -g @getpaseo/cli && paseo"
+      title="从二开源码部署服务器"
+      description="先克隆二开仓库，再安装依赖与构建。桌面端已经内置守护进程，无需另行部署。"
+      command="git clone https://github.com/finelly977/paseo.git"
       footnote={SERVER_INSTALL_FOOTNOTE}
     />
   );
@@ -1840,13 +1825,12 @@ function FAQ() {
           Claude Code, Codex, Cursor, OpenCode, and Pi. Each agent runs as its own process using its
           own CLI or local integration. Paseo doesn&apos;t modify or wrap their behavior.
         </FAQItem>
-        <FAQItem question="Do I need the desktop app?">
-          No. You can run the daemon headless with{" "}
-          <code className="font-mono text-muted-foreground">
-            npm install -g @getpaseo/cli && paseo
-          </code>{" "}
-          and use the CLI, web app, or mobile app to connect. The desktop app just bundles the
-          daemon with a UI.
+        <FAQItem question="是否必须安装桌面端？">
+          不需要。可以按
+          <a href="/docs/web-ui" className="underline hover:text-white/80">
+            自托管指南
+          </a>
+          部署守护进程与网页端，或使用 CLI 连接。桌面安装包则已经包含守护进程和界面。
         </FAQItem>
         <FAQItem question="How does voice work?">
           Voice runs locally on your device by default. You talk, the app transcribes and sends it
@@ -1889,51 +1873,6 @@ function FAQ() {
           </a>
           .
         </FAQItem>
-      </div>
-    </motion.div>
-  );
-}
-
-function SponsorCTA() {
-  return (
-    <motion.div
-      initial={FADE_IN_UP}
-      whileInView={FADE_IN}
-      viewport={VIEWPORT_60}
-      transition={EASE_OUT_05}
-      className="rounded-xl bg-white/5 border border-white/10 p-8 md:p-10 text-left space-y-4 max-w-xl mx-auto"
-    >
-      <div className="text-sm text-muted-foreground leading-relaxed space-y-3">
-        <p>
-          Paseo is an independent open source project for running coding agents across your own
-          machines, phone, desktop, and CLI.
-        </p>
-        <p>
-          It&apos;s built around freedom of choice: use the provider you want, run it on your own
-          infrastructure, and keep your workflow portable.
-        </p>
-        <p>If you like Paseo, sponsorship is the best way to support continued development.</p>
-        <p>- Mo</p>
-      </div>
-      <div className="pt-2">
-        <a
-          href="https://github.com/sponsors/boudra"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 rounded-lg bg-white/10 border border-white/20 px-5 py-2.5 text-sm font-medium text-white hover:bg-white/15 transition-colors"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            className="text-pink-400"
-          >
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-          </svg>
-          Sponsor on GitHub
-        </a>
       </div>
     </motion.div>
   );

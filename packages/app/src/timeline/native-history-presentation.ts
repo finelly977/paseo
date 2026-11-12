@@ -10,7 +10,7 @@ import type { NativeHistoryDetails } from "./native-history-details";
 
 const completedDetailsCache = new WeakMap<
   NativeHistoryProcessItem,
-  WeakMap<AgentTimelineItem[], StreamItem[]>
+  WeakMap<AgentTimelineItem[], { expanded?: StreamItem[]; compactions?: StreamItem[] }>
 >();
 
 /** 展开的历史过程进入普通消息流，再走现有命令分组和外层虚拟化。 */
@@ -32,19 +32,22 @@ export function presentNativeHistoryProcesses(input: {
           )
         : undefined;
     const inserted: StreamItem[] = [];
-    if (input.expandedTurnIds.has(item.turnId)) {
+    {
       let byItems = completedDetailsCache.get(item);
       if (!byItems) {
         byItems = new WeakMap();
         completedDetailsCache.set(item, byItems);
       }
-      let rows = byItems.get(details.items);
+      const mode = input.expandedTurnIds.has(item.turnId) ? "expanded" : "compactions";
+      const cached = byItems.get(details.items) ?? {};
+      let rows = cached[mode];
       if (!rows) {
         const summaryIds = new Set(item.summaryMessageIds);
         rows = hydrateNativeHistoryDetails(
           item,
           details.items.filter(
             (entry) =>
+              (mode === "expanded" || entry.type === "compaction") &&
               entry !== previewSource &&
               !(
                 "messageId" in entry &&
@@ -54,11 +57,16 @@ export function presentNativeHistoryProcesses(input: {
           ),
         );
         for (const row of rows) {
-          row.id = `native-detail:${item.turnId}:${row.id}`;
+          row.id =
+            row.kind === "compaction" && row.compactionId
+              ? `native-compaction:${item.turnId}:${row.compactionId}`
+              : `native-detail:${item.turnId}:${row.id}`;
           row.nativeTurnId = item.turnId;
+          if (row.kind !== "compaction") row.nativeProcessDetail = true;
           row.nativePageCursor = item.nativePageCursor;
         }
-        byItems.set(details.items, rows);
+        cached[mode] = rows;
+        byItems.set(details.items, cached);
       }
       inserted.push(...rows);
     }
@@ -305,10 +313,12 @@ export function hydrateNativeHistoryDetails(
   details: AgentTimelineItem[],
 ): StreamItem[] {
   const rows = hydrateStreamState(
-    details.map((entry) => ({
-      event: { type: "timeline" as const, provider: "codex", item: entry, turnId: item.turnId },
-      timestamp: item.timestamp,
-    })),
+    details
+      .filter((entry) => entry.type !== "user_message")
+      .map((entry) => ({
+        event: { type: "timeline" as const, provider: "codex", item: entry, turnId: item.turnId },
+        timestamp: item.timestamp,
+      })),
     { source: "canonical" },
   );
   for (const row of rows) row.timestampUnknown = true; // 条目接口不提供每个操作的独立发生时间。

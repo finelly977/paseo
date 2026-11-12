@@ -20,4 +20,4 @@ Projects built by the Paseo community. These **aren't official Paseo projects** 
 
 ## Add your project
 
-Built something for Paseo, a relay, a deployment recipe, an integration, a client? Open a pull request or an issue on [GitHub](https://github.com/getpaseo/paseo) to get it listed here.
+Built something for Paseo, a relay, a deployment recipe, an integration, a client? Open a pull request or an issue on [GitHub](https://github.com/finelly977/paseo) to get it listed here.

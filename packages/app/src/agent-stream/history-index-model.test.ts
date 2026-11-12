@@ -11,6 +11,7 @@ import {
   HISTORY_INDEX_MAX_HEIGHT,
   HISTORY_INDEX_MARKER_PITCH,
   mergeConversationHistoryIndexEntries,
+  buildHistoryIndexItemOwners,
   resolveHistoryIndexRailLayout,
 } from "./history-index-model";
 
@@ -47,6 +48,16 @@ function assistant(id: string, text: string): StreamItem {
 }
 
 describe("conversation history index model", () => {
+  it("长过程正文归属本轮刻度，用户气泡不在虚拟窗口时也不跳过多轮", () => {
+    const items: StreamItem[] = [
+      user("first", "第一轮"),
+      { kind: "assistant_message", id: "reply", text: "长过程", timestamp: new Date() },
+      user("second", "第二轮"),
+    ];
+    const entries = buildConversationHistoryIndex(items);
+    expect(buildHistoryIndexItemOwners(items, entries).get("reply")).toBe(entries[0]);
+    expect(buildHistoryIndexItemOwners(items, entries).get("second")).toBe(entries[1]);
+  });
   it("重复提供方标识不覆盖不同历史位置，跳转只匹配目标位置", () => {
     const first = summaryEntry("reused-provider-id", 1);
     const second = summaryEntry("reused-provider-id", 20);
@@ -101,12 +112,42 @@ describe("conversation history index model", () => {
     ).toEqual([
       {
         id: "user-42",
+        messageId: "user-42",
         title: "检查历史索引",
         preview: "已经完成 检查。",
         sourceIndex: 0,
         seqStart: 420,
       },
     ]);
+  });
+
+  it("同一提交在原生历史与规范索引中采用不同展示标识时只占一个刻度", () => {
+    const loaded = {
+      ...loadedEntry("native-user"),
+      messageId: "provider-user",
+      clientMessageId: "submission",
+    };
+    const entries = mergeConversationHistoryIndexEntries({
+      summaries: [
+        {
+          ...summaryEntry("provider-user", 42),
+          messageId: "provider-user",
+          clientMessageId: "submission",
+        },
+      ],
+      loaded: [loaded],
+    });
+    expect(entries.map((entry) => entry.id)).toEqual(["native-user"]);
+    expect(matchesHistoryIndexEntry(loaded, entries[0])).toBe(true);
+  });
+
+  it("提供方重复标识对应不同历史位置时不猜测无游标记录的归属", () => {
+    const entries = mergeConversationHistoryIndexEntries({
+      summaries: [summaryEntry("reused", 1), summaryEntry("reused", 20)],
+      loaded: [loadedEntry("reused")],
+    });
+    expect(entries.map((entry) => entry.seqStart)).toEqual([1, 20]);
+    expect(matchesHistoryIndexEntry(loadedEntry("reused"), entries[0])).toBe(false);
   });
 
   it("keeps a short history compact instead of spreading it over the rail", () => {

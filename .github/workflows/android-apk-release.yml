@@ -68,7 +68,6 @@ jobs:
           node-version: "22"
           cache: "npm"
           registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
 
       - name: Install JS dependencies
         run: node scripts/npm-retry.mjs ci

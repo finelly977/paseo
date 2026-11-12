@@ -44,7 +44,7 @@ describe("完成回合过程收起展示", () => {
     expect(formatCompletedTurnDuration(0)).toBe("0s");
   });
 
-  it("最终回复由多个分块组成时使用首个分块判断是否复用 Markdown 横线", () => {
+  it("最终回复由多个分块组成时入口仍位于最早过程之前", () => {
     const process = processItem("process");
     const divider = assistantBlock({
       id: "answer-divider",
@@ -81,11 +81,10 @@ describe("完成回合过程收起展示", () => {
     expect(model.toggleByItemId.get(process.id)).toEqual({
       turnId: conclusion.id,
       durationMs: 7_000,
-      isFollowedByDivider: true,
     });
   });
 
-  it("最终回复不以横线开头时保留收起入口自己的分界线", () => {
+  it("入口保留真实耗时与回合身份", () => {
     const process = processItem("process");
     const conclusion = assistantBlock({
       id: "answer",
@@ -111,7 +110,6 @@ describe("完成回合过程收起展示", () => {
     expect(model.toggleByItemId.get(process.id)).toEqual({
       turnId: conclusion.id,
       durationMs: undefined,
-      isFollowedByDivider: false,
     });
   });
 

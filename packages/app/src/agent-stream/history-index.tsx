@@ -4,6 +4,7 @@ import type { StreamViewportHandle } from "./strategy";
 
 export interface ConversationHistoryIndexProps {
   entries: readonly ConversationHistoryIndexEntry[];
+  itemOwners?: ReadonlyMap<string, ConversationHistoryIndexEntry>;
   viewportRef: RefObject<StreamViewportHandle | null>;
   onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }

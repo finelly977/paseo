@@ -11,11 +11,9 @@ You are helping a user understand, configure, or troubleshoot Paseo itself. Answ
 
 ## Use current documentation
 
-Fetch [https://paseo.sh/llms.txt](https://paseo.sh/llms.txt) first. It is the current index of Paseo documentation, with a description and Markdown URL for each page.
+优先阅读当前二开仓库的 `docs/` 和 `public-docs/`，以实际安装版本的代码与文档为准。外部资料使用[二开版文档目录](https://github.com/finelly977/paseo/tree/main/public-docs)，不要把原作者网站的行为当作当前二开版。
 
-Use that index to select the page that owns the user's question, then fetch the linked `.md` page before answering. For troubleshooting, begin with [Common problems](https://paseo.sh/docs/troubleshooting.md) and follow its links when the issue belongs to a more specific page.
-
-Prefer the deployed docs over memory. Answer the user directly, then link the relevant `.md` page as supporting documentation.
+排障从[常见问题](https://github.com/finelly977/paseo/blob/main/public-docs/troubleshooting.md)开始；需要抓取 Markdown 时，使用相同文件的 `raw.githubusercontent.com/finelly977/paseo/main/` 地址。直接回答用户，再附相关文档链接。
 
 ## Establish the topology first
 
@@ -87,6 +85,5 @@ Offer to fix the PATH or symlink; do not change shell configuration silently.
 
 If the current docs and diagnostics do not resolve the problem, collect the app and daemon versions, OS, install method, connection method, exact error, minimal reproduction, and a small redacted log excerpt.
 
-- Bugs: [GitHub Issues](https://github.com/getpaseo/paseo/issues)
-- Questions and quick help: [Paseo Discord](https://discord.gg/jz8T2uahpH)
-- Product workflow discussions: [GitHub Discussions](https://github.com/getpaseo/paseo/discussions) or `#product` in Discord
+- Bugs: [GitHub Issues](https://github.com/finelly977/paseo/issues)
+- 功能与使用问题：[二开版 Issues](https://github.com/finelly977/paseo/issues)

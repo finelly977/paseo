@@ -1,4 +1,4 @@
-const SITE_ORIGIN = "https://paseo.sh";
+export const SITE_ORIGIN = import.meta.env.VITE_SITE_URL ?? "";
 
 export function pageMeta(title: string, description: string, path: string) {
   const url = `${SITE_ORIGIN}${path}`;

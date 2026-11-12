@@ -17,6 +17,9 @@ export interface ConversationHistoryIndexEntry {
   preview: string;
   sourceIndex: number;
   seqStart?: number;
+  messageId?: string;
+  clientMessageId?: string;
+  loadedId?: string;
 }
 
 export function getHistoryIndexEntryKey(entry: ConversationHistoryIndexEntry): string {
@@ -27,9 +30,9 @@ export function matchesHistoryIndexEntry(
   candidate: ConversationHistoryIndexEntry,
   target: ConversationHistoryIndexEntry,
 ): boolean {
-  return target.seqStart === undefined
-    ? candidate.id === target.id
-    : candidate.seqStart === target.seqStart;
+  if (target.seqStart === undefined) return candidate.id === target.id;
+  if (candidate.seqStart === undefined) return target.loadedId === candidate.id;
+  return candidate.seqStart === target.seqStart;
 }
 
 export interface ConversationHistoryIndexSummary {
@@ -103,10 +106,27 @@ export function buildConversationHistoryIndex(
       title: getUserTitle(item),
       preview: getTurnPreview(items, index),
       sourceIndex: index,
+      ...(item.messageId ? { messageId: item.messageId } : {}),
+      ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
       ...(item.timelineCursor ? { seqStart: item.timelineCursor.seq } : {}),
     });
   }
   return entries;
+}
+
+/** 用户气泡被虚拟化卸载后，当前可见正文仍归属同一轮刻度。 */
+export function buildHistoryIndexItemOwners(
+  items: readonly StreamItem[],
+  entries: readonly ConversationHistoryIndexEntry[],
+): Map<string, ConversationHistoryIndexEntry> {
+  const users = new Map(entries.map((entry) => [entry.id, entry]));
+  const owners = new Map<string, ConversationHistoryIndexEntry>();
+  let current: ConversationHistoryIndexEntry | undefined;
+  for (const item of items) {
+    if (item.kind === "user_message") current = users.get(item.id);
+    if (current) owners.set(item.id, current);
+  }
+  return owners;
 }
 
 export function buildConversationHistoryIndexFromSummaries(
@@ -120,7 +140,37 @@ export function buildConversationHistoryIndexFromSummaries(
     preview: truncate(normalizePreviewText(summary.assistantPreview), 220),
     sourceIndex: index,
     seqStart: summary.seqStart,
+    ...(summary.messageId ? { messageId: summary.messageId } : {}),
+    ...(summary.clientMessageId ? { clientMessageId: summary.clientMessageId } : {}),
   }));
+}
+
+const historyAliases = (entry: ConversationHistoryIndexEntry) =>
+  new Set([
+    entry.id,
+    ...(entry.messageId ? [entry.messageId] : []),
+    ...(entry.clientMessageId ? [entry.clientMessageId] : []),
+  ]);
+
+function indexUnsequencedHistory(
+  summaries: readonly ConversationHistoryIndexEntry[],
+  loaded: readonly ConversationHistoryIndexEntry[],
+) {
+  const summaryAliasCount = new Map<string, number>();
+  for (const entry of summaries) {
+    for (const alias of historyAliases(entry))
+      summaryAliasCount.set(alias, (summaryAliasCount.get(alias) ?? 0) + 1);
+  }
+  const unsequencedByAlias = new Map<string, ConversationHistoryIndexEntry[]>();
+  for (const entry of loaded) {
+    if (entry.seqStart !== undefined) continue;
+    for (const alias of historyAliases(entry)) {
+      const matches = unsequencedByAlias.get(alias) ?? [];
+      matches.push(entry);
+      unsequencedByAlias.set(alias, matches);
+    }
+  }
+  return { summaryAliasCount, unsequencedByAlias };
 }
 
 /**
@@ -140,9 +190,28 @@ export function mergeConversationHistoryIndexEntries(params: {
     ),
   );
   const indexed: ConversationHistoryIndexEntry[] = [];
+  const { summaryAliasCount, unsequencedByAlias } = indexUnsequencedHistory(
+    params.summaries,
+    params.loaded,
+  );
+  const adopted = new Set<ConversationHistoryIndexEntry>();
   for (const entry of params.summaries) {
-    const loaded = entry.seqStart === undefined ? undefined : loadedBySeq.get(entry.seqStart);
-    indexed.push(loaded ? { ...entry, id: loaded.id } : entry);
+    let loaded = entry.seqStart === undefined ? undefined : loadedBySeq.get(entry.seqStart);
+    if (!loaded) {
+      for (const alias of historyAliases(entry)) {
+        const matches = unsequencedByAlias.get(alias);
+        if (
+          summaryAliasCount.get(alias) === 1 &&
+          matches?.length === 1 &&
+          !adopted.has(matches[0])
+        ) {
+          loaded = matches[0];
+          break;
+        }
+      }
+    }
+    if (loaded) adopted.add(loaded);
+    indexed.push(loaded ? { ...entry, id: loaded.id, loadedId: loaded.id } : entry);
   }
   const newestIndexedSeq = indexed.at(-1)?.seqStart ?? -1;
   const indexedIds = new Set(indexed.map((entry) => entry.id));
@@ -151,6 +220,7 @@ export function mergeConversationHistoryIndexEntries(params: {
   // 才可能比索引新；中间的无游标条目要么已被索引采用，要么等索引刷新后由
   // summaries 提供，直接跳过避免与 indexed 重复。
   const liveEntries = params.loaded.filter((entry, index) => {
+    if (adopted.has(entry)) return false;
     if (entry.seqStart !== undefined) {
       return entry.seqStart > newestIndexedSeq;
     }

@@ -1,3 +1,4 @@
+import { PASEO_LINKS } from "@/constants/product-links";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, ScrollView } from "react-native";
@@ -179,7 +180,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
   }, [router]);
 
   const handleOpenPaseoSite = useCallback(() => {
-    void openExternalUrl("https://paseo.sh");
+    void openExternalUrl(PASEO_LINKS.repository);
   }, []);
 
   const handleOpenSettings = useCallback(() => {
@@ -269,7 +270,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
             <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
             {isNative ? (
               <Pressable style={styles.setupLink} onPress={handleOpenPaseoSite}>
-                <Text style={styles.setupLinkText}>paseo.sh</Text>
+                <Text style={styles.setupLinkText}>GitHub · finelly977/paseo</Text>
                 <ExternalLink size={14} color={theme.colors.accent} />
               </Pressable>
             ) : null}

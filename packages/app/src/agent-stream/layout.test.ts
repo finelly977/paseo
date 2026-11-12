@@ -10,6 +10,28 @@ import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { layoutStream, type StreamLayout, type StreamLayoutItem } from "./layout";
 import { buildCompletedTurnProcessModel } from "./completed-turn-process";
 
+it("已结束回合中的压缩标记不进入可收起的过程正文", () => {
+  const compact: StreamItem = {
+    kind: "compaction",
+    id: "compact",
+    status: "loading",
+    timestamp: timestamp(3),
+  };
+  const tail: StreamItem[] = [
+    userMessage("q", 1),
+    { kind: "assistant_message", id: "comment", text: "检查中", timestamp: timestamp(2) },
+    compact,
+    { kind: "assistant_message", id: "answer", text: "完成", timestamp: timestamp(4) },
+  ];
+  const layout = layoutFor({ platform: "web", tail, timingIds: ["answer"] });
+  const hosts = [...layout.history, ...layout.liveHead].flatMap((row) =>
+    row.completedFooter ? [row.completedFooter] : [],
+  );
+  if (layout.auxiliaryTurnFooter) hosts.push(layout.auxiliaryTurnFooter);
+  const model = buildCompletedTurnProcessModel({ hosts, chronologicalItems: tail });
+  expect(model.turnIdByProcessItemId.has("compact")).toBe(false);
+});
+
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);
 }

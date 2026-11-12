@@ -124,7 +124,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
           registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
 
       - name: Install JS dependencies
         run: node scripts/npm-retry.mjs ci
@@ -234,7 +233,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
           registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
 
       - name: Install JS dependencies
         run: node scripts/npm-retry.mjs ci
@@ -342,7 +340,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
           registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
 
       - name: Install JS dependencies
         run: node scripts/npm-retry.mjs ci
@@ -452,7 +449,6 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
           registry-url: "https://npm.pkg.github.com"
-          scope: "@boudra"
 
       - name: Install JS dependencies
         run: node scripts/npm-retry.mjs ci

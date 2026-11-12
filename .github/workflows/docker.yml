@@ -41,7 +41,7 @@ on:
           - "false"
           - "true"
       publish_latest:
-        description: "Also publish ghcr.io/getpaseo/paseo:latest. Ignored for prereleases."
+        description: "Also publish ghcr.io/finelly977/paseo:latest. Ignored for prereleases."
         required: false
         default: "false"
         type: choice

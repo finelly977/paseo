@@ -60,11 +60,9 @@ In the desktop app:
 
 The app will check for beta updates from then on.
 
-## App stores
+## 二开版下载来源
 
-Desktop releases and the CLI are usually available first. App Store and Play Store releases can lag behind because they go through review.
-
-There is no beta channel in the app stores right now — only stable builds are submitted. If you want early Android builds, download the APK from the [GitHub releases page](https://github.com/getpaseo/paseo/releases).
+桌面更新与下载均使用 [finelly977/paseo Releases](https://github.com/finelly977/paseo/releases)，Android 使用同页 APK。二开版不使用原作者的应用商店或 npm 包作为更新来源；独立服务端和源码安装沿用原来的部署方式更新。
 
 ## What to do if something breaks
 

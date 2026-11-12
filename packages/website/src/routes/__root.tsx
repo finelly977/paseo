@@ -3,32 +3,20 @@ import { createContext, useContext } from "react";
 import { Outlet, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { getLatestRelease } from "~/release";
 import { getStarCount } from "~/stars";
-
-interface ReleaseContext {
-  version: string;
-  linuxAppImageAsset: string;
-  windowsX64Asset: string | null;
-  windowsArm64Asset: string | null;
-}
+import { SITE_ORIGIN } from "~/meta";
+import type { ReleaseInfo } from "~/latest-release";
 
 interface StarsContext {
   stars: string;
 }
 
-const ReleaseCtx = createContext<ReleaseContext>({
-  version: "",
-  linuxAppImageAsset: "",
-  windowsX64Asset: null,
-  windowsArm64Asset: null,
-});
+const ReleaseCtx = createContext<ReleaseInfo | null>(null);
 const StarsCtx = createContext<StarsContext>({ stars: "" });
 
-const PLAUSIBLE_INIT_SCRIPT = {
-  __html: `window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`,
-};
-
-export function useRelease(): ReleaseContext {
-  return useContext(ReleaseCtx);
+export function useRelease(): ReleaseInfo {
+  const release = useContext(ReleaseCtx);
+  if (!release) throw new Error("Release context is not available");
+  return release;
 }
 
 export function useStars(): StarsContext {
@@ -47,9 +35,9 @@ export const Route = createRootRoute({
       { name: "theme-color", content: "#101615" },
       { property: "og:site_name", content: "Paseo" },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "https://paseo.sh/og-image.png" },
+      { property: "og:image", content: `${SITE_ORIGIN}/og-image.png` },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: "https://paseo.sh/og-image.png" },
+      { name: "twitter:image", content: `${SITE_ORIGIN}/og-image.png` },
     ],
     links: [
       { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
@@ -78,8 +66,6 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
     <html lang="en">
       <head>
         <HeadContent />
-        <script async src="https://plausible.io/js/pa-cKNUoWbeH_Iksb2fh82s3.js" />
-        <script dangerouslySetInnerHTML={PLAUSIBLE_INIT_SCRIPT} />
       </head>
       <body className="antialiased bg-background text-foreground">
         {children}

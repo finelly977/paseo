@@ -4,8 +4,6 @@ import { SiteShell } from "~/components/site-shell";
 import { pageMeta } from "~/meta";
 import {
   downloadUrls,
-  appStoreUrl,
-  playStoreUrl,
   webAppUrl,
   AppleIcon,
   AndroidIcon,
@@ -20,8 +18,8 @@ import "~/styles.css";
 export const Route = createFileRoute("/download")({
   head: () =>
     pageMeta(
-      "Download Paseo for macOS, Windows, Linux, iOS, and Android",
-      "Install Paseo on every platform. Native desktop apps for macOS, Windows, and Linux. Mobile apps for iOS and Android. Self-hosted, open source, free to download.",
+      "下载 Paseo 二开版",
+      "从二开仓库下载桌面端与 Android APK，或构建并部署自己的网页端和守护进程。",
       "/download",
     ),
   component: Download,
@@ -60,15 +58,6 @@ function Download() {
               <DownloadPill href={urls.macAppleSilicon} label="Apple Silicon" />
               <DownloadPill href={urls.macIntel} label="Intel" />
             </div>
-          </div>
-
-          {/* Homebrew */}
-          <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <TerminalIcon className="h-5 w-5 text-foreground" />
-              <span className="font-medium">Homebrew</span>
-            </div>
-            <CodeBlock size="sm">brew install --cask paseo</CodeBlock>
           </div>
 
           {/* Windows */}
@@ -116,19 +105,12 @@ function Download() {
               <span className="font-medium">Android</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <DownloadPill href={playStoreUrl} label="Play Store" external />
               <DownloadPill href={urls.androidApk} label="APK" />
-            </div>
-          </div>
-
-          {/* iOS */}
-          <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <AppleIcon className="h-5 w-5 text-foreground" />
-              <span className="font-medium">iOS</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <DownloadPill href={appStoreUrl} label="App Store" external />
+              <DownloadPill
+                href="https://github.com/finelly977/paseo/releases"
+                label="其他 APK 与预发布版"
+                external
+              />
             </div>
           </div>
         </div>
@@ -153,7 +135,7 @@ function Download() {
               <span className="font-medium">Web App</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <DownloadPill href={webAppUrl} label="Open" external />
+              <DownloadPill href={webAppUrl} label="自托管指南" external />
             </div>
           </div>
         </div>
@@ -175,9 +157,9 @@ function Download() {
           <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <TerminalIcon className="h-5 w-5 text-foreground" />
-              <span className="font-medium">npm</span>
+              <span className="font-medium">源码构建</span>
             </div>
-            <CodeBlock size="sm">npm install -g @getpaseo/cli && paseo</CodeBlock>
+            <CodeBlock size="sm">git clone https://github.com/finelly977/paseo.git</CodeBlock>
           </div>
 
           <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
@@ -185,7 +167,7 @@ function Download() {
               <TerminalIcon className="h-5 w-5 text-foreground" />
               <span className="font-medium">Nix</span>
             </div>
-            <CodeBlock size="sm">nix run github:getpaseo/paseo</CodeBlock>
+            <CodeBlock size="sm">nix run github:finelly977/paseo</CodeBlock>
           </div>
         </div>
       </section>
@@ -193,7 +175,7 @@ function Download() {
       <p className="text-center text-xs text-muted-foreground mt-8">
         All releases are available on{" "}
         <a
-          href="https://github.com/getpaseo/paseo/releases"
+          href="https://github.com/finelly977/paseo/releases"
           target="_blank"
           rel="noopener noreferrer"
           className="underline hover:text-foreground transition-colors"
@@ -211,10 +193,13 @@ function DownloadPill({
   label,
   external,
 }: {
-  href: string;
+  href: string | null;
   label: string;
   external?: boolean;
 }) {
+  if (href === null) {
+    return <span className="text-sm text-muted-foreground">当前发布未提供 {label}</span>;
+  }
   return (
     <a
       href={href}

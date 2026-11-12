@@ -37,7 +37,7 @@ Minimal example that configures listening address, hostnames, and MCP:
 
 ```json
 {
-  "$schema": "https://paseo.sh/schemas/paseo.config.v1.json",
+  "$schema": "https://raw.githubusercontent.com/finelly977/paseo/main/packages/website/public/schemas/paseo.config.v1.json",
   "version": 1,
   "daemon": {
     "listen": "127.0.0.1:6767",
@@ -75,7 +75,7 @@ Environment variables and daemon start flags remain authoritative. Reload report
 
 Agent providers, both the first-class ones Paseo ships with and custom entries you add under `agents.providers`, are documented on their own page.
 
-See [Providers](/docs/providers) for the mental model and [Supported providers](/docs/supported-providers) for the full list of agents Paseo can launch. For pointing Claude at Anthropic-compatible endpoints (Z.AI, Alibaba/Qwen), multiple profiles, custom binaries, ACP agents, and the `additionalModels` merge behavior, see [Custom providers](/docs/custom-providers). The full field reference lives on GitHub at [docs/custom-providers.md](https://github.com/getpaseo/paseo/blob/main/docs/custom-providers.md).
+See [Providers](/docs/providers) for the mental model and [Supported providers](/docs/supported-providers) for the full list of agents Paseo can launch. For pointing Claude at Anthropic-compatible endpoints (Z.AI, Alibaba/Qwen), multiple profiles, custom binaries, ACP agents, and the `additionalModels` merge behavior, see [Custom providers](/docs/custom-providers). The full field reference lives on GitHub at [docs/custom-providers.md](https://github.com/finelly977/paseo/blob/main/docs/custom-providers.md).
 
 ## Worktrees
 
@@ -241,5 +241,5 @@ In the mobile app, enter the password in the direct connection setup screen.
 For editor autocomplete/validation, set `$schema` to:
 
 ```
-https://paseo.sh/schemas/paseo.config.v1.json
+https://raw.githubusercontent.com/finelly977/paseo/main/packages/website/public/schemas/paseo.config.v1.json
 ```

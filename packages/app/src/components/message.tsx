@@ -81,7 +81,11 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import type { MarkdownPhase } from "@/components/markdown/fence/types";
-import { getMarkdownBlockGap, splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+import {
+  getMarkdownBlockGap,
+  isStandaloneMarkdownHorizontalRule,
+  splitMarkdownBlocks,
+} from "@/utils/split-markdown-blocks";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { colorMarkdownLinkChildren } from "@/components/markdown/link-children";
 import { formatDuration, formatMessageTimestamp, formatTurnEndTimestamp } from "@/utils/time";
@@ -111,6 +115,7 @@ import {
 } from "@/assistant-file-links";
 import { getCompactionMarkerLabel } from "./message-compaction-label";
 import { Button } from "@/components/ui/button";
+import { ConversationDivider } from "@/components/conversation-divider";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -1809,6 +1814,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   const markdownRules = useMemo<RenderRules>(() => {
     return {
       ...createMarkdownTableRules(),
+      hr: () => null,
       text: (
         node: ASTNode,
         _children: ReactNode[],
@@ -2112,7 +2118,13 @@ export const AssistantMessage = memo(function AssistantMessage({
     };
   }, [client, fileLinkActions, phase, serverId, workspaceRoot]);
 
-  const blocks = useMemo(() => splitMarkdownBlocks(revealedMessage), [revealedMessage]);
+  const blocks = useMemo(
+    () =>
+      splitMarkdownBlocks(revealedMessage).filter(
+        (block) => !isStandaloneMarkdownHorizontalRule(block),
+      ),
+    [revealedMessage],
+  );
   const keyedBlocks = useMemo(
     () => blocks.map((block, index) => ({ key: `block:${index}`, block })),
     [blocks],
@@ -2408,18 +2420,6 @@ interface CompactionMarkerProps {
 }
 
 const compactionStylesheet = StyleSheet.create((theme) => ({
-  container: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[4],
-    gap: theme.spacing[2],
-  },
-  line: {
-    flex: 1,
-    height: 1,
-    backgroundColor: theme.colors.border,
-  },
   label: {
     flexDirection: "row",
     alignItems: "center",
@@ -2439,14 +2439,8 @@ export const CompactionMarker = memo(function CompactionMarker({
   verticalSpacing,
 }: CompactionMarkerProps) {
   const label = getCompactionMarkerLabel({ status, trigger, preTokens });
-  const containerStyle = useMemo(
-    () => [compactionStylesheet.container, { paddingVertical: verticalSpacing }],
-    [verticalSpacing],
-  );
-
   return (
-    <View style={containerStyle}>
-      <View style={compactionStylesheet.line} />
+    <ConversationDivider spacing={verticalSpacing} labelPosition="center">
       <View style={compactionStylesheet.label}>
         {status === "loading" ? (
           <ActivityIndicator size="small" color="#a1a1aa" />
@@ -2455,8 +2449,7 @@ export const CompactionMarker = memo(function CompactionMarker({
         )}
         <Text style={compactionStylesheet.text}>{label}</Text>
       </View>
-      <View style={compactionStylesheet.line} />
-    </View>
+    </ConversationDivider>
   );
 });
 

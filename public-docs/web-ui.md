@@ -8,7 +8,7 @@ category: Getting started
 
 # Self-hosting the web UI
 
-Paseo's daemon can serve the browser web app itself, from the same address it already uses for the API. You don't need the hosted app at [app.paseo.sh](https://app.paseo.sh): point a browser at your own daemon and you get the full UI, connected to your own agents, on infrastructure you control.
+Paseo's daemon can serve the browser web app itself, from the same address it already uses for the API. 在浏览器中打开自己的守护进程地址，即可使用完整界面并连接自己的智能体，无需访问外部托管客户端。
 
 This is useful when you want to:
 
@@ -217,7 +217,7 @@ Self-hosting the web UI puts you in charge of who can reach the daemon. The esse
 - **Keep the daemon on localhost when you can** and let a reverse proxy or tunnel be the only exposed surface.
 - **Review your host allowlist** when serving on a custom domain.
 
-For the full threat model, relay encryption, and DNS-rebinding details, see [Security](/docs/security) and [SECURITY.md](https://github.com/getpaseo/paseo/blob/main/SECURITY.md).
+For the full threat model, relay encryption, and DNS-rebinding details, see [Security](/docs/security) and [SECURITY.md](https://github.com/finelly977/paseo/blob/main/SECURITY.md).
 
 ## Troubleshooting
 

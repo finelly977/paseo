@@ -25,6 +25,7 @@ import type { StreamViewportHandle } from "./strategy";
 
 export interface ConversationHistoryIndexProps {
   entries: readonly ConversationHistoryIndexEntry[];
+  itemOwners?: ReadonlyMap<string, ConversationHistoryIndexEntry>;
   viewportRef: RefObject<StreamViewportHandle | null>;
   onNavigate?: (entry: ConversationHistoryIndexEntry) => Promise<void> | void;
 }
@@ -180,6 +181,7 @@ function ConversationHistoryIndexMarker({
       onBlur={handleBlur}
       onPress={handlePress}
       accessibilityRole="button"
+      aria-current={isActive ? "step" : undefined}
       accessibilityState={
         isActive ? ACTIVE_MARKER_ACCESSIBILITY_STATE : INACTIVE_MARKER_ACCESSIBILITY_STATE
       }
@@ -195,6 +197,7 @@ function ConversationHistoryIndexMarker({
 
 export function ConversationHistoryIndex({
   entries,
+  itemOwners,
   viewportRef,
   onNavigate,
 }: ConversationHistoryIndexProps) {
@@ -230,8 +233,12 @@ export function ConversationHistoryIndex({
   });
   const renderedEntries = visibleEntries.slice(markerWindow.start, markerWindow.end);
   const entryByDomId = useMemo(
-    () => new Map(entries.map((entry) => [getStreamItemDomId(entry.id), entry])),
-    [entries],
+    () =>
+      new Map([
+        ...entries.map((entry) => [getStreamItemDomId(entry.id), entry] as const),
+        ...Array.from(itemOwners ?? [], ([id, entry]) => [getStreamItemDomId(id), entry] as const),
+      ]),
+    [entries, itemOwners],
   );
   const railStyle = useMemo<CSSProperties>(
     () => ({

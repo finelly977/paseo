@@ -87,7 +87,12 @@ export type StreamItem = (
   | CompactionItem
   | PluginTimelineStreamItem
   | NativeHistoryProcessItem
-) & { nativeTurnId?: string; nativePageCursor?: string | null; timestampUnknown?: boolean };
+) & {
+  nativeTurnId?: string;
+  nativePageCursor?: string | null;
+  timestampUnknown?: boolean;
+  nativeProcessDetail?: true;
+};
 
 export interface NativeHistoryProcessItem {
   kind: "native_history_process";
@@ -1756,7 +1761,12 @@ function reduceTimelineCompaction(
   }
   const compaction: CompactionItem = {
     kind: "compaction",
-    id: createTimelineId("compaction", item.status, timestamp),
+    id: createUniqueTimelineId(
+      state,
+      "compaction",
+      JSON.stringify([turnId, item.compactionId ?? item.status]),
+      timestamp,
+    ),
     timestamp,
     ...(timelineCursor ? { timelineCursor } : {}),
     ...(turnId ? { turnId } : {}),

@@ -12,8 +12,8 @@ function formatStars(count: number): string {
   return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
 }
 
-const GITHUB_REPO_URL = "https://api.github.com/repos/getpaseo/paseo";
-const STARS_CACHE_KEY = "github-stars:v1";
+const GITHUB_REPO_URL = "https://api.github.com/repos/finelly977/paseo";
+const STARS_CACHE_KEY = "github-stars:finelly977:v1";
 
 async function fetchStarCount(): Promise<string> {
   const res = await fetch(GITHUB_REPO_URL, {
@@ -24,7 +24,7 @@ async function fetchStarCount(): Promise<string> {
     cf: {
       cacheEverything: true,
       cacheTtl: 60,
-      cacheKey: "github-repo-stars",
+      cacheKey: "finelly977-repo-stars",
     },
   } as RequestInit);
   if (!res.ok) throw new Error(`github repo ${res.status}`);

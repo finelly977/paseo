@@ -13,6 +13,7 @@ import { formatCompletedTurnDuration } from "./completed-turn-process";
 import { useTranslation } from "react-i18next";
 import type { StreamViewportHandle } from "./strategy";
 import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
+import { ConversationDivider } from "@/components/conversation-divider";
 import {
   loadNativeHistoryDetails,
   nativeHistoryDetailKey,
@@ -33,6 +34,7 @@ export function NativeHistoryProcess({
   serverId,
   gapAbove,
   gapBelow,
+  dividerSpacing,
 }: {
   item: Extract<StreamItem, { kind: "native_history_process" }>;
   client: DaemonClient | null;
@@ -41,6 +43,7 @@ export function NativeHistoryProcess({
   readId: string;
   gapAbove: number;
   gapBelow: number;
+  dividerSpacing: number;
   expanded: boolean;
   onToggle(input: { turnId: string; itemId: string }): void;
   registerAnchor(input: { turnId: string; node: View }): () => void;
@@ -118,20 +121,22 @@ export function NativeHistoryProcess({
   return (
     <View testID={`native-process-${item.turnId}`} style={rootStyle}>
       <View style={styles.process}>
-        <Pressable
-          ref={anchorRef}
-          onPress={toggle}
-          accessibilityRole="button"
-          accessibilityState={accessibilityState}
-          aria-expanded={expanded}
-          style={styles.toggle}
-        >
-          <ThemedLayers size={16} aria-hidden uniProps={processIconColor} />
-          <Text style={styles.label}>{label}</Text>
-          <DisclosureChevron expanded={expanded} collapsedRotation={-90} expandedRotation={0}>
-            <ThemedChevron size={12} uniProps={processIconColor} />
-          </DisclosureChevron>
-        </Pressable>
+        <ConversationDivider spacing={dividerSpacing} labelPosition="above">
+          <Pressable
+            ref={anchorRef}
+            onPress={toggle}
+            accessibilityRole="button"
+            accessibilityState={accessibilityState}
+            aria-expanded={expanded}
+            style={styles.toggle}
+          >
+            <ThemedLayers size={16} aria-hidden uniProps={processIconColor} />
+            <Text style={styles.label}>{label}</Text>
+            <DisclosureChevron expanded={expanded} collapsedRotation={-90} expandedRotation={0}>
+              <ThemedChevron size={12} uniProps={processIconColor} />
+            </DisclosureChevron>
+          </Pressable>
+        </ConversationDivider>
         {item.error !== null && (
           <Alert variant="error" title="本轮处理未完成" description={item.error} />
         )}
@@ -159,15 +164,11 @@ const styles = StyleSheet.create((theme) => ({
   },
   process: {
     paddingHorizontal: theme.spacing[2],
-    paddingBottom: theme.spacing[2],
-    borderBottomWidth: theme.borderWidth[1],
-    borderBottomColor: theme.colors.border,
   },
   toggle: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
   },
   label: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base, lineHeight: 22 },
 }));

@@ -20,7 +20,7 @@ The relay is designed to be untrusted. All traffic between your phone and daemon
 ### How it works
 
 1. The daemon generates a persistent Curve25519 keypair on first run and stores it at `$PASEO_HOME/daemon-keypair.json` with mode `0600`
-2. The pairing URL (rendered as a QR code or opened directly) carries the daemon's public key in its URL fragment (`https://app.paseo.sh/#offer=...`). Fragments are not sent to the web server, so `app.paseo.sh` never sees the key.
+2. The pairing URL (rendered as a QR code or opened directly) carries the daemon's public key in its URL fragment (`https://client.example.com/#offer=...`). Fragments are not sent to the web server, so the client web server never sees the key.
 3. When the phone connects via the relay, it generates a fresh ephemeral Curve25519 keypair and sends an `e2ee_hello` message containing its public key. The daemon will not process any application messages until this handshake completes.
 4. Both sides perform a Curve25519 ECDH key exchange to derive a shared key. All subsequent messages are encrypted with XSalsa20-Poly1305 (NaCl `box`). The encrypted bundle is `[24-byte nonce][ciphertext]`. Peers optionally negotiate `binaryCiphertext` in `e2ee_hello` / `e2ee_ready`: negotiated application text is carried as a base64 WebSocket text frame, while application binary is carried as a raw WebSocket binary frame. A peer that does not negotiate the capability uses base64 text frames for both kinds.
 
@@ -82,4 +82,4 @@ Paseo only talks to a forge host that is either a known cloud host or one the fo
 
 ## Reporting vulnerabilities
 
-If you discover a security vulnerability, please report it privately by emailing hello@moboudra.com. Do not open a public issue.
+如发现二开版的安全漏洞，请先在[二开仓库](https://github.com/finelly977/paseo/issues/new)提交不含漏洞细节的联系请求，与维护者协商私下报送方式。不要在公开 Issue 中提交利用步骤、凭据或其他敏感内容。本仓库未在此声明已开通私密漏洞报告功能。

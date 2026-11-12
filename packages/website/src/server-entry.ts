@@ -4,8 +4,6 @@ import { getDoc } from "~/docs";
 import { getLatestAndroidVersion } from "~/latest-release";
 import { buildLlmsTxt } from "~/llms";
 
-const CANONICAL_HOST = "paseo.sh";
-
 interface WebsiteEnv {
   WEBSITE_CACHE?: KVNamespace;
 }
@@ -37,13 +35,6 @@ function docSlugFromMarkdownPath(pathname: string): string | null {
 export default {
   async fetch(request: Request, env: WebsiteEnv, context: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-
-    const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-    if (!isLocal && (url.hostname !== CANONICAL_HOST || url.protocol !== "https:")) {
-      url.protocol = "https:";
-      url.hostname = CANONICAL_HOST;
-      return Response.redirect(url.toString(), 301);
-    }
 
     const altRedirectMatch = url.pathname.match(/^\/docs\/alternatives\/(.+?)\/?$/);
     if (altRedirectMatch) {

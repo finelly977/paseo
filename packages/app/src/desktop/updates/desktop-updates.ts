@@ -1,3 +1,4 @@
+import { PASEO_LINKS } from "@/constants/product-links";
 import { isElectronRuntime } from "@/desktop/host";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { isWeb } from "@/constants/platform";
@@ -38,7 +39,7 @@ export interface LocalDaemonVersionResult {
   error: string | null;
 }
 
-const RELEASE_DOWNLOAD_BASE_URL = "https://github.com/getpaseo/paseo/releases/download";
+const RELEASE_DOWNLOAD_BASE_URL = PASEO_LINKS.releaseDownloads;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

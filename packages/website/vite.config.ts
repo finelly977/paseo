@@ -8,7 +8,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 const repoRoot = path.resolve(__dirname, "../..");
-const siteHost = "https://paseo.sh";
+const siteHost = process.env.VITE_SITE_URL;
 
 function discoverDocsRoutes(): string[] {
   const docsDir = path.join(repoRoot, "public-docs");
@@ -116,9 +116,7 @@ export default defineConfig((): UserConfig => {
           semicolons: true,
         },
         pages: sitemapPages,
-        sitemap: {
-          host: siteHost,
-        },
+        ...(siteHost ? { sitemap: { host: siteHost } } : {}),
       }),
       react(),
       tailwindcss(),
