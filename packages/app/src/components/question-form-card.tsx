@@ -1,3 +1,4 @@
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { useState, useCallback, useMemo } from "react";
 import {
   View,
@@ -521,7 +522,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
   const showTextInput = activeQuestion ? questionShowsTextInput(activeQuestion) : false;
 
   return (
-    <View style={containerStyle} testID="question-form-card">
+    <View style={containerStyle} testID="question-form-card" dataSet={COMPACT_LABEL_DATASET}>
       <QuestionNav
         questions={questions}
         activeIndex={resolvedActiveQuestionIndex}
@@ -614,10 +615,13 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
 
 const styles = StyleSheet.create((theme) => ({
   container: {
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "flex-start",
     padding: theme.spacing[3],
     borderRadius: theme.spacing[2],
     borderWidth: 1,
-    gap: theme.spacing[3],
+    gap: theme.spacing[2],
   },
   questionBlock: {
     gap: theme.spacing[2],
@@ -626,15 +630,13 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
     paddingBottom: theme.spacing[1],
-    flex: 1,
   },
   questionText: {
     flex: 1,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
-    lineHeight: 22,
+    lineHeight: 20,
   },
   optionsWrap: {
     gap: theme.spacing[1],
@@ -644,7 +646,6 @@ const styles = StyleSheet.create((theme) => ({
     flexWrap: "wrap",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[3],
   },
   questionNavButton: {
     flexDirection: "row",
@@ -657,14 +658,15 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: theme.borderWidth[1],
   },
   questionNavText: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
   },
   optionItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[2],
+    minHeight: { xs: 44, md: 34 },
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1.5],
     borderRadius: theme.borderRadius.md,
   },
   optionItemPressed: {
@@ -681,21 +683,21 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[1],
   },
   optionLabel: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.semibold,
-    lineHeight: 22,
-  },
-  optionDescription: {
-    fontSize: theme.fontSize.sm,
     lineHeight: 20,
   },
+  optionDescription: {
+    fontSize: theme.fontSize.base * 0.8125,
+    lineHeight: 18,
+  },
   selectionControl: {
-    width: 18,
-    height: 18,
+    width: 16,
+    height: 16,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: theme.borderWidth[1],
-    marginTop: 2, // optical-align 18px control to the 22px label first line
+    marginTop: 2, // 与首行 20px 标签居中对齐
   },
   selectionControlCheckbox: {
     borderRadius: theme.borderRadius.base,
@@ -712,8 +714,8 @@ const styles = StyleSheet.create((theme) => ({
     borderWidth: 1,
     borderRadius: theme.borderRadius.lg,
     paddingHorizontal: theme.spacing[3],
-    paddingVertical: theme.spacing[3],
-    fontSize: theme.fontSize.sm,
+    paddingVertical: theme.spacing[2],
+    fontSize: { xs: theme.fontSize.base, md: theme.fontSize.base * 0.875 },
   },
   actionsContainer: {
     gap: theme.spacing[2],
@@ -724,7 +726,9 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
   },
   actionButton: {
-    paddingVertical: theme.spacing[2],
+    minHeight: { xs: 44, md: 32 },
+    justifyContent: "center",
+    paddingVertical: theme.spacing[1.5],
     paddingHorizontal: theme.spacing[3],
     borderRadius: theme.borderRadius.md,
     alignItems: "center",
@@ -736,6 +740,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
   },
   actionText: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
   },
 }));

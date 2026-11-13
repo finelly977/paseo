@@ -1,3 +1,5 @@
+import { WORKSPACE_OVERLAY_FRACTION } from "@/components/workspace-overlay-size";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
 import { Blocks, ChevronDown, X } from "lucide-react-native";
@@ -17,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useHosts } from "@/runtime/host-runtime";
 import { PluginCenterHeader } from "@/codex-plugins/center-header";
-import { PLUGIN_CENTER_MAX_WIDTH, resolvePluginCenterLayout } from "@/codex-plugins/center-layout";
+import { resolvePluginCenterLayout } from "@/codex-plugins/center-layout";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { WindowChromeRegion } from "@/utils/desktop-window";
 import { navigateToLastWorkspace } from "@/stores/navigation-active-workspace-store";
@@ -30,7 +32,7 @@ export function CodexPluginCenterScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const isCompact = useIsCompactFormFactor();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const layout = useMemo(() => resolvePluginCenterLayout(width, isCompact), [width, isCompact]);
   const close = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -119,7 +121,7 @@ export function CodexPluginCenterScreen() {
         </DropdownMenu>
         {hostPicker}
         <Button
-          size="sm"
+          size={isCompact ? "sm" : "xs"}
           variant="ghost"
           leftIcon={X}
           onPress={close}
@@ -128,7 +130,7 @@ export function CodexPluginCenterScreen() {
         />
       </>
     ),
-    [hostPicker, close, provider, selectCodex, selectClaude],
+    [hostPicker, close, provider, selectCodex, selectClaude, isCompact],
   );
   const marketplace =
     provider === "codex" ? (
@@ -137,7 +139,7 @@ export function CodexPluginCenterScreen() {
       <HostClaudePluginsPage serverId={serverId} layout={layout} headerActions={headerRight} />
     );
   const content = (
-    <View style={styles.screen}>
+    <View style={styles.screen} dataSet={COMPACT_LABEL_DATASET}>
       {serverId ? (
         marketplace
       ) : (
@@ -158,8 +160,8 @@ export function CodexPluginCenterScreen() {
       header={null}
       visible={isFocused}
       onClose={close}
-      desktopMaxWidth={PLUGIN_CENTER_MAX_WIDTH}
-      desktopCardStyle={styles.dialog}
+      desktopMaxWidth={width * WORKSPACE_OVERLAY_FRACTION}
+      desktopCardStyle={[styles.dialog, { height: height * WORKSPACE_OVERLAY_FRACTION }]}
       contentContainerStyle={styles.dialogContent}
       scrollable={false}
       testID="codex-plugins-dialog"
@@ -171,15 +173,15 @@ export function CodexPluginCenterScreen() {
 
 const styles = StyleSheet.create((theme) => ({
   screen: { flex: 1, backgroundColor: theme.colors.surface0 },
-  dialog: { height: "94%", maxHeight: "94%", overflow: "hidden" },
+  dialog: { overflow: "hidden" },
   dialogContent: { flex: 1, padding: 0, gap: 0 },
   hostTrigger: {
-    minHeight: 32,
+    minHeight: 28,
     maxWidth: { xs: 80, md: 110 },
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
+    paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
     backgroundColor: theme.colors.surface2,
   },
@@ -188,10 +190,10 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     maxWidth: 180,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
   },
   providerTrigger: {
-    minHeight: 32,
+    minHeight: 28,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
@@ -209,7 +211,7 @@ const styles = StyleSheet.create((theme) => ({
   emptyTitle: { color: theme.colors.foreground, fontSize: theme.fontSize.base },
   emptyText: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
     textAlign: "center",
   },
 }));

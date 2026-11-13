@@ -566,15 +566,26 @@ function ModelRow({
   const description = showProviderLabel ? buildProviderQualifiedDescription(row) : row.description;
 
   return (
-    <ModelBrowserRow
-      label={row.modelLabel}
-      description={description}
-      selected={isSelected}
-      selectionIndicator
-      onPress={onPress}
-      leadingSlot={leadingSlot}
-      testID={`model-row-${row.provider}-${row.modelId}`}
-    />
+    <Tooltip delayDuration={400} enabledOnMobile={false}>
+      <TooltipTrigger asChild>
+        <View collapsable={false}>
+          <ModelBrowserRow
+            label={row.modelLabel}
+            description={description}
+            selected={isSelected}
+            selectionIndicator
+            onPress={onPress}
+            leadingSlot={leadingSlot}
+            testID={`model-row-${row.provider}-${row.modelId}`}
+          />
+        </View>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" maxWidth={420}>
+        <Text style={styles.tooltipText}>
+          {row.modelLabel === row.modelId ? row.modelLabel : `${row.modelLabel}\n${row.modelId}`}
+        </Text>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

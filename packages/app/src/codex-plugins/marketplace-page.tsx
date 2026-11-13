@@ -417,6 +417,7 @@ function MarketHeading({
             accessibilityLabel="搜索 Codex 插件"
             size="sm"
             testID="codex-market-search"
+            style={styles.controlText}
           />
         </View>
         <Button
@@ -427,6 +428,7 @@ function MarketHeading({
           disabled={disabled}
           accessibilityLabel="刷新插件目录"
           testID="codex-market-refresh"
+          textStyle={styles.controlText}
         />
       </View>
     </View>
@@ -744,12 +746,12 @@ const styles = StyleSheet.create((theme) => ({
   panel: { flex: 1, minHeight: 0 },
   center: { flex: 1, flexDirection: "row", minHeight: 0 },
   scroll: { flex: 1 },
-  content: { flexGrow: 1, padding: theme.spacing[6] },
+  content: { flexGrow: 1, padding: theme.spacing[4] },
   canvas: {
     width: "100%",
     maxWidth: 1120,
     alignSelf: "center",
-    gap: theme.spacing[6],
+    gap: theme.spacing[4],
     paddingBottom: theme.spacing[8],
   },
   heading: {
@@ -758,22 +760,27 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     gap: theme.spacing[4],
     flexWrap: "wrap",
-    paddingTop: theme.spacing[4],
+    paddingTop: theme.spacing[2],
   },
   headingText: { flex: 1, minWidth: 220, gap: theme.spacing[2] },
   title: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foreground,
   },
-  subtitle: { fontSize: theme.fontSize.sm, color: theme.colors.foregroundMuted, lineHeight: 24 },
+  subtitle: {
+    fontSize: theme.fontSize.base * 0.875,
+    color: theme.colors.foregroundMuted,
+    lineHeight: 20,
+  },
+  controlText: { fontSize: theme.fontSize.base * 0.875 },
   headingActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   search: { width: 220 },
-  authHint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
+  authHint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.8125 },
   category: { gap: theme.spacing[3] },
   categoryTitle: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
   },
   grid: { flexDirection: "row", flexWrap: "wrap", columnGap: "4%", rowGap: theme.spacing[2] },
@@ -785,16 +792,16 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
+    paddingVertical: theme.spacing[1.5],
     paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
   },
   cardText: { flex: 1, minWidth: 0, gap: theme.spacing[1] },
-  cardTitle: { color: theme.colors.foreground, fontSize: theme.fontSize.base },
+  cardTitle: { color: theme.colors.foreground, fontSize: theme.fontSize.base * 0.875 },
   cardDescription: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
-    lineHeight: 22,
+    fontSize: theme.fontSize.base * 0.8125,
+    lineHeight: 18,
   },
   hover: { backgroundColor: theme.colors.surface2 },
   rail: {
@@ -808,7 +815,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   railTitle: {
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     paddingHorizontal: theme.spacing[2],
   },
   railItems: { gap: theme.spacing[1] },
@@ -823,9 +830,9 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
   },
-  muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
+  muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.875 },
   state: { padding: theme.spacing[8], alignItems: "center", gap: theme.spacing[3] },
   pager: {
     flexDirection: "row",

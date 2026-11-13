@@ -1,3 +1,4 @@
+import { WORKSPACE_OVERLAY_FRACTION } from "@/components/workspace-overlay-size";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -7,6 +8,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
   type PressableStateCallbackType,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -121,11 +123,7 @@ import {
 import { HostPluginsPage } from "@/screens/settings/plugins-page";
 import ProjectsScreen from "@/screens/projects-screen";
 import ProjectSettingsScreen from "@/screens/project-settings-screen";
-import {
-  SETTINGS_DESKTOP_MAX_WIDTH,
-  SETTINGS_DESKTOP_SIDEBAR_WIDTH,
-  useIsCompactFormFactor,
-} from "@/constants/layout";
+import { SETTINGS_DESKTOP_SIDEBAR_WIDTH, useIsCompactFormFactor } from "@/constants/layout";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import {
   type EnableBuiltInDaemonOption,
@@ -1237,6 +1235,7 @@ export interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ view, openAddHostIntent = null }: SettingsScreenProps) {
+  const windowSize = useWindowDimensions();
   const router = useRouter();
   const isFocused = useIsFocused();
   const { theme } = useUnistyles();
@@ -1705,8 +1704,11 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
       header={null}
       visible={isFocused}
       onClose={handleBackToWorkspace}
-      desktopMaxWidth={SETTINGS_DESKTOP_MAX_WIDTH}
-      desktopCardStyle={desktopStyles.dialog}
+      desktopMaxWidth={windowSize.width * WORKSPACE_OVERLAY_FRACTION}
+      desktopCardStyle={[
+        desktopStyles.dialog,
+        { height: windowSize.height * WORKSPACE_OVERLAY_FRACTION },
+      ]}
       contentContainerStyle={desktopStyles.dialogContent}
       scrollable={false}
       testID="settings-dialog"
@@ -1840,8 +1842,6 @@ const styles = StyleSheet.create((theme) => ({
 
 const desktopStyles = StyleSheet.create((theme) => ({
   dialog: {
-    height: "90%",
-    maxHeight: "90%",
     overflow: "hidden",
     backgroundColor: theme.colors.surfaceSidebar,
   },

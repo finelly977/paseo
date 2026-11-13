@@ -4,9 +4,18 @@ import {
   resolveComposerControlDensity,
   resolveComposerControlPresentation,
   resolveComposerToolbarGlyphSize,
+  resolveDesktopModelMenuHeight,
 } from "./layout";
 
 describe("composer control layout", () => {
+  it.each([
+    [1000, 2, 3, 162],
+    [1000, 19, 6, 330],
+    [400, 19, 6, 240],
+    [1000, null, 0, 180],
+  ] as const)("模型浮层根据窗口和真实选项数量收缩", (height, models, thinking, expected) => {
+    expect(resolveDesktopModelMenuHeight(height, models, thinking)).toBe(expected);
+  });
   it("removes labels in priority order as the toolbar narrows", () => {
     expect(resolveComposerControlPresentation("full")).toEqual({
       showCarets: true,

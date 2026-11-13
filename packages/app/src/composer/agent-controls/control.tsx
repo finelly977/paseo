@@ -1,6 +1,7 @@
-import { forwardRef, useCallback, type ComponentType } from "react";
+import { forwardRef, useCallback, useMemo, type ComponentType } from "react";
 import { Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { ChevronUp } from "lucide-react-native";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { useComposerControlLayout } from "@/composer/agent-controls/layout-context";
 import { ComposerToolbarGlyph } from "@/composer/agent-controls/glyph";
@@ -79,6 +80,7 @@ interface AgentControlTriggerProps {
   value?: string;
   showToolbarLabel?: boolean;
   showCaret?: boolean;
+  caretUp?: boolean;
   open?: boolean;
   disabled?: boolean;
   onPress: () => void;
@@ -96,6 +98,7 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
       value,
       showToolbarLabel = true,
       showCaret = false,
+      caretUp = false,
       open = false,
       disabled = false,
       onPress,
@@ -119,6 +122,10 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
       [disabled, isSheet, open, showToolbarLabel],
     );
 
+    const chevron = useMemo(
+      () => (caretUp ? <AgentControlIconGlyph icon={ChevronUp} size={12} /> : undefined),
+      [caretUp],
+    );
     return (
       <ComboboxTrigger
         ref={ref}
@@ -129,7 +136,7 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         testID={testID}
-        chevron={showCaret ? undefined : null}
+        chevron={showCaret ? chevron : null}
       >
         {isSheet ? (
           <View style={styles.sheetGlyph}>

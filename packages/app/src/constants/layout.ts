@@ -19,7 +19,6 @@ export const COMPACT_FORM_FACTOR_WIDTH = 500;
 
 // 设置浮层独立覆盖工作面，不再占据应用侧栏的宽度预算。
 export const SETTINGS_DESKTOP_SIDEBAR_WIDTH = 240;
-export const SETTINGS_DESKTOP_MAX_WIDTH = 1120;
 
 // Desktop app constants for macOS traffic light buttons
 // These buttons (close/minimize/maximize) overlay the top-left corner

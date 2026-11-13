@@ -4,7 +4,7 @@ import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import { Bot } from "lucide-react-native";
+import { Bot, ShieldOff } from "lucide-react-native";
 import { type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { Combobox, ComboboxItem, type ComboboxOption } from "@/components/ui/combobox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -82,6 +82,25 @@ function normalizeSearchQuery(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function modeTriggerAppearance(
+  provider: string,
+  modeId: string | undefined,
+  iconName: string,
+  footer: boolean,
+  iconOnly: boolean,
+  showLabel: boolean,
+  toolbar: boolean,
+  showCaret: boolean,
+) {
+  const fullAccess = provider === "codex" && modeId === "full-access";
+  return {
+    Icon: footer && fullAccess ? ShieldOff : (MODE_ICONS[iconName] ?? Bot),
+    iconTone: !footer && fullAccess ? ("orange" as const) : ("muted" as const),
+    showLabel: footer || (!iconOnly && showLabel),
+    showCaret: footer || (!iconOnly && toolbar && showCaret),
+  };
+}
+
 export function AgentModeControl({
   provider,
   providerDefinitions,
@@ -91,10 +110,12 @@ export function AgentModeControl({
   disabled = false,
   surface = "toolbar",
   iconOnly = false,
+  menuFooter = false,
   onClose,
 }: AgentModeControlValue & {
   surface?: "toolbar" | "sheet";
   iconOnly?: boolean;
+  menuFooter?: boolean;
   onClose?: () => void;
 }) {
   const { presentation } = useComposerControlLayout();
@@ -118,8 +139,16 @@ export function AgentModeControl({
   const iconName = selectedMode
     ? resolveAgentModeIcon(provider, selectedMode.id, visuals?.icon)
     : "Bot";
-  const Icon = MODE_ICONS[iconName] ?? Bot;
-  const iconTone = provider === "codex" && selectedMode?.id === "full-access" ? "orange" : "muted";
+  const { Icon, iconTone, showLabel, showCaret } = modeTriggerAppearance(
+    provider,
+    selectedMode?.id,
+    iconName,
+    menuFooter,
+    iconOnly,
+    presentation.showModeLabel,
+    surface === "toolbar",
+    presentation.showCarets,
+  );
   const selectedModeLabel = selectedMode ? formatAgentModeLabel(selectedMode) : "";
 
   const allOptions = useMemo<ComboboxOption[]>(
@@ -218,8 +247,9 @@ export function AgentModeControl({
             surface={surface}
             label={t("agentControls.mode.title")}
             value={selectedModeLabel}
-            showToolbarLabel={!iconOnly && presentation.showModeLabel}
-            showCaret={!iconOnly && surface === "toolbar" && presentation.showCarets}
+            showToolbarLabel={showLabel}
+            showCaret={showCaret}
+            caretUp={menuFooter}
             open={open}
             disabled={disabled}
             onPress={handlePress}
@@ -232,7 +262,9 @@ export function AgentModeControl({
         <TooltipContent side="top" align="center" offset={8}>
           <View style={styles.tooltipRow}>
             <Text style={styles.tooltipText}>{t(getAgentControlHintKey("mode"))}</Text>
-            {isActiveComposer && cycleShortcutKeys ? <Shortcut chord={cycleShortcutKeys} /> : null}
+            {!menuFooter && isActiveComposer && cycleShortcutKeys ? (
+              <Shortcut chord={cycleShortcutKeys} />
+            ) : null}
           </View>
         </TooltipContent>
       </Tooltip>

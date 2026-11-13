@@ -5,6 +5,7 @@ import {
   webScrollbarThumbColor,
   WEB_SCROLLBAR_WIDTH,
 } from "@/styles/web-scrollbar";
+import { trackWebScrollbarVisibility } from "./web-scrollbar-visibility.web";
 
 const STYLE_ID = "paseo-web-scrollbar-styles";
 const handleColor = webScrollbarHandleCssValue();
@@ -17,8 +18,16 @@ export function installWebScrollbarStyles(): () => void {
   style.id = STYLE_ID;
   style.textContent = `
 * {
-  scrollbar-color: ${webScrollbarColor(handleColor)};
+  scrollbar-color: transparent transparent;
   scrollbar-width: ${WEB_SCROLLBAR_WIDTH};
+}
+
+[data-scrollbar-x], [data-scrollbar-y] {
+  scrollbar-color: ${webScrollbarColor(handleColor)};
+}
+
+@supports selector(::-webkit-scrollbar) {
+  *, [data-scrollbar-x], [data-scrollbar-y] { scrollbar-width: auto; scrollbar-color: auto; }
 }
 
 [data-composer-input] {
@@ -27,7 +36,6 @@ export function installWebScrollbarStyles(): () => void {
 
 [data-hidden-scrollbar] {
   scrollbar-width: none;
-  -ms-overflow-style: none;
 }
 
 [data-hidden-scrollbar]::-webkit-scrollbar {
@@ -49,11 +57,20 @@ export function installWebScrollbarStyles(): () => void {
 *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
-  background: ${webScrollbarThumbColor(handleColor)};
+  background: transparent;
   background-clip: content-box;
+}
+
+[data-scrollbar-y]::-webkit-scrollbar-thumb:vertical,
+[data-scrollbar-x]::-webkit-scrollbar-thumb:horizontal {
+  background-color: ${webScrollbarThumbColor(handleColor)};
 }
 `;
   document.head.append(style);
+  const stopTracking = trackWebScrollbarVisibility();
 
-  return () => style.remove();
+  return () => {
+    stopTracking();
+    style.remove();
+  };
 }

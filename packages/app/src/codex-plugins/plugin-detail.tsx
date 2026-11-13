@@ -213,15 +213,23 @@ const styles = StyleSheet.create((theme) => ({
   hero: { flexDirection: "row", alignItems: "center", gap: theme.spacing[4], flexWrap: "wrap" },
   heroText: { flex: 1, minWidth: 160, gap: theme.spacing[2] },
   title: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     color: theme.colors.foreground,
     fontWeight: theme.fontWeight.medium,
   },
-  muted: { fontSize: theme.fontSize.sm, color: theme.colors.foregroundMuted, lineHeight: 24 },
-  description: { fontSize: theme.fontSize.base, color: theme.colors.foreground, lineHeight: 26 },
+  muted: {
+    fontSize: theme.fontSize.base * 0.875,
+    color: theme.colors.foregroundMuted,
+    lineHeight: 20,
+  },
+  description: {
+    fontSize: theme.fontSize.base * 0.875,
+    color: theme.colors.foreground,
+    lineHeight: 22,
+  },
   section: { gap: theme.spacing[4] },
   sectionTitle: {
-    fontSize: theme.fontSize.base,
+    fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
     color: theme.colors.foreground,
   },
@@ -232,8 +240,8 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
   },
   infoRow: { flexDirection: "row", gap: theme.spacing[4] },
-  label: { width: 96, fontSize: theme.fontSize.sm, color: theme.colors.foregroundMuted },
-  infoValue: { flex: 1, fontSize: theme.fontSize.sm, color: theme.colors.foreground },
+  label: { width: 96, fontSize: theme.fontSize.base * 0.875, color: theme.colors.foregroundMuted },
+  infoValue: { flex: 1, fontSize: theme.fontSize.base * 0.875, color: theme.colors.foreground },
   component: {
     flexDirection: "row",
     alignItems: "center",
@@ -243,7 +251,7 @@ const styles = StyleSheet.create((theme) => ({
     borderTopColor: theme.colors.border,
   },
   componentText: { flex: 1, gap: theme.spacing[1] },
-  name: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  name: { color: theme.colors.foreground, fontSize: theme.fontSize.base * 0.875 },
   skill: {
     gap: theme.spacing[1],
     paddingVertical: theme.spacing[3],
@@ -257,6 +265,6 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "space-between",
     flexWrap: "wrap",
   },
-  error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
+  error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.base * 0.875 },
 }));
 export { styles as pluginDetailStyles };

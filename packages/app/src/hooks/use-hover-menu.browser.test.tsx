@@ -91,3 +91,25 @@ test("未输入时离开菜单仍会收起，聚焦搜索后也能点击入口�
   button.click();
   await vi.waitFor(() => expect(host.querySelector("input")).toBeNull());
 });
+
+test("搜索框仅聚焦、未选词时，鼠标移出仍会收起", async () => {
+  const input = await openSearch();
+  input.focus();
+  document.dispatchEvent(
+    new PointerEvent("pointermove", { clientX: 900, clientY: 600, pointerType: "mouse" }),
+  );
+  await vi.waitFor(() => expect(host.querySelector("input")).toBeNull());
+});
+
+test("鼠标已在外侧时，输入法选词结束后恢复自动收起", async () => {
+  const input = await openSearch();
+  input.focus();
+  input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  document.dispatchEvent(
+    new PointerEvent("pointermove", { clientX: 900, clientY: 600, pointerType: "mouse" }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  expect(host.querySelector("input")).toBe(input);
+  input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
+  await vi.waitFor(() => expect(host.querySelector("input")).toBeNull());
+});

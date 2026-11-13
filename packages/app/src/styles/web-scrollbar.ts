@@ -1,5 +1,11 @@
 export const WEB_SCROLLBAR_WIDTH = "thin";
 export const WEB_SCROLLBAR_SIZE_PX = 8;
+export const WEB_SCROLLBAR_OVERFLOW_RATIO = 1.25;
+
+/** 原生滑块按可视区 / 内容长度缩放，内容增长时先缩得快、再逐渐放缓。 */
+export function shouldShowWebScrollbar(viewport: number, content: number): boolean {
+  return viewport > 0 && content > viewport * WEB_SCROLLBAR_OVERFLOW_RATIO;
+}
 export const WEB_SCROLLBAR_HANDLE_CSS_VAR = "--paseo-scrollbar-handle";
 export const WEB_SCROLLBAR_HANDLE_FALLBACK = "#3A3A3A";
 

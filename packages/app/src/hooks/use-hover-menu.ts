@@ -25,6 +25,8 @@ export function useHoverMenu({
   const closedByHover = useRef(false);
   const previousOpen = useRef(open);
   const openedByHover = useRef(false);
+  const composing = useRef(false);
+  const pointerOutside = useRef(false);
   const clearOpen = useCallback(() => {
     if (openTimer.current !== null) clearTimeout(openTimer.current);
     openTimer.current = null;
@@ -42,6 +44,7 @@ export function useHoverMenu({
     previousOpen.current = open;
   }, [open]);
   const enter = useCallback(() => {
+    pointerOutside.current = false;
     clearClose();
     if (open || suppressed.current || openTimer.current !== null) return;
     openTimer.current = setTimeout(() => {
@@ -51,27 +54,39 @@ export function useHoverMenu({
     }, 100);
   }, [clearClose, open, onOpenChange]);
   const leave = useCallback(() => {
+    pointerOutside.current = true;
     suppressed.current = false;
     clearOpen();
     if (!open || closeTimer.current !== null) return;
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null;
-      // 模型筛选会改变菜单边界，输入法候选窗也可能使指针暂时离开；输入仍聚焦时不按悬停退出关闭。
-      if (isWeb) {
-        const content = contentRef.current as unknown as HTMLElement | null;
-        const active = document.activeElement;
-        if (
-          content &&
-          active &&
-          content.contains(active) &&
-          active.matches("input,textarea,[contenteditable=true]")
-        )
-          return;
-      }
+      // 只保护正在选词的输入法，搜索框自动聚焦不能永久阻止悬停关闭。
+      if (composing.current) return;
       closedByHover.current = true;
       onOpenChange(false);
     }, 160);
-  }, [clearOpen, contentRef, open, onOpenChange]);
+  }, [clearOpen, open, onOpenChange]);
+  useEffect(() => {
+    if (!isWeb || !enabled || !open) return;
+    const start = (event: CompositionEvent) => {
+      const content = contentRef.current as unknown as HTMLElement | null;
+      if (content && event.target instanceof Node && content.contains(event.target)) {
+        composing.current = true;
+      }
+    };
+    const end = () => {
+      if (!composing.current) return;
+      composing.current = false;
+      if (pointerOutside.current) leave();
+    };
+    document.addEventListener("compositionstart", start, true);
+    document.addEventListener("compositionend", end, true);
+    return () => {
+      composing.current = false;
+      document.removeEventListener("compositionstart", start, true);
+      document.removeEventListener("compositionend", end, true);
+    };
+  }, [contentRef, enabled, leave, open]);
   useHoverSafeZone({
     enabled,
     triggerRef,

@@ -142,3 +142,7 @@ Before opening a PR that touches hover:
 - [ ] Visibility on native and compact layouts works without hover (`isHovered || isNative || isCompact`).
 - [ ] If the revealed content sits in a separate layer (portal, floating panel), `useHoverSafeZone` is wired up.
 - [ ] You opened the dev server, hovered the trigger, and slowly moved the mouse along **every** revealed element — including any visible gaps — without losing hover state.
+
+## 带搜索框的悬停菜单
+
+`useHoverMenu` 只在真实的 `compositionstart` 至 `compositionend` 期间暂停离开关闭。搜索框自动聚焦或保留焦点不代表用户仍在选词，不能据此无限保留浮层。组合输入结束时，如果指针已经离开触发行、菜单与桥接安全区，重新启动短延迟关闭；指针返回则取消关闭。输入法确认、取消和候选选择仍由输入法处理，不代替外层显式关闭操作。

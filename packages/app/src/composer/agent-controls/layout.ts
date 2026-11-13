@@ -1,5 +1,16 @@
 export type ComposerControlDensity = "full" | "condensed" | "tight";
 
+/** 少量选项按内容收缩，长列表和较矮窗口保留可见底栏。 */
+export function resolveDesktopModelMenuHeight(
+  viewportHeight: number,
+  modelCount: number | null,
+  thinkingCount: number,
+): number {
+  const modelsHeight = modelCount === null ? 180 : 54 + modelCount * 36;
+  const contentHeight = Math.max(144, modelsHeight, 54 + thinkingCount * 36);
+  return Math.min(330, Math.max(100, viewportHeight - 160), contentHeight);
+}
+
 export interface ComposerControlPresence {
   hasModel: boolean;
   hasThinking: boolean;

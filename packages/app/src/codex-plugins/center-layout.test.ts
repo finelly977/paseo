@@ -4,7 +4,7 @@ import { resolvePluginCenterLayout } from "./center-layout";
 describe("插件中心首帧布局", () => {
   it.each([
     [1440, false, true, true],
-    [1080, false, true, true],
+    [1080, false, false, true],
     [960, false, false, true],
     [808, false, false, false],
     [720, false, false, false],

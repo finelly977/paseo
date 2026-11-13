@@ -1,22 +1,21 @@
+import { DesktopModelMenuContent } from "./desktop-model-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { router } from "expo-router";
 import { View, Text, Keyboard, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
-import { Brain, ChevronRight, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
+import { Brain, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuSeparator,
   DropdownMenuItem,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
-import { CombinedModelSelector } from "@/components/combined-model-selector";
 import {
   buildSelectedTriggerLabel,
   resolveSelectedModelLabel,
@@ -703,7 +702,7 @@ function ControlledAgentControls({
   );
 }
 
-interface DesktopAgentControlsContentProps {
+export interface DesktopAgentControlsContentProps {
   providerLocked: boolean;
   provider: string;
   providerOptions?: AgentControlOption[];
@@ -743,15 +742,8 @@ interface DesktopAgentControlsContentProps {
 
 function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
-  const {
-    onDropdownClose,
-    disabled,
-    displayProvider,
-    provider,
-    handleDesktopModelSelect,
-    onApplyAgentProfile,
-    onEditAgentProfiles,
-  } = props;
+  const { onDropdownClose, onEditAgentProfiles, onModelSelectorOpen } = props;
+  const { width } = useWindowDimensions();
   const [menuOpen, setMenuOpen] = useState(false);
   const modelLabel = resolveSelectedModelLabel({
     providers: props.modelSelectorProviders,
@@ -760,195 +752,94 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     isLoading: props.isModelLoading,
   });
   const label = buildSelectedTriggerLabel(modelLabel);
-  const closeMenu = useCallback(() => {
+  const handleEditProfiles = useCallback(() => {
     setMenuOpen(false);
     onDropdownClose?.();
-  }, [onDropdownClose]);
-  const handleEditProfiles = useCallback(() => {
-    closeMenu();
     onEditAgentProfiles?.();
-  }, [closeMenu, onEditAgentProfiles]);
-  const editProfilesAction = useMemo(
-    () => (onEditAgentProfiles ? handleEditProfiles : undefined),
-    [onEditAgentProfiles, handleEditProfiles],
-  );
+  }, [onDropdownClose, onEditAgentProfiles]);
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
       setMenuOpen(open);
-      if (!open) onDropdownClose?.();
+      if (open) onModelSelectorOpen?.();
+      else onDropdownClose?.();
     },
-    [onDropdownClose],
+    [onDropdownClose, onModelSelectorOpen],
   );
   const chipStyle = useCallback(
     ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
       styles.roleChip,
       (hovered || pressed || open) && styles.roleChipActive,
-      disabled && styles.disabledBadge,
+      props.disabled && styles.disabledBadge,
     ],
-    [disabled],
+    [props.disabled],
   );
-  const providerValue = useMemo(
-    () => (
-      <Text style={styles.roleMenuValue}>
-        {displayProvider === t("agentControls.provider.fallback") ? provider : displayProvider}
-      </Text>
-    ),
-    [displayProvider, provider, t],
-  );
-  const renderModelRow = useCallback(
-    ({
-      selectedModelLabel,
-      hovered,
-      pressed,
-      isOpen,
-    }: {
-      selectedModelLabel: string;
-      hovered: boolean;
-      pressed: boolean;
-      isOpen: boolean;
-    }) => (
-      <View
-        style={[styles.roleMenuRow, (hovered || pressed || isOpen) && styles.roleMenuRowActive]}
-      >
-        <Text numberOfLines={1} style={styles.roleMenuLabel}>
-          {t("agentControls.model.title")}
-        </Text>
-        <Text numberOfLines={1} style={styles.roleMenuValue}>
-          {selectedModelLabel}
-        </Text>
-        <AgentControlIconGlyph icon={ChevronRight} size={16} />
-      </View>
-    ),
-    [t],
-  );
-
+  const hasInjection =
+    props.canSelectCodexProviderInjection &&
+    props.codexProviderInjections &&
+    props.onSelectCodexProviderInjection;
+  const otherFeatures = props.features?.filter((feature) => feature.id !== "fast_mode") ?? [];
+  const advanced =
+    hasInjection || otherFeatures.length > 0 ? (
+      <>
+        {hasInjection && props.codexProviderInjections && props.onSelectCodexProviderInjection ? (
+          <CodexProviderInjectionControl
+            injections={props.codexProviderInjections}
+            selectedInjectionId={props.selectedCodexProviderInjectionId}
+            selectedModelId={props.selectedModelId ?? ""}
+            onSelect={props.onSelectCodexProviderInjection}
+            disabled={props.disabled}
+            surface="sheet"
+          />
+        ) : null}
+        {otherFeatures.map((feature) => (
+          <RoleMenuFeature
+            key={feature.id}
+            feature={feature}
+            disabled={props.disabled}
+            onSetFeature={props.onSetFeature}
+          />
+        ))}
+      </>
+    ) : null;
   return (
-    <>
-      <DropdownMenu
-        compact
-        open={menuOpen}
-        onOpenChange={handleMenuOpenChange}
-        selectionCloseScope="current"
+    <DropdownMenu
+      compact
+      open={menuOpen}
+      onOpenChange={handleMenuOpenChange}
+      selectionCloseScope="current"
+    >
+      <DropdownMenuTrigger
+        disabled={props.disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
+        testID="agent-role-selector"
+        style={chipStyle}
       >
-        <DropdownMenuTrigger
-          disabled={props.disabled}
-          accessibilityRole="button"
-          accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
-          testID="agent-role-selector"
-          style={chipStyle}
-        >
-          <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
-          <FastModeIndicator features={props.features} />
-          <Text numberOfLines={1} style={styles.roleChipText}>
-            {label}
-          </Text>
-          {props.canSelectThinking ? (
-            <Text
-              numberOfLines={1}
-              style={styles.roleThinkingText}
-            >{`· ${props.displayThinking}`}</Text>
-          ) : null}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side="top"
-          align="start"
-          width={240}
-          maxHeight={420}
-          scrollable
-          testID="agent-role-menu"
-        >
-          {props.providerOptions && props.providerOptions.length > 0 ? (
-            <DropdownMenuSub openOnHover={!props.disabled}>
-              <DropdownMenuSubTrigger
-                disabled={props.disabled || !props.canSelectProvider}
-                testID="agent-provider-selector"
-              >
-                {findOptionLabel(props.providerOptions, props.selectedProviderId, "Agent")}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {props.providerOptions.map((option) => (
-                  <RoleMenuOption
-                    key={option.id}
-                    option={option}
-                    selected={option.id === props.selectedProviderId}
-                    onSelect={props.handleProviderSelect}
-                  />
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ) : (
-            <DropdownMenuItem disabled trailing={providerValue}>
-              Agent
-            </DropdownMenuItem>
-          )}
-          {props.canSelectModel ? (
-            <CombinedModelSelector
-              providerLocked={props.providerLocked}
-              providers={props.modelSelectorProviders}
-              selectedProvider={props.provider}
-              selectedModel={props.selectedModelId ?? ""}
-              onSelect={handleDesktopModelSelect}
-              profiles={props.agentProfiles}
-              onApplyProfile={onApplyAgentProfile}
-              onEditProfiles={editProfilesAction}
-              isLoading={props.isModelLoading}
-              disabled={props.modelDisabled}
-              onOpen={props.onModelSelectorOpen}
-              onRetryProvider={props.onRetryModelProvider}
-              isRetryingProvider={props.isRetryingModelProvider}
-              serverId={props.modelSelectorServerId}
-              desktopPlacement="right-start"
-              desktopMinWidth={300}
-              openOnHover
-              compactMenu
-              triggerFill
-              renderTrigger={renderModelRow}
-            />
-          ) : null}
-          {props.canSelectThinking && props.thinkingOptions ? (
-            <DropdownMenuSub openOnHover={!props.disabled}>
-              <DropdownMenuSubTrigger disabled={props.disabled} testID="agent-thinking-selector">
-                {t("agentControls.role.thinking")} · {props.displayThinking}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent width={200} testID="agent-thinking-menu">
-                {props.thinkingOptions.map((option) => (
-                  <RoleMenuOption
-                    key={option.id}
-                    option={option}
-                    selected={option.id === props.selectedThinkingOptionId}
-                    onSelect={props.handleThinkingSelect}
-                  />
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ) : null}
-          {props.canSelectCodexProviderInjection &&
-          props.codexProviderInjections &&
-          props.onSelectCodexProviderInjection ? (
-            <CodexProviderInjectionControl
-              injections={props.codexProviderInjections}
-              selectedInjectionId={props.selectedCodexProviderInjectionId}
-              selectedModelId={props.selectedModelId ?? ""}
-              onSelect={props.onSelectCodexProviderInjection}
-              disabled={props.disabled}
-              surface="sheet"
-            />
-          ) : null}
-          {props.features && props.features.length > 0 ? <DropdownMenuSeparator /> : null}
-          {props.features?.map((feature) => (
-            <RoleMenuFeature
-              key={feature.id}
-              feature={feature}
-              disabled={props.disabled}
-              onSetFeature={props.onSetFeature}
-            />
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {props.modeControl ? (
-        <AgentModeControl {...props.modeControl} iconOnly onClose={props.onDropdownClose} />
-      ) : null}
-    </>
+        <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
+        <FastModeIndicator features={props.features} />
+        <Text numberOfLines={1} style={styles.roleChipText}>
+          {label}
+        </Text>
+        {props.canSelectThinking ? (
+          <Text
+            numberOfLines={1}
+            style={styles.roleThinkingText}
+          >{`· ${props.displayThinking}`}</Text>
+        ) : null}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        width={Math.min(640, width - 32)}
+        testID="agent-role-menu"
+      >
+        <DesktopModelMenuContent
+          controls={props}
+          advanced={advanced}
+          onEditProfiles={onEditAgentProfiles ? handleEditProfiles : undefined}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1754,11 +1645,11 @@ const styles = StyleSheet.create((theme) => ({
   roleChip: {
     minWidth: 0,
     flexShrink: 1,
-    height: 32,
+    height: 28,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1.5],
-    paddingHorizontal: theme.spacing[2],
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[1.5],
     borderRadius: theme.borderRadius.lg,
   },
   roleChipActive: { backgroundColor: theme.colors.surface3 },
