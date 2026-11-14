@@ -2,7 +2,17 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "r
 import type { ReactNode, Ref } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type LayoutChangeEvent,
+} from "react-native";
 import type { StyleProp, TextInputProps, ViewStyle } from "react-native";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -509,6 +519,8 @@ export interface AdaptiveModalSheetProps {
   desktopMaxWidth?: number;
   /** 桌面多栏设置等大型任务可以提供自己的卡片尺寸与内部标题栏。 */
   desktopCardStyle?: StyleProp<ViewStyle>;
+  /** 按浮层自身可见视口计算尺寸，最后应用，避免被旧的宽高上限覆盖。 */
+  desktopViewportFraction?: number;
   scrollable?: boolean;
   presentation?: "push" | "replace";
   contentContainerStyle?: StyleProp<ViewStyle>;
@@ -530,6 +542,7 @@ export function AdaptiveModalSheet({
   testID,
   desktopMaxWidth,
   desktopCardStyle: desktopCardStyleProp,
+  desktopViewportFraction,
   scrollable = true,
   presentation,
   contentContainerStyle,
@@ -539,6 +552,17 @@ export function AdaptiveModalSheet({
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
+  const windowSize = useWindowDimensions();
+  const [desktopViewport, setDesktopViewport] = useState(() => ({
+    width: windowSize.width,
+    height: windowSize.height,
+  }));
+  const measureDesktopViewport = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setDesktopViewport((previous) =>
+      previous.width === width && previous.height === height ? previous : { width, height },
+    );
+  }, []);
   const insets = useSafeAreaInsets();
   const resolvedSnapPoints = useMemo(() => snapPoints ?? ["65%", "90%"], [snapPoints]);
   const compactSafeAreaPadding = useMemo(
@@ -621,8 +645,15 @@ export function AdaptiveModalSheet({
       styles.desktopCard,
       desktopMaxWidth != null && { maxWidth: desktopMaxWidth },
       desktopCardStyleProp,
+      desktopViewportFraction !== undefined && {
+        width: desktopViewport.width * desktopViewportFraction,
+        maxWidth: desktopViewport.width * desktopViewportFraction,
+        height: desktopViewport.height * desktopViewportFraction,
+        maxHeight: desktopViewport.height * desktopViewportFraction,
+        flexShrink: 0,
+      },
     ],
-    [desktopMaxWidth, desktopCardStyleProp],
+    [desktopMaxWidth, desktopCardStyleProp, desktopViewport, desktopViewportFraction],
   );
   const desktopOverlayStyle = useMemo(
     () => [
@@ -740,13 +771,19 @@ export function AdaptiveModalSheet({
   );
 
   const desktopContent = (
-    <View style={desktopOverlayStyle} testID={testID}>
+    <View
+      style={desktopOverlayStyle}
+      testID={testID}
+      onLayout={desktopViewportFraction !== undefined ? measureDesktopViewport : undefined}
+    >
       <Pressable
         accessibilityLabel={t("common.actions.dismiss")}
         style={ABSOLUTE_FILL_STYLE}
         onPress={onClose}
       />
-      <View style={desktopCardStyle}>{cardInner}</View>
+      <View style={desktopCardStyle} testID={testID ? `${testID}-card` : undefined}>
+        {cardInner}
+      </View>
     </View>
   );
 

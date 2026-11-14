@@ -4,7 +4,6 @@ import { Keyboard, ScrollView, Text, View, type PressableStateCallbackType } fro
 import { StyleSheet } from "react-native-unistyles";
 import type { AgentProvider, AgentFeature } from "@getpaseo/protocol/agent-types";
 import { FastModeIndicator } from "./fast-mode-indicator";
-import type { AgentProfilePicker } from "@/agent-profiles";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { getProviderIcon } from "@/components/provider-icons";
@@ -27,9 +26,6 @@ interface CompactModelSheetProps {
   selectedModel: string;
   onSelect: (provider: string, modelId: string) => void;
   isLoading: boolean;
-  profiles?: AgentProfilePicker | null;
-  onApplyProfile?: (profileId: string) => void;
-  onEditProfiles?: () => void;
   onOpen?: () => void;
   onClose?: () => void;
   onRetryProvider?: (provider: AgentProvider) => void;
@@ -53,9 +49,6 @@ export function CompactModelSheet({
   selectedModel,
   onSelect,
   isLoading,
-  profiles = null,
-  onApplyProfile,
-  onEditProfiles,
   onOpen,
   onClose,
   onRetryProvider,
@@ -77,7 +70,6 @@ export function CompactModelSheet({
     selectedProvider,
     selectedModel,
     isLoading,
-    profiles,
     serverId,
   });
   const { prepareToOpen, reset } = browser;
@@ -114,19 +106,6 @@ export function CompactModelSheet({
     },
     [close, onSelect],
   );
-
-  const handleApplyProfile = useCallback(
-    (profileId: string) => {
-      onApplyProfile?.(profileId);
-      close();
-    },
-    [close, onApplyProfile],
-  );
-
-  const handleEditProfiles = useCallback(() => {
-    close();
-    onEditProfiles?.();
-  }, [close, onEditProfiles]);
 
   const toggle = useCallback(() => {
     if (isOpen) {
@@ -193,8 +172,6 @@ export function CompactModelSheet({
           <ModelBrowser
             state={browser}
             onSelect={handleSelect}
-            onApplyProfile={handleApplyProfile}
-            onEditProfiles={onEditProfiles ? handleEditProfiles : undefined}
             onRetryProvider={onRetryProvider}
             isRetryingProvider={isRetryingProvider}
             scrolling="independent"

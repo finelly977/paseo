@@ -48,7 +48,6 @@ describe("model browser initial view", () => {
         providers: [pi],
         selectedProvider: "",
         selectedModel: "",
-        hasProfiles: false,
       }),
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
@@ -59,40 +58,36 @@ describe("model browser initial view", () => {
         providers: [codex, pi],
         selectedProvider: "pi",
         selectedModel: "pi-pro",
-        hasProfiles: false,
         providerLocked: false,
       }),
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("已选择智能体时有配置档案也直接显示模型", () => {
+  it("已选择智能体时直接显示模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [codex, pi],
         selectedProvider: "pi",
         selectedModel: "pi-pro",
-        hasProfiles: true,
       }),
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
 
-  it("单智能体和档案同样直达模型", () => {
+  it("单智能体直达模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [pi],
         selectedProvider: "pi",
         selectedModel: "pi-pro",
-        hasProfiles: true,
       }),
     ).toEqual({ kind: "provider", providerId: "pi", providerLabel: "Pi" });
   });
-  it("固定智能体的会话有配置档案时也直接进入该智能体模型", () => {
+  it("固定智能体的会话直接进入该智能体模型", () => {
     expect(
       resolveInitialModelBrowserView({
         providers: [codex],
         selectedProvider: "codex",
         selectedModel: "",
-        hasProfiles: true,
         providerLocked: true,
       }),
     ).toEqual({ kind: "provider", providerId: "codex", providerLabel: "Codex" });
@@ -104,7 +99,6 @@ describe("model browser initial view", () => {
         providers: [codex, pi],
         selectedProvider: "gemini",
         selectedModel: "gemini-3",
-        hasProfiles: false,
       }),
     ).toEqual({ kind: "all" });
   });
@@ -192,9 +186,5 @@ describe("模型菜单的紧凑高度", () => {
   });
   it("空模型仍保留搜索、创建配置和空状态的空间", () => {
     expect(resolveCompactModelMenuHeight(0)).toBe(152);
-  });
-  it("配置档案也占据列表空间，不将其高度误算为留白", () => {
-    expect(resolveCompactModelMenuHeight(2, 2)).toBe(296);
-    expect(resolveCompactModelMenuHeight(20, 2)).toBe(400);
   });
 });

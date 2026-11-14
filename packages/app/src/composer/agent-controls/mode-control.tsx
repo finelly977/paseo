@@ -49,8 +49,9 @@ function ModeComboboxOption({
 }: ModeComboboxOptionProps) {
   const visuals = getModeVisuals(provider, option.id, providerDefinitions);
   const iconName = resolveAgentModeIcon(provider, option.id, visuals?.icon);
-  const IconComponent = provider === "codex" || visuals?.icon ? MODE_ICONS[iconName] : undefined;
-  const iconTone = provider === "codex" && option.id === "full-access" ? "orange" : "foreground";
+  let IconComponent = provider === "codex" || visuals?.icon ? MODE_ICONS[iconName] : undefined;
+  if (option.id === "full-access") IconComponent = ShieldOff;
+  const iconTone = "foreground";
   const leadingSlot = useMemo(
     () =>
       IconComponent ? (
@@ -92,10 +93,10 @@ function modeTriggerAppearance(
   toolbar: boolean,
   showCaret: boolean,
 ) {
-  const fullAccess = provider === "codex" && modeId === "full-access";
+  const fullAccess = modeId === "full-access";
   return {
-    Icon: footer && fullAccess ? ShieldOff : (MODE_ICONS[iconName] ?? Bot),
-    iconTone: !footer && fullAccess ? ("orange" as const) : ("muted" as const),
+    Icon: fullAccess ? ShieldOff : (MODE_ICONS[iconName] ?? Bot),
+    iconTone: "muted" as const,
     showLabel: footer || (!iconOnly && showLabel),
     showCaret: footer || (!iconOnly && toolbar && showCaret),
   };

@@ -75,7 +75,6 @@ import { isWorkspaceOverlayRoute } from "@/navigation/workspace-overlay-route";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { AgentNavigationListener } from "@/desktop/agent-navigation";
 import { WorkspacePreviewBridge } from "@/file-explorer/open-in-browser";
-import { legacyFavoriteProfileMigration } from "@/agent-profiles/migration";
 import { listenToDesktopEvent } from "@/desktop/electron/events";
 import { updateDesktopWindowChrome } from "@/desktop/electron/window";
 import { getDesktopHost } from "@/desktop/host";
@@ -103,14 +102,12 @@ import {
   useHostRegistryLoaded,
   useHostMutations,
   useHostRuntimeClient,
-  useHostRuntimeIsConnected,
   useHosts,
 } from "@/runtime/host-runtime";
 import { getDaemonStartService } from "@/runtime/daemon-start-service";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { flushDraftPersistStorage } from "@/stores/draft-store";
 import type { ThemeName } from "@/styles/theme";
-import { useSessionStore } from "@/stores/session-store";
 import { installWebScrollbarStyles } from "@/styles/install-web-scrollbar-styles";
 import { WebScrollbarThemeSync } from "@/styles/web-scrollbar-theme-sync";
 import type { HostProfile } from "@/types/host-connection";
@@ -270,32 +267,9 @@ function ManagedDaemonSession({ daemon }: { daemon: HostProfile }) {
 
   return (
     <SessionProvider key={daemon.serverId} serverId={daemon.serverId} client={client}>
-      <LegacyFavoriteProfileMigrationBootstrap serverId={daemon.serverId} client={client} />
       <PluginCatalogSync serverId={daemon.serverId} client={client} />
     </SessionProvider>
   );
-}
-
-function LegacyFavoriteProfileMigrationBootstrap({
-  serverId,
-  client,
-}: {
-  serverId: string;
-  client: NonNullable<ReturnType<typeof useHostRuntimeClient>>;
-}) {
-  const serverInfo = useSessionStore((state) => state.sessions[serverId]?.serverInfo ?? null);
-  const isConnected = useHostRuntimeIsConnected(serverId);
-
-  useEffect(() => {
-    if (!serverInfo || !isConnected) {
-      return;
-    }
-    void legacyFavoriteProfileMigration.migrateHost(serverId, client).catch((error) => {
-      console.warn("[AgentProfiles] Failed to migrate legacy favourites", error);
-    });
-  }, [client, isConnected, serverId, serverInfo]);
-
-  return null;
 }
 
 function HostSessionManager() {

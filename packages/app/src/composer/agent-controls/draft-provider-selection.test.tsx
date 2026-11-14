@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -11,11 +12,13 @@ vi.mock("@/i18n/i18next", () => ({ i18n: { t: (key: string) => key } }));
 vi.mock("react-native-unistyles", async () => {
   const { darkTheme } = await import("@/styles/theme");
   return {
-    StyleSheet: { create: (build: (theme: Theme) => unknown) => build(darkTheme) },
+    StyleSheet: {
+      create: (build: ((theme: Theme) => unknown) | object) =>
+        typeof build === "function" ? build(darkTheme) : build,
+    },
     withUnistyles: (component: unknown) => component,
   };
 });
-vi.mock("@/agent-profiles", () => ({ useAgentProfilePicker: () => null }));
 vi.mock("@/components/model-browser", () => ({ ModelProviderGlyph: () => null }));
 vi.mock("@/components/combined-model-selector", () => ({ CombinedModelSelector: () => null }));
 vi.mock("@/components/ui/combobox", () => ({ Combobox: () => null, ComboboxItem: () => null }));
@@ -104,6 +107,7 @@ function renderDraft(disabled = false) {
   const root = createRoot(container);
   roots.push(root);
   const onSelectProvider = vi.fn();
+  const onSelectProviderAndModel = vi.fn();
   const props: DraftAgentControlsProps = {
     providerDefinitions: [],
     selectedProvider: "codex",
@@ -116,41 +120,73 @@ function renderDraft(disabled = false) {
     onSelectModel: vi.fn(),
     isModelLoading: false,
     modelSelectorProviders: [
-      { id: "codex", label: "Codex", modelSelection: { kind: "models", rows: [] } },
-      { id: "claude", label: "Claude", modelSelection: { kind: "models", rows: [] } },
+      {
+        id: "codex",
+        label: "Codex",
+        modelSelection: {
+          kind: "models",
+          rows: [
+            {
+              favoriteKey: "codex:one",
+              provider: "codex",
+              providerLabel: "Codex",
+              modelId: "one",
+              modelLabel: "Codex 模型",
+            },
+          ],
+        },
+      },
+      {
+        id: "claude",
+        label: "Claude",
+        modelSelection: {
+          kind: "models",
+          rows: [
+            {
+              favoriteKey: "claude:one",
+              provider: "claude",
+              providerLabel: "Claude",
+              modelId: "one",
+              modelLabel: "Claude 模型",
+            },
+          ],
+        },
+      },
     ],
     isAllModelsLoading: false,
-    onSelectProviderAndModel: vi.fn(),
+    onSelectProviderAndModel,
     thinkingOptions: [],
     selectedThinkingOptionId: "",
     onSelectThinkingOption: vi.fn(),
     disabled,
   };
-  act(() => root.render(<DraftAgentControls {...props} />));
-  const trigger = container.querySelector<HTMLButtonElement>(
-    '[data-testid="agent-provider-selector"]',
+  act(() =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <DraftAgentControls {...props} />
+      </QueryClientProvider>,
+    ),
   );
+  const trigger = container.querySelector<HTMLButtonElement>('[data-testid="agent-role-selector"]');
   if (!trigger) throw new Error("新会话的智能体选择入口不存在");
-  return { dom, container, trigger, onSelectProvider };
+  return { dom, container, trigger, onSelectProvider, onSelectProviderAndModel };
 }
 
 describe("新会话智能体选择", () => {
-  it("草稿的智能体入口可用，选择 Claude 调用原有切换逻辑", () => {
-    const { dom, container, trigger, onSelectProvider } = renderDraft();
+  it("浏览提供方不提前切换，确认模型才提交提供方与模型", () => {
+    const { dom, container, trigger, onSelectProvider, onSelectProviderAndModel } = renderDraft();
     expect(trigger.disabled).toBe(false);
-    const current = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Codex",
-    );
-    if (!current) throw new Error("当前智能体选项缺失");
-    expect(current.getAttribute("aria-pressed")).toBe("true");
-    const choice = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Claude",
-    );
-    if (!choice) throw new Error("主机的 Claude 选项缺失");
-    act(() => choice.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
-    expect(onSelectProvider).toHaveBeenCalledExactlyOnceWith("claude");
+    const provider = container.querySelector('[aria-label="Claude"]');
+    if (!provider) throw new Error("缺少 Claude 目录入口");
+    act(() => provider.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+    expect(onSelectProvider).not.toHaveBeenCalled();
+    const model = container.querySelector('[data-testid="model-row-claude-one"]');
+    if (!model) throw new Error("缺少 Claude 模型入口");
+    act(() => model.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })));
+    expect(onSelectProviderAndModel).toHaveBeenCalledWith("claude", "one");
   });
-  it("创建提交期间仍禁止切换智能体", () => {
-    expect(renderDraft(true).trigger.disabled).toBe(true);
+  it("禁用草稿时不允许打开模型菜单", () => {
+    const { trigger } = renderDraft(true);
+    expect(trigger.disabled).toBe(true);
   });
 });

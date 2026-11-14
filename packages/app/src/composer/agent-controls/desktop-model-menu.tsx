@@ -1,3 +1,5 @@
+import { ModelLibraryList } from "@/model-library/model-list";
+import { useModelLibrary, type ModelLibrary } from "@/model-library/use-model-library";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
@@ -9,7 +11,7 @@ import {
   useWindowDimensions,
   type PressableStateCallbackType,
 } from "react-native";
-import { Check, RefreshCw, Search, Settings2, Zap } from "lucide-react-native";
+import { Check, RefreshCw, Search, Settings2, Star, Zap } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -22,9 +24,7 @@ import {
   filterAndRankModelRows,
   getAllProviderModelRows,
   type ProviderSelectorProvider,
-  type ProviderSelectionModelRow,
 } from "@/provider-selection/provider-selection";
-import { AgentProfileGlyph, type AgentProfilePickerRow } from "@/agent-profiles";
 import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { AgentControlIconGlyph } from "./control";
 import type { DesktopAgentControlsContentProps } from "./index";
@@ -36,7 +36,6 @@ interface ChoiceProps {
   label: string;
   tooltip?: string;
   provider?: string;
-  profile?: AgentProfilePickerRow;
   selected?: boolean;
   disabled?: boolean;
   iconOnly?: boolean;
@@ -51,7 +50,6 @@ function MenuChoice({
   label,
   tooltip = label,
   provider,
-  profile,
   selected = false,
   disabled = false,
   iconOnly = false,
@@ -85,10 +83,7 @@ function MenuChoice({
           style={style}
           testID={testID}
         >
-          {profile ? (
-            <AgentProfileGlyph icon={profile.icon} color={profile.color} size={glyphSize} />
-          ) : null}
-          {!profile && provider ? (
+          {provider ? (
             <ModelProviderGlyph provider={provider} size={iconOnly ? 18 : glyphSize} />
           ) : null}
           {icon ? <AgentControlIconGlyph icon={icon} size={glyphSize} /> : null}
@@ -109,58 +104,40 @@ function MenuChoice({
   );
 }
 
-function ModelChoice({ row, controls }: { row: ProviderSelectionModelRow; controls: Controls }) {
-  const { handleDesktopModelSelect } = controls;
-  const select = useCallback(
-    (id: string) => handleDesktopModelSelect(row.provider, id),
-    [handleDesktopModelSelect, row.provider],
-  );
-  return (
-    <MenuChoice
-      id={row.modelId}
-      label={row.modelLabel}
-      provider={row.provider}
-      tooltip={
-        row.modelLabel === row.modelId ? row.modelLabel : `${row.modelLabel}\n${row.modelId}`
-      }
-      selected={row.provider === controls.provider && row.modelId === controls.selectedModelId}
-      disabled={controls.modelDisabled}
-      onSelect={select}
-      testID={`model-row-${row.provider}-${row.modelId}`}
-    />
-  );
-}
-
 function ModelChoices({
   active,
+  providers,
   query,
+  favoritesOnly,
   controls,
+  library,
 }: {
   active: ProviderSelectorProvider | undefined;
+  providers: ProviderSelectorProvider[];
   query: string;
+  favoritesOnly: boolean;
   controls: Controls;
+  library: ModelLibrary;
 }) {
   const { onRetryModelProvider } = controls;
-  const rows = useMemo(
-    () =>
-      filterAndRankModelRows(
-        getAllProviderModelRows(active ? [active] : []),
-        query.trim().toLowerCase(),
-      ),
-    [active, query],
-  );
+  const catalogRows = useMemo(() => getAllProviderModelRows(providers), [providers]);
+  const rows = useMemo(() => {
+    let entries = providers;
+    if (!favoritesOnly) entries = active ? [active] : [];
+    return filterAndRankModelRows(getAllProviderModelRows(entries), query.trim().toLowerCase());
+  }, [active, favoritesOnly, providers, query]);
   const retry = useCallback(() => {
     if (active) onRetryModelProvider?.(active.id);
   }, [active, onRetryModelProvider]);
-  if (!active) return <Text style={styles.empty}>当前主机没有可选模型</Text>;
-  if (active.modelSelection.kind === "loading")
+  if (!favoritesOnly && !active) return <Text style={styles.empty}>当前主机没有可选模型</Text>;
+  if (!favoritesOnly && active?.modelSelection.kind === "loading")
     return (
       <View style={styles.state}>
         <ActivityIndicator size="small" />
         <Text style={styles.muted}>正在读取模型…</Text>
       </View>
     );
-  if (active.modelSelection.kind === "error")
+  if (!favoritesOnly && active?.modelSelection.kind === "error")
     return (
       <View style={styles.state}>
         <Text style={styles.muted}>{active.modelSelection.message}</Text>
@@ -174,53 +151,18 @@ function ModelChoices({
         ) : null}
       </View>
     );
-  if (rows.length === 0) return <Text style={styles.empty}>没有匹配的模型</Text>;
   return (
-    <>
-      {rows.map((row) => (
-        <ModelChoice key={row.favoriteKey} row={row} controls={controls} />
-      ))}
-    </>
+    <ModelLibraryList
+      rows={rows}
+      catalogRows={catalogRows}
+      library={library}
+      favoritesOnly={favoritesOnly}
+      selectedProvider={controls.provider}
+      selectedModel={controls.selectedModelId ?? ""}
+      onSelect={controls.handleDesktopModelSelect}
+      disabled={controls.modelDisabled}
+    />
   );
-}
-
-function ProfileChoices({
-  controls,
-  query,
-  onEdit,
-}: {
-  controls: Controls;
-  query: string;
-  onEdit: (() => void) | undefined;
-}) {
-  const profiles = controls.agentProfiles?.rows ?? [];
-  const apply = controls.onApplyAgentProfile ?? controls.agentProfiles?.applyProfile;
-  const matching = profiles.filter((profile) =>
-    `${profile.name} ${profile.summary}`.toLowerCase().includes(query.toLowerCase()),
-  );
-  return (
-    <>
-      {matching.map((profile) => (
-        <MenuChoice
-          key={profile.id}
-          id={profile.id}
-          label={profile.name}
-          tooltip={`${profile.name}\n${profile.summary}`}
-          profile={profile}
-          disabled={controls.disabled || !apply}
-          onSelect={apply ?? unavailableProfile}
-        />
-      ))}
-      {matching.length === 0 ? <Text style={styles.empty}>没有匹配的配置档案</Text> : null}
-      {onEdit ? (
-        <MenuChoice id="edit" label="管理配置档案" icon={Settings2} onSelect={onEdit} />
-      ) : null}
-    </>
-  );
-}
-
-function unavailableProfile(): never {
-  throw new Error("Profile application is unavailable");
 }
 
 function ThinkingChoices({ controls, visible }: { controls: Controls; visible: boolean }) {
@@ -297,40 +239,44 @@ function MenuFooter({ controls, advanced }: { controls: Controls; advanced: Reac
   );
 }
 
-/** 三个区域共用一个浮层，选择模型后仍可继续调整思考与权限。 */
+/** 模型、收藏与思考强度共用一个浮层，选择后保留主面板。 */
 export function DesktopModelMenuContent({
   controls,
   advanced,
-  onEditProfiles,
 }: {
   controls: Controls;
   advanced: ReactNode;
-  onEditProfiles: (() => void) | undefined;
 }) {
   const { height } = useWindowDimensions();
   const [providerId, setProviderId] = useState(controls.provider);
   const [query, setQuery] = useState("");
-  const [profilesOpen, setProfilesOpen] = useState(false);
-  const providers = controls.providerLocked
-    ? controls.modelSelectorProviders.filter((entry) => entry.id === controls.provider)
-    : controls.modelSelectorProviders;
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const library = useModelLibrary(controls.modelSelectorServerId);
+  const providers = useMemo(
+    () =>
+      controls.providerLocked
+        ? controls.modelSelectorProviders.filter((entry) => entry.id === controls.provider)
+        : controls.modelSelectorProviders,
+    [controls.modelSelectorProviders, controls.provider, controls.providerLocked],
+  );
   const active = providers.find((entry) => entry.id === providerId) ?? providers[0];
   const selectProvider = useCallback((id: string) => {
     setProviderId(id);
-    setProfilesOpen(false);
+    setFavoritesOnly(false);
     setQuery("");
   }, []);
-  const showProfiles = useCallback(() => {
-    setProfilesOpen(true);
+  const showFavorites = useCallback(() => {
+    setFavoritesOnly(true);
     setQuery("");
   }, []);
   const { onRetryModelProvider } = controls;
   const retryActive = useCallback(() => {
     if (active) onRetryModelProvider?.(active.id);
   }, [active, onRetryModelProvider]);
-  const hasProfiles = (controls.agentProfiles?.rows.length ?? 0) > 0 || Boolean(onEditProfiles);
-  const modelCount = profilesOpen
-    ? (controls.agentProfiles?.rows.length ?? 0) + Number(Boolean(onEditProfiles))
+  const modelCount = favoritesOnly
+    ? getAllProviderModelRows(providers).filter((row) =>
+        library.preferences.favorites.includes(row.favoriteKey),
+      ).length
     : getMenuModelCount(active);
   const menuHeight = resolveDesktopModelMenuHeight(
     height,
@@ -341,6 +287,14 @@ export function DesktopModelMenuContent({
     <View dataSet={COMPACT_LABEL_DATASET} style={styles.menu}>
       <View style={styles.columns(menuHeight)}>
         <ScrollView style={styles.rail} contentContainerStyle={styles.railContent}>
+          <MenuChoice
+            id="favorites"
+            label="收藏模型"
+            icon={Star}
+            iconOnly
+            selected={favoritesOnly}
+            onSelect={showFavorites}
+          />
           {providers.map((entry) => (
             <MenuChoice
               key={entry.id}
@@ -348,21 +302,11 @@ export function DesktopModelMenuContent({
               label={entry.label}
               provider={entry.id}
               iconOnly
-              selected={!profilesOpen && entry.id === active?.id}
+              selected={!favoritesOnly && entry.id === active?.id}
               disabled={controls.disabled}
               onSelect={selectProvider}
             />
           ))}
-          {hasProfiles ? (
-            <MenuChoice
-              id="profiles"
-              label="配置档案"
-              icon={Settings2}
-              iconOnly
-              selected={profilesOpen}
-              onSelect={showProfiles}
-            />
-          ) : null}
         </ScrollView>
         <View style={styles.models}>
           <View style={styles.search}>
@@ -371,12 +315,12 @@ export function DesktopModelMenuContent({
               autoFocus
               value={query}
               onChangeText={setQuery}
-              placeholder={profilesOpen ? "搜索配置档案" : "搜索模型…"}
-              accessibilityLabel={profilesOpen ? "搜索配置档案" : "搜索模型"}
+              placeholder={favoritesOnly ? "搜索收藏模型…" : "搜索模型…"}
+              accessibilityLabel="搜索模型"
               testID="agent-model-search"
               style={styles.input}
             />
-            {!profilesOpen && onRetryModelProvider ? (
+            {!favoritesOnly && onRetryModelProvider ? (
               <MenuChoice
                 id="refresh"
                 label="刷新模型目录"
@@ -387,21 +331,18 @@ export function DesktopModelMenuContent({
               />
             ) : null}
           </View>
-          <ScrollView
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {profilesOpen ? (
-              <ProfileChoices controls={controls} query={query} onEdit={onEditProfiles} />
-            ) : (
-              <ModelChoices active={active} query={query} controls={controls} />
-            )}
-          </ScrollView>
+          <ModelChoices
+            active={active}
+            providers={providers}
+            controls={controls}
+            library={library}
+            query={query}
+            favoritesOnly={favoritesOnly}
+          />
         </View>
         <ThinkingChoices
           controls={controls}
-          visible={active?.id === controls.provider && !profilesOpen}
+          visible={favoritesOnly || active?.id === controls.provider}
         />
       </View>
       <MenuFooter controls={controls} advanced={advanced} />
@@ -447,7 +388,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     height: 30,
     padding: 0,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
     color: theme.colors.foreground,
     outlineWidth: 0,
   },
@@ -466,7 +407,7 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.base * 0.875,
     lineHeight: 18,
   },
   segmentLabel: {
@@ -479,7 +420,7 @@ const styles = StyleSheet.create((theme) => ({
   active: { backgroundColor: theme.colors.surface2 },
   thinking: { width: 144, borderLeftWidth: 1, borderLeftColor: theme.colors.border },
   thinkingHeader: { height: 36, justifyContent: "center", paddingHorizontal: 10 },
-  empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, padding: 8 },
+  empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.875, padding: 8 },
   state: { padding: 8, gap: 6, alignItems: "flex-start" },
   footer: {
     borderTopWidth: 1,

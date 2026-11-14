@@ -11,11 +11,7 @@ import { compareMatchScores, scoreTextFields } from "@/utils/score-match";
 import { filterSelectableModels } from "./model-catalog";
 
 export interface ProviderSelectionModelRow {
-  /**
-   * Row identity — `provider:modelId`. Used as the React key and as the row's
-   * stable handle across list rebuilds. The name is historical; it has nothing
-   * to do with the removed favourites feature.
-   */
+  /** 提供方与模型组成的稳定身份，同时用于列表、收藏与排序。 */
   favoriteKey: string;
   provider: string;
   providerLabel: string;

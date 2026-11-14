@@ -37,8 +37,6 @@ import { FOOTER_HEIGHT, MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
 import {
   AgentControls,
   DraftAgentControls,
-  DraftAgentModeControl,
-  LiveAgentModeControl,
   type DraftAgentControlsProps,
 } from "@/composer/agent-controls";
 import { ContextWindowMeter } from "@/components/context-window-meter";
@@ -284,15 +282,8 @@ interface RenderLeftContentArgs {
 
 function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
   const { agentControls, agentId, serverId, focusInput, isCompactLayout, isPaneFocused } = args;
-  const hideDesktopModeControl = !isCompactLayout;
   if (resolveAgentControlsMode(agentControls) === "draft" && agentControls) {
-    return (
-      <DraftAgentControls
-        {...agentControls}
-        isCompactLayout={isCompactLayout}
-        hideDesktopModeControl={hideDesktopModeControl}
-      />
-    );
+    return <DraftAgentControls {...agentControls} isCompactLayout={isCompactLayout} />;
   }
   return (
     <AgentControls
@@ -301,31 +292,6 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
       isPaneFocused={isPaneFocused}
       onDropdownClose={focusInput}
       isCompactLayout={isCompactLayout}
-      hideDesktopModeControl={hideDesktopModeControl}
-    />
-  );
-}
-
-function renderDesktopRightModeControl(args: {
-  isCompactLayout: boolean;
-  agentControls: DraftAgentControlsProps | undefined;
-  agentId: string;
-  serverId: string;
-  isPaneFocused: boolean;
-  onClose: () => void;
-}): ReactElement | null {
-  if (args.isCompactLayout) {
-    return null;
-  }
-  if (resolveAgentControlsMode(args.agentControls) === "draft" && args.agentControls) {
-    return <DraftAgentModeControl agentControls={args.agentControls} onClose={args.onClose} />;
-  }
-  return (
-    <LiveAgentModeControl
-      agentId={args.agentId}
-      serverId={args.serverId}
-      isPaneFocused={args.isPaneFocused}
-      onClose={args.onClose}
     />
   );
 }
@@ -1912,53 +1878,38 @@ export function Composer({
 
   const rightContent = useMemo(
     () => (
-      <>
-        <ComposerRightControlsSlot
-          voiceModeEnabled={appSettings.voiceModeEnabled}
-          isVoiceModeForAgent={isVoiceModeForAgent}
-          hasAgent={hasAgent}
-          isAgentRunning={isAgentRunning}
-          hasSendableContent={hasSendableContent}
-          isProcessing={isProcessing}
-          isCompact={isCompactLayout}
-          buttonIconSize={buttonIconSize}
-          handleToggleRealtimeVoice={handleToggleRealtimeVoice}
-          isConnected={isConnected}
-          isVoiceSwitching={isVoiceSwitching}
-          realtimeVoiceButtonStyle={realtimeVoiceButtonStyle}
-          voiceToggleKeys={voiceToggleKeys}
-          t={t}
-          cancelButton={cancelButton}
-        />
-        {renderDesktopRightModeControl({
-          isCompactLayout,
-          agentControls,
-          agentId,
-          serverId,
-          isPaneFocused,
-          onClose: focusInput,
-        })}
-      </>
+      <ComposerRightControlsSlot
+        voiceModeEnabled={appSettings.voiceModeEnabled}
+        isVoiceModeForAgent={isVoiceModeForAgent}
+        hasAgent={hasAgent}
+        isAgentRunning={isAgentRunning}
+        hasSendableContent={hasSendableContent}
+        isProcessing={isProcessing}
+        isCompact={isCompactLayout}
+        buttonIconSize={buttonIconSize}
+        handleToggleRealtimeVoice={handleToggleRealtimeVoice}
+        isConnected={isConnected}
+        isVoiceSwitching={isVoiceSwitching}
+        realtimeVoiceButtonStyle={realtimeVoiceButtonStyle}
+        voiceToggleKeys={voiceToggleKeys}
+        t={t}
+        cancelButton={cancelButton}
+      />
     ),
     [
-      agentControls,
-      agentId,
       buttonIconSize,
       cancelButton,
       appSettings.voiceModeEnabled,
-      focusInput,
       handleToggleRealtimeVoice,
       hasAgent,
       hasSendableContent,
       isAgentRunning,
       isConnected,
       isCompactLayout,
-      isPaneFocused,
       isProcessing,
       isVoiceModeForAgent,
       isVoiceSwitching,
       realtimeVoiceButtonStyle,
-      serverId,
       t,
       voiceToggleKeys,
     ],

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
@@ -18,10 +19,6 @@ vi.mock("react-native-unistyles", async () => {
     withUnistyles: (component: unknown) => component,
   };
 });
-vi.mock("@/agent-profiles", () => ({
-  AgentProfileGlyph: () => null,
-  useAgentProfilePicker: () => null,
-}));
 vi.mock("@/components/model-browser", () => ({ ModelProviderGlyph: () => null }));
 vi.mock("@/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
@@ -132,7 +129,13 @@ describe("desktop composer controls & model menu", () => {
       onSetFeature: vi.fn(),
     };
 
-    act(() => root.render(<DraftAgentControls {...props} />));
+    act(() =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <DraftAgentControls {...props} />
+        </QueryClientProvider>,
+      ),
+    );
 
     expect(container.querySelector('[data-testid="agent-role-selector"]')).not.toBeNull();
     const modeButtons = container.querySelectorAll('[data-testid="mode-control"]');

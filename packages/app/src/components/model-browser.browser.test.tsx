@@ -36,7 +36,6 @@ function HeaderFixture({
     providers,
     selectedProvider: "pi",
     selectedModel: "",
-    hasProfiles: false,
   });
   if (view.kind !== "provider") throw new Error("已选择智能体未直接进入模型列表");
   return (

@@ -8,7 +8,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
   type PressableStateCallbackType,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -1235,7 +1234,6 @@ export interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ view, openAddHostIntent = null }: SettingsScreenProps) {
-  const windowSize = useWindowDimensions();
   const router = useRouter();
   const isFocused = useIsFocused();
   const { theme } = useUnistyles();
@@ -1704,15 +1702,8 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
       header={null}
       visible={isFocused}
       onClose={handleBackToWorkspace}
-      desktopMaxWidth={windowSize.width * WORKSPACE_OVERLAY_FRACTION}
-      desktopCardStyle={[
-        desktopStyles.dialog,
-        {
-          width: windowSize.width * WORKSPACE_OVERLAY_FRACTION,
-          height: windowSize.height * WORKSPACE_OVERLAY_FRACTION,
-          maxHeight: windowSize.height * WORKSPACE_OVERLAY_FRACTION,
-        },
-      ]}
+      desktopViewportFraction={WORKSPACE_OVERLAY_FRACTION}
+      desktopCardStyle={desktopStyles.dialog}
       contentContainerStyle={desktopStyles.dialogContent}
       scrollable={false}
       testID="settings-dialog"

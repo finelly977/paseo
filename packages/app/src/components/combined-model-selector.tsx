@@ -4,7 +4,6 @@ import { Pressable, Text, View, type PressableStateCallbackType } from "react-na
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
-import type { AgentProfilePicker } from "@/agent-profiles";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Combobox, type ComboboxOption, type ComboboxProps } from "@/components/ui/combobox";
@@ -31,9 +30,6 @@ interface CombinedModelSelectorProps {
   selectedModel: string;
   onSelect: (provider: AgentProvider, modelId: string) => void;
   isLoading: boolean;
-  profiles?: AgentProfilePicker | null;
-  onApplyProfile?: (profileId: string) => void;
-  onEditProfiles?: () => void;
   renderTrigger?: (input: {
     selectedModelLabel: string;
     onPress: () => void;
@@ -74,9 +70,6 @@ export function CombinedModelSelector({
   selectedModel,
   onSelect,
   isLoading,
-  profiles = null,
-  onApplyProfile,
-  onEditProfiles,
   renderTrigger,
   onOpen,
   onClose,
@@ -107,7 +100,6 @@ export function CombinedModelSelector({
     selectedProvider,
     selectedModel,
     isLoading,
-    profiles,
     serverId,
   });
   const { prepareToOpen, reset } = browser;
@@ -175,25 +167,10 @@ export function CombinedModelSelector({
     [disabled, isOpen, renderTrigger, triggerFill],
   );
 
-  const handleApplyProfile = useCallback(
-    (profileId: string) => {
-      onApplyProfile?.(profileId);
-      handleOpenChange(false);
-    },
-    [handleOpenChange, onApplyProfile],
-  );
-
-  const handleEditProfiles = useCallback(() => {
-    handleOpenChange(false);
-    onEditProfiles?.();
-  }, [handleOpenChange, onEditProfiles]);
-
   const selectorBody = isContentReady ? (
     <ModelBrowser
       state={browser}
       onSelect={handleSelect}
-      onApplyProfile={handleApplyProfile}
-      onEditProfiles={onEditProfiles ? handleEditProfiles : undefined}
       onRetryProvider={onRetryProvider}
       isRetryingProvider={isRetryingProvider}
       scrolling={modelBrowserScrolling}
@@ -273,7 +250,7 @@ export function CombinedModelSelector({
         desktopFixedHeight={browser.desktopFixedHeight}
         desktopChildrenScrollEnabled={false}
         header={browser.header}
-        mobileChildrenScrollEnabled={!browser.isProviderView || !isNative}
+        mobileChildrenScrollEnabled={false}
         mobileChildrenContentContainerStyle={styles.mobileBrowserContent}
       >
         {selectorBody}

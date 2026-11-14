@@ -7,6 +7,7 @@ import {
 
 export type ModelBrowserView =
   | { kind: "all" }
+  | { kind: "favorites" }
   | { kind: "provider"; providerId: string; providerLabel: string };
 
 export function resolveModelBrowserScrolling({
@@ -46,19 +47,14 @@ export function resolveModelBrowserAllView({
 export function resolveInitialModelBrowserView({
   providers,
   selectedProvider,
-  hasProfiles,
 }: {
   providers: ProviderSelectorProvider[];
   selectedProvider: string;
   selectedModel: string;
-  hasProfiles: boolean;
   providerLocked?: boolean;
 }): ModelBrowserView {
   const provider = providers.find((entry) => entry.id === selectedProvider);
   if (provider) return { kind: "provider", providerId: provider.id, providerLabel: provider.label };
-  if (hasProfiles) {
-    return { kind: "all" };
-  }
 
   const singleProvider = providers.length === 1 ? providers[0] : undefined;
   if (singleProvider) {
@@ -73,9 +69,6 @@ export function resolveInitialModelBrowserView({
 }
 
 // 少量选项按内容收缩；长列表增加至 400 像素，让更多模型直接可见。
-export function resolveCompactModelMenuHeight(modelCount: number, profileCount = 0): number {
-  return Math.min(
-    400,
-    112 + Math.max(modelCount + profileCount, 1) * 40 + (profileCount > 0 ? 24 : 0),
-  );
+export function resolveCompactModelMenuHeight(modelCount: number): number {
+  return Math.min(400, 112 + Math.max(modelCount, 1) * 40);
 }

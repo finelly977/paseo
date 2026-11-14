@@ -1,7 +1,6 @@
 import { DesktopModelMenuContent } from "./desktop-model-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
-import { router } from "expo-router";
 import { View, Text, Keyboard, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
@@ -70,12 +69,6 @@ import {
 } from "@/composer/agent-controls/control";
 import { CompactModelSheet } from "@/composer/agent-controls/model-sheet";
 import { FastModeIndicator } from "./fast-mode-indicator";
-import {
-  useAgentProfilePicker,
-  type AgentProfileApplyTarget,
-  type AgentProfilePicker,
-} from "@/agent-profiles";
-import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
 import { CodexProviderInjectionControl } from "@/composer/agent-controls/codex-provider-injection-control";
 
 interface AgentControlOption {
@@ -101,9 +94,6 @@ interface ControlledAgentControlsProps {
   disabled?: boolean;
   isModelLoading?: boolean;
   modelSelectorProviders?: ProviderSelectorProvider[];
-  agentProfiles?: AgentProfilePicker | null;
-  onApplyAgentProfile?: (profileId: string) => void;
-  onEditAgentProfiles?: () => void;
   features?: AgentFeature[];
   onSetFeature?: (featureId: string, value: unknown) => void;
   onDropdownClose?: () => void;
@@ -113,7 +103,6 @@ interface ControlledAgentControlsProps {
   modeControl?: AgentModeControlValue | null;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
-  hideDesktopModeControl?: boolean;
   codexProviderInjections?: readonly CodexProviderInjection[];
   selectedCodexProviderInjectionId?: string | null;
   onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
@@ -145,7 +134,6 @@ export interface DraftAgentControlsProps {
   disabled?: boolean;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
-  hideDesktopModeControl?: boolean;
   codexProviderInjections?: readonly CodexProviderInjection[];
   selectedCodexProviderInjectionId?: string | null;
   onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
@@ -157,7 +145,6 @@ interface AgentControlsProps {
   isPaneFocused: boolean;
   onDropdownClose?: () => void;
   isCompactLayout?: boolean;
-  hideDesktopModeControl?: boolean;
 }
 
 function findOptionLabel(
@@ -224,21 +211,6 @@ function toThinkingControlOptions(options: AgentControlOption[] | undefined): Ag
     id: option.id,
     label: formatThinkingOptionLabel(option),
   }));
-}
-
-/**
- * The picker's edit shortcut. Agent profiles are host config, so it lands on the
- * host settings section that owns the list.
- */
-function useEditAgentProfilesNavigation(
-  serverId: string | null,
-  isSupported: boolean,
-): (() => void) | undefined {
-  const handleEdit = useCallback(() => {
-    if (!serverId) return;
-    router.push(buildSettingsHostSectionRoute(serverId, "agents"));
-  }, [serverId]);
-  return serverId && isSupported ? handleEdit : undefined;
 }
 
 function buildFallbackModelSelectorProviders(
@@ -382,13 +354,6 @@ function supportsCodexProviderInjectionControl(input: {
   if (input.provider !== "codex") return false;
   if (!input.injections || input.injections.length === 0) return false;
   return input.onSelect !== undefined;
-}
-
-function resolveToolbarModeControl(
-  hideDesktopModeControl: boolean,
-  modeControl: AgentModeControlValue | null | undefined,
-): AgentModeControlValue | null | undefined {
-  return hideDesktopModeControl ? null : modeControl;
 }
 
 function useAgentFeatureMutation(input: {
@@ -631,9 +596,6 @@ function ControlledAgentControls({
   disabled = false,
   isModelLoading = false,
   modelSelectorProviders,
-  agentProfiles = null,
-  onApplyAgentProfile,
-  onEditAgentProfiles,
   features,
   onSetFeature,
   onDropdownClose,
@@ -643,7 +605,6 @@ function ControlledAgentControls({
   modeControl,
   modelSelectorServerId = null,
   isCompactLayout,
-  hideDesktopModeControl = false,
   codexProviderInjections,
   selectedCodexProviderInjectionId = null,
   onSelectCodexProviderInjection,
@@ -864,13 +825,10 @@ function ControlledAgentControls({
             selectedThinkingOptionId={selectedThinkingOptionId}
             features={features}
             onSetFeature={onSetFeature}
-            onApplyAgentProfile={onApplyAgentProfile}
-            onEditAgentProfiles={onEditAgentProfiles}
             onDropdownClose={onDropdownClose}
             onModelSelectorOpen={onModelSelectorOpen}
             onRetryModelProvider={onRetryModelProvider}
             isRetryingModelProvider={isRetryingModelProvider}
-            agentProfiles={agentProfiles}
             disabled={disabled}
             isModelLoading={isModelLoading}
             canSelectProvider={canSelectProvider}
@@ -883,7 +841,7 @@ function ControlledAgentControls({
             handleProviderSelect={handleProviderSelect}
             handleThinkingSelect={handleThinkingSelect}
             handleDesktopModelSelect={handleDesktopModelSelect}
-            modeControl={resolveToolbarModeControl(hideDesktopModeControl, modeControl)}
+            modeControl={modeControl}
             glyphSize={layoutContextValue.glyphSize}
             modelSelectorServerId={modelSelectorServerId}
             codexProviderInjections={codexProviderInjections}
@@ -899,13 +857,10 @@ function ControlledAgentControls({
             selectedThinkingOptionId={selectedThinkingOptionId}
             features={features}
             onSetFeature={onSetFeature}
-            onApplyAgentProfile={onApplyAgentProfile}
-            onEditAgentProfiles={onEditAgentProfiles}
             onDropdownClose={onDropdownClose}
             onModelSelectorOpen={onModelSelectorOpen}
             onRetryModelProvider={onRetryModelProvider}
             isRetryingModelProvider={isRetryingModelProvider}
-            agentProfiles={agentProfiles}
             disabled={disabled}
             isModelLoading={isModelLoading}
             canSelectModel={canSelectModel}
@@ -946,13 +901,10 @@ export interface DesktopAgentControlsContentProps {
   selectedThinkingOptionId?: string;
   features?: AgentFeature[];
   onSetFeature?: (featureId: string, value: unknown) => void;
-  onApplyAgentProfile?: (profileId: string) => void;
-  onEditAgentProfiles?: () => void;
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
   onRetryModelProvider?: (provider: AgentProvider) => void;
   isRetryingModelProvider: boolean;
-  agentProfiles: AgentProfilePicker | null;
   disabled: boolean;
   isModelLoading: boolean;
   canSelectProvider: boolean;
@@ -976,7 +928,7 @@ export interface DesktopAgentControlsContentProps {
 
 function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
-  const { onDropdownClose, onEditAgentProfiles, onModelSelectorOpen } = props;
+  const { onDropdownClose, onModelSelectorOpen } = props;
   const { width } = useWindowDimensions();
   const [menuOpen, setMenuOpen] = useState(false);
   const modelLabel = resolveSelectedModelLabel({
@@ -986,11 +938,6 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     isLoading: props.isModelLoading,
   });
   const label = buildSelectedTriggerLabel(modelLabel);
-  const handleEditProfiles = useCallback(() => {
-    setMenuOpen(false);
-    onDropdownClose?.();
-    onEditAgentProfiles?.();
-  }, [onDropdownClose, onEditAgentProfiles]);
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
       setMenuOpen(open);
@@ -1068,14 +1015,12 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           width={Math.min(480, width - 32)}
           testID="agent-role-menu"
         >
-          <DesktopModelMenuContent
-            controls={props}
-            advanced={advanced}
-            onEditProfiles={onEditAgentProfiles ? handleEditProfiles : undefined}
-          />
+          <DesktopModelMenuContent controls={props} advanced={advanced} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {props.modeControl ? <AgentModeControl {...props.modeControl} /> : null}
+      {props.modeControl ? (
+        <AgentModeControl {...props.modeControl} onClose={props.onDropdownClose} />
+      ) : null}
     </>
   );
 }
@@ -1087,13 +1032,10 @@ interface SheetAgentControlsContentProps {
   selectedThinkingOptionId?: string;
   features?: AgentFeature[];
   onSetFeature?: (featureId: string, value: unknown) => void;
-  onApplyAgentProfile?: (profileId: string) => void;
-  onEditAgentProfiles?: () => void;
   onDropdownClose?: () => void;
   onModelSelectorOpen?: () => void;
   onRetryModelProvider?: (provider: AgentProvider) => void;
   isRetryingModelProvider: boolean;
-  agentProfiles: AgentProfilePicker | null;
   disabled: boolean;
   isModelLoading: boolean;
   canSelectModel: boolean;
@@ -1133,13 +1075,10 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
     selectedThinkingOptionId,
     features,
     onSetFeature,
-    onApplyAgentProfile,
-    onEditAgentProfiles,
     onDropdownClose,
     onModelSelectorOpen,
     onRetryModelProvider,
     isRetryingModelProvider,
-    agentProfiles,
     disabled,
     isModelLoading,
     canSelectModel,
@@ -1251,9 +1190,6 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
       selectedProvider={provider}
       selectedModel={selectedModelId ?? ""}
       onSelect={handleSheetModelSelect}
-      profiles={agentProfiles}
-      onApplyProfile={onApplyAgentProfile}
-      onEditProfiles={onEditAgentProfiles}
       isLoading={isModelLoading}
       disabled={modelDisabled}
       onOpen={onModelSelectorOpen}
@@ -1488,7 +1424,6 @@ export const AgentControls = memo(function AgentControls({
   isPaneFocused,
   onDropdownClose,
   isCompactLayout,
-  hideDesktopModeControl = false,
 }: AgentControlsProps) {
   const { t } = useTranslation();
   const { updatePreferences } = useFormPreferences();
@@ -1555,20 +1490,6 @@ export const AgentControls = memo(function AgentControls({
     actions: commandCenterModelActions,
   });
 
-  // A running agent is one provider's process, so only that provider's profiles
-  // can apply to it.
-  const profileProviders = useMemo(() => (agentProvider ? [agentProvider] : []), [agentProvider]);
-  const profileTarget = useMemo<AgentProfileApplyTarget>(
-    () => ({ kind: "agent", agentId }),
-    [agentId],
-  );
-  const agentProfiles = useAgentProfilePicker({
-    serverId,
-    availableProviders: profileProviders,
-    target: profileTarget,
-  });
-  const handleEditAgentProfiles = useEditAgentProfilesNavigation(serverId, agentProfiles !== null);
-
   const handleSelectThinkingOption = useAgentThinkingMutation({
     activeModelId,
     agentId,
@@ -1603,9 +1524,6 @@ export const AgentControls = memo(function AgentControls({
       modelOptions={modelOptions}
       selectedModelId={modelSelection.activeModelId ?? undefined}
       onSelectModel={handleSelectModel}
-      agentProfiles={agentProfiles}
-      onApplyAgentProfile={agentProfiles?.applyProfile}
-      onEditAgentProfiles={handleEditAgentProfiles}
       thinkingOptions={thinkingOptions.length > 1 ? thinkingOptions : undefined}
       selectedThinkingOptionId={modelSelection.selectedThinkingId ?? undefined}
       onSelectThinkingOption={handleSelectThinkingOption}
@@ -1620,74 +1538,6 @@ export const AgentControls = memo(function AgentControls({
       modeControl={modeControl}
       modelSelectorServerId={serverId}
       isCompactLayout={isCompactLayout}
-      hideDesktopModeControl={hideDesktopModeControl}
-    />
-  );
-});
-
-export const LiveAgentModeControl = memo(function LiveAgentModeControl({
-  agentId,
-  serverId,
-  isPaneFocused,
-  desktopPlacement = "top-end",
-  onClose,
-}: {
-  agentId: string;
-  serverId: string;
-  isPaneFocused: boolean;
-  desktopPlacement?: "top-start" | "top-end";
-  onClose?: () => void;
-}) {
-  const agent = useSessionStore(
-    useShallow((state) => selectAgentControlsSlice(state, serverId, agentId)),
-  );
-  const { entries: snapshotEntries } = useProvidersSnapshot(serverId, {
-    cwd: agent?.cwd,
-    enabled: isPaneFocused && Boolean(agent),
-  });
-  const snapshotSelectedEntry = useMemo(
-    () => resolveSnapshotSelectedEntry(snapshotEntries, agent?.provider),
-    [snapshotEntries, agent?.provider],
-  );
-  const modeControl = useLiveAgentModeControl(serverId, agentId, snapshotSelectedEntry);
-  if (!modeControl) {
-    return null;
-  }
-  return (
-    <AgentModeControl {...modeControl} desktopPlacement={desktopPlacement} onClose={onClose} />
-  );
-});
-
-export const DraftAgentModeControl = memo(function DraftAgentModeControl({
-  agentControls,
-  desktopPlacement = "top-end",
-  onClose,
-}: {
-  agentControls: DraftAgentControlsProps;
-  desktopPlacement?: "top-start" | "top-end";
-  onClose?: () => void;
-}) {
-  const {
-    selectedProvider,
-    providerDefinitions,
-    modeOptions,
-    selectedMode,
-    onSelectMode,
-    disabled,
-  } = agentControls;
-  if (!selectedProvider || modeOptions.length === 0) {
-    return null;
-  }
-  return (
-    <AgentModeControl
-      provider={selectedProvider}
-      providerDefinitions={providerDefinitions}
-      modeOptions={modeOptions}
-      selectedModeId={selectedMode}
-      onSelectMode={onSelectMode}
-      disabled={disabled}
-      desktopPlacement={desktopPlacement}
-      onClose={onClose}
     />
   );
 });
@@ -1718,7 +1568,6 @@ export function DraftAgentControls({
   disabled = false,
   modelSelectorServerId = null,
   isCompactLayout,
-  hideDesktopModeControl = false,
   codexProviderInjections,
   selectedCodexProviderInjectionId = null,
   onSelectCodexProviderInjection,
@@ -1741,41 +1590,6 @@ export function DraftAgentControls({
         label: model.label,
       })),
     [models],
-  );
-
-  // The draft form is the one surface that can switch provider, so every profile
-  // the host can actually run is offered here.
-  const profileProviders = useMemo(
-    () => modelSelectorProviders.map((entry) => entry.id),
-    [modelSelectorProviders],
-  );
-  const profileTarget = useMemo<AgentProfileApplyTarget>(
-    () => ({
-      kind: "draft",
-      controls: {
-        selectProvider: onSelectProvider,
-        selectProviderAndModel: onSelectProviderAndModel,
-        selectMode: onSelectMode,
-        selectThinkingOption: onSelectThinkingOption,
-        setFeature: onSetFeature,
-      },
-    }),
-    [
-      onSelectMode,
-      onSelectProvider,
-      onSelectProviderAndModel,
-      onSelectThinkingOption,
-      onSetFeature,
-    ],
-  );
-  const agentProfiles = useAgentProfilePicker({
-    serverId: modelSelectorServerId,
-    availableProviders: profileProviders,
-    target: profileTarget,
-  });
-  const handleEditAgentProfiles = useEditAgentProfilesNavigation(
-    modelSelectorServerId,
-    agentProfiles !== null,
   );
 
   const modeControl = useMemo<AgentModeControlValue | null>(
@@ -1806,9 +1620,6 @@ export function DraftAgentControls({
       onSelectModel={onSelectModel}
       onSelectProviderAndModel={onSelectProviderAndModel}
       isModelLoading={isAllModelsLoading}
-      agentProfiles={agentProfiles}
-      onApplyAgentProfile={agentProfiles?.applyProfile}
-      onEditAgentProfiles={handleEditAgentProfiles}
       thinkingOptions={mappedThinkingOptions.length > 0 ? mappedThinkingOptions : undefined}
       selectedThinkingOptionId={effectiveSelectedThinkingOption}
       onSelectThinkingOption={onSelectThinkingOption}
@@ -1822,7 +1633,6 @@ export function DraftAgentControls({
       modeControl={modeControl}
       modelSelectorServerId={modelSelectorServerId}
       isCompactLayout={isCompactLayout}
-      hideDesktopModeControl={hideDesktopModeControl}
       codexProviderInjections={codexProviderInjections}
       selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
       onSelectCodexProviderInjection={onSelectCodexProviderInjection}

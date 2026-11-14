@@ -32,7 +32,7 @@ export function CodexPluginCenterScreen() {
   const router = useRouter();
   const isFocused = useIsFocused();
   const isCompact = useIsCompactFormFactor();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const layout = useMemo(() => resolvePluginCenterLayout(width, isCompact), [width, isCompact]);
   const close = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -160,15 +160,8 @@ export function CodexPluginCenterScreen() {
       header={null}
       visible={isFocused}
       onClose={close}
-      desktopMaxWidth={width * WORKSPACE_OVERLAY_FRACTION}
-      desktopCardStyle={[
-        styles.dialog,
-        {
-          width: width * WORKSPACE_OVERLAY_FRACTION,
-          height: height * WORKSPACE_OVERLAY_FRACTION,
-          maxHeight: height * WORKSPACE_OVERLAY_FRACTION,
-        },
-      ]}
+      desktopViewportFraction={WORKSPACE_OVERLAY_FRACTION}
+      desktopCardStyle={styles.dialog}
       contentContainerStyle={styles.dialogContent}
       scrollable={false}
       testID="codex-plugins-dialog"
