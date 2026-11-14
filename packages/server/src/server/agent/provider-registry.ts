@@ -402,6 +402,38 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
   };
 }
 
+function wrapForkSessionMethod(
+  provider: AgentProvider,
+  innerProvider: AgentProvider,
+  forkSession: AgentClient["forkSession"],
+): AgentClient["forkSession"] {
+  if (!forkSession) return undefined;
+  return async (input, context) => {
+    const forked = await forkSession(
+      {
+        ...input,
+        persistence: { ...input.persistence, provider: innerProvider },
+        sourceConfig: { ...input.sourceConfig, provider: innerProvider },
+      },
+      {
+        ...context,
+        config: { ...context.config, provider: innerProvider },
+        storedConfig: { ...context.storedConfig, provider: innerProvider },
+      },
+    );
+    const persistence = mapPersistenceHandle(provider, forked.persistence);
+    if (!persistence) {
+      throw new Error(`Provider '${provider}' fork did not return persistence`);
+    }
+    return {
+      ...forked,
+      session: wrapSessionProvider(provider, forked.session),
+      config: { ...forked.config, provider },
+      persistence,
+    };
+  };
+}
+
 export function wrapClientProvider(
   provider: AgentProvider,
   inner: AgentClient,
@@ -518,6 +550,7 @@ export function wrapClientProvider(
           };
         }
       : undefined,
+    forkSession: wrapForkSessionMethod(provider, inner.provider, inner.forkSession?.bind(inner)),
     isAvailable: () => inner.isAvailable(),
     getDiagnostic: inner.getDiagnostic?.bind(inner),
   };

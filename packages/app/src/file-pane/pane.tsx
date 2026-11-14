@@ -40,6 +40,8 @@ import { filePreviewReadonlyReason } from "./editing-policy";
 import { Alert } from "@/components/ui/alert";
 import { WorkspaceHtmlBrowserActions } from "@/file-explorer/browser-actions";
 import { usePaneContext } from "@/panels/pane-context";
+import { getDocumentPreviewKind } from "./document-preview/model";
+import { DocumentFilePreview } from "./document-preview/view";
 
 interface FilePreviewBodyProps {
   preview: ExplorerFile | null;
@@ -48,6 +50,7 @@ interface FilePreviewBodyProps {
   location: WorkspaceFileLocation;
   navigationRevision: number;
   imagePreviewUri: string | null;
+  binaryBytes: Uint8Array | null;
 }
 
 type TextExplorerFile = ExplorerFile & { kind: "text" };
@@ -73,14 +76,19 @@ function formatFileSize({ size }: { size: number }): string {
 async function createFilePanePreview(file: FileReadResult | null): Promise<{
   file: ExplorerFile | null;
   imageAttachment: AttachmentMetadata | null;
+  binaryBytes: Uint8Array | null;
 }> {
   if (!file) {
-    return { file: null, imageAttachment: null };
+    return { file: null, imageAttachment: null, binaryBytes: null };
   }
 
   const explorerFile = explorerFileFromReadResult(file);
   if (file.kind !== "image") {
-    return { file: explorerFile, imageAttachment: null };
+    return {
+      file: explorerFile,
+      imageAttachment: null,
+      binaryBytes: file.kind === "binary" ? file.bytes : null,
+    };
   }
 
   const imageAttachment = await persistAttachmentFromBytes({
@@ -99,6 +107,7 @@ async function createFilePanePreview(file: FileReadResult | null): Promise<{
   return {
     file: explorerFile,
     imageAttachment,
+    binaryBytes: null,
   };
 }
 
@@ -160,6 +169,7 @@ function FilePreviewBody({
   location,
   navigationRevision,
   imagePreviewUri,
+  binaryBytes,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation();
   const filePath = location.path;
@@ -239,6 +249,26 @@ function FilePreviewBody({
     );
   }
 
+  const documentKind = getDocumentPreviewKind(filePath, preview.mimeType);
+  if (documentKind) {
+    if (!binaryBytes) {
+      return (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="small" />
+          <Text style={styles.loadingText}>{t("panels.file.loading")}</Text>
+        </View>
+      );
+    }
+    return (
+      <DocumentFilePreview
+        kind={documentKind}
+        bytes={binaryBytes}
+        filename={filePath}
+        mimeType={preview.mimeType}
+      />
+    );
+  }
+
   return (
     <View style={styles.centerState}>
       <Text style={styles.emptyText}>{t("panels.file.binaryPreviewUnavailable")}</Text>
@@ -267,7 +297,8 @@ export function FilePane({
     key: string | null;
     file: ExplorerFile | null;
     imageAttachment: AttachmentMetadata | null;
-  }>({ key: null, file: null, imageAttachment: null });
+    binaryBytes: Uint8Array | null;
+  }>({ key: null, file: null, imageAttachment: null, binaryBytes: null });
 
   const client = useSessionStore((state) => state.sessions[serverId]?.client ?? null);
   // COMPAT(workspaceFileEditing): added in v0.2.0, remove after 2027-01-18 once daemon floor >= v0.2.0.
@@ -326,6 +357,7 @@ export function FilePane({
 
   const previewKey = readTarget ? `${readTarget.cwd}:${readTarget.path}` : null;
   const preview = resolvedPreview.key === previewKey ? resolvedPreview.file : null;
+  const binaryBytes = resolvedPreview.key === previewKey ? resolvedPreview.binaryBytes : null;
   const imagePreviewUri = useAttachmentPreviewUrl(
     resolvedPreview.key === previewKey ? resolvedPreview.imageAttachment : null,
     setPreviewError,
@@ -377,6 +409,7 @@ export function FilePane({
         location={location}
         navigationRevision={navigationRevision}
         imagePreviewUri={imagePreviewUri}
+        binaryBytes={binaryBytes}
       />
     </View>
   );
@@ -422,6 +455,7 @@ function FilePanePresentation({
   location,
   navigationRevision,
   imagePreviewUri,
+  binaryBytes,
 }: {
   readonlyReason: string | null;
   serverId: string;
@@ -441,6 +475,7 @@ function FilePanePresentation({
   location: WorkspaceFileLocation;
   navigationRevision: number;
   imagePreviewUri: string | null;
+  binaryBytes: Uint8Array | null;
 }) {
   if (!client && readTarget) {
     return (
@@ -505,6 +540,7 @@ function FilePanePresentation({
         location={location}
         navigationRevision={navigationRevision}
         imagePreviewUri={imagePreviewUri}
+        binaryBytes={binaryBytes}
       />
     </View>
   );
@@ -690,6 +726,7 @@ function EditableFilePane({
           location={location}
           navigationRevision={navigationRevision}
           imagePreviewUri={null}
+          binaryBytes={null}
         />
       )}
     </View>

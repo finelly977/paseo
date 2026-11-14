@@ -80,12 +80,18 @@ function getRemoveAccessibilityLabel(
   if (attachment.kind === "chat_history") {
     return "Remove chat history attachment";
   }
+  if (attachment.kind === "native_fork") {
+    return "移除原生分叉";
+  }
   return t("composer.attachments.removeReview");
 }
 
 function getPillTestID(attachment: WorkspaceComposerAttachment): string {
   if (attachment.kind === "chat_history") {
     return "composer-chat-history-attachment-pill";
+  }
+  if (attachment.kind === "native_fork") {
+    return "composer-native-fork-attachment-pill";
   }
   return "composer-review-attachment-pill";
 }
@@ -168,6 +174,7 @@ function useWorkspaceAttachmentBinding({
         if (
           selected.kind === "browser_element" ||
           selected.kind === "chat_history" ||
+          selected.kind === "native_fork" ||
           isPullRequestContextAttachment(selected)
         ) {
           const selectedKey = getAttachmentKey(selected);

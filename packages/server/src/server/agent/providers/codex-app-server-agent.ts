@@ -30,6 +30,8 @@ import {
   type ToolCallTimelineItem,
   type AgentUsage,
   type FetchCatalogOptions,
+  type ForkProviderSessionContext,
+  type ForkProviderSessionInput,
   type ImportableProviderSession,
   type ImportProviderSessionContext,
   type ImportProviderSessionInput,
@@ -93,6 +95,7 @@ import {
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import { forkCodexNativeThread, resolveCodexForkTurnId } from "./codex/fork.js";
 import {
   CodexThreadReadResponseSchema,
   readCodexThread,
@@ -246,6 +249,7 @@ const CODEX_APP_SERVER_CAPABILITIES: AgentCapabilityFlags = {
   supportsRewindConversation: true,
   supportsRewindFiles: false,
   supportsRewindBoth: false,
+  supportsNativeFork: true,
 };
 
 const CODEX_MODES: AgentMode[] = [
@@ -7797,6 +7801,136 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 }
 
+function buildCodexForkConfigObject(
+  config: AgentSessionConfig,
+  runtimeSettings: ProviderRuntimeSettings | undefined,
+  customProvider: CodexAppServerAgentDeps["customProvider"],
+): Record<string, unknown> | null {
+  const innerConfig: Record<string, unknown> = {};
+  if (config.mcpServers) {
+    const mcpServers: Record<string, CodexMcpServerConfig> = {};
+    for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+      mcpServers[name] = toCodexMcpConfig(serverConfig);
+    }
+    innerConfig.mcp_servers = mcpServers;
+  }
+  if (config.extra?.codex) {
+    Object.assign(innerConfig, config.extra.codex);
+  }
+  const customProviderConfig = buildCodexCustomProviderConfig(runtimeSettings, customProvider);
+  if (customProviderConfig) {
+    Object.assign(innerConfig, customProviderConfig);
+  }
+  return Object.keys(innerConfig).length > 0 ? innerConfig : null;
+}
+
+async function resolveCodexForkModePreset(
+  client: CodexAppServerClient,
+  modeId: string,
+): Promise<CodexModePreset> {
+  const preset = MODE_PRESETS[modeId];
+  if (preset) return preset;
+  if (modeId !== "custom") {
+    throw new Error(`无效的 Codex 权限模式：${modeId}`);
+  }
+  return readCodexCustomModePreset(client);
+}
+
+async function resolveCodexForkServiceTier(input: {
+  client: CodexAppServerClient;
+  cwd: string;
+  config: AgentSessionConfig;
+  overrides: Record<string, unknown> | null;
+}): Promise<string | null | undefined> {
+  const fastPreference = input.config.featureValues?.fast_mode;
+  if (fastPreference === undefined) return undefined;
+  const { models, defaults } = await readCodexModelCatalog({
+    client: input.client,
+    cwd: input.cwd,
+    overrides: input.overrides,
+  });
+  const modelDef = findCodexModel(models, input.config.model);
+  const fastServiceTierId =
+    modelDef && defaults.fastModeEnabled
+      ? resolveCodexFastServiceTier(modelDef.serviceTiers)
+      : null;
+  return resolveCodexServiceTier({
+    fastModePreference: z.boolean().optional().parse(fastPreference),
+    fastServiceTierId,
+    configuredServiceTier: defaults.serviceTier,
+    defaultServiceTier: modelDef?.defaultServiceTier ?? null,
+  });
+}
+
+function buildCodexForkRequestParams(input: {
+  sourceThreadId: string;
+  lastTurnId?: string;
+  cwd: string;
+  config: AgentSessionConfig;
+  innerConfig: Record<string, unknown> | null;
+  preset: CodexModePreset;
+  serviceTier?: string | null;
+}): CodexThreadForkParams {
+  const modelProvider = resolveCodexModelProvider(input.innerConfig);
+  const developerInstructions = composeSystemPromptParts(
+    input.config.systemPrompt,
+    input.config.daemonAppendSystemPrompt,
+  );
+  return {
+    threadId: input.sourceThreadId,
+    ...(input.lastTurnId ? { lastTurnId: input.lastTurnId } : {}),
+    cwd: input.cwd,
+    ...(input.config.model ? { model: input.config.model } : {}),
+    ...(modelProvider ? { modelProvider } : {}),
+    ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
+    approvalPolicy: resolveCodexApprovalPolicy(
+      input.config.approvalPolicy,
+      input.preset.approvalPolicy,
+    ),
+    ...(input.preset.approvalsReviewer
+      ? { approvalsReviewer: input.preset.approvalsReviewer }
+      : {}),
+    sandbox: input.config.sandboxMode ?? input.preset.sandbox,
+    ...(input.innerConfig ? { config: input.innerConfig } : {}),
+    ...(developerInstructions ? { developerInstructions } : {}),
+    excludeTurns: true,
+  };
+}
+
+function buildForkedSessionOverrideProps(input: {
+  forked: CodexThreadForkResponse;
+  context: ForkProviderSessionContext;
+  modeId: string;
+  cwd: string;
+  title?: string;
+}): { config: Partial<AgentSessionConfig>; persistence: AgentPersistenceHandle } {
+  const forkedThreadId = input.forked.thread.id;
+  const effectiveModel = input.context.config.model ?? input.forked.model;
+  const effectiveThinking =
+    input.context.config.thinkingOptionId ?? input.forked.reasoningEffort ?? undefined;
+  const shared = {
+    modeId: input.modeId,
+    ...(effectiveModel ? { model: effectiveModel } : {}),
+    ...(effectiveThinking ? { thinkingOptionId: effectiveThinking } : {}),
+    ...(input.title ? { title: input.title } : {}),
+  };
+  return {
+    config: { ...input.context.config, ...shared },
+    persistence: {
+      provider: CODEX_PROVIDER,
+      sessionId: forkedThreadId,
+      nativeHandle: forkedThreadId,
+      metadata: {
+        ...input.context.storedConfig,
+        provider: CODEX_PROVIDER,
+        cwd: input.cwd,
+        threadId: forkedThreadId,
+        ...shared,
+      },
+    },
+  };
+}
+
 export class CodexAppServerAgentClient implements AgentClient {
   readonly provider = CODEX_PROVIDER;
   readonly capabilities = CODEX_APP_SERVER_CAPABILITIES;
@@ -8079,6 +8213,82 @@ export class CodexAppServerAgentClient implements AgentClient {
       request: input,
       context,
       resumeSession: this.resumeSession.bind(this),
+    });
+  }
+
+  async forkSession(input: ForkProviderSessionInput, context: ForkProviderSessionContext) {
+    const sourceThreadId = input.persistence.nativeHandle ?? input.persistence.sessionId;
+    if (!sourceThreadId) {
+      throw new Error("Codex 会话尚未建立原生线程，无法分叉");
+    }
+
+    const goalsEnabled = await this.resolveGoalsEnabled();
+    const child = await this.spawnAppServer(context.launchContext?.env, {
+      goalsEnabled,
+      agentId: context.launchContext?.agentId,
+    });
+    const client = new CodexAppServerClient(child, this.logger);
+
+    const modeId = context.config.modeId ?? DEFAULT_CODEX_MODE_ID;
+    let forked: CodexThreadForkResponse;
+    try {
+      await client.request("initialize", buildCodexAppServerInitializeParams());
+      client.notify("initialized", {});
+
+      const lastTurnId = await resolveCodexForkTurnId({
+        client,
+        threadId: sourceThreadId,
+        nativeTurnId: input.nativeTurnId,
+        messageIds: input.messageIds,
+        turnIndex: input.turnIndex,
+      });
+      const preset = await resolveCodexForkModePreset(client, modeId);
+      const innerConfig = buildCodexForkConfigObject(
+        context.config,
+        this.runtimeSettings,
+        this.deps.customProvider,
+      );
+      const serviceTier = await resolveCodexForkServiceTier({
+        client,
+        cwd: input.cwd,
+        config: context.config,
+        overrides: innerConfig,
+      });
+      forked = await forkCodexNativeThread(
+        client,
+        buildCodexForkRequestParams({
+          sourceThreadId,
+          lastTurnId,
+          cwd: input.cwd,
+          config: context.config,
+          innerConfig,
+          preset,
+          serviceTier,
+        }),
+      );
+    } finally {
+      await client.dispose();
+    }
+
+    const forkedProps = buildForkedSessionOverrideProps({
+      forked,
+      context,
+      modeId,
+      cwd: input.cwd,
+      title: input.title,
+    });
+
+    return importSessionFromPersistence({
+      provider: CODEX_PROVIDER,
+      request: {
+        providerHandleId: forked.thread.id,
+        cwd: input.cwd,
+        ...(input.title ? { title: input.title } : {}),
+      },
+      context,
+      resumeSession: this.resumeSession.bind(this),
+      config: forkedProps.config,
+      persistence: forkedProps.persistence,
     });
   }
 

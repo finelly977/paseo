@@ -9,10 +9,10 @@ import {
 
 describe("composer control layout", () => {
   it.each([
-    [1000, 2, 3, 162],
-    [1000, 19, 6, 330],
+    [1000, 2, 3, 129],
+    [1000, 19, 6, 280],
     [400, 19, 6, 240],
-    [1000, null, 0, 180],
+    [1000, null, 0, 140],
   ] as const)("模型浮层根据窗口和真实选项数量收缩", (height, models, thinking, expected) => {
     expect(resolveDesktopModelMenuHeight(height, models, thinking)).toBe(expected);
   });

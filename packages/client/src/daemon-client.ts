@@ -43,6 +43,7 @@ import type {
   FileWriteResult,
   FetchAgentTimelineResponseMessage,
   AgentForkContextResponseMessage,
+  AgentForkRequestMessage,
   GitSetupOptions,
   CheckoutStatusResponse,
   CheckoutCommit,
@@ -643,6 +644,9 @@ type ScheduleUpdatePayload = Extract<
 >["payload"];
 export type FetchAgentTimelinePayload = FetchAgentTimelineResponseMessage["payload"];
 export type AgentForkContextPayload = AgentForkContextResponseMessage["payload"];
+export type ForkAgentInput = Omit<AgentForkRequestMessage, "type" | "requestId"> & {
+  requestId?: string;
+};
 
 export type FetchAgentTimelineDirection = FetchAgentTimelinePayload["direction"];
 export type FetchAgentTimelineProjection = FetchAgentTimelinePayload["projection"];
@@ -3027,6 +3031,38 @@ export class DaemonClient {
     }
 
     return payload;
+  }
+
+  async forkAgent(input: ForkAgentInput): Promise<AgentSnapshotPayload> {
+    const { requestId, ...rest } = input;
+    const resolvedRequestId = this.createRequestId(requestId);
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.fork.request",
+      requestId: resolvedRequestId,
+      ...rest,
+    });
+
+    const payload = await this.sendRequest({
+      requestId: resolvedRequestId,
+      message,
+      timeout: 30000,
+      options: { skipQueue: true },
+      select: (msg) => {
+        if (msg.type !== "agent.fork.response") {
+          return null;
+        }
+        if (msg.payload.requestId !== resolvedRequestId) {
+          return null;
+        }
+        return msg.payload;
+      },
+    });
+
+    if (payload.error || !payload.agent) {
+      throw new Error(payload.error || "分叉会话失败");
+    }
+
+    return payload.agent;
   }
 
   async searchConversations(query: string, agentIds: string[]) {

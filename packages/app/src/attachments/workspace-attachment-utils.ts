@@ -26,6 +26,7 @@ export function isWorkspaceAttachment(
     attachment?.kind === "review" ||
     attachment?.kind === "browser_element" ||
     attachment?.kind === "chat_history" ||
+    attachment?.kind === "native_fork" ||
     isPullRequestContextAttachment(attachment)
   );
 }
@@ -38,6 +39,7 @@ export function userAttachmentsOnly(
       attachment.kind !== "review" &&
       attachment.kind !== "browser_element" &&
       attachment.kind !== "chat_history" &&
+      attachment.kind !== "native_fork" &&
       !isPullRequestContextAttachment(attachment),
   );
 }

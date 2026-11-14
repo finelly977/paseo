@@ -186,6 +186,7 @@ export interface AgentCapabilityFlags {
   supportsRewindConversation?: boolean;
   supportsRewindFiles?: boolean;
   supportsRewindBoth?: boolean;
+  supportsNativeFork?: boolean;
 }
 
 export interface AgentPersistenceHandle {
@@ -572,6 +573,22 @@ export interface ImportProviderSessionContext {
   launchContext?: AgentLaunchContext;
 }
 
+export interface ForkProviderSessionInput {
+  persistence: AgentPersistenceHandle;
+  sourceConfig: AgentSessionConfig;
+  cwd: string;
+  nativeTurnId?: string;
+  messageIds?: readonly string[];
+  turnIndex?: number;
+  title?: string;
+}
+
+export interface ForkProviderSessionContext {
+  config: AgentSessionConfig;
+  storedConfig: AgentSessionConfig;
+  launchContext?: AgentLaunchContext;
+}
+
 export interface ImportedTimelineEntry {
   item: AgentTimelineItem;
   timestamp?: string;
@@ -801,6 +818,10 @@ export interface AgentClient {
   importSession?(
     input: ImportProviderSessionInput,
     context: ImportProviderSessionContext,
+  ): Promise<ImportedProviderSession>;
+  forkSession?(
+    input: ForkProviderSessionInput,
+    context: ForkProviderSessionContext,
   ): Promise<ImportedProviderSession>;
   /**
    * Check if this provider is available (CLI binary is installed).

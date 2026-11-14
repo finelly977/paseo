@@ -618,7 +618,7 @@ function ControlledAgentControls({
 
   return (
     <ComposerControlLayoutProvider value={layoutContextValue}>
-      <View style={styles.container} onLayout={isCompact ? handleLayout : undefined}>
+      <View style={styles.container} onLayout={handleLayout}>
         {!isCompact ? (
           <DesktopAgentControlsContent
             providerLocked={providerLocked}
@@ -802,44 +802,47 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
       </>
     ) : null;
   return (
-    <DropdownMenu
-      compact
-      open={menuOpen}
-      onOpenChange={handleMenuOpenChange}
-      selectionCloseScope="current"
-    >
-      <DropdownMenuTrigger
-        disabled={props.disabled}
-        accessibilityRole="button"
-        accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
-        testID="agent-role-selector"
-        style={chipStyle}
+    <>
+      <DropdownMenu
+        compact
+        open={menuOpen}
+        onOpenChange={handleMenuOpenChange}
+        selectionCloseScope="current"
       >
-        <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
-        <FastModeIndicator features={props.features} />
-        <Text numberOfLines={1} style={styles.roleChipText}>
-          {label}
-        </Text>
-        {props.canSelectThinking ? (
-          <Text
-            numberOfLines={1}
-            style={styles.roleThinkingText}
-          >{`· ${props.displayThinking}`}</Text>
-        ) : null}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side="top"
-        align="start"
-        width={Math.min(640, width - 32)}
-        testID="agent-role-menu"
-      >
-        <DesktopModelMenuContent
-          controls={props}
-          advanced={advanced}
-          onEditProfiles={onEditAgentProfiles ? handleEditProfiles : undefined}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={props.disabled}
+          accessibilityRole="button"
+          accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
+          testID="agent-role-selector"
+          style={chipStyle}
+        >
+          <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
+          <FastModeIndicator features={props.features} />
+          <Text numberOfLines={1} style={styles.roleChipText}>
+            {label}
+          </Text>
+          {props.canSelectThinking ? (
+            <Text
+              numberOfLines={1}
+              style={styles.roleThinkingText}
+            >{`· ${props.displayThinking}`}</Text>
+          ) : null}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          width={Math.min(480, width - 32)}
+          testID="agent-role-menu"
+        >
+          <DesktopModelMenuContent
+            controls={props}
+            advanced={advanced}
+            onEditProfiles={onEditAgentProfiles ? handleEditProfiles : undefined}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {props.modeControl ? <AgentModeControl {...props.modeControl} /> : null}
+    </>
   );
 }
 

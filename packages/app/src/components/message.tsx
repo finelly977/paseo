@@ -2091,6 +2091,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           key={node.key}
           source={getMarkdownLinkSource(node)}
           style={styles.link}
+          skipIcon={markdownNodeContainsType(node, "image")}
         >
           {colorMarkdownLinkChildren(children, styles.link.color)}
         </AssistantMarkdownLink>

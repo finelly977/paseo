@@ -11,5 +11,11 @@
   "arrowParens": "always",
   "bracketSameLine": false,
   "bracketSpacing": true,
-  "ignorePatterns": ["*.lock", "**/*.gen.ts", "**/*.gen.tsx", "packages/server/AGENTS.md"]
+  "ignorePatterns": [
+    "*.lock",
+    "**/*.gen.js",
+    "**/*.gen.ts",
+    "**/*.gen.tsx",
+    "packages/server/AGENTS.md"
+  ]
 }

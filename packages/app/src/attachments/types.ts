@@ -91,6 +91,22 @@ export interface ChatHistoryContextAttachment {
   };
 }
 
+export interface NativeForkSource {
+  serverId: string;
+  agentId: string;
+  provider: string;
+  boundaryTurnId?: string;
+  boundaryCursor?: { epoch: string; seq: number };
+  boundaryMessageId?: string;
+}
+
+export interface NativeForkContextAttachment {
+  kind: "native_fork";
+  id: string;
+  title: string;
+  source: NativeForkSource;
+}
+
 export const NEW_WORKSPACE_PICKER_ATTACHMENT_OWNER = "new-workspace-picker";
 
 export type WorkspaceFileSelection =
@@ -126,6 +142,7 @@ export type WorkspaceComposerAttachment =
     }
   | PullRequestContextAttachment
   | ChatHistoryContextAttachment
+  | NativeForkContextAttachment
   | {
       kind: "review";
       attachment: Extract<AgentAttachment, { type: "review" }>;

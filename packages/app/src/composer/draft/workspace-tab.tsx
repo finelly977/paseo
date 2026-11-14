@@ -34,9 +34,9 @@ import {
   validateDraftSubmission,
 } from "@/composer/draft/workspace-tab-core";
 import type { AgentCapabilityFlags } from "@getpaseo/protocol/agent-types";
-import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import type { WorkspaceComposerAttachment } from "@/attachments/types";
+import type { NativeForkSource, WorkspaceComposerAttachment } from "@/attachments/types";
 import {
   useDraftWorkspaceAttachmentScopeKey,
   useWorkspaceAttachmentScopeKey,
@@ -69,6 +69,7 @@ interface AutoSubmitConfig {
   codexProviderInjectionId: string | null;
   thinkingOptionId: string | null;
   featureValues: Record<string, unknown>;
+  nativeFork: NativeForkSource | null;
 }
 
 function resolveAutoSubmitConfig(
@@ -79,6 +80,7 @@ function resolveAutoSubmitConfig(
     codexProviderInjectionId?: string | null;
     thinkingOptionId?: string | null;
     featureValues?: Record<string, unknown>;
+    nativeFork?: NativeForkSource;
   } | null,
 ): AutoSubmitConfig | null {
   if (!pending) return null;
@@ -89,6 +91,7 @@ function resolveAutoSubmitConfig(
     codexProviderInjectionId: pending.codexProviderInjectionId ?? null,
     thinkingOptionId: pending.thinkingOptionId ?? null,
     featureValues: pending.featureValues ?? {},
+    nativeFork: pending.nativeFork ?? null,
   };
 }
 
@@ -147,16 +150,96 @@ function resolveDraftCodexProviderInjectionId(input: {
   );
 }
 
+function buildNativeForkRequest(input: {
+  nativeFork: NativeForkSource;
+  workspaceId: string;
+  cwd: string;
+  config: {
+    modeId?: string;
+    model?: string;
+    thinkingOptionId?: string;
+    featureValues?: Record<string, unknown>;
+    codexProviderInjectionId?: string;
+  };
+  text: string;
+  clientMessageId: string;
+  imagesData?: { data: string; mimeType: string }[];
+  attachmentsArray?: AgentAttachment[];
+}) {
+  const { nativeFork, config } = input;
+  return {
+    agentId: nativeFork.agentId,
+    workspaceId: input.workspaceId,
+    cwd: input.cwd,
+    ...(nativeFork.boundaryTurnId ? { boundaryTurnId: nativeFork.boundaryTurnId } : {}),
+    ...(nativeFork.boundaryCursor ? { boundaryCursor: nativeFork.boundaryCursor } : {}),
+    ...(nativeFork.boundaryMessageId ? { boundaryMessageId: nativeFork.boundaryMessageId } : {}),
+    ...(config.modeId ? { modeId: config.modeId } : {}),
+    ...(config.model ? { model: config.model } : {}),
+    ...(config.thinkingOptionId ? { thinkingOptionId: config.thinkingOptionId } : {}),
+    ...(config.featureValues ? { featureValues: config.featureValues } : {}),
+    ...(config.codexProviderInjectionId
+      ? { codexProviderInjectionId: config.codexProviderInjectionId }
+      : {}),
+    ...(input.text ? { initialPrompt: input.text } : {}),
+    clientMessageId: input.clientMessageId,
+    ...(input.imagesData && input.imagesData.length > 0 ? { images: input.imagesData } : {}),
+    ...(input.attachmentsArray && input.attachmentsArray.length > 0
+      ? { attachments: input.attachmentsArray }
+      : {}),
+  };
+}
+
+function resolveDraftCreateAgentConfig(input: {
+  cwd: string;
+  autoSubmitConfig: AutoSubmitConfig | null;
+  composerState: {
+    selectedProvider: string | null;
+    selectedMode: string;
+    modeOptions: readonly { id: string }[];
+    effectiveModelId: string | null;
+    codexProviderInjectionId: string | null;
+    effectiveThinkingOptionId: string | null;
+    featureValues: Record<string, unknown> | undefined;
+  };
+  selectModelMessage: string;
+}) {
+  const { cwd, autoSubmitConfig, composerState } = input;
+  const provider = autoSubmitConfig?.provider ?? composerState.selectedProvider;
+  if (!provider) {
+    throw new Error(input.selectModelMessage);
+  }
+  const modeIdOverride = resolveDraftModeIdOverride({
+    autoSubmitConfig,
+    modeOptionIds: composerState.modeOptions.map((mode) => mode.id),
+    selectedMode: composerState.selectedMode,
+  });
+  return buildWorkspaceDraftAgentConfig({
+    provider,
+    cwd,
+    ...modeIdOverride,
+    model: autoSubmitConfig?.model ?? (composerState.effectiveModelId || undefined),
+    codexProviderInjectionId: resolveDraftCodexProviderInjectionId({
+      autoSubmitConfig,
+      composerState,
+    }),
+    thinkingOptionId:
+      autoSubmitConfig?.thinkingOptionId ?? (composerState.effectiveThinkingOptionId || undefined),
+    featureValues: autoSubmitConfig?.featureValues ?? composerState.featureValues,
+  });
+}
+
 async function submitDraftCreateRequest(input: {
   attempt: { clientMessageId: string };
   text: string;
   images?: UserMessageImageAttachment[];
-  attachments?: unknown;
+  attachments?: AgentAttachment[];
   cwd: string;
   client: DaemonClient | null;
   workspaceDirectory: string | null;
   workspaceId: string | null;
   autoSubmitConfig: AutoSubmitConfig | null;
+  nativeFork?: NativeForkSource | null;
   composerState: {
     selectedProvider: string | null;
     selectedMode: string;
@@ -179,6 +262,7 @@ async function submitDraftCreateRequest(input: {
     workspaceDirectory,
     workspaceId,
     autoSubmitConfig,
+    nativeFork,
     composerState,
   } = input;
 
@@ -188,31 +272,34 @@ async function submitDraftCreateRequest(input: {
     throw new Error(input.hostDisconnectedMessage);
   }
 
-  const provider = autoSubmitConfig?.provider ?? composerState.selectedProvider;
-  if (!provider) {
-    throw new Error(input.selectModelMessage);
-  }
-  const modeIdOverride = resolveDraftModeIdOverride({
-    autoSubmitConfig,
-    modeOptionIds: composerState.modeOptions.map((mode) => mode.id),
-    selectedMode: composerState.selectedMode,
-  });
-  const config = buildWorkspaceDraftAgentConfig({
-    provider,
+  const config = resolveDraftCreateAgentConfig({
     cwd,
-    ...modeIdOverride,
-    model: autoSubmitConfig?.model ?? (composerState.effectiveModelId || undefined),
-    codexProviderInjectionId: resolveDraftCodexProviderInjectionId({
-      autoSubmitConfig,
-      composerState,
-    }),
-    thinkingOptionId:
-      autoSubmitConfig?.thinkingOptionId ?? (composerState.effectiveThinkingOptionId || undefined),
-    featureValues: autoSubmitConfig?.featureValues ?? composerState.featureValues,
+    autoSubmitConfig,
+    composerState,
+    selectModelMessage: input.selectModelMessage,
   });
 
   const imagesData = await encodeImages(images);
   const attachmentsArray = Array.isArray(attachments) ? attachments : undefined;
+  const activeNativeFork = nativeFork ?? autoSubmitConfig?.nativeFork ?? null;
+  if (activeNativeFork) {
+    const forked = await client.forkAgent(
+      buildNativeForkRequest({
+        nativeFork: activeNativeFork,
+        workspaceId,
+        cwd,
+        config,
+        text,
+        clientMessageId: attempt.clientMessageId,
+        imagesData,
+        attachmentsArray,
+      }),
+    );
+    return {
+      agentId: forked.id,
+      result: forked,
+    };
+  }
   const result = await client.createAgent({
     config,
     workspaceId,
@@ -427,6 +514,7 @@ export function WorkspaceDraftAgentTab({
     const pending = state.pendingByDraftId[draftId] ?? null;
     return pending?.serverId === serverId && pending.workspaceId === workspaceId ? pending : null;
   });
+  const consumedNativeForkRef = useRef<NativeForkSource | null>(null);
   const pendingCreateAttempt = useCreateFlowStore((state) => {
     const pending = state.pendingByDraftId[draftId] ?? null;
     return pending?.serverId === serverId && pending.lifecycle === "active" ? pending : null;
@@ -468,6 +556,13 @@ export function WorkspaceDraftAgentTab({
     workspaceId,
   });
   const draftAttachmentScopeKey = useDraftWorkspaceAttachmentScopeKey(draftId);
+  const getDraftNativeFork = useCallback((): NativeForkSource | null => {
+    if (consumedNativeForkRef.current) return consumedNativeForkRef.current;
+    const scoped =
+      useWorkspaceAttachmentsStore.getState().attachmentsByScope[draftAttachmentScopeKey] ?? [];
+    const attachment = scoped.find((item) => item.kind === "native_fork");
+    return attachment?.kind === "native_fork" ? attachment.source : null;
+  }, [draftAttachmentScopeKey]);
   const attachmentScopeKeys = useMemo(
     () => [draftAttachmentScopeKey, workspaceAttachmentScopeKey].filter(Boolean),
     [draftAttachmentScopeKey, workspaceAttachmentScopeKey],
@@ -553,11 +648,13 @@ export function WorkspaceDraftAgentTab({
         workspaceDirectory: draftWorkingDirectory,
         workspaceId: workspaceFields?.id ?? null,
         autoSubmitConfig,
+        nativeFork: getDraftNativeFork(),
         composerState,
         hostDisconnectedMessage: t("workspace.terminal.hostDisconnected"),
         selectModelMessage: t("workspaceSetup.errors.selectModel"),
       }),
     onCreateSuccess: ({ result }) => {
+      consumedNativeForkRef.current = null;
       clearDraftInput("sent");
       clearWorkspaceAttachments({ scopeKey: draftAttachmentScopeKey });
       useWorkspaceDraftSubmissionStore.getState().clearDraftSetup({ draftId });
@@ -594,6 +691,7 @@ export function WorkspaceDraftAgentTab({
     if (!submission) {
       return;
     }
+    consumedNativeForkRef.current = submission.nativeFork ?? null;
     autoSubmitKeyRef.current = submitKey;
     setDraftText("");
     setDraftAttachments([]);
@@ -612,6 +710,7 @@ export function WorkspaceDraftAgentTab({
           cwd: submission.cwd,
         });
     void createPromise.catch(() => {
+      consumedNativeForkRef.current = null;
       setDraftText(submission.text);
       setDraftAttachments(composerWorkspaceAttachment.userAttachmentsOnly(submission.attachments));
       autoSubmitKeyRef.current = null;

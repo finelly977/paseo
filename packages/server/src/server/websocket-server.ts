@@ -1701,6 +1701,8 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
         agentForkContextCursor: true,
         agentForkContextNativeTurn: true,
+        // COMPAT(agentNativeFork): 2026-11-14 新增，2027-05-14 后移除门控。
+        agentNativeFork: true,
         // COMPAT(providerSubagents): added in v0.1.107, remove gate after 2027-01-12.
         providerSubagents: true,
         // COMPAT(workspacePinning): added in v0.1.107, remove gate after 2027-01-12.

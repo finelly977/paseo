@@ -46,6 +46,9 @@ import {
   type AgentTimelineItem,
   type AgentUsage,
   type AgentRuntimeInfo,
+  type ForkProviderSessionContext,
+  type ForkProviderSessionInput,
+  type ImportedProviderSession,
   type ImportedTimelineEntry,
   type ImportableProviderSession,
   type ListImportableSessionsOptions,
@@ -700,6 +703,12 @@ function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): A
     });
   }
   return rows;
+}
+
+function formatForkedTitle(sourceTitle: string | null | undefined): string | undefined {
+  const trimmed = sourceTitle?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.endsWith("(分叉)") ? trimmed : `${trimmed} (分叉)`;
 }
 
 function resolveImportedAgentTitle(
@@ -1649,6 +1658,20 @@ export class AgentManager {
     return this.trackAgentRegistrationOperation(this.importProviderSessionInternal(input));
   }
 
+  forkAgent(input: {
+    sourceAgentId: string;
+    workspaceId: string;
+    cwd: string;
+    nativeTurnId?: string;
+    messageIds?: readonly string[];
+    turnIndex?: number;
+    overrides?: Partial<AgentSessionConfig>;
+    title?: string;
+    labels?: Record<string, string>;
+  }): Promise<ManagedAgent> {
+    return this.trackAgentRegistrationOperation(this.forkAgentInternal(input));
+  }
+
   private async importProviderSessionInternal(input: {
     provider: AgentProvider;
     providerHandleId: string;
@@ -1719,6 +1742,151 @@ export class AgentManager {
     } finally {
       if (!handedToRegistration) {
         await this.closeUnregisteredSession(imported.session);
+      }
+    }
+  }
+
+  private async forkAgentInternal(input: {
+    sourceAgentId: string;
+    workspaceId: string;
+    cwd: string;
+    nativeTurnId?: string;
+    messageIds?: readonly string[];
+    turnIndex?: number;
+    overrides?: Partial<AgentSessionConfig>;
+    title?: string;
+    labels?: Record<string, string>;
+  }): Promise<ManagedAgent> {
+    this.assertAcceptingAgentRegistrations();
+    const { sourceConfig, sourcePersistence, sourceTitle } = await this.resolveForkSource(
+      input.sourceAgentId,
+    );
+    const resolvedAgentId = validateAgentId(this.idFactory(), "forkAgent");
+    this.requireEnabledProvider(sourceConfig.provider);
+    const client = await this.requireAvailableClient({ provider: sourceConfig.provider });
+    if (!client.forkSession) {
+      throw new Error(`提供方 '${sourceConfig.provider}' 不支持原生分叉`);
+    }
+
+    const forkedTitle = input.title ?? formatForkedTitle(sourceTitle);
+    const baseConfig: AgentSessionConfig = {
+      ...sourceConfig,
+      ...input.overrides,
+      provider: sourceConfig.provider,
+      cwd: input.cwd,
+      ...(forkedTitle ? { title: forkedTitle } : {}),
+    };
+    const { storedConfig, launchConfig, launchEnv } = await this.prepareSessionConfig(
+      baseConfig,
+      resolvedAgentId,
+    );
+    const launchContext = await this.buildLaunchContext(
+      resolvedAgentId,
+      client,
+      storedConfig.cwd,
+      launchEnv,
+    );
+    const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
+    const forkInput: ForkProviderSessionInput = {
+      persistence: sourcePersistence,
+      sourceConfig,
+      cwd: input.cwd,
+      ...(input.nativeTurnId ? { nativeTurnId: input.nativeTurnId } : {}),
+      ...(input.messageIds ? { messageIds: input.messageIds } : {}),
+      ...(input.turnIndex !== undefined ? { turnIndex: input.turnIndex } : {}),
+      ...(forkedTitle ? { title: forkedTitle } : {}),
+    };
+    const forkContext: ForkProviderSessionContext = {
+      config: providerLaunchConfig,
+      storedConfig,
+      launchContext,
+    };
+    const forked = await client.forkSession(forkInput, forkContext);
+    return this.registerForkedAgent({
+      client,
+      forked,
+      resolvedAgentId,
+      workspaceId: input.workspaceId,
+      forkedTitle,
+      labels: input.labels,
+    });
+  }
+
+  private async resolveForkSource(sourceAgentId: string): Promise<{
+    sourceConfig: AgentSessionConfig;
+    sourcePersistence: AgentPersistenceHandle;
+    sourceTitle: string | null;
+  }> {
+    const sourceLive = this.agents.get(sourceAgentId);
+    const sourceRecord = sourceLive ? null : await this.registry?.get(sourceAgentId);
+    let sourceConfig: AgentSessionConfig | undefined;
+    if (sourceLive) sourceConfig = sourceLive.config;
+    else if (sourceRecord) sourceConfig = buildStoredAgentConfig(sourceRecord);
+    if (!sourceConfig) {
+      throw new Error(`找不到要分叉的源智能体：${sourceAgentId}`);
+    }
+    const sourcePersistence =
+      sourceLive?.session?.describePersistence() ?? sourceRecord?.persistence ?? null;
+    if (!sourcePersistence) {
+      throw new Error("源智能体尚未建立原生会话，无法执行原生分叉");
+    }
+    return {
+      sourceConfig,
+      sourcePersistence,
+      sourceTitle: sourceRecord?.title ?? sourceConfig.title ?? null,
+    };
+  }
+
+  private async registerForkedAgent(input: {
+    client: AgentClient;
+    forked: ImportedProviderSession;
+    resolvedAgentId: string;
+    workspaceId: string;
+    forkedTitle: string | undefined;
+    labels?: Record<string, string>;
+  }): Promise<ManagedAgent> {
+    const { client, forked, resolvedAgentId, forkedTitle } = input;
+
+    let handedToRegistration = false;
+    try {
+      const providerConfig = stripInternalPaseoMcpServer(forked.config);
+      const forkedConfig = await this.normalizeConfig(
+        forkedTitle && !providerConfig.title
+          ? { ...providerConfig, title: forkedTitle }
+          : providerConfig,
+      );
+      const timelineRows = buildImportedTimelineRows(forked.timeline);
+      const initialTitle = forkedTitle ?? resolveImportedAgentTitle(forkedConfig, timelineRows);
+
+      handedToRegistration = true;
+      const agent = await this.registerSession(forked.session, forkedConfig, resolvedAgentId, {
+        labels: input.labels,
+        workspaceId: input.workspaceId,
+        timelineRows,
+        timelineNextSeq: timelineRows.length + 1,
+        persistence: forked.persistence,
+        historyPrimed: true,
+        initialTitle,
+        publishWhenReady: true,
+      });
+      for (const event of forked.providerSubagentEvents ?? []) {
+        const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
+        this.dispatch({ type: "provider_subagent", event: update });
+      }
+      if (forkedTitle && client.renameNativeSessionTitle && forked.persistence) {
+        void client
+          .renameNativeSessionTitle({ handle: forked.persistence, title: forkedTitle })
+          .catch((error) => {
+            this.logger.warn(
+              { err: error, agentId: agent.id },
+              "Failed to sync native title for forked session",
+            );
+          });
+      }
+      return agent;
+    } finally {
+      if (!handedToRegistration) {
+        await this.closeUnregisteredSession(forked.session);
       }
     }
   }

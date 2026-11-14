@@ -27,7 +27,6 @@ import {
 import { AgentProfileGlyph, type AgentProfilePickerRow } from "@/agent-profiles";
 import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { AgentControlIconGlyph } from "./control";
-import { AgentModeControl } from "./mode-control";
 import type { DesktopAgentControlsContentProps } from "./index";
 import { resolveDesktopModelMenuHeight } from "./layout";
 
@@ -73,6 +72,7 @@ function MenuChoice({
     ],
     [disabled, iconOnly, segmented, selected],
   );
+  const glyphSize = segmented ? 12 : 16;
   return (
     <Tooltip delayDuration={400} enabledOnMobile={false}>
       <TooltipTrigger asChild>
@@ -86,14 +86,14 @@ function MenuChoice({
           testID={testID}
         >
           {profile ? (
-            <AgentProfileGlyph icon={profile.icon} color={profile.color} size={16} />
+            <AgentProfileGlyph icon={profile.icon} color={profile.color} size={glyphSize} />
           ) : null}
           {!profile && provider ? (
-            <ModelProviderGlyph provider={provider} size={iconOnly ? 20 : 16} />
+            <ModelProviderGlyph provider={provider} size={iconOnly ? 18 : glyphSize} />
           ) : null}
-          {icon ? <AgentControlIconGlyph icon={icon} size={16} /> : null}
+          {icon ? <AgentControlIconGlyph icon={icon} size={glyphSize} /> : null}
           {!iconOnly ? (
-            <Text numberOfLines={1} style={styles.label}>
+            <Text numberOfLines={1} style={segmented ? styles.segmentLabel : styles.label}>
               {label}
             </Text>
           ) : null}
@@ -259,6 +259,7 @@ function MenuFooter({ controls, advanced }: { controls: Controls; advanced: Reac
     (id: string) => onSetFeature?.("fast_mode", id === "fast"),
     [onSetFeature],
   );
+  if (!fast && !advanced) return null;
   return (
     <View style={styles.footer}>
       {fast ? (
@@ -285,15 +286,13 @@ function MenuFooter({ controls, advanced }: { controls: Controls; advanced: Reac
       {advanced ? (
         <DropdownMenu compact selectionCloseScope="current">
           <DropdownMenuTrigger accessibilityLabel="更多模型选项" style={styles.more}>
-            <AgentControlIconGlyph icon={Settings2} size={15} />
+            <AgentControlIconGlyph icon={Settings2} size={14} />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" width={250} maxHeight={300} scrollable>
             {advanced}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}
-      <View style={styles.spacer} />
-      {controls.modeControl ? <AgentModeControl {...controls.modeControl} menuFooter /> : null}
     </View>
   );
 }
@@ -367,7 +366,7 @@ export function DesktopModelMenuContent({
         </ScrollView>
         <View style={styles.models}>
           <View style={styles.search}>
-            <AgentControlIconGlyph icon={Search} size={16} />
+            <AgentControlIconGlyph icon={Search} size={14} />
             <TextInput
               autoFocus
               value={query}
@@ -419,48 +418,48 @@ const styles = StyleSheet.create((theme) => ({
   menu: { minHeight: 0 },
   columns: (height: number) => ({ flexDirection: "row", height }),
   rail: {
-    width: 44,
+    width: 38,
     flexGrow: 0,
     flexShrink: 0,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
   },
-  railContent: { padding: 4, gap: 6 },
+  railContent: { padding: 4, gap: 4 },
   railButton: {
-    width: 34,
-    height: 36,
+    width: 30,
+    height: 30,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.md,
   },
   models: { flex: 1, minWidth: 0 },
   search: {
-    height: 42,
+    height: 36,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginHorizontal: 10,
+    marginHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   input: {
     flex: 1,
     minWidth: 0,
-    height: 36,
+    height: 30,
     padding: 0,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
     outlineWidth: 0,
   },
   list: { flex: 1, minHeight: 0 },
-  listContent: { padding: 6, gap: 2 },
+  listContent: { padding: 4, gap: 1 },
   row: {
-    minHeight: 34,
-    paddingVertical: 6,
+    minHeight: 28,
+    paddingVertical: 3,
     paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
     borderRadius: theme.borderRadius.md,
   },
   label: {
@@ -468,21 +467,25 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
-    lineHeight: 20,
+    lineHeight: 18,
+  },
+  segmentLabel: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.xs,
+    lineHeight: 16,
   },
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
   disabled: { opacity: 0.5 },
   active: { backgroundColor: theme.colors.surface2 },
-  thinking: { width: 180, borderLeftWidth: 1, borderLeftColor: theme.colors.border },
-  thinkingHeader: { height: 42, justifyContent: "center", paddingHorizontal: 14 },
-  empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, padding: 12 },
-  state: { padding: 12, gap: 8, alignItems: "flex-start" },
+  thinking: { width: 144, borderLeftWidth: 1, borderLeftColor: theme.colors.border },
+  thinkingHeader: { height: 36, justifyContent: "center", paddingHorizontal: 10 },
+  empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, padding: 8 },
+  state: { padding: 8, gap: 6, alignItems: "flex-start" },
   footer: {
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     gap: 6,
     flexDirection: "row",
     alignItems: "center",
@@ -491,25 +494,24 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     padding: 2,
     backgroundColor: theme.colors.surface1,
-    borderRadius: theme.borderRadius.lg,
+    borderRadius: theme.borderRadius.md,
   },
   segmentButton: {
-    minHeight: 26,
+    minHeight: 22,
     paddingVertical: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    height: 26,
-    borderRadius: theme.borderRadius.md,
+    gap: 3,
+    paddingHorizontal: 7,
+    height: 22,
+    borderRadius: theme.borderRadius.sm,
   },
   more: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.md,
   },
-  spacer: { flex: 1 },
   tooltip: { maxWidth: 420, color: theme.colors.foreground, fontSize: theme.fontSize.sm },
 }));

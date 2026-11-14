@@ -6,9 +6,9 @@ export function resolveDesktopModelMenuHeight(
   modelCount: number | null,
   thinkingCount: number,
 ): number {
-  const modelsHeight = modelCount === null ? 180 : 54 + modelCount * 36;
-  const contentHeight = Math.max(144, modelsHeight, 54 + thinkingCount * 36);
-  return Math.min(330, Math.max(100, viewportHeight - 160), contentHeight);
+  const modelsHeight = modelCount === null ? 140 : 42 + modelCount * 29;
+  const contentHeight = Math.max(112, modelsHeight, 42 + thinkingCount * 29);
+  return Math.min(280, Math.max(100, viewportHeight - 160), contentHeight);
 }
 
 export interface ComposerControlPresence {

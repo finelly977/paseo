@@ -23,11 +23,13 @@ import {
 } from "@/components/ui/context-menu";
 import type { Theme } from "@/styles/theme";
 import { useAssistantBrowserMenu } from "./browser-menu";
+import { AssistantLinkIcon, resolveAssistantLinkIconSvg } from "./link-icon";
 
 interface AssistantMarkdownLinkProps {
   source: AssistantFileLinkSource;
   style: StyleProp<TextStyle>;
   monoSurface?: boolean;
+  skipIcon?: boolean;
   children: ReactNode;
 }
 
@@ -35,6 +37,7 @@ export function AssistantMarkdownLink({
   source,
   style,
   monoSurface,
+  skipIcon = false,
   children,
 }: AssistantMarkdownLinkProps) {
   const { t } = useTranslation();
@@ -79,6 +82,10 @@ export function AssistantMarkdownLink({
     () => ({ onPress, accessibilityRole: "link" }),
     [onPress],
   );
+  const iconSvg = useMemo(
+    () => (skipIcon ? null : resolveAssistantLinkIconSvg({ source, target })),
+    [skipIcon, source, target],
+  );
   const handleOpenInFileManager = useStableEvent(async () => {
     const openInFileManager = configRef.current.onOpenInFileManager;
     if (!openInFileManager) {
@@ -111,6 +118,13 @@ export function AssistantMarkdownLink({
         onPress={onPress}
         style={style}
       >
+        {Platform.OS === "android" && iconSvg ? (
+          <>
+            <View style={styles.nativeInlineIconSlot}>
+              <AssistantLinkIcon svg={iconSvg} size={13} />
+            </View>{" "}
+          </>
+        ) : null}
         {children}
       </MarkdownTextSpan>
     );
@@ -125,8 +139,19 @@ export function AssistantMarkdownLink({
     );
   }
 
+  const linkLeadingIcon = iconSvg ? (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      dataSet={LINK_ICON_DATASET}
+      style={styles.webInlineIconSlot}
+    >
+      <AssistantLinkIcon svg={iconSvg} size={14} />
+    </View>
+  ) : null;
   const linkText = (
     <Text dataSet={monoSurface ? CODE_SURFACE_DATASET : undefined} style={hoveredTextStyle}>
+      {linkLeadingIcon}
       {children}
     </Text>
   );
@@ -145,8 +170,9 @@ export function AssistantMarkdownLink({
       dataSet={monoSurface ? CODE_SURFACE_DATASET : undefined}
       style={style}
       onPress={onPress}
-      onHoverIn={onHoverIn}
+      onHoverIn={handleHoverIn}
     >
+      {linkLeadingIcon}
       {children}
     </MarkdownLinkText>
   );
@@ -267,6 +293,7 @@ const FILE_LINK_TOOLTIP_TRIGGER_STYLE: ViewStyle = {
 };
 
 const FILE_LINK_TOOLTIP_MOD_KEYS = ["mod"];
+const LINK_ICON_DATASET = { paseoLinkIcon: "true" };
 
 const ThemedFolderOpen = withUnistyles(FolderOpen);
 const mutedIconColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -338,5 +365,20 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.normal,
+  },
+  webInlineIconSlot: {
+    display: "inline-flex" as ViewStyle["display"],
+    alignItems: "center",
+    justifyContent: "center",
+    width: 14,
+    height: 14,
+    marginRight: 4,
+    ...(isWeb ? ({ verticalAlign: "-0.16em", userSelect: "none" } as object) : {}),
+  },
+  nativeInlineIconSlot: {
+    width: 14,
+    height: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
 }));

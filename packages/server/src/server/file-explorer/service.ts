@@ -128,6 +128,21 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
+const DOCUMENT_MIME_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".docm": "application/vnd.ms-word.document.macroEnabled.12",
+  ".dotx": "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+  ".xlsb": "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
 interface ScopedPathParams {
   root: string;
   relativePath?: string;
@@ -278,7 +293,7 @@ export async function readExplorerFileBytes({
         kind: "binary",
         encoding: "binary",
         bytes: buffer,
-        mimeType: "application/octet-stream",
+        mimeType: DOCUMENT_MIME_TYPES[ext] ?? "application/octet-stream",
       };
     }
 
@@ -319,7 +334,7 @@ export async function streamExplorerFile(
       mimeType = IMAGE_MIME_TYPES[ext];
     } else if (isBinary) {
       kind = "binary";
-      mimeType = "application/octet-stream";
+      mimeType = DOCUMENT_MIME_TYPES[ext] ?? "application/octet-stream";
     }
 
     await consume({
@@ -641,6 +656,8 @@ export async function getDownloadableFileInfo({ root, relativePath }: ReadFilePa
     let mimeType = "application/octet-stream";
     if (ext in IMAGE_MIME_TYPES) {
       mimeType = IMAGE_MIME_TYPES[ext];
+    } else if (ext in DOCUMENT_MIME_TYPES) {
+      mimeType = DOCUMENT_MIME_TYPES[ext];
     } else {
       const sample = Buffer.alloc(FILE_TYPE_SAMPLE_BYTES);
       const { bytesRead } = await handle.read(sample, 0, sample.length, 0);

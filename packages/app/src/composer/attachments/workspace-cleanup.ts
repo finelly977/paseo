@@ -26,6 +26,12 @@ export function getAttachmentKey(attachment: WorkspaceComposerAttachment): strin
       id: attachment.id,
     });
   }
+  if (attachment.kind === "native_fork") {
+    return JSON.stringify({
+      kind: attachment.kind,
+      id: attachment.id,
+    });
+  }
   return JSON.stringify({
     type: "review",
     cwd: attachment.attachment.cwd,
@@ -59,6 +65,7 @@ function isSentContextAttachment(
   return (
     attachment.kind === "browser_element" ||
     attachment.kind === "chat_history" ||
+    attachment.kind === "native_fork" ||
     isPullRequestContextAttachment(attachment)
   );
 }

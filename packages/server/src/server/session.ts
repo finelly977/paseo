@@ -104,13 +104,18 @@ import {
   type TimelineProjectionEntry,
   type TimelineProjectionMode,
 } from "./agent/timeline-projection.js";
-import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import {
+  buildAgentForkContextAttachment,
+  resolveForkTurnLocator,
+} from "./agent/activity-curator.js";
 import {
   buildAgentConversationIndex,
   selectAgentConversationIndexPayload,
   LEGACY_CONVERSATION_INDEX_LIMIT,
 } from "./agent/agent-conversation-index.js";
+import { startCreatedAgentInitialPrompt } from "./agent/agent-prompt.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
+import { normalizeClientMessageId } from "./client-message-id.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
   getAgentStreamEventTurnId,
@@ -595,6 +600,26 @@ function describeRegistryTransition(record: ArchivedRecordSnapshot | null): Regi
  * It owns all state management, orchestration logic, and message processing.
  * Session has no knowledge of WebSockets - it only emits and receives messages.
  */
+function formatForkAgentTitle(title: string | null | undefined): string | undefined {
+  const trimmed = title?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.endsWith("(分叉)") ? trimmed : `${trimmed} (分叉)`;
+}
+
+function buildForkOverridesFromRequest(
+  msg: Extract<SessionInboundMessage, { type: "agent.fork.request" }>,
+): Partial<AgentSessionConfig> {
+  const overrides: Partial<AgentSessionConfig> = {};
+  if (msg.modeId !== undefined) overrides.modeId = msg.modeId;
+  if (msg.model !== undefined) overrides.model = msg.model;
+  if (msg.thinkingOptionId !== undefined) overrides.thinkingOptionId = msg.thinkingOptionId;
+  if (msg.featureValues !== undefined) overrides.featureValues = msg.featureValues;
+  if (msg.codexProviderInjectionId !== undefined) {
+    overrides.codexProviderInjectionId = msg.codexProviderInjectionId;
+  }
+  return overrides;
+}
+
 export class Session {
   private readonly clientId: string;
   private readonly authorization: SessionAuthorization;
@@ -2317,6 +2342,8 @@ export class Session {
       }
       case "agent.fork_context.request":
         return this.handleAgentForkContextRequest(msg);
+      case "agent.fork.request":
+        return this.handleAgentForkRequest(msg);
       default:
         return undefined;
     }
@@ -7530,6 +7557,80 @@ export class Session {
           itemCount: 0,
           boundaryCursor: msg.boundaryCursor ?? null,
           boundaryMessageId: msg.boundaryMessageId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private async handleAgentForkRequest(
+    msg: Extract<SessionInboundMessage, { type: "agent.fork.request" }>,
+  ): Promise<void> {
+    try {
+      const snapshot = await ensureAgentLoaded(msg.agentId, {
+        agentManager: this.agentManager,
+        agentStorage: this.agentStorage,
+        logger: this.sessionLogger,
+      });
+      await this.agentManager.ensureCanonicalHistory(msg.agentId);
+      const timeline = this.agentManager.fetchTimeline(msg.agentId, {
+        direction: "tail",
+        limit: 0,
+      });
+      const locator = resolveForkTurnLocator({
+        rows: timeline.rows,
+        timelineEpoch: timeline.epoch,
+        boundaryTurnId: msg.boundaryTurnId,
+        boundaryCursor: msg.boundaryCursor,
+        boundaryMessageId: msg.boundaryMessageId,
+      });
+      const targetWorkspaceId = msg.workspaceId?.trim() || snapshot.workspaceId;
+      if (!targetWorkspaceId) {
+        throw new Error("无法确定分叉目标工作区");
+      }
+      const targetCwd = msg.cwd?.trim() || snapshot.cwd;
+      const sourcePayload = await this.buildAgentPayload(snapshot);
+      const forkedTitle = formatForkAgentTitle(sourcePayload.title);
+      let forked = await this.agentManager.forkAgent({
+        sourceAgentId: msg.agentId,
+        workspaceId: targetWorkspaceId,
+        cwd: targetCwd,
+        ...(forkedTitle ? { title: forkedTitle } : {}),
+        ...locator,
+        overrides: buildForkOverridesFromRequest(msg),
+      });
+
+      const trimmedPrompt = msg.initialPrompt?.trim() ?? "";
+      const prompt = buildAgentPrompt(trimmedPrompt, msg.images, msg.attachments);
+      if (prompt.length > 0) {
+        const clientMessageId = normalizeClientMessageId(msg.clientMessageId);
+        forked = await startCreatedAgentInitialPrompt({
+          agentManager: this.agentManager,
+          agentId: forked.id,
+          snapshot: forked,
+          prompt,
+          ...(clientMessageId ? { runOptions: { clientMessageId } } : {}),
+          logger: this.sessionLogger,
+        });
+      }
+
+      await this.agentUpdates.forwardLiveAgent(forked);
+      const agentPayload = await this.buildAgentPayload(forked);
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agent: agentPayload,
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.sessionLogger.error({ err: error, agentId: msg.agentId }, "Failed to fork agent");
+      this.emit({
+        type: "agent.fork.response",
+        payload: {
+          requestId: msg.requestId,
+          agent: null,
           error: error instanceof Error ? error.message : String(error),
         },
       });

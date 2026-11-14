@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ComposerAttachment } from "@/attachments/types";
+import type { ComposerAttachment, NativeForkSource } from "@/attachments/types";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceDraftTabSetup } from "@/workspace-tabs/model";
 
@@ -19,6 +19,7 @@ export interface PendingWorkspaceDraftSubmission {
   thinkingOptionId?: string;
   featureValues?: Record<string, unknown>;
   allowEmptyText?: boolean;
+  nativeFork?: NativeForkSource;
 }
 
 export interface PendingWorkspaceDraftSetup {

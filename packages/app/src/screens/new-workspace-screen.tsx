@@ -1117,6 +1117,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     composerState,
     initialSetup,
   });
+  const nativeForkAttachment = attachments.find((item) => item.kind === "native_fork");
   const prepared = useCreateFlowStore.getState().setPending({
     serverId,
     draftId,
@@ -1149,6 +1150,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): void {
     ...(submission.thinkingOptionId ? { thinkingOptionId: submission.thinkingOptionId } : {}),
     ...(submission.featureValues ? { featureValues: submission.featureValues } : {}),
     allowEmptyText: true,
+    ...(nativeForkAttachment ? { nativeFork: nativeForkAttachment.source } : {}),
   });
   navigateToWorkspace({
     serverId,

@@ -7,6 +7,7 @@ import {
   GitPullRequest,
   MessageSquareCode,
   MousePointer2,
+  Split,
 } from "lucide-react-native";
 import { withUnistyles } from "react-native-unistyles";
 import type { AgentAttachment } from "@getpaseo/protocol/messages";
@@ -133,6 +134,13 @@ export function getWorkspaceAttachmentPillContent(
       subtitle: getTextAttachmentSubtitle(attachment.attachment, t),
     };
   }
+  if (attachment.kind === "native_fork") {
+    return {
+      icon: attachmentForkIcon,
+      title: attachment.title,
+      subtitle: "Codex 原生分叉",
+    };
+  }
   return {
     icon: attachmentReviewIcon,
     title: t("message.attachments.review"),
@@ -145,6 +153,7 @@ const ThemedAttachmentGitPullRequest = withUnistyles(GitPullRequest);
 const ThemedAttachmentCircleDot = withUnistyles(CircleDot);
 const ThemedAttachmentMessageSquareCode = withUnistyles(MessageSquareCode);
 const ThemedAttachmentMousePointer = withUnistyles(MousePointer2);
+const ThemedAttachmentSplit = withUnistyles(Split);
 
 const iconForegroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
@@ -162,4 +171,7 @@ const attachmentFileIcon = (
 );
 const attachmentBrowserIcon = (
   <ThemedAttachmentMousePointer size={ICON_SIZE.sm} uniProps={iconForegroundMutedMapping} />
+);
+const attachmentForkIcon = (
+  <ThemedAttachmentSplit size={ICON_SIZE.sm} uniProps={iconForegroundMutedMapping} />
 );

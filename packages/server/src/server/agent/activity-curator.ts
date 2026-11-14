@@ -356,3 +356,109 @@ export function buildAgentForkContextAttachment(input: {
     boundaryMessageId: selected.boundaryMessageId,
   };
 }
+
+export interface ForkTurnLocator {
+  nativeTurnId?: string;
+  messageIds?: string[];
+  turnIndex?: number;
+}
+
+function findForkBoundaryIndex(input: {
+  rows: readonly AgentTimelineRow[];
+  timelineEpoch: string;
+  boundaryTurnId?: string;
+  boundaryCursor?: { epoch: string; seq: number } | null;
+  boundaryMessageId?: string | null;
+}): number {
+  if (input.boundaryTurnId) {
+    if (input.boundaryCursor || input.boundaryMessageId) {
+      throw new Error("Only one fork boundary may be selected.");
+    }
+    const idx = input.rows.findLastIndex((row) => row.turnId === input.boundaryTurnId);
+    if (idx < 0) throw new Error("Selected turn is no longer available.");
+    return idx;
+  }
+  if (input.boundaryCursor) {
+    if (input.boundaryCursor.epoch !== input.timelineEpoch) {
+      throw new Error("Selected timeline position is no longer available.");
+    }
+    const idx = input.rows.findIndex((row) => row.seq === input.boundaryCursor?.seq);
+    if (idx < 0) throw new Error("Selected timeline position is no longer available.");
+    return idx;
+  }
+  const idx = input.rows.findLastIndex(
+    (row) =>
+      row.item.type === "assistant_message" && row.item.messageId === input.boundaryMessageId,
+  );
+  if (idx < 0) throw new Error("Selected assistant message is no longer available.");
+  return idx;
+}
+
+function collectRowMessageIds(row: AgentTimelineRow, target: Set<string>): void {
+  if (row.item.type === "user_message") {
+    if (row.item.messageId) target.add(row.item.messageId);
+    if (row.item.clientMessageId) target.add(row.item.clientMessageId);
+    return;
+  }
+  if (row.item.type === "assistant_message" && row.item.messageId) {
+    target.add(row.item.messageId);
+  }
+}
+
+function collectForkTurnMessageIds(
+  rows: readonly AgentTimelineRow[],
+  boundaryIndex: number,
+): string[] {
+  const boundaryRow = rows[boundaryIndex];
+  const messageIds = new Set<string>();
+  if (boundaryRow.turnId) {
+    for (let i = 0; i <= boundaryIndex; i += 1) {
+      if (rows[i].turnId === boundaryRow.turnId) collectRowMessageIds(rows[i], messageIds);
+    }
+    return Array.from(messageIds);
+  }
+  collectRowMessageIds(boundaryRow, messageIds);
+  for (let i = boundaryIndex; i >= 0; i -= 1) {
+    if (rows[i].item.type === "user_message") {
+      collectRowMessageIds(rows[i], messageIds);
+      break;
+    }
+  }
+  return Array.from(messageIds);
+}
+
+export function resolveForkTurnLocator(input: {
+  rows: readonly AgentTimelineRow[];
+  timelineEpoch: string;
+  boundaryTurnId?: string;
+  boundaryCursor?: { epoch: string; seq: number } | null;
+  boundaryMessageId?: string | null;
+}): ForkTurnLocator {
+  const boundaryTurnId = input.boundaryTurnId?.trim();
+  const boundaryCursor = input.boundaryCursor ?? null;
+  const boundaryMessageId = input.boundaryMessageId?.trim() || null;
+  if (!boundaryTurnId && !boundaryCursor && !boundaryMessageId) {
+    return {};
+  }
+  const boundaryIndex = findForkBoundaryIndex({
+    rows: input.rows,
+    timelineEpoch: input.timelineEpoch,
+    boundaryTurnId,
+    boundaryCursor,
+    boundaryMessageId,
+  });
+  const nativeTurnId = input.rows[boundaryIndex].turnId;
+  const messageIds = collectForkTurnMessageIds(input.rows, boundaryIndex);
+  let userTurnCount = 0;
+  for (let i = 0; i <= boundaryIndex; i += 1) {
+    const item = input.rows[i].item;
+    if (item.type === "user_message" && item.turnRole !== "steer") {
+      userTurnCount += 1;
+    }
+  }
+  return {
+    ...(nativeTurnId ? { nativeTurnId } : {}),
+    ...(messageIds.length > 0 ? { messageIds } : {}),
+    ...(userTurnCount > 0 ? { turnIndex: userTurnCount - 1 } : {}),
+  };
+}
