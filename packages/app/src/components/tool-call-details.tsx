@@ -33,6 +33,7 @@ const ScrollView = isWeb ? RNScrollView : GHScrollView;
 // ---- Content Component ----
 
 interface ToolCallDetailsContentProps {
+  appearance?: "surface" | "plain";
   toolName?: string;
   detail?: ToolCallDetail;
   errorText?: string;
@@ -42,6 +43,8 @@ interface ToolCallDetailsContentProps {
 }
 
 interface DetailStyles {
+  groupHeaderStyle: StyleProp<ViewStyle>;
+  editFilePathsStyle: StyleProp<ViewStyle>;
   sectionFillStyle: StyleProp<ViewStyle>;
   codeBlockFillStyle: StyleProp<ViewStyle>;
   codeVerticalScrollStyle: StyleProp<ViewStyle>;
@@ -73,18 +76,22 @@ function useDetailStyles(
   detail: ToolCallDetail | undefined,
   resolvedMaxHeight: number | undefined,
   fillAvailableHeight: boolean,
+  appearance: "surface" | "plain",
 ): DetailStyles {
   const isFullBleed = resolveIsFullBleed(detail);
   const shouldFill = resolveShouldFill(detail, fillAvailableHeight);
+  const surfaceStyle = appearance === "plain" ? styles.plainSurface : null;
   const codeBlockStyle = isFullBleed ? styles.fullBleedBlock : styles.diffContainer;
+  const groupHeaderStyle = useMemo(() => [styles.groupHeader, surfaceStyle], [surfaceStyle]);
+  const editFilePathsStyle = useMemo(() => [styles.editFilePaths, surfaceStyle], [surfaceStyle]);
 
   const sectionFillStyle = useMemo(
     () => [styles.section, shouldFill && styles.fillHeight],
     [shouldFill],
   );
   const codeBlockFillStyle = useMemo(
-    () => [codeBlockStyle, shouldFill && styles.fillHeight],
-    [codeBlockStyle, shouldFill],
+    () => [codeBlockStyle, surfaceStyle, shouldFill && styles.fillHeight],
+    [codeBlockStyle, surfaceStyle, shouldFill],
   );
   const codeVerticalScrollStyle = useMemo(
     () => [
@@ -97,26 +104,32 @@ function useDetailStyles(
   const scrollAreaFillStyle = useMemo(
     () => [
       styles.scrollArea,
+      surfaceStyle,
       resolvedMaxHeight !== undefined && inlineUnistylesStyle({ maxHeight: resolvedMaxHeight }),
       shouldFill && styles.fillHeight,
     ],
-    [resolvedMaxHeight, shouldFill],
+    [resolvedMaxHeight, shouldFill, surfaceStyle],
   );
   const scrollAreaStyle = useMemo(
     () => [
       styles.scrollArea,
+      surfaceStyle,
       resolvedMaxHeight !== undefined && inlineUnistylesStyle({ maxHeight: resolvedMaxHeight }),
     ],
-    [resolvedMaxHeight],
+    [resolvedMaxHeight, surfaceStyle],
   );
-  const jsonScrollCombined = styles.jsonScroll;
-  const jsonScrollErrorCombined = [styles.jsonScroll, styles.jsonScrollError];
+  const jsonScrollCombined = useMemo(() => [styles.jsonScroll, surfaceStyle], [surfaceStyle]);
+  const jsonScrollErrorCombined = useMemo(
+    () => [styles.jsonScroll, styles.jsonScrollError, surfaceStyle],
+    [surfaceStyle],
+  );
   const fullBleedContainerStyle = useMemo(
     () => [
       isFullBleed ? styles.fullBleedContainer : styles.paddedContainer,
+      appearance === "plain" && styles.plainContainer,
       shouldFill && styles.fillHeight,
     ],
-    [isFullBleed, shouldFill],
+    [isFullBleed, shouldFill, appearance],
   );
   const loadingContainerStyle = useMemo(
     () => [styles.loadingContainer, fillAvailableHeight && styles.fillHeight],
@@ -124,6 +137,8 @@ function useDetailStyles(
   );
 
   return {
+    groupHeaderStyle,
+    editFilePathsStyle,
     sectionFillStyle,
     codeBlockFillStyle,
     codeVerticalScrollStyle,
@@ -405,9 +420,9 @@ function EditDetailSection({ diffLines, ds }: EditDetailProps) {
   );
 }
 
-function EditFilePathsSection({ filePaths }: { filePaths: string[] }) {
+function EditFilePathsSection({ filePaths, ds }: { filePaths: string[]; ds: DetailStyles }) {
   return (
-    <View style={styles.editFilePaths} testID="tool-call-edit-file-paths">
+    <View style={ds.editFilePathsStyle} testID="tool-call-edit-file-paths">
       {filePaths.map((filePath) => (
         <Text
           key={filePath}
@@ -586,7 +601,7 @@ function buildUnknownSections(detail: UnknownDetail, ds: DetailStyles, t: TFunct
       continue;
     }
     out.push(
-      <View key={`${section.title}-header`} style={styles.groupHeader}>
+      <View key={`${section.title}-header`} style={ds.groupHeaderStyle}>
         <Text style={styles.groupHeaderText}>{section.title}</Text>
       </View>,
     );
@@ -684,7 +699,7 @@ function buildDetailSections(
   if (detail.type === "edit") {
     const sections: ReactNode[] = [];
     if (detail.filePaths && detail.filePaths.length > 1) {
-      sections.push(<EditFilePathsSection key="edit-files" filePaths={detail.filePaths} />);
+      sections.push(<EditFilePathsSection key="edit-files" filePaths={detail.filePaths} ds={ds} />);
     }
     if (diffLines) {
       sections.push(<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />);
@@ -780,12 +795,13 @@ function ToolCallDetailsContentInner({
   detail,
   errorText,
   maxHeight,
+  appearance = "surface",
   fillAvailableHeight = false,
   showLoadingSkeleton = false,
 }: ToolCallDetailsContentProps) {
   const { t } = useTranslation();
   const resolvedMaxHeight = fillAvailableHeight ? undefined : (maxHeight ?? 300);
-  const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight);
+  const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight, appearance);
   const diffLines = useDiffLines(detail);
 
   const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
@@ -818,6 +834,7 @@ const styles = StyleSheet.create((theme) => {
       gap: theme.spacing[2],
       padding: 0,
     },
+    plainContainer: { gap: theme.spacing[2] },
     editFilePaths: {
       gap: theme.spacing[1],
       paddingHorizontal: theme.spacing[3],
@@ -915,6 +932,7 @@ const styles = StyleSheet.create((theme) => {
       overflow: "hidden",
       backgroundColor: theme.colors.surface2,
     },
+    plainSurface: { borderWidth: 0, borderRadius: 0, backgroundColor: "transparent" },
     fullBleedBlock: {
       borderWidth: 0,
       borderRadius: 0,

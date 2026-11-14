@@ -276,7 +276,7 @@ export function SidebarWorkspaceMenu({
   }, [sessionId, t, toast]);
 
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu onOpenChange={onOpenChange} typography="sidebar">
       <DropdownMenuTrigger
         hitSlop={8}
         style={triggerStyle}

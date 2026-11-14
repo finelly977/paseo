@@ -44,6 +44,7 @@ export const File = StubIcon;
 export const FileText = StubIcon;
 export const Folder = StubIcon;
 export const FolderPlus = StubIcon;
+export const FolderInput = StubIcon;
 export const Gift = StubIcon;
 export const GitBranch = StubIcon;
 export const GitCommitHorizontal = StubIcon;

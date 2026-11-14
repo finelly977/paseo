@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { isWeb } from "@/constants/platform";
 
 export interface AdaptiveRenameModalProps {
+  desktopMaxWidth?: number;
   visible: boolean;
   title: string;
   initialValue: string;
@@ -25,6 +26,7 @@ export interface AdaptiveRenameModalProps {
 }
 
 export function AdaptiveRenameModal({
+  desktopMaxWidth,
   visible,
   title,
   initialValue,
@@ -111,6 +113,8 @@ export function AdaptiveRenameModal({
   }, [handleSubmit]);
 
   const submitDisabled = isPending || draft === initialValue || computeError(draft) !== null;
+  let displayedError = error;
+  if (displayedError === null && validate && draft.length > 0) displayedError = computeError(draft);
   const inputTestID = testID ? `${testID}-input` : undefined;
   const errorTestID = testID ? `${testID}-error` : undefined;
   const submitTestID = testID ? `${testID}-submit` : undefined;
@@ -119,6 +123,7 @@ export function AdaptiveRenameModal({
 
   return (
     <AdaptiveModalSheet
+      desktopMaxWidth={desktopMaxWidth}
       visible={visible}
       onClose={handleCancel}
       header={sheetHeader}
@@ -139,9 +144,9 @@ export function AdaptiveRenameModal({
           style={styles.input}
           testID={inputTestID}
         />
-        {error ? (
+        {displayedError ? (
           <Text style={styles.errorText} testID={errorTestID}>
-            {error}
+            {displayedError}
           </Text>
         ) : null}
         <View style={styles.actions}>

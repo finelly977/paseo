@@ -44,6 +44,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
 import { isWeb } from "@/constants/platform";
 import { useHosts } from "@/runtime/host-runtime";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 
 interface Rect {
   x: number;
@@ -226,7 +227,11 @@ function WorkspaceHoverCardContent({
 
   return (
     <Portal hostName={bottomSheetInternal?.hostName}>
-      <View pointerEvents="box-none" style={styles.portalOverlay}>
+      <View
+        pointerEvents="box-none"
+        style={styles.portalOverlay}
+        dataSet={SIDEBAR_TYPOGRAPHY_DATASET}
+      >
         <FloatingSurface
           ref={contentRef}
           entering={FadeIn.duration(MOTION_DURATION.instant)}
@@ -549,7 +554,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   cardTitle: {
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     flex: 1,
     minWidth: 0,
@@ -572,7 +577,7 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
   },
   cardInfoTextHovered: {
@@ -594,7 +599,7 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 28,
   },
   checksSummaryLabel: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundMuted,
   },
@@ -614,17 +619,17 @@ const styles = StyleSheet.create((theme) => ({
     gap: 3,
   },
   checksStatusTextFailed: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.statusDanger,
   },
   checksStatusTextPending: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.statusWarning,
   },
   checksStatusTextPassed: {
-    fontSize: theme.fontSize.xs,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.statusSuccess,
   },

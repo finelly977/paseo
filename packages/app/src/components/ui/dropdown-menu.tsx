@@ -40,6 +40,7 @@ import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overl
 import { MOTION_DURATION } from "@/styles/motion";
 import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
 
 // Action status for menu items with loading/success feedback
 export type ActionStatus = "idle" | "pending" | "success";
@@ -62,6 +63,7 @@ interface Size {
 }
 
 interface DropdownMenuContextValue {
+  typography: "default" | "sidebar";
   selectionCloseScope: "all" | "current";
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -198,6 +200,7 @@ function computePosition({
 }
 
 function renderDropdownSurface(input: {
+  typography: "default" | "sidebar";
   frameStyle: StyleProp<ViewStyle>;
   testID?: string;
   surfaceStyle: StyleProp<ViewStyle>;
@@ -209,6 +212,7 @@ function renderDropdownSurface(input: {
   contentRef: React.RefObject<View | null>;
 }): ReactElement {
   const {
+    typography,
     frameStyle,
     testID,
     surfaceStyle,
@@ -235,6 +239,7 @@ function renderDropdownSurface(input: {
 
   return (
     <FloatingSurface
+      dataSet={typographyDataSets[typography]}
       ref={contentRef}
       collapsable={false}
       nativeID={surfaceNativeID}
@@ -259,6 +264,7 @@ function renderDropdownSurface(input: {
 }
 
 export function DropdownMenu({
+  typography: typographyProp,
   compact: compactProp,
   openOnHover = false,
   open,
@@ -267,6 +273,7 @@ export function DropdownMenu({
   selectionCloseScope: scopeProp,
   children,
 }: PropsWithChildren<{
+  typography?: "default" | "sidebar";
   compact?: boolean;
   openOnHover?: boolean;
   open?: boolean;
@@ -278,6 +285,7 @@ export function DropdownMenu({
   const parentCloseAll = useContext(DropdownMenuDismissContext);
   const isCompact = useIsCompactFormFactor();
   const parentMenu = useContext(DropdownMenuContext);
+  const typography = typographyProp ?? parentMenu?.typography ?? "default";
   const selectionCloseScope = scopeProp ?? parentMenu?.selectionCloseScope ?? "all";
   const compact = compactProp ?? parentMenu?.compact ?? false;
   const passThroughBackdrop = openOnHover && parentMenu !== null;
@@ -341,6 +349,7 @@ export function DropdownMenu({
 
   const value = useMemo<DropdownMenuContextValue>(
     () => ({
+      typography,
       selectionCloseScope,
       open: isOpen,
       setOpen: setIsOpen,
@@ -353,6 +362,7 @@ export function DropdownMenu({
       passThroughBackdrop,
     }),
     [
+      typography,
       activateTrigger,
       flushPendingSelect,
       isOpen,
@@ -452,7 +462,11 @@ export function DropdownMenuSubTrigger({
   disabled?: boolean;
   testID?: string;
 }>): ReactElement {
-  const { compact } = useDropdownMenuContext("DropdownMenuSubTrigger");
+  const { compact, typography } = useDropdownMenuContext("DropdownMenuSubTrigger");
+  const textStyle = useMemo(
+    () => [styles.itemText, typography === "sidebar" && styles.sidebarText],
+    [typography],
+  );
   const triggerStyle = useCallback(
     ({ pressed, hovered, open }: TriggerState) => [
       styles.item,
@@ -472,7 +486,7 @@ export function DropdownMenuSubTrigger({
     >
       {leading ? <View style={styles.leadingSlot}>{leading}</View> : null}
       <View style={styles.itemContent}>
-        <Text numberOfLines={1} style={styles.itemText}>
+        <Text numberOfLines={1} style={textStyle}>
           {children}
         </Text>
       </View>
@@ -610,6 +624,7 @@ export function DropdownMenuContent({
     triggerRef,
     contentRef,
     compact,
+    typography,
     passThroughBackdrop,
     flushPendingSelect,
   } = useDropdownMenuContext("DropdownMenuContent");
@@ -813,6 +828,7 @@ export function DropdownMenuContent({
       />
       {!closing
         ? renderDropdownSurface({
+            typography,
             frameStyle,
             testID,
             surfaceStyle,
@@ -850,10 +866,15 @@ export function DropdownMenuLabel({
   style,
   testID,
 }: PropsWithChildren<{ style?: ViewStyle | ViewStyle[]; testID?: string }>): ReactElement {
+  const { typography } = useDropdownMenuContext("DropdownMenuLabel");
+  const textStyle = useMemo(
+    () => [styles.labelText, typography === "sidebar" && styles.sidebarText],
+    [typography],
+  );
   const labelContainerStyle = useMemo(() => [styles.labelContainer, style], [style]);
   return (
     <View style={labelContainerStyle} testID={testID}>
-      <Text style={styles.labelText}>{children}</Text>
+      <Text style={textStyle}>{children}</Text>
     </View>
   );
 }
@@ -874,10 +895,15 @@ export function DropdownMenuHint({
   style,
   testID,
 }: PropsWithChildren<{ style?: ViewStyle | ViewStyle[]; testID?: string }>): ReactElement {
+  const { typography } = useDropdownMenuContext("DropdownMenuHint");
+  const textStyle = useMemo(
+    () => [styles.hintText, typography === "sidebar" && styles.sidebarText],
+    [typography],
+  );
   const hintContainerStyle = useMemo(() => [styles.hintContainer, style], [style]);
   return (
     <View style={hintContainerStyle} testID={testID}>
-      <Text style={styles.hintText}>{children}</Text>
+      <Text style={textStyle}>{children}</Text>
     </View>
   );
 }
@@ -954,7 +980,7 @@ export function DropdownMenuItem({
   tooltip?: string;
 }>): ReactElement {
   const { theme } = useUnistyles();
-  const { selectItem, compact } = useDropdownMenuContext("DropdownMenuItem");
+  const { selectItem, compact, typography } = useDropdownMenuContext("DropdownMenuItem");
 
   // Derive state from status prop (preferred) or legacy loading prop
   const isPending = status === "pending" || loading;
@@ -1015,20 +1041,22 @@ export function DropdownMenuItem({
   const itemTextStyle = useMemo(
     () => [
       styles.itemText,
+      typographyTextStyles[typography],
       destructive && !isSuccess ? styles.itemTextDestructive : null,
       isSuccess ? styles.itemTextSuccess : null,
       selected && selectedVariant === "accent" ? styles.itemTextSelectedAccent : null,
       muted && !isDisabled ? styles.itemTextMuted : null,
     ],
-    [destructive, isSuccess, selected, selectedVariant, muted, isDisabled],
+    [destructive, isSuccess, selected, selectedVariant, muted, isDisabled, typography],
   );
 
   const itemDescriptionStyle = useMemo(
     () => [
       styles.itemDescription,
+      typographyTextStyles[typography],
       selected && selectedVariant === "accent" ? styles.itemDescriptionSelectedAccent : null,
     ],
-    [selected, selectedVariant],
+    [selected, selectedVariant, typography],
   );
 
   const content = (
@@ -1067,13 +1095,17 @@ export function DropdownMenuItem({
     <Tooltip delayDuration={250} enabledOnDesktop enabledOnMobile={false}>
       <TooltipTrigger asChild>{content}</TooltipTrigger>
       <TooltipContent side="right" align="center" offset={10}>
-        <Text style={styles.tooltipText}>{tooltip}</Text>
+        <View dataSet={typographyDataSets[typography]}>
+          <Text style={typographyTooltipStyles[typography]}>{tooltip}</Text>
+        </View>
       </TooltipContent>
     </Tooltip>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
+  sidebarText: { fontSize: theme.fontSize.sidebar },
+  sidebarTooltipText: { color: theme.colors.foreground, fontSize: theme.fontSize.sidebar },
   overlay: {
     flex: 1,
   },
@@ -1208,3 +1240,8 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
   },
 }));
+
+const typographyTextStyles = { default: null, sidebar: styles.sidebarText };
+
+const typographyDataSets = { default: undefined, sidebar: SIDEBAR_TYPOGRAPHY_DATASET };
+const typographyTooltipStyles = { default: styles.tooltipText, sidebar: styles.sidebarTooltipText };

@@ -1556,7 +1556,11 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   detailWrapperBorderless: {
     borderWidth: 0,
+    borderRadius: 0,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
+  inlineDetails: { paddingLeft: 22 },
   shimmerOverlay: {
     position: "absolute",
     top: 0,
@@ -3152,7 +3156,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     () => [
       expandableBadgeStylesheet.pressable,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
-      isExpanded && expandableBadgeStylesheet.pressableExpanded,
+      isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpandedAttached,
     ],
     [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
@@ -3446,13 +3450,16 @@ export const ToolCall = memo(function ToolCall({
   const renderDetails = useCallback(() => {
     if (!shouldRenderInline) return null;
     return (
-      <ToolCallDetailsContent
-        toolName={toolName}
-        detail={effectiveDetail}
-        errorText={presentation.errorText}
-        maxHeight={maxDetailHeight}
-        showLoadingSkeleton={presentation.isLoadingDetails && executionActive}
-      />
+      <View style={expandableBadgeStylesheet.inlineDetails}>
+        <ToolCallDetailsContent
+          appearance="plain"
+          toolName={toolName}
+          detail={effectiveDetail}
+          errorText={presentation.errorText}
+          maxHeight={maxDetailHeight}
+          showLoadingSkeleton={presentation.isLoadingDetails && executionActive}
+        />
+      </View>
     );
   }, [
     shouldRenderInline,
@@ -3477,6 +3484,7 @@ export const ToolCall = memo(function ToolCall({
   return (
     <ExpandableBadge
       testID="tool-call-badge"
+      borderlessWhenExpanded
       label={presentation.displayName}
       secondaryLabel={
         !executionActive && (renderedStatus === "running" || renderedStatus === "executing")

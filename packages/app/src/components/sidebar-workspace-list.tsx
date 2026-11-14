@@ -102,6 +102,10 @@ import {
 import { useLongPressDragInteraction } from "@/components/sidebar/use-long-press-drag-interaction";
 import { useSidebarRowHover } from "@/components/sidebar/use-sidebar-row-hover";
 import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
+import { useSidebarGroupsStore } from "@/sidebar-groups/store";
+import { SidebarGroupsLoader, ProjectGroupSubmenu } from "@/sidebar-groups/group-menu";
+import { SidebarGroupDialogs } from "@/sidebar-groups/group-name-dialog";
+import { GroupedProjectList } from "@/sidebar-groups/project-groups";
 import { SidebarGroupToggleRow } from "@/components/sidebar/sidebar-group-toggle-row";
 import { PinnedSectionHeader } from "@/components/sidebar/pinned-section-header";
 import { useLimitedSidebarGroup } from "@/components/sidebar/use-limited-sidebar-group";
@@ -617,6 +621,10 @@ function ProjectKebabMenu({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const openGroup = useCallback(
+    () => useSidebarGroupsStore.getState().openDialog({ projectKey, group: null }),
+    [projectKey],
+  );
   const handleOpenProjectSettings = useCallback(() => {
     if (!settingsTarget) return;
     router.navigate(buildProjectSettingsRoute(settingsTarget.serverId, settingsTarget.projectId));
@@ -637,7 +645,7 @@ function ProjectKebabMenu({
       });
   }, [projectPath, t, toast]);
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu onOpenChange={onOpenChange} typography="sidebar">
       <DropdownMenuTrigger
         hitSlop={8}
         style={projectKebabStyle}
@@ -650,6 +658,7 @@ function ProjectKebabMenu({
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" width={220}>
+        <ProjectGroupSubmenu projectKey={projectKey} onCreate={openGroup} />
         {canOpenProjectSettings ? (
           <DropdownMenuItem
             testID={`sidebar-project-menu-open-settings-${projectKey}`}
@@ -966,7 +975,7 @@ function NewWorktreeButton({
           </Pressable>
         </TooltipTrigger>
         <TooltipContent side="bottom" align="center" offset={8}>
-          <View style={styles.projectActionTooltipRow}>
+          <View style={styles.projectActionTooltipRow} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
             <Text style={styles.projectActionTooltipText}>
               {t("sidebar.workspace.actions.newWorkspace")}
             </Text>
@@ -2486,6 +2495,8 @@ export function SidebarWorkspaceList({
   return (
     <SidebarListSpacingContext.Provider value={sidebarListSpacing}>
       <SidebarProjectDropZone onDropPaths={handleProjectDrop} onError={handleProjectDropError}>
+        <SidebarGroupsLoader />
+        <SidebarGroupDialogs />
         {content}
       </SidebarProjectDropZone>
     </SidebarListSpacingContext.Provider>
@@ -2873,6 +2884,7 @@ function ProjectModeList({
     ],
   );
 
+  const hasGroups = useSidebarGroupsStore((state) => state.data.groups.length > 0);
   let projectListContent: ReactElement;
   if (projects.length === 0) {
     projectListContent = (
@@ -2885,6 +2897,18 @@ function ProjectModeList({
           {t("sidebar.actions.addProject")}
         </Button>
       </View>
+    );
+  } else if (hasGroups) {
+    projectListContent = (
+      <GroupedProjectList
+        projects={projects}
+        renderItem={renderProject}
+        onReorder={handleProjectDragEnd}
+        extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+        nestable={platformIsNative}
+        parentGestureRef={parentGestureRef}
+        reorderEnabled={projectSortMode !== "name"}
+      />
     );
   } else if (projectSortMode === "name") {
     projectListContent = (
@@ -3198,7 +3222,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   projectActionTooltipText: {
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
   },
   projectActionTooltipShortcut: {},
   projectShortcutBadgeOverlay: {
