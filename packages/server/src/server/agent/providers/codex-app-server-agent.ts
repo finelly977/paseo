@@ -1303,16 +1303,20 @@ async function fetchAllCodexThreads(
   const indexed = new Map([...activeIndex, ...archivedIndex].map((thread) => [thread.id, thread]));
   const seenThreadIds = new Set<string>();
   const mergedThreads: Array<Record<string, unknown>> = [];
-  for (const thread of [...activeThreads, ...archivedThreads]) {
-    const threadId = typeof thread.id === "string" ? thread.id : null;
-    if (threadId !== null) {
-      if (seenThreadIds.has(threadId)) {
-        continue;
+  const appendThreads = (threads: Array<Record<string, unknown>>) => {
+    for (const thread of threads) {
+      const threadId = typeof thread.id === "string" ? thread.id : null;
+      if (threadId !== null) {
+        if (seenThreadIds.has(threadId)) {
+          continue;
+        }
+        seenThreadIds.add(threadId);
       }
-      seenThreadIds.add(threadId);
+      mergedThreads.push(indexed.get(threadId) ?? thread);
     }
-    mergedThreads.push(indexed.get(threadId) ?? thread);
-  }
+  };
+  appendThreads([...activeThreads, ...archivedThreads]);
+  appendThreads(filterCodexThreadsByCwd([...activeIndex, ...archivedIndex], options?.cwd));
   return mergedThreads;
 }
 
@@ -2081,6 +2085,15 @@ function mapCodexThreadPlanItem(normalizedItem: Record<string, unknown>): AgentT
   });
 }
 
+function mapCodexThreadReasoningItem(
+  normalizedItem: Record<string, unknown>,
+): AgentTimelineItem | null {
+  const summary = Array.isArray(normalizedItem.summary) ? normalizedItem.summary.join("\n") : "";
+  const content = Array.isArray(normalizedItem.content) ? normalizedItem.content.join("\n") : "";
+  const text = summary || content;
+  return text ? { type: "reasoning", text } : null;
+}
+
 function mapCodexThreadUserMessageItem(
   normalizedItem: Record<string, unknown>,
   includeUserMessage: boolean,
@@ -2323,7 +2336,7 @@ export function threadItemToTimeline(
     case "plan":
       return mapCodexThreadPlanItem(normalizedItem);
     case "reasoning":
-      return null;
+      return mapCodexThreadReasoningItem(normalizedItem);
     case CODEX_CONTEXT_COMPACTION_TYPE:
       return {
         type: "compaction",
@@ -4922,8 +4935,8 @@ export class CodexAppServerAgentSession implements AgentSession {
         type: "timeline",
         provider: CODEX_PROVIDER,
         item: entry.item,
-        timestamp: entry.timestamp,
-        turnId: entry.turnId,
+        ...(entry.timestamp !== undefined ? { timestamp: entry.timestamp } : {}),
+        ...(entry.turnId !== undefined ? { turnId: entry.turnId } : {}),
       };
     }
   }
@@ -6526,6 +6539,29 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     if (parsed.kind === "reasoning_delta") {
+      const prev = this.pendingReasoning.get(parsed.itemId) ?? [];
+      prev.push(parsed.delta);
+      this.pendingReasoning.set(parsed.itemId, prev);
+      const subAgentCallId = this.getSubAgentCallIdForThread(parsed.threadId);
+      if (subAgentCallId) {
+        if (parsed.threadId) {
+          this.emitProviderSubagentTimeline(parsed.threadId, {
+            type: "reasoning",
+            text: parsed.delta,
+          });
+        }
+        this.upsertSubAgentChildItem(subAgentCallId, parsed.itemId, {
+          type: "reasoning",
+          text: prev.join(""),
+        });
+        this.emitSubAgentActivityUpdate(subAgentCallId, "running");
+        return;
+      }
+      this.emitEvent({
+        type: "timeline",
+        provider: CODEX_PROVIDER,
+        item: { type: "reasoning", text: parsed.delta },
+      });
       return;
     }
     if (parsed.kind === "exec_command_output_delta") {
@@ -7201,6 +7237,17 @@ export class CodexAppServerAgentSession implements AgentSession {
         registeredChildThreadIds,
       })
     ) {
+      return;
+    }
+    if (
+      timelineItem.type === "reasoning" &&
+      this.consumeStreamedTextCompletion(timelineItem, itemId)
+    ) {
+      if (itemId) {
+        this.emittedItemCompletedIds.add(itemId);
+        this.emittedItemStartedIds.delete(itemId);
+      }
+      this.replayPendingSubAgentNotifications(registeredChildThreadIds);
       return;
     }
     this.applyBufferedDeltaTextToTimelineItem(timelineItem, itemId);

@@ -111,11 +111,13 @@ export function AgentModeControl({
   surface = "toolbar",
   iconOnly = false,
   menuFooter = false,
+  desktopPlacement = "top-start",
   onClose,
 }: AgentModeControlValue & {
   surface?: "toolbar" | "sheet";
   iconOnly?: boolean;
   menuFooter?: boolean;
+  desktopPlacement?: "top-start" | "top-end";
   onClose?: () => void;
 }) {
   const { presentation } = useComposerControlLayout();
@@ -275,7 +277,7 @@ export function AgentModeControl({
         open={open}
         onOpenChange={handleOpenChange}
         anchorRef={anchorRef}
-        desktopPlacement="top-start"
+        desktopPlacement={desktopPlacement}
         desktopMinWidth={260}
         header={sheetHeader}
         renderOption={renderOption}

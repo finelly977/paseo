@@ -392,6 +392,7 @@ export const ptBR: TranslationResources = {
       failedAll: "Não foi possível carregar sessões recentes.",
       failedProviders: "Não foi possível carregar sessões de {{providers}}.",
       failedImport: "Não foi possível importar a sessão selecionada.",
+      alreadyImportedHidden: "{{count}} sessão(ões) já importada(s) oculta(s).",
     },
     actions: {
       refresh: "Atualizar sessões",
@@ -618,6 +619,7 @@ export const ptBR: TranslationResources = {
         splitDown: "Dividir painel abaixo",
         terminalProfilesMenu: "Perfis de terminal",
         editTerminalProfiles: "Editar perfis…",
+        reopenClosedSessions: "Reabrir sessões fechadas",
         pinTarget: "Fixar",
         unpinTarget: "Desafixar",
       },

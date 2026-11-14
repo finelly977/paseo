@@ -72,7 +72,7 @@ export { buildDesktopFrameStyle } from "./combobox-frame-style";
 const IS_WEB = isWeb;
 
 export type ComboboxOption = ComboboxOptionModel;
-export type ComboboxDesktopPlacement = "top-start" | "bottom-start" | "right-start";
+export type ComboboxDesktopPlacement = "top-start" | "top-end" | "bottom-start" | "right-start";
 
 export interface ComboboxProps {
   options: ComboboxOption[];

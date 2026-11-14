@@ -626,6 +626,7 @@ describe("Codex active-turn steering admission", () => {
             text: "子任务已经结束，这是完整结果。",
           },
           timestamp: "1970-01-01T00:00:02.000Z",
+          turnId: "child-turn",
         },
       ]);
       expect(
@@ -3361,6 +3362,7 @@ describe("Codex app-server provider", () => {
       {
         type: "timeline",
         provider: "codex",
+        turnId: "turn-first",
         item: {
           type: "user_message",
           messageId: "codex-first",
@@ -3372,6 +3374,7 @@ describe("Codex app-server provider", () => {
       {
         type: "timeline",
         provider: "codex",
+        turnId: "turn-first",
         item: {
           type: "assistant_message",
           messageId: "answer-first",
@@ -5640,6 +5643,7 @@ describe("Codex app-server provider", () => {
         timestamp: "2026-05-01T10:00:01.000Z",
         item: {
           type: "compaction",
+          compactionId: "compact-history",
           status: "completed",
         },
       },
@@ -7613,7 +7617,7 @@ describe("Codex app-server provider", () => {
     ]);
   });
 
-  test("完全忽略 Codex reasoning 摘要", () => {
+  test("流式输出 Codex reasoning 摘要并在完成时去重", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -7634,10 +7638,23 @@ describe("Codex app-server provider", () => {
       },
     });
 
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "test-turn",
+        item: { type: "reasoning", text: "Think" },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "test-turn",
+        item: { type: "reasoning", text: "ing" },
+      },
+    ]);
   });
 
-  test("不会从完成事件补回 Codex reasoning 摘要", () => {
+  test("完成事件携带新增结尾时只补发缺失的 Codex reasoning 摘要后缀", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
@@ -7658,7 +7675,26 @@ describe("Codex app-server provider", () => {
       },
     });
 
-    expect(events).toEqual([]);
+    expect(events).toEqual([
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "test-turn",
+        item: { type: "reasoning", text: "Think" },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "test-turn",
+        item: { type: "reasoning", text: "ing" },
+      },
+      {
+        type: "timeline",
+        provider: "codex",
+        turnId: "test-turn",
+        item: { type: "reasoning", text: "!" },
+      },
+    ]);
   });
 
   test("approving a synthetic Codex plan permission disables plan mode, preserves fast mode, and returns follow-up prompt", async () => {

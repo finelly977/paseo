@@ -393,6 +393,7 @@ export const fr: TranslationResources = {
       failedAll: "Impossible de charger les sessions récentes.",
       failedProviders: "Impossible de charger les sessions pour{{providers}}.",
       failedImport: "Impossible d'importer la session sélectionnée.",
+      alreadyImportedHidden: "{{count}} session(s) déjà importée(s) masquée(s).",
     },
     actions: {
       refresh: "Sessions de rafraîchissement",
@@ -620,6 +621,7 @@ export const fr: TranslationResources = {
         splitDown: "Diviser le volet vers le bas",
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles…",
+        reopenClosedSessions: "Rouvrir les sessions fermées",
         pinTarget: "Épingler",
         unpinTarget: "Détacher",
       },

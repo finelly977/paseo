@@ -389,6 +389,7 @@ export const ar: TranslationResources = {
       failedAll: "تعذر تحميل الجلسات الأخيرة.",
       failedProviders: "تعذر تحميل جلسات العمل لـ{{providers}}.",
       failedImport: "تعذر استيراد الجلسة المحددة.",
+      alreadyImportedHidden: "تم إخفاء {{count}} من الجلسات المستوردة بالفعل.",
     },
     actions: {
       refresh: "تحديث الجلسات",
@@ -613,6 +614,7 @@ export const ar: TranslationResources = {
         splitDown: "تقسيم الجزء لأسفل",
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles…",
+        reopenClosedSessions: "إعادة فتح الجلسات المغلقة",
         pinTarget: "تثبيت",
         unpinTarget: "إلغاء التثبيت",
       },

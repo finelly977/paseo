@@ -31,6 +31,7 @@ import {
   SquarePen,
   SquareTerminal,
   X,
+  History,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -89,6 +90,10 @@ import { runPinnedTabTarget, type TabTargetHandlers } from "@/workspace-pins/run
 import type { PinnedTabTarget } from "@/workspace-pins/target";
 import { PinnedTargetsRow } from "@/workspace-pins/pinned-targets-row";
 import { PinnableMenuItem } from "@/workspace-pins/pinnable-menu-item";
+import { useSessionStore } from "@/stores/session-store";
+import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
+import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store";
 
 const DROPDOWN_WIDTH = 220;
 const LOADING_TAB_LABEL_SKELETON_WIDTH = 80;
@@ -115,6 +120,8 @@ const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMut
 const AGENT_ICON = <ThemedSquarePen size={14} uniProps={mutedColorMapping} />;
 const TERMINAL_ICON = <ThemedSquareTerminal size={14} uniProps={mutedColorMapping} />;
 const BROWSER_ICON = <ThemedGlobe size={14} uniProps={mutedColorMapping} />;
+const ThemedHistory = withUnistyles(History);
+const REOPEN_SESSION_ICON = <ThemedHistory size={14} uniProps={mutedColorMapping} />;
 
 const DRAFT_TARGET: PinnedTabTarget = { kind: "draft" };
 const TERMINAL_TARGET: PinnedTabTarget = { kind: "terminal" };
@@ -138,6 +145,30 @@ function ProfileLeadingIcon({ iconKey }: { iconKey: string | undefined }) {
     <View style={styles.terminalProfileIconWrapper}>
       <ProfileIcon iconKey={iconKey} />
     </View>
+  );
+}
+
+function ReopenClosedSessionMenuItem({
+  agentId,
+  label,
+  onReopen,
+}: {
+  agentId: string;
+  label: string;
+  onReopen: (agentId: string) => void;
+}) {
+  const handleSelect = useCallback(() => {
+    onReopen(agentId);
+  }, [agentId, onReopen]);
+
+  return (
+    <DropdownMenuItem
+      testID={`workspace-reopen-session-${agentId}`}
+      leading={REOPEN_SESSION_ICON}
+      onSelect={handleSelect}
+    >
+      {label}
+    </DropdownMenuItem>
   );
 }
 
@@ -215,6 +246,7 @@ interface WorkspaceTabRowExtrasProps {
   onCreateTerminalWithProfile: (profile: TerminalProfileInput) => void;
   onEditProfiles: () => void;
   normalizedServerId: string;
+  normalizedWorkspaceId: string;
   showCreateBrowserTab: boolean;
   terminalDisabled: boolean;
 }
@@ -226,6 +258,7 @@ function WorkspaceTabRowExtras({
   onCreateTerminalWithProfile,
   onEditProfiles,
   normalizedServerId,
+  normalizedWorkspaceId,
   showCreateBrowserTab,
   terminalDisabled,
 }: WorkspaceTabRowExtrasProps) {
@@ -234,6 +267,55 @@ function WorkspaceTabRowExtras({
   const profiles = useMemo(
     () => resolveTerminalProfiles(config?.terminalProfiles),
     [config?.terminalProfiles],
+  );
+  const persistenceKey = useMemo(
+    () =>
+      normalizedServerId && normalizedWorkspaceId
+        ? buildWorkspaceTabPersistenceKey({
+            serverId: normalizedServerId,
+            workspaceId: normalizedWorkspaceId,
+          })
+        : null,
+    [normalizedServerId, normalizedWorkspaceId],
+  );
+  const hiddenAgentIds = useWorkspaceLayoutStore((state) =>
+    persistenceKey ? state.hiddenAgentIdsByWorkspace[persistenceKey] : undefined,
+  );
+  const agentsMap = useSessionStore((state) => state.sessions[normalizedServerId]?.agents);
+  const reopenableAgents = useMemo(() => {
+    if (!normalizedWorkspaceId || !hiddenAgentIds || hiddenAgentIds.size === 0 || !agentsMap) {
+      return [];
+    }
+    const fallbackTitle = t("workspace.tabs.fallback.agent");
+    const items: Array<{ id: string; title: string; lastActivityMs: number }> = [];
+    for (const agentId of hiddenAgentIds) {
+      const agent = agentsMap.get(agentId);
+      if (!agent || agent.archivedAt || agent.parentAgentId) {
+        continue;
+      }
+      const lastActivityMs = agent.lastActivityAt ? agent.lastActivityAt.getTime() : 0;
+      items.push({
+        id: agent.id,
+        title: agent.title?.trim() || fallbackTitle,
+        lastActivityMs,
+      });
+    }
+    items.sort((a, b) => b.lastActivityMs - a.lastActivityMs);
+    return items.slice(0, 8);
+  }, [agentsMap, hiddenAgentIds, normalizedWorkspaceId, t]);
+
+  const handleReopenSession = useCallback(
+    (agentId: string) => {
+      if (!normalizedServerId || !normalizedWorkspaceId) {
+        return;
+      }
+      navigateToWorkspace({
+        serverId: normalizedServerId,
+        workspaceId: normalizedWorkspaceId,
+        target: { kind: "agent", agentId },
+      });
+    },
+    [normalizedServerId, normalizedWorkspaceId],
   );
 
   const handlers = useMemo<TabTargetHandlers>(
@@ -312,6 +394,22 @@ function WorkspaceTabRowExtras({
           <DropdownMenuItem testID="workspace-new-tab-menu-edit-profiles" onSelect={onEditProfiles}>
             {t("workspace.tabs.actions.editTerminalProfiles")}
           </DropdownMenuItem>
+          {reopenableAgents.length > 0 ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>
+                {t("workspace.tabs.actions.reopenClosedSessions")}
+              </DropdownMenuLabel>
+              {reopenableAgents.map((agent) => (
+                <ReopenClosedSessionMenuItem
+                  key={agent.id}
+                  agentId={agent.id}
+                  label={agent.title}
+                  onReopen={handleReopenSession}
+                />
+              ))}
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <PinnedTargetsRow launchers={launchers} testIdPrefix="workspace-pinned-target" />
@@ -1086,6 +1184,7 @@ export function WorkspaceDesktopTabsRow({
           onCreateTerminalWithProfile={handleCreateTerminalWithProfile}
           onEditProfiles={handleEditProfiles}
           normalizedServerId={normalizedServerId}
+          normalizedWorkspaceId={normalizedWorkspaceId}
           showCreateBrowserTab={showCreateBrowserTab}
           terminalDisabled={terminalDisabled}
         />

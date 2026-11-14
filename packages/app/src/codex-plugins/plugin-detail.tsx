@@ -209,13 +209,23 @@ function PluginLink({ label, url }: { label: string; url: string | null }) {
   );
 }
 const styles = StyleSheet.create((theme) => ({
-  detail: { gap: theme.spacing[8], maxWidth: 880, width: "100%", alignSelf: "center" },
-  hero: { flexDirection: "row", alignItems: "center", gap: theme.spacing[4], flexWrap: "wrap" },
-  heroText: { flex: 1, minWidth: 160, gap: theme.spacing[2] },
+  detail: { gap: theme.spacing[6], maxWidth: 880, width: "100%", alignSelf: "center" },
+  hero: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[4],
+    flexWrap: "wrap",
+    padding: theme.spacing[4],
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  heroText: { flex: 1, minWidth: 160, gap: theme.spacing[1.5] },
   title: {
-    fontSize: theme.fontSize.base * 0.875,
+    fontSize: theme.fontSize.lg,
     color: theme.colors.foreground,
-    fontWeight: theme.fontWeight.medium,
+    fontWeight: theme.fontWeight.semibold,
   },
   muted: {
     fontSize: theme.fontSize.base * 0.875,

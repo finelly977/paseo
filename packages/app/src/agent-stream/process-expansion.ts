@@ -58,7 +58,7 @@ export function useProcessExpansion(owner: string) {
           setState(settled);
         },
         (expanded.has(turnId) ? MOTION_DURATION.base : MOTION_DURATION.fast) +
-          MOTION_DURATION.instant,
+          (expanded.has(turnId) ? MOTION_DURATION.instant : 16),
       ),
     );
   }, []);

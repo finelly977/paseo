@@ -699,6 +699,7 @@ function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): A
     rows.push({
       seq: rows.length + 1,
       timestamp: entry.timestamp ?? new Date().toISOString(),
+      ...(entry.turnId ? { turnId: entry.turnId } : {}),
       item: limitAgentTimelineItemContent(entry.item),
     });
   }
@@ -1858,6 +1859,17 @@ export class AgentManager {
       const timelineRows = buildImportedTimelineRows(forked.timeline);
       const initialTitle = forkedTitle ?? resolveImportedAgentTitle(forkedConfig, timelineRows);
 
+      if (forkedTitle && client.renameNativeSessionTitle && forked.persistence) {
+        try {
+          await client.renameNativeSessionTitle({ handle: forked.persistence, title: forkedTitle });
+        } catch (error) {
+          this.logger.warn(
+            { err: error, agentId: resolvedAgentId },
+            "Failed to sync native title for forked session",
+          );
+        }
+      }
+
       handedToRegistration = true;
       const agent = await this.registerSession(forked.session, forkedConfig, resolvedAgentId, {
         labels: input.labels,
@@ -1872,16 +1884,6 @@ export class AgentManager {
       for (const event of forked.providerSubagentEvents ?? []) {
         const update = this.providerSubagents.apply(agent.id, event.provider, event.event);
         this.dispatch({ type: "provider_subagent", event: update });
-      }
-      if (forkedTitle && client.renameNativeSessionTitle && forked.persistence) {
-        void client
-          .renameNativeSessionTitle({ handle: forked.persistence, title: forkedTitle })
-          .catch((error) => {
-            this.logger.warn(
-              { err: error, agentId: agent.id },
-              "Failed to sync native title for forked session",
-            );
-          });
       }
       return agent;
     } finally {

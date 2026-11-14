@@ -7,7 +7,7 @@ import type { Theme } from "@/styles/theme";
 
 const ThemedBlocks = withUnistyles(Blocks);
 const muted = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
-const sizes = { tiny: 22, list: 28, hero: 48 } as const;
+const sizes = { tiny: 22, list: 34, hero: 52 } as const;
 
 function IconView({
   plugin,
@@ -54,11 +54,14 @@ export const PluginIcon = withUnistyles(IconView, (theme) => ({
 const styles = StyleSheet.create((theme) => ({
   frame: {
     borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface2,
+    padding: 2,
   },
   image: { width: "100%", height: "100%" },
 }));

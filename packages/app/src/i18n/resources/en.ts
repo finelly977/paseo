@@ -388,6 +388,7 @@ export const en = {
       failedAll: "Could not load recent sessions.",
       failedProviders: "Could not load sessions for {{providers}}.",
       failedImport: "Could not import selected session.",
+      alreadyImportedHidden: "{{count}} already-imported session(s) are hidden.",
     },
     actions: {
       refresh: "Refresh sessions",
@@ -614,6 +615,7 @@ export const en = {
         splitDown: "Split pane down",
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles…",
+        reopenClosedSessions: "Reopen closed sessions",
         pinTarget: "Pin",
         unpinTarget: "Unpin",
       },

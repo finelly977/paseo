@@ -1,7 +1,11 @@
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import type { AgentCapabilityFlags } from "../agent-sdk-types.js";
+import type {
+  AgentCapabilityFlags,
+  ImportableProviderSession,
+  ListImportableSessionsOptions,
+} from "../agent-sdk-types.js";
 import {
   checkProviderLaunchAvailable,
   getProviderLaunchAvailability,
@@ -21,7 +25,11 @@ import {
   type DiagnosticEntry,
   toDiagnosticErrorMessage,
 } from "./diagnostic-utils.js";
-import { deleteGrokNativeSession } from "./grok-native-session.js";
+import {
+  deleteGrokNativeSession,
+  isEmptyGrokProbeSession,
+  removeLocalEmptyGrokProbeSession,
+} from "./grok-native-session.js";
 
 export const GenericACPProviderParamsSchema = z
   .object({
@@ -68,12 +76,28 @@ export class GenericACPAgentClient extends ACPAgentClient {
     const providerParams = parseGenericACPProviderParams(options.providerParams);
     const cleanupNativeSession =
       options.providerId === "grok"
-        ? (sessionId: string) =>
-            deleteGrokNativeSession({
-              command: options.command,
-              env: options.env,
-              sessionId,
-            })
+        ? async (sessionId: string) => {
+            try {
+              await deleteGrokNativeSession({
+                command: options.command,
+                env: options.env,
+                sessionId,
+              });
+            } catch (error) {
+              const removedLocally = await removeLocalEmptyGrokProbeSession({
+                sessionId,
+                env: options.env,
+              });
+              if (removedLocally) {
+                options.logger.warn(
+                  { err: error, sessionId },
+                  "Grok 远端探测会话删除失败，已清理本地空探测目录",
+                );
+                return;
+              }
+              throw error;
+            }
+          }
         : undefined;
     super({
       provider: "acp",
@@ -110,6 +134,27 @@ export class GenericACPAgentClient extends ACPAgentClient {
     const launch = await this.resolveConfiguredLaunch();
     const availability = await getProviderLaunchAvailability(launch);
     return availability.available;
+  }
+
+  override async listImportableSessions(
+    options?: ListImportableSessionsOptions,
+  ): Promise<ImportableProviderSession[]> {
+    const sessions = await super.listImportableSessions(options);
+    if (this.providerId !== "grok" || sessions.length === 0) {
+      return sessions;
+    }
+    const keep = await Promise.all(
+      sessions.map(async (session) => {
+        if (session.title && session.title.trim().length > 0) {
+          return true;
+        }
+        return !(await isEmptyGrokProbeSession({
+          sessionId: session.providerHandleId,
+          env: this.runtimeSettings?.env,
+        }));
+      }),
+    );
+    return sessions.filter((_, index) => keep[index]);
   }
 
   async getDiagnostic(): Promise<{ diagnostic: string }> {

@@ -1841,9 +1841,6 @@ function reduceTimelineEvent(
         ),
       );
     case "reasoning":
-      if (event.provider === "codex") {
-        return state;
-      }
       return appendThought(state, item.text, timestamp);
     case "tool_call":
       return finalizeActiveThoughts(
@@ -2055,7 +2052,7 @@ function getEventItemKind(
     case "assistant_message":
       return "assistant_message";
     case "reasoning":
-      return event.provider === "codex" ? null : "thought";
+      return "thought";
     case "tool_call":
       return "tool_call";
     case "todo":

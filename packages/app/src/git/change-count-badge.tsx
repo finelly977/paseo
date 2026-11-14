@@ -1,6 +1,6 @@
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { COMPACT_LABEL_DATASET, COMPACT_LABEL_SCALE } from "@/styles/compact-label";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 
 export function GitChangeCountBadge({ count, label }: { count: number; label: string }) {
   return (
@@ -17,8 +17,8 @@ export function GitChangeCountBadge({ count, label }: { count: number; label: st
 }
 
 const styles = StyleSheet.create((theme) => {
-  const fontSize = Math.round(theme.fontSize.base * COMPACT_LABEL_SCALE);
-  const diameter = Math.max(20, fontSize + theme.spacing[2]);
+  const fontSize = Math.max(10, Math.round(theme.fontSize.base * 0.625));
+  const diameter = Math.max(16, fontSize + 6);
   return {
     container: (round: boolean) => ({
       width: round ? diameter : undefined,

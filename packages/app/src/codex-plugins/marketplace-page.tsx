@@ -7,8 +7,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { Check, Plus, RefreshCw } from "lucide-react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { Check, Plus, RefreshCw, Search } from "lucide-react-native";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type {
@@ -63,6 +63,10 @@ const views = [
   { value: "installed", label: "已安装" },
   { value: "sources", label: "市场来源" },
 ] satisfies Array<{ value: MarketView; label: string }>;
+const ThemedSearch = withUnistyles(Search);
+const searchIconColor = (theme: import("@/styles/theme").Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 export const marketQueryRoot = (serverId: string) => ["codexPluginMarket", serverId] as const;
 function reducer(state: ViewState, action: ViewAction): ViewState {
   switch (action.type) {
@@ -250,7 +254,13 @@ export function CodexPluginMarketplacePanel({
       <PluginCenterHeader navigation={navigation} actions={headerActions} />
       <View style={styles.center} testID="codex-plugin-market">
         {showRail ? (
-          <InstalledRail client={client} serverId={serverId} onOpen={select} onView={changeView} />
+          <InstalledRail
+            client={client}
+            serverId={serverId}
+            selectedPluginId={state.selection?.plugin.id ?? null}
+            onOpen={select}
+            onView={changeView}
+          />
         ) : null}
         <ScrollView
           ref={scroll}
@@ -291,16 +301,18 @@ export function CodexPluginMarketplacePanel({
                   onRefresh={doRefresh}
                   disabled={busy || catalog.isFetching}
                 />
-                <SegmentedControl
-                  options={views}
-                  value={state.view}
-                  onValueChange={changeView}
-                  size="sm"
-                  testID="codex-market-views"
-                />
-                <Text style={styles.authHint}>
-                  安装到当前主机 · 市场使用独立 ChatGPT 登录，正文可继续使用第三方模型
-                </Text>
+                <View style={styles.toolbarRow}>
+                  <SegmentedControl
+                    options={views}
+                    value={state.view}
+                    onValueChange={changeView}
+                    size="sm"
+                    testID="codex-market-views"
+                  />
+                  <Text style={styles.authHint}>
+                    安装到当前主机 · 市场使用独立 ChatGPT 登录，正文可继续使用第三方模型
+                  </Text>
+                </View>
                 <CatalogBody
                   data={catalog.data}
                   pending={catalog.isPending}
@@ -405,11 +417,11 @@ function MarketHeading({
   return (
     <View style={styles.heading}>
       <View style={styles.headingText}>
-        <Text style={styles.title}>插件</Text>
         <Text style={styles.subtitle}>连接插件，让 Codex 在你的各类工具中协同工作</Text>
       </View>
       <View style={styles.headingActions}>
-        <View style={styles.search}>
+        <View style={styles.searchBox}>
+          <ThemedSearch size={14} uniProps={searchIconColor} />
           <FormTextInput
             initialValue={query}
             onChangeText={onQuery}
@@ -417,12 +429,12 @@ function MarketHeading({
             accessibilityLabel="搜索 Codex 插件"
             size="sm"
             testID="codex-market-search"
-            style={styles.controlText}
+            style={styles.searchInput}
           />
         </View>
         <Button
           size="sm"
-          variant="ghost"
+          variant="outline"
           leftIcon={RefreshCw}
           onPress={onRefresh}
           disabled={disabled}
@@ -435,10 +447,13 @@ function MarketHeading({
   );
 }
 function cardMainStyle({ hovered }: { hovered?: boolean }) {
-  return [styles.cardMain, hovered && styles.hover];
+  return [styles.cardMain, hovered && styles.cardHover];
 }
 function installedStyle({ hovered }: { hovered?: boolean }) {
   return [styles.installedItem, hovered && styles.hover];
+}
+function installedSelectedStyle({ hovered }: { hovered?: boolean }) {
+  return [styles.installedItem, styles.installedItemSelected, hovered && styles.hover];
 }
 
 function CatalogBody({
@@ -568,26 +583,28 @@ function PluginCard({
             {plugin.description || plugin.name}
           </Text>
         </View>
+        <Button
+          size="sm"
+          variant="ghost"
+          leftIcon={plugin.installed ? Check : Plus}
+          onPress={plugin.installed ? open : install}
+          disabled={busy || unavailable}
+          accessibilityLabel={plugin.installed ? `管理 ${plugin.title}` : `安装 ${plugin.title}`}
+        />
       </Pressable>
-      <Button
-        size="sm"
-        variant="ghost"
-        leftIcon={plugin.installed ? Check : Plus}
-        onPress={plugin.installed ? open : install}
-        disabled={busy || unavailable}
-        accessibilityLabel={plugin.installed ? `管理 ${plugin.title}` : `安装 ${plugin.title}`}
-      />
     </View>
   );
 }
 function InstalledRail({
   client,
   serverId,
+  selectedPluginId,
   onOpen,
   onView,
 }: {
   client: MarketClient;
   serverId: string;
+  selectedPluginId: string | null;
   onOpen(value: PluginSelection): void;
   onView(value: MarketView): void;
 }) {
@@ -623,9 +640,14 @@ function InstalledRail({
   return (
     <View style={styles.rail}>
       <Text style={styles.railTitle}>已安装</Text>
-      <ScrollView contentContainerStyle={styles.railItems}>
+      <ScrollView style={styles.railScroll} contentContainerStyle={styles.railItems}>
         {entries.slice(0, 30).map((entry) => (
-          <InstalledItem key={entry.plugin.id} selection={entry} onOpen={onOpen} />
+          <InstalledItem
+            key={entry.plugin.id}
+            selection={entry}
+            selected={selectedPluginId === entry.plugin.id}
+            onOpen={onOpen}
+          />
         ))}
         {entries.length === 0 && (local.isPending || official.isPending) ? (
           <InstalledLoading />
@@ -635,10 +657,12 @@ function InstalledRail({
         !official.isPending &&
         !local.error &&
         !official.error ? (
-          <Text style={styles.muted}>暂无已安装插件</Text>
+          <Text style={styles.railEmpty}>暂无已安装插件</Text>
         ) : null}
         {local.error || official.error ? (
-          <Text style={settingsStyles.rowError}>部分插件读取失败，请刷新目录</Text>
+          <Text style={[settingsStyles.rowError, styles.railError]}>
+            部分插件读取失败，请刷新目录
+          </Text>
         ) : null}
         {entries.length > 30 ? (
           <Button size="sm" variant="ghost" onPress={showAll}>
@@ -651,16 +675,18 @@ function InstalledRail({
 }
 function InstalledItem({
   selection,
+  selected,
   onOpen,
 }: {
   selection: PluginSelection;
+  selected: boolean;
   onOpen(value: PluginSelection): void;
 }) {
   const open = useCallback(() => onOpen(selection), [selection, onOpen]);
   return (
     <Pressable
       onPress={open}
-      style={installedStyle}
+      style={selected ? installedSelectedStyle : installedStyle}
       accessibilityRole="button"
       accessibilityLabel={`查看 ${selection.plugin.title} 详情`}
     >
@@ -746,23 +772,22 @@ const styles = StyleSheet.create((theme) => ({
   panel: { flex: 1, minHeight: 0 },
   center: { flex: 1, flexDirection: "row", minHeight: 0 },
   scroll: { flex: 1 },
-  content: { flexGrow: 1, padding: theme.spacing[4] },
+  content: { flexGrow: 1, paddingHorizontal: theme.spacing[6], paddingVertical: 20 },
   canvas: {
     width: "100%",
     maxWidth: 1120,
     alignSelf: "center",
-    gap: theme.spacing[4],
+    gap: 20,
     paddingBottom: theme.spacing[8],
   },
   heading: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: theme.spacing[4],
+    gap: theme.spacing[3],
     flexWrap: "wrap",
-    paddingTop: theme.spacing[2],
   },
-  headingText: { flex: 1, minWidth: 220, gap: theme.spacing[2] },
+  headingText: { flex: 1, minWidth: 220, gap: theme.spacing[1] },
   title: {
     fontSize: theme.fontSize.base * 0.875,
     fontWeight: theme.fontWeight.medium,
@@ -770,34 +795,72 @@ const styles = StyleSheet.create((theme) => ({
   },
   subtitle: {
     fontSize: theme.fontSize.base * 0.875,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
     lineHeight: 20,
   },
   controlText: { fontSize: theme.fontSize.base * 0.875 },
   headingActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
-  search: { width: 220 },
-  authHint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.8125 },
-  category: { gap: theme.spacing[3] },
-  categoryTitle: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.base * 0.875,
-    fontWeight: theme.fontWeight.medium,
+  searchBox: {
+    width: 240,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    paddingLeft: 10,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", columnGap: "4%", rowGap: theme.spacing[2] },
-  card: { width: "100%", flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
-  cardTwo: { width: "48%" },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingLeft: 0,
+    fontSize: theme.fontSize.base * 0.875,
+  },
+  toolbarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: theme.spacing[3],
+  },
+  authHint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.8125 },
+  category: { gap: 10 },
+  categoryTitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base * 0.8125,
+    fontWeight: theme.fontWeight.semibold,
+    letterSpacing: 0.2,
+  },
+  grid: { flexDirection: "row", flexWrap: "wrap", columnGap: "2.5%", rowGap: 10 },
+  card: { width: "100%" },
+  cardTwo: { width: "48.75%" },
   cardMain: {
     flex: 1,
     minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[1.5],
-    paddingHorizontal: theme.spacing[2],
-    borderRadius: theme.borderRadius.lg,
+    gap: theme.spacing[3],
+    minHeight: 72,
+    paddingVertical: 10,
+    paddingHorizontal: theme.spacing[3],
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
   },
-  cardText: { flex: 1, minWidth: 0, gap: theme.spacing[1] },
-  cardTitle: { color: theme.colors.foreground, fontSize: theme.fontSize.base * 0.875 },
+  cardHover: {
+    backgroundColor: theme.colors.surface2,
+    borderColor: theme.colors.surface3,
+  },
+  cardText: { flex: 1, minWidth: 0, gap: 3 },
+  cardTitle: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base * 0.875,
+    fontWeight: theme.fontWeight.medium,
+  },
   cardDescription: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base * 0.8125,
@@ -808,24 +871,38 @@ const styles = StyleSheet.create((theme) => ({
     width: PLUGIN_CENTER_RAIL_WIDTH,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
-    padding: theme.spacing[3],
-    paddingTop: theme.spacing[6],
-    gap: theme.spacing[4],
+    paddingTop: theme.spacing[4],
+    gap: theme.spacing[2],
     backgroundColor: theme.colors.surfaceSidebar,
   },
+  railScroll: { flex: 1, minHeight: 0 },
   railTitle: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sidebar,
-    paddingHorizontal: theme.spacing[2],
+    fontWeight: theme.fontWeight.medium,
+    paddingHorizontal: theme.spacing[4],
   },
-  railItems: { gap: theme.spacing[1] },
+  railItems: {
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+    paddingBottom: theme.spacing[4],
+  },
+  railEmpty: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base * 0.8125,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+  },
+  railError: { paddingHorizontal: theme.spacing[2] },
   installedItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
-    padding: theme.spacing[2],
+    paddingVertical: theme.spacing[1.5],
+    paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.lg,
   },
+  installedItemSelected: { backgroundColor: theme.colors.surfaceSidebarHover },
   installedName: {
     flex: 1,
     minWidth: 0,

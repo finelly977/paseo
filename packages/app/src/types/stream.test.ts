@@ -665,7 +665,7 @@ describe("stream reducer canonical tool calls", () => {
     assert.strictEqual(first.messageId, "msg-same");
   });
 
-  it("完全忽略 Codex reasoning，且不会打断正在输出的正文", () => {
+  it("显示 Codex reasoning 为思考条目", () => {
     const assistantResult = applyStreamEvent({
       tail: [],
       head: [],
@@ -679,9 +679,12 @@ describe("stream reducer canonical tool calls", () => {
       timestamp: new Date("2025-01-01T10:02:01Z"),
     });
 
-    expect(reasoningResult.tail).toEqual([]);
-    expect(reasoningResult.head).toBe(assistantResult.head);
-    expect(reasoningResult.head.some((item) => item.kind === "thought")).toBe(false);
+    const thoughts = [...reasoningResult.tail, ...reasoningResult.head].filter(
+      (item) => item.kind === "thought",
+    );
+    expect(thoughts).toEqual([
+      expect.objectContaining({ kind: "thought", text: "这段摘要不应显示" }),
+    ]);
   });
 
   it("在压缩标记前结清流式正文并保持时间顺序", () => {

@@ -431,12 +431,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       if (!row) {
         return index;
       }
-      const heightOverride = collapsedHeights?.get(row.id);
       // 纯入口换承载行后仍是同一个可见条目，复用其已测量高度，避免重新估算。
-      const key = processAnchorIdByItemId?.get(row.id) ?? row.id;
-      return heightOverride === undefined ? key : `${key}:display-height-${heightOverride}`;
+      return processAnchorIdByItemId?.get(row.id) ?? row.id;
     },
-    [segments.historyVirtualized, collapsedHeights, processAnchorIdByItemId],
+    [segments.historyVirtualized, processAnchorIdByItemId],
   );
   const estimateSize = useCallback(
     (index: number) => {

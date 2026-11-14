@@ -7,7 +7,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { Check, Plus, RefreshCw, ExternalLink } from "lucide-react-native";
+import { Check, Plus, RefreshCw, ExternalLink, Search } from "lucide-react-native";
+import { withUnistyles } from "react-native-unistyles";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type {
@@ -55,6 +56,10 @@ const views = [
   { value: "installed", label: "已安装" },
   { value: "sources", label: "市场来源" },
 ] satisfies Array<{ value: "catalog" | "installed" | "sources"; label: string }>;
+const ThemedSearch = withUnistyles(Search);
+const searchIconColor = (theme: import("@/styles/theme").Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 
 export function HostClaudePluginsPage({
   serverId,
@@ -309,7 +314,7 @@ export function ClaudePluginMarketplacePanel({
         {layout.showRail ? (
           <View style={styles.rail}>
             <Text style={styles.railTitle}>已安装</Text>
-            <ScrollView contentContainerStyle={styles.railItems}>
+            <ScrollView style={styles.railScroll} contentContainerStyle={styles.railItems}>
               {rail.isPending ? <InstalledLoading /> : null}
               {rail.error ? (
                 <Alert
@@ -319,10 +324,15 @@ export function ClaudePluginMarketplacePanel({
                 />
               ) : null}
               {rail.data?.plugins.length === 0 ? (
-                <Text style={styles.muted}>暂无已安装插件</Text>
+                <Text style={styles.railEmpty}>暂无已安装插件</Text>
               ) : null}
               {rail.data?.plugins.map((plugin) => (
-                <InstalledItem key={plugin.id} plugin={plugin} onOpen={select} />
+                <InstalledItem
+                  key={plugin.id}
+                  plugin={plugin}
+                  selected={selected?.id === plugin.id}
+                  onOpen={select}
+                />
               ))}
               {rail.data?.nextOffset !== null && rail.data?.nextOffset !== undefined ? (
                 <Button size="sm" variant="ghost" onPress={viewAllInstalled}>
@@ -427,19 +437,27 @@ function PluginCard({
   );
 }
 function cardStyle({ hovered }: { hovered?: boolean }) {
-  return [styles.cardMain, hovered && styles.hover];
+  return [styles.cardMain, hovered && styles.cardHover];
+}
+function installedItemStyle({ hovered }: { hovered?: boolean }) {
+  return [styles.installedItem, hovered && styles.hover];
+}
+function installedSelectedItemStyle({ hovered }: { hovered?: boolean }) {
+  return [styles.installedItem, styles.installedItemSelected, hovered && styles.hover];
 }
 function InstalledItem({
   plugin,
+  selected,
   onOpen,
 }: {
   plugin: ClaudePlugin;
+  selected: boolean;
   onOpen(plugin: ClaudePlugin): void;
 }) {
   const open = useCallback(() => onOpen(plugin), [plugin, onOpen]);
   return (
     <Pressable
-      style={styles.installedItem}
+      style={selected ? installedSelectedItemStyle : installedItemStyle}
       onPress={open}
       accessibilityRole="button"
       accessibilityLabel={`查看 ${plugin.title} 详情`}
@@ -778,22 +796,23 @@ function ClaudeCatalogView({
     <>
       <View style={styles.heading}>
         <View style={styles.headingText}>
-          <Text style={styles.title}>Claude Code 插件</Text>
           <Text style={styles.subtitle}>浏览原生市场，让技能、智能体与工具协同工作</Text>
         </View>
         <View style={styles.headingActions}>
-          <View style={styles.search}>
+          <View style={styles.searchBox}>
+            <ThemedSearch size={14} uniProps={searchIconColor} />
             <FormTextInput
               initialValue={query}
               onChangeText={searchChanged}
               placeholder="搜索插件"
               accessibilityLabel="搜索 Claude Code 插件"
               size="sm"
+              style={styles.searchInput}
             />
           </View>
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             leftIcon={RefreshCw}
             onPress={refreshCatalog}
             disabled={busy || fetching}

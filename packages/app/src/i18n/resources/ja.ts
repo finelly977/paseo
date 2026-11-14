@@ -392,6 +392,7 @@ export const ja: TranslationResources = {
       failedAll: "最近のセッションを読み込めませんでした。",
       failedProviders: "{{providers}}のセッションを読み込めませんでした。",
       failedImport: "選択したセッションをインポートできませんでした。",
+      alreadyImportedHidden: "すでにインポート済みの {{count}} 件のセッションは非表示です。",
     },
     actions: {
       refresh: "セッションを更新",
@@ -618,6 +619,7 @@ export const ja: TranslationResources = {
         splitDown: "下にペインを分割",
         terminalProfilesMenu: "ターミナルプロファイル",
         editTerminalProfiles: "プロファイルを編集…",
+        reopenClosedSessions: "閉じたセッションを再度開く",
         pinTarget: "ピン留め",
         unpinTarget: "ピン留めを解除",
       },

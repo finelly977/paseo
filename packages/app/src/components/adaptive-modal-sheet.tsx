@@ -94,7 +94,7 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
     alignItems: "center",
-    padding: theme.spacing[6],
+    padding: theme.spacing[4],
     zIndex: OVERLAY_Z.modal,
     pointerEvents: "auto" as const,
   },

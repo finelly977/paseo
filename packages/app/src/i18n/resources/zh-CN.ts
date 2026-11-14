@@ -389,6 +389,7 @@ export const zhCN: TranslationResources = {
       failedAll: "无法加载最近会话。",
       failedProviders: "无法加载 {{providers}} 的会话。",
       failedImport: "无法导入所选会话。",
+      alreadyImportedHidden: "已隐藏 {{count}} 个已导入会话。",
     },
     actions: {
       refresh: "刷新会话",
@@ -613,6 +614,7 @@ export const zhCN: TranslationResources = {
         splitDown: "向下拆分窗格",
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles…",
+        reopenClosedSessions: "重新打开已关闭会话",
         pinTarget: "固定",
         unpinTarget: "取消固定",
       },

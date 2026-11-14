@@ -113,6 +113,7 @@ interface ControlledAgentControlsProps {
   modeControl?: AgentModeControlValue | null;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  hideDesktopModeControl?: boolean;
   codexProviderInjections?: readonly CodexProviderInjection[];
   selectedCodexProviderInjectionId?: string | null;
   onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
@@ -144,6 +145,7 @@ export interface DraftAgentControlsProps {
   disabled?: boolean;
   modelSelectorServerId?: string | null;
   isCompactLayout?: boolean;
+  hideDesktopModeControl?: boolean;
   codexProviderInjections?: readonly CodexProviderInjection[];
   selectedCodexProviderInjectionId?: string | null;
   onSelectCodexProviderInjection?: (injectionId: string, model?: string) => void;
@@ -155,6 +157,7 @@ interface AgentControlsProps {
   isPaneFocused: boolean;
   onDropdownClose?: () => void;
   isCompactLayout?: boolean;
+  hideDesktopModeControl?: boolean;
 }
 
 function findOptionLabel(
@@ -381,6 +384,237 @@ function supportsCodexProviderInjectionControl(input: {
   return input.onSelect !== undefined;
 }
 
+function resolveToolbarModeControl(
+  hideDesktopModeControl: boolean,
+  modeControl: AgentModeControlValue | null | undefined,
+): AgentModeControlValue | null | undefined {
+  return hideDesktopModeControl ? null : modeControl;
+}
+
+function useAgentFeatureMutation(input: {
+  agentId: string;
+  agentProvider: string | undefined;
+  client: ReturnType<typeof useSessionStore.getState>["sessions"][string]["client"] | null;
+  toast: ReturnType<typeof useToast>;
+  updatePreferences: ReturnType<typeof useFormPreferences>["updatePreferences"];
+}) {
+  const { agentId, agentProvider, client, toast, updatePreferences } = input;
+  return useCallback(
+    (featureId: string, value: unknown) => {
+      if (!client || !agentProvider) {
+        return;
+      }
+      void updatePreferences((current) =>
+        mergeProviderPreferences({
+          preferences: current,
+          provider: agentProvider,
+          updates: { featureValues: { [featureId]: value } },
+        }),
+      ).catch((error) => {
+        console.warn("[AgentControls] persist feature preference failed", error);
+      });
+      void client.setAgentFeature(agentId, featureId, value).catch((error) => {
+        console.warn("[AgentControls] setAgentFeature failed", error);
+        toast.error(toErrorMessage(error));
+      });
+    },
+    [agentId, agentProvider, client, toast, updatePreferences],
+  );
+}
+
+function useAgentModelMutation(input: {
+  agentId: string;
+  agentProvider: string | undefined;
+  client: ReturnType<typeof useSessionStore.getState>["sessions"][string]["client"] | null;
+  toast: ReturnType<typeof useToast>;
+  updatePreferences: ReturnType<typeof useFormPreferences>["updatePreferences"];
+}) {
+  const { agentId, agentProvider, client, toast, updatePreferences } = input;
+  return useCallback(
+    async (modelId: string) => {
+      if (!client || !agentProvider) {
+        return;
+      }
+      try {
+        await client.setAgentModel(agentId, modelId);
+        await updatePreferences((current) =>
+          mergeProviderPreferences({
+            preferences: current,
+            provider: agentProvider,
+            updates: { model: modelId },
+          }),
+        );
+      } catch (error) {
+        console.warn("[AgentControls] setAgentModel or persist preference failed", error);
+        toast.error(toErrorMessage(error));
+      }
+    },
+    [agentId, agentProvider, client, toast, updatePreferences],
+  );
+}
+
+function useAgentThinkingMutation(input: {
+  activeModelId: string | null;
+  agentId: string;
+  agentProvider: string | undefined;
+  client: ReturnType<typeof useSessionStore.getState>["sessions"][string]["client"] | null;
+  toast: ReturnType<typeof useToast>;
+  updatePreferences: ReturnType<typeof useFormPreferences>["updatePreferences"];
+}) {
+  const { activeModelId, agentId, agentProvider, client, toast, updatePreferences } = input;
+  return useCallback(
+    (thinkingOptionId: string) => {
+      if (!client || !agentProvider) {
+        return;
+      }
+      if (activeModelId) {
+        void updatePreferences((current) =>
+          mergeProviderPreferences({
+            preferences: current,
+            provider: agentProvider,
+            updates: {
+              model: activeModelId,
+              thinkingByModel: { [activeModelId]: thinkingOptionId },
+            },
+          }),
+        ).catch((error) => {
+          console.warn("[AgentControls] persist thinking preference failed", error);
+        });
+      }
+      void client
+        .setAgentThinkingOption(agentId, thinkingOptionId)
+        .then((notice) => showProviderNoticeToast(toast, notice))
+        .catch((error) => {
+          console.warn("[AgentControls] setAgentThinkingOption failed", error);
+          toast.error(toErrorMessage(error));
+        });
+    },
+    [activeModelId, agentId, agentProvider, client, toast, updatePreferences],
+  );
+}
+
+function useAgentModelRefreshHandlers(input: {
+  agentProvider: string | undefined;
+  refreshSnapshot: (providers?: AgentProvider[]) => Promise<void>;
+  snapshotSelectedEntry: ReturnType<typeof resolveSnapshotSelectedEntry>;
+  toast: ReturnType<typeof useToast>;
+}) {
+  const { agentProvider, refreshSnapshot, snapshotSelectedEntry, toast } = input;
+  const handleModelSelectorOpen = useCallback(() => {
+    if (!agentProvider || (snapshotSelectedEntry && snapshotSelectedEntry.status !== "loading")) {
+      return;
+    }
+    void refreshSnapshot([agentProvider]).catch((error) => {
+      console.warn("[智能体控制栏] 刷新提供方模型失败", error);
+      toast.error(toErrorMessage(error));
+    });
+  }, [agentProvider, refreshSnapshot, snapshotSelectedEntry, toast]);
+
+  const handleRetryModelProvider = useCallback(
+    (provider: AgentProvider) => {
+      void refreshSnapshot([provider]).catch((error) => {
+        console.warn("[智能体控制栏] 重试刷新提供方模型失败", error);
+        toast.error(toErrorMessage(error));
+      });
+    },
+    [refreshSnapshot, toast],
+  );
+
+  return { handleModelSelectorOpen, handleRetryModelProvider };
+}
+
+function useAgentSelectorModelData(input: {
+  agent: ReturnType<typeof selectAgentControlsSlice>;
+  snapshotEntries: ReturnType<typeof useProvidersSnapshot>["entries"];
+  snapshotSelectedEntry: ReturnType<typeof resolveSnapshotSelectedEntry>;
+}) {
+  const { agent, snapshotEntries, snapshotSelectedEntry } = input;
+  const models = snapshotSelectedEntry?.models ?? null;
+  const agentProvider = agent?.provider;
+  const agentProviderDefinitions = useMemo(
+    () => buildAgentProviderDefinitions(agentProvider, snapshotEntries),
+    [agentProvider, snapshotEntries],
+  );
+  const agentProviderModels = useMemo(
+    () => buildAgentProviderModels(agentProvider, models),
+    [agentProvider, models],
+  );
+  const agentModelSelectorProviders = useMemo(() => {
+    if (snapshotSelectedEntry) {
+      return buildSelectableProviderSelectorProviders([snapshotSelectedEntry]);
+    }
+    return buildProviderSelectorProviders({
+      providerDefinitions: agentProviderDefinitions,
+      modelsByProvider: agentProviderModels,
+    });
+  }, [agentProviderDefinitions, agentProviderModels, snapshotSelectedEntry]);
+  const modelSelection = resolveAgentModelSelection({
+    models,
+    runtimeModelId: agent?.runtimeModelId,
+    configuredModelId: agent?.model,
+    explicitThinkingOptionId: agent?.thinkingOptionId,
+  });
+  const modelOptions = useMemo<AgentControlOption[]>(
+    () => (models ?? []).map((model) => ({ id: model.id, label: model.label })),
+    [models],
+  );
+  const thinkingOptions = useMemo<AgentControlOption[]>(
+    () =>
+      (modelSelection.thinkingOptions ?? []).map((option) => ({
+        id: option.id,
+        label: formatThinkingOptionLabel(option),
+      })),
+    [modelSelection.thinkingOptions],
+  );
+  return {
+    agentModelSelectorProviders,
+    modelSelection,
+    modelOptions,
+    thinkingOptions,
+    selectedProviderIsLoading: snapshotSelectedEntry?.status === "loading",
+  };
+}
+
+function resolveControlledControlCapabilities(input: {
+  provider: string;
+  providerOptions: AgentControlOption[] | undefined;
+  onSelectProvider: ((providerId: string) => void) | undefined;
+  onSelectModel: ((modelId: string) => void) | undefined;
+  thinkingOptions: AgentControlOption[] | undefined;
+  onSelectThinkingOption: ((thinkingOptionId: string) => void) | undefined;
+  codexProviderInjections: readonly CodexProviderInjection[] | undefined;
+  onSelectCodexProviderInjection: ((injectionId: string, model?: string) => void) | undefined;
+  features: AgentFeature[] | undefined;
+  hasMode: boolean;
+}) {
+  const canSelectProvider = Boolean(
+    input.onSelectProvider && input.providerOptions && input.providerOptions.length > 0,
+  );
+  const canSelectModel = Boolean(input.onSelectModel);
+  const canSelectThinking = Boolean(
+    input.onSelectThinkingOption && input.thinkingOptions && input.thinkingOptions.length > 0,
+  );
+  const canSelectCodexProviderInjection = supportsCodexProviderInjectionControl({
+    provider: input.provider,
+    injections: input.codexProviderInjections,
+    onSelect: input.onSelectCodexProviderInjection,
+  });
+  const hasAnyControl = resolveHasAnyControl({
+    providerOptions: input.providerOptions,
+    canSelectModel,
+    thinkingOptions: input.thinkingOptions,
+    features: input.features,
+    hasMode: input.hasMode,
+  });
+  return {
+    canSelectProvider,
+    canSelectModel,
+    canSelectThinking,
+    canSelectCodexProviderInjection,
+    hasAnyControl,
+  };
+}
+
 function ControlledAgentControls({
   providerLocked,
   provider,
@@ -409,6 +643,7 @@ function ControlledAgentControls({
   modeControl,
   modelSelectorServerId = null,
   isCompactLayout,
+  hideDesktopModeControl = false,
   codexProviderInjections,
   selectedCodexProviderInjectionId = null,
   onSelectCodexProviderInjection,
@@ -424,17 +659,23 @@ function ControlledAgentControls({
   const densityRef = useRef<ComposerControlDensity>(initialDensity);
   const availableWidthRef = useRef(0);
 
-  const canSelectProvider = Boolean(
-    onSelectProvider && providerOptions && providerOptions.length > 0,
-  );
-  const canSelectModel = Boolean(onSelectModel);
-  const canSelectThinking = Boolean(
-    onSelectThinkingOption && thinkingOptions && thinkingOptions.length > 0,
-  );
-  const canSelectCodexProviderInjection = supportsCodexProviderInjectionControl({
+  const {
+    canSelectProvider,
+    canSelectModel,
+    canSelectThinking,
+    canSelectCodexProviderInjection,
+    hasAnyControl,
+  } = resolveControlledControlCapabilities({
     provider,
-    injections: codexProviderInjections,
-    onSelect: onSelectCodexProviderInjection,
+    providerOptions,
+    onSelectProvider,
+    onSelectModel,
+    thinkingOptions,
+    onSelectThinkingOption,
+    codexProviderInjections,
+    onSelectCodexProviderInjection,
+    features,
+    hasMode: modeControl !== null && modeControl !== undefined,
   });
 
   const displayProvider = findOptionLabel(
@@ -452,13 +693,6 @@ function ControlledAgentControls({
     formattedThinkingOptions[0]?.label ?? t("agentControls.thinking.unknown"),
   );
 
-  const hasAnyControl = resolveHasAnyControl({
-    providerOptions,
-    canSelectModel,
-    thinkingOptions,
-    features,
-    hasMode: modeControl !== null && modeControl !== undefined,
-  });
   const featureControls = useMemo(
     () =>
       (features ?? []).map((feature) => {
@@ -649,7 +883,7 @@ function ControlledAgentControls({
             handleProviderSelect={handleProviderSelect}
             handleThinkingSelect={handleThinkingSelect}
             handleDesktopModelSelect={handleDesktopModelSelect}
-            modeControl={modeControl}
+            modeControl={resolveToolbarModeControl(hideDesktopModeControl, modeControl)}
             glyphSize={layoutContextValue.glyphSize}
             modelSelectorServerId={modelSelectorServerId}
             codexProviderInjections={codexProviderInjections}
@@ -1254,6 +1488,7 @@ export const AgentControls = memo(function AgentControls({
   isPaneFocused,
   onDropdownClose,
   isCompactLayout,
+  hideDesktopModeControl = false,
 }: AgentControlsProps) {
   const { t } = useTranslation();
   const { updatePreferences } = useFormPreferences();
@@ -1277,76 +1512,28 @@ export const AgentControls = memo(function AgentControls({
     [snapshotEntries, agent?.provider],
   );
   const modeControl = useLiveAgentModeControl(serverId, agentId, snapshotSelectedEntry);
-
-  const models = snapshotSelectedEntry?.models ?? null;
-  const selectedProviderIsLoading = snapshotSelectedEntry?.status === "loading";
-
-  const agentProviderDefinitions = useMemo(
-    () => buildAgentProviderDefinitions(agent?.provider, snapshotEntries),
-    [agent?.provider, snapshotEntries],
-  );
-
-  const agentProviderModels = useMemo(
-    () => buildAgentProviderModels(agent?.provider, models),
-    [agent?.provider, models],
-  );
-  const agentModelSelectorProviders = useMemo(() => {
-    if (snapshotSelectedEntry) {
-      return buildSelectableProviderSelectorProviders([snapshotSelectedEntry]);
-    }
-    return buildProviderSelectorProviders({
-      providerDefinitions: agentProviderDefinitions,
-      modelsByProvider: agentProviderModels,
-    });
-  }, [agentProviderDefinitions, agentProviderModels, snapshotSelectedEntry]);
-
-  const modelSelection = resolveAgentModelSelection({
-    models,
-    runtimeModelId: agent?.runtimeModelId,
-    configuredModelId: agent?.model,
-    explicitThinkingOptionId: agent?.thinkingOptionId,
+  const {
+    agentModelSelectorProviders,
+    modelSelection,
+    modelOptions,
+    thinkingOptions,
+    selectedProviderIsLoading,
+  } = useAgentSelectorModelData({
+    agent,
+    snapshotEntries,
+    snapshotSelectedEntry,
   });
-
-  const modelOptions = useMemo<AgentControlOption[]>(() => {
-    return (models ?? []).map((model) => ({
-      id: model.id,
-      label: model.label,
-    }));
-  }, [models]);
-
-  const thinkingOptions = useMemo<AgentControlOption[]>(() => {
-    return (modelSelection.thinkingOptions ?? []).map((option) => ({
-      id: option.id,
-      label: formatThinkingOptionLabel(option),
-    }));
-  }, [modelSelection.thinkingOptions]);
 
   const agentProvider = agent?.provider;
   const activeModelId = modelSelection.activeModelId;
 
-  const handleSelectModel = useCallback(
-    async (modelId: string) => {
-      if (!client || !agentProvider) {
-        return;
-      }
-      try {
-        await client.setAgentModel(agentId, modelId);
-        await updatePreferences((current) =>
-          mergeProviderPreferences({
-            preferences: current,
-            provider: agentProvider,
-            updates: {
-              model: modelId,
-            },
-          }),
-        );
-      } catch (error) {
-        console.warn("[AgentControls] setAgentModel or persist preference failed", error);
-        toast.error(toErrorMessage(error));
-      }
-    },
-    [agentId, agentProvider, client, toast, updatePreferences],
-  );
+  const handleSelectModel = useAgentModelMutation({
+    agentId,
+    agentProvider,
+    client,
+    toast,
+    updatePreferences,
+  });
 
   const commandCenterModelActions = useMemo(
     () =>
@@ -1382,83 +1569,27 @@ export const AgentControls = memo(function AgentControls({
   });
   const handleEditAgentProfiles = useEditAgentProfilesNavigation(serverId, agentProfiles !== null);
 
-  const handleSelectThinkingOption = useCallback(
-    (thinkingOptionId: string) => {
-      if (!client || !agentProvider) {
-        return;
-      }
-      if (activeModelId) {
-        void updatePreferences((current) =>
-          mergeProviderPreferences({
-            preferences: current,
-            provider: agentProvider,
-            updates: {
-              model: activeModelId,
-              thinkingByModel: {
-                [activeModelId]: thinkingOptionId,
-              },
-            },
-          }),
-        ).catch((error) => {
-          console.warn("[AgentControls] persist thinking preference failed", error);
-        });
-      }
-      void client
-        .setAgentThinkingOption(agentId, thinkingOptionId)
-        .then((notice) => showProviderNoticeToast(toast, notice))
-        .catch((error) => {
-          console.warn("[AgentControls] setAgentThinkingOption failed", error);
-          toast.error(toErrorMessage(error));
-        });
-    },
-    [activeModelId, agentId, agentProvider, client, toast, updatePreferences],
-  );
-
-  const handleSetFeature = useCallback(
-    (featureId: string, value: unknown) => {
-      if (!client || !agentProvider) {
-        return;
-      }
-      void updatePreferences((current) =>
-        mergeProviderPreferences({
-          preferences: current,
-          provider: agentProvider,
-          updates: {
-            featureValues: {
-              [featureId]: value,
-            },
-          },
-        }),
-      ).catch((error) => {
-        console.warn("[AgentControls] persist feature preference failed", error);
-      });
-      void client.setAgentFeature(agentId, featureId, value).catch((error) => {
-        console.warn("[AgentControls] setAgentFeature failed", error);
-        toast.error(toErrorMessage(error));
-      });
-    },
-    [agentId, agentProvider, client, toast, updatePreferences],
-  );
-
-  const handleModelSelectorOpen = useCallback(() => {
-    if (!agentProvider || (snapshotSelectedEntry && snapshotSelectedEntry.status !== "loading")) {
-      return;
-    }
-    void refreshSnapshot([agentProvider]).catch((error) => {
-      console.warn("[智能体控制栏] 刷新提供方模型失败", error);
-      toast.error(toErrorMessage(error));
-    });
-  }, [agentProvider, refreshSnapshot, snapshotSelectedEntry, toast]);
-
-  const handleRetryModelProvider = useCallback(
-    (provider: AgentProvider) => {
-      void refreshSnapshot([provider]).catch((error) => {
-        console.warn("[智能体控制栏] 重试刷新提供方模型失败", error);
-        toast.error(toErrorMessage(error));
-      });
-    },
-    [refreshSnapshot, toast],
-  );
+  const handleSelectThinkingOption = useAgentThinkingMutation({
+    activeModelId,
+    agentId,
+    agentProvider,
+    client,
+    toast,
+    updatePreferences,
+  });
+  const handleSetFeature = useAgentFeatureMutation({
+    agentId,
+    agentProvider,
+    client,
+    toast,
+    updatePreferences,
+  });
+  const { handleModelSelectorOpen, handleRetryModelProvider } = useAgentModelRefreshHandlers({
+    agentProvider,
+    refreshSnapshot,
+    snapshotSelectedEntry,
+    toast,
+  });
 
   if (!agent) {
     return null;
@@ -1489,6 +1620,74 @@ export const AgentControls = memo(function AgentControls({
       modeControl={modeControl}
       modelSelectorServerId={serverId}
       isCompactLayout={isCompactLayout}
+      hideDesktopModeControl={hideDesktopModeControl}
+    />
+  );
+});
+
+export const LiveAgentModeControl = memo(function LiveAgentModeControl({
+  agentId,
+  serverId,
+  isPaneFocused,
+  desktopPlacement = "top-end",
+  onClose,
+}: {
+  agentId: string;
+  serverId: string;
+  isPaneFocused: boolean;
+  desktopPlacement?: "top-start" | "top-end";
+  onClose?: () => void;
+}) {
+  const agent = useSessionStore(
+    useShallow((state) => selectAgentControlsSlice(state, serverId, agentId)),
+  );
+  const { entries: snapshotEntries } = useProvidersSnapshot(serverId, {
+    cwd: agent?.cwd,
+    enabled: isPaneFocused && Boolean(agent),
+  });
+  const snapshotSelectedEntry = useMemo(
+    () => resolveSnapshotSelectedEntry(snapshotEntries, agent?.provider),
+    [snapshotEntries, agent?.provider],
+  );
+  const modeControl = useLiveAgentModeControl(serverId, agentId, snapshotSelectedEntry);
+  if (!modeControl) {
+    return null;
+  }
+  return (
+    <AgentModeControl {...modeControl} desktopPlacement={desktopPlacement} onClose={onClose} />
+  );
+});
+
+export const DraftAgentModeControl = memo(function DraftAgentModeControl({
+  agentControls,
+  desktopPlacement = "top-end",
+  onClose,
+}: {
+  agentControls: DraftAgentControlsProps;
+  desktopPlacement?: "top-start" | "top-end";
+  onClose?: () => void;
+}) {
+  const {
+    selectedProvider,
+    providerDefinitions,
+    modeOptions,
+    selectedMode,
+    onSelectMode,
+    disabled,
+  } = agentControls;
+  if (!selectedProvider || modeOptions.length === 0) {
+    return null;
+  }
+  return (
+    <AgentModeControl
+      provider={selectedProvider}
+      providerDefinitions={providerDefinitions}
+      modeOptions={modeOptions}
+      selectedModeId={selectedMode}
+      onSelectMode={onSelectMode}
+      disabled={disabled}
+      desktopPlacement={desktopPlacement}
+      onClose={onClose}
     />
   );
 });
@@ -1519,6 +1718,7 @@ export function DraftAgentControls({
   disabled = false,
   modelSelectorServerId = null,
   isCompactLayout,
+  hideDesktopModeControl = false,
   codexProviderInjections,
   selectedCodexProviderInjectionId = null,
   onSelectCodexProviderInjection,
@@ -1622,6 +1822,7 @@ export function DraftAgentControls({
       modeControl={modeControl}
       modelSelectorServerId={modelSelectorServerId}
       isCompactLayout={isCompactLayout}
+      hideDesktopModeControl={hideDesktopModeControl}
       codexProviderInjections={codexProviderInjections}
       selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
       onSelectCodexProviderInjection={onSelectCodexProviderInjection}

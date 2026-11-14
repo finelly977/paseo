@@ -1,3 +1,6 @@
+import { readdir, readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
 import { execCommand } from "../../../utils/spawn.js";
 import { createProviderEnvSpec } from "../provider-launch-config.js";
 
@@ -69,4 +72,123 @@ function buildGrokDeleteInvocation(
     command: command[0],
     args: [...command.slice(1, agentCommandIndex), "sessions", "delete", sessionId],
   };
+}
+
+function resolveGrokSessionsDir(env?: Record<string, string>): string {
+  const customHome = env?.GROK_HOME?.trim() || process.env.GROK_HOME?.trim();
+  if (customHome) {
+    return path.join(customHome, "sessions");
+  }
+  return path.join(homedir(), ".grok", "sessions");
+}
+
+function isSafeSessionDirName(sessionId: string): boolean {
+  return (
+    sessionId.length > 0 &&
+    sessionId !== "." &&
+    sessionId !== ".." &&
+    !sessionId.includes("/") &&
+    !sessionId.includes("\\")
+  );
+}
+
+function isSystemReminderOnlyUserMessage(entry: Record<string, unknown>): boolean {
+  if (entry.type !== "user" || !Array.isArray(entry.content)) {
+    return false;
+  }
+  const texts = entry.content
+    .map((part) =>
+      typeof part === "object" &&
+      part !== null &&
+      typeof (part as { text?: unknown }).text === "string"
+        ? (part as { text: string }).text.trim()
+        : "",
+    )
+    .filter((text) => text.length > 0);
+  return texts.length > 0 && texts.every((text) => text.startsWith("<system-reminder>"));
+}
+
+async function isEmptyProbeSessionDirectory(sessionDir: string): Promise<boolean> {
+  try {
+    const summaryRaw = await readFile(path.join(sessionDir, "summary.json"), "utf8");
+    const summary = JSON.parse(summaryRaw) as {
+      session_summary?: unknown;
+      num_chat_messages?: unknown;
+    };
+    if (typeof summary.session_summary === "string" && summary.session_summary.trim().length > 0) {
+      return false;
+    }
+    if (typeof summary.num_chat_messages === "number" && summary.num_chat_messages > 2) {
+      return false;
+    }
+    const historyRaw = await readFile(path.join(sessionDir, "chat_history.jsonl"), "utf8");
+    const lines = historyRaw
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    for (const line of lines) {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      if (entry.type === "system") {
+        continue;
+      }
+      if (isSystemReminderOnlyUserMessage(entry)) {
+        continue;
+      }
+      return false;
+    }
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function findLocalGrokSessionDirs(
+  sessionId: string,
+  env?: Record<string, string>,
+): Promise<string[]> {
+  if (!isSafeSessionDirName(sessionId)) {
+    return [];
+  }
+  const sessionsRoot = resolveGrokSessionsDir(env);
+  let workspaceDirs;
+  try {
+    workspaceDirs = await readdir(sessionsRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+  const matches: string[] = [];
+  for (const entry of workspaceDirs) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(sessionsRoot, entry.name, sessionId);
+    if (await isEmptyProbeSessionDirectory(candidate)) {
+      matches.push(candidate);
+    }
+  }
+  return matches;
+}
+
+export async function isEmptyGrokProbeSession(options: {
+  sessionId: string;
+  env?: Record<string, string>;
+}): Promise<boolean> {
+  const dirs = await findLocalGrokSessionDirs(options.sessionId, options.env);
+  return dirs.length > 0;
+}
+
+export async function removeLocalEmptyGrokProbeSession(options: {
+  sessionId: string;
+  env?: Record<string, string>;
+}): Promise<boolean> {
+  const dirs = await findLocalGrokSessionDirs(options.sessionId, options.env);
+  if (dirs.length === 0) {
+    return false;
+  }
+  await Promise.all(dirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  return true;
 }

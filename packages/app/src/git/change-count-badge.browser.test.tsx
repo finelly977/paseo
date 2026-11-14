@@ -34,7 +34,7 @@ test.each(["Arial", "Segoe UI", "Microsoft YaHei"])(
         const count = Number(text.textContent);
         const bounds = badge.getBoundingClientRect();
         const label = text.getBoundingClientRect();
-        expect(bounds.height).toBe(20);
+        expect(bounds.height).toBe(16);
         if (count < 100) expect(bounds.width).toBe(bounds.height);
         else expect(bounds.width).toBeGreaterThanOrEqual(bounds.height);
         expect(
@@ -43,7 +43,7 @@ test.each(["Arial", "Segoe UI", "Microsoft YaHei"])(
         expect(
           Math.abs(label.y + label.height / 2 - bounds.y - bounds.height / 2),
         ).toBeLessThanOrEqual(0.5);
-        expect(getComputedStyle(text).fontSize).toBe("12px");
+        expect(getComputedStyle(text).fontSize).toBe("10px");
       }
     } finally {
       root.unmount();

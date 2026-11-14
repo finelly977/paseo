@@ -705,6 +705,11 @@ export function ImportSessionSheet({
           ))}
         </View>
       ) : null}
+      {visibleEntries.length > 0 && totalAlreadyImportedCount > 0 ? (
+        <Text style={styles.alreadyImportedHint} testID="import-session-already-imported-hint">
+          {t("importSession.status.alreadyImportedHidden", { count: totalAlreadyImportedCount })}
+        </Text>
+      ) : null}
       {showEmptyState ? <SheetEmptyState title={emptyStateTitle} /> : null}
     </AdaptiveModalSheet>
   );
@@ -843,6 +848,12 @@ const styles = StyleSheet.create((theme) => ({
   statusText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+  },
+  alreadyImportedHint: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    paddingTop: theme.spacing[3],
+    textAlign: "center",
   },
   emptyState: {
     alignItems: "center",

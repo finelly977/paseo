@@ -196,12 +196,23 @@ describe("Codex native fork", () => {
   });
 
   test("handles agent.fork.request RPC through daemon", async () => {
+    const threadNames = new Map<string, string>();
     const appServer = createFakeCodexAppServer({
+      "thread/name/set": (params) => {
+        const record = params as { threadId?: string; name?: string };
+        if (typeof record.threadId === "string" && typeof record.name === "string") {
+          threadNames.set(record.threadId, record.name);
+        }
+        return {};
+      },
       "thread/read": (params) => {
         const record = params as { threadId?: string };
+        const threadId = record.threadId ?? "thread-1";
+        const name = threadNames.get(threadId);
         return {
           thread: {
-            id: record.threadId ?? "thread-1",
+            id: threadId,
+            ...(name !== undefined ? { name } : {}),
             historyMode: "legacy",
             turns: [
               {
@@ -263,6 +274,7 @@ describe("Codex native fork", () => {
       expect(forked.id).not.toBe(source.id);
       expect(forked.title).toBe("原对话 (分叉)");
       expect(forked.persistence?.sessionId).toBe("forked-thread");
+      expect(threadNames.get("forked-thread")).toBe("原对话 (分叉)");
     } finally {
       await client.close();
       await daemon.close();

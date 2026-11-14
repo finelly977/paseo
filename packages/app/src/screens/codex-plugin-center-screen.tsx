@@ -161,7 +161,14 @@ export function CodexPluginCenterScreen() {
       visible={isFocused}
       onClose={close}
       desktopMaxWidth={width * WORKSPACE_OVERLAY_FRACTION}
-      desktopCardStyle={[styles.dialog, { height: height * WORKSPACE_OVERLAY_FRACTION }]}
+      desktopCardStyle={[
+        styles.dialog,
+        {
+          width: width * WORKSPACE_OVERLAY_FRACTION,
+          height: height * WORKSPACE_OVERLAY_FRACTION,
+          maxHeight: height * WORKSPACE_OVERLAY_FRACTION,
+        },
+      ]}
       contentContainerStyle={styles.dialogContent}
       scrollable={false}
       testID="codex-plugins-dialog"
@@ -176,13 +183,15 @@ const styles = StyleSheet.create((theme) => ({
   dialog: { overflow: "hidden" },
   dialogContent: { flex: 1, padding: 0, gap: 0 },
   hostTrigger: {
-    minHeight: 28,
-    maxWidth: { xs: 80, md: 110 },
+    minHeight: 30,
+    maxWidth: { xs: 100, md: 150 },
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
-    paddingHorizontal: theme.spacing[2],
+    gap: theme.spacing[1.5],
+    paddingHorizontal: 10,
     borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface2,
   },
   hostLabel: {
@@ -193,12 +202,14 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base * 0.875,
   },
   providerTrigger: {
-    minHeight: 28,
+    minHeight: 30,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[2],
+    gap: theme.spacing[1.5],
+    paddingHorizontal: 10,
     borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface2,
   },
   empty: {

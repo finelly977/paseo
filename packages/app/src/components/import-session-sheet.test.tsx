@@ -374,6 +374,35 @@ describe("ImportSessionSheet", () => {
     expect(screen.queryByText("No recent sessions to import.")).toBeNull();
   });
 
+  it("shows hidden count hint when visible entries exist alongside already-imported sessions", async () => {
+    const fetchRecentProviderSessions = vi.fn(async () => ({
+      requestId: "recent-provider-sessions",
+      entries: [
+        createProviderSessionEntry({
+          providerId: "claude",
+          providerLabel: "Claude Code",
+          providerHandleId: "session-1",
+          title: "Visible Session",
+        }),
+      ],
+      filteredAlreadyImportedCount: 2,
+    }));
+    const importAgent = vi.fn();
+
+    renderSheet(
+      { fetchRecentProviderSessions, importAgent } as Pick<
+        DaemonClient,
+        "fetchRecentProviderSessions" | "importAgent"
+      >,
+      {
+        snapshot: { supportsSnapshot: true, entries: [createSnapshotEntry("claude")] },
+      },
+    );
+
+    await screen.findByText("Visible Session");
+    await screen.findByText("2 already-imported session(s) are hidden.");
+  });
+
   it("shows a fetch error state when recent provider sessions cannot be loaded", async () => {
     const fetchRecentProviderSessions = vi.fn(async () => {
       throw new Error("recent sessions unavailable");

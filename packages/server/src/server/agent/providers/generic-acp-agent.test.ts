@@ -21,10 +21,16 @@ vi.mock("./acp-agent.js", () => ({
   },
   ACPAgentClient: class ACPAgentClient {
     readonly provider: string;
+    protected readonly runtimeSettings?: { env?: Record<string, string> };
 
     constructor(options: unknown) {
       this.provider = "acp";
       mockState.superConstructorOptions.push(options);
+      if (typeof options === "object" && options !== null && "runtimeSettings" in options) {
+        this.runtimeSettings = (
+          options as { runtimeSettings?: { env?: Record<string, string> } }
+        ).runtimeSettings;
+      }
     }
   },
 }));
@@ -33,6 +39,8 @@ vi.mock("./grok-native-session.js", () => ({
   deleteGrokNativeSession: vi.fn(async (options: unknown) => {
     mockState.deletedGrokSessions.push(options);
   }),
+  isEmptyGrokProbeSession: vi.fn(async () => false),
+  removeLocalEmptyGrokProbeSession: vi.fn(async () => false),
 }));
 
 import { GenericACPAgentClient } from "./generic-acp-agent.js";

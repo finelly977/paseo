@@ -1,8 +1,13 @@
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
   GrokNativeSessionDeleteError,
   deleteGrokNativeSession,
+  isEmptyGrokProbeSession,
+  removeLocalEmptyGrokProbeSession,
   type GrokCommandExecutor,
 } from "./grok-native-session.js";
 
@@ -90,5 +95,58 @@ describe("Grok 原生会话删除", () => {
         cause: commandError,
       }),
     );
+  });
+
+  test("识别并清理本地空 Grok 探测会话，保留真实用户会话", async () => {
+    const grokHome = mkdtempSync(path.join(tmpdir(), "grok-probe-clean-"));
+    const wsDir = path.join(grokHome, "sessions", "E%3A%5Cpaseo");
+    const probeDir = path.join(wsDir, "probe-1");
+    const realDir = path.join(wsDir, "real-1");
+    mkdirSync(probeDir, { recursive: true });
+    mkdirSync(realDir, { recursive: true });
+
+    writeFileSync(
+      path.join(probeDir, "summary.json"),
+      JSON.stringify({ session_summary: "", num_chat_messages: 2 }),
+    );
+    writeFileSync(
+      path.join(probeDir, "chat_history.jsonl"),
+      [
+        JSON.stringify({ type: "system", content: "You are Grok" }),
+        JSON.stringify({
+          type: "user",
+          content: [{ type: "text", text: "<system-reminder>\nskills" }],
+        }),
+      ].join("\n"),
+    );
+
+    writeFileSync(
+      path.join(realDir, "summary.json"),
+      JSON.stringify({ session_summary: "", num_chat_messages: 2 }),
+    );
+    writeFileSync(
+      path.join(realDir, "chat_history.jsonl"),
+      [
+        JSON.stringify({ type: "system", content: "You are Grok" }),
+        JSON.stringify({ type: "user", content: [{ type: "text", text: "帮我检查代码" }] }),
+      ].join("\n"),
+    );
+
+    await expect(
+      isEmptyGrokProbeSession({ sessionId: "probe-1", env: { GROK_HOME: grokHome } }),
+    ).resolves.toBe(true);
+    await expect(
+      isEmptyGrokProbeSession({ sessionId: "real-1", env: { GROK_HOME: grokHome } }),
+    ).resolves.toBe(false);
+
+    await expect(
+      removeLocalEmptyGrokProbeSession({ sessionId: "real-1", env: { GROK_HOME: grokHome } }),
+    ).resolves.toBe(false);
+    expect(existsSync(realDir)).toBe(true);
+
+    await expect(
+      removeLocalEmptyGrokProbeSession({ sessionId: "probe-1", env: { GROK_HOME: grokHome } }),
+    ).resolves.toBe(true);
+    expect(existsSync(probeDir)).toBe(false);
   });
 });

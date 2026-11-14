@@ -1707,7 +1707,11 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
       desktopMaxWidth={windowSize.width * WORKSPACE_OVERLAY_FRACTION}
       desktopCardStyle={[
         desktopStyles.dialog,
-        { height: windowSize.height * WORKSPACE_OVERLAY_FRACTION },
+        {
+          width: windowSize.width * WORKSPACE_OVERLAY_FRACTION,
+          height: windowSize.height * WORKSPACE_OVERLAY_FRACTION,
+          maxHeight: windowSize.height * WORKSPACE_OVERLAY_FRACTION,
+        },
       ]}
       contentContainerStyle={desktopStyles.dialogContent}
       scrollable={false}
@@ -1778,7 +1782,7 @@ const styles = StyleSheet.create((theme) => ({
     padding: theme.spacing[4],
     paddingTop: theme.spacing[6],
     width: "100%",
-    maxWidth: 720,
+    maxWidth: 880,
     alignSelf: "center",
   },
   aboutValue: {

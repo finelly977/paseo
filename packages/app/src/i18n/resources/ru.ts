@@ -391,6 +391,7 @@ export const ru: TranslationResources = {
       failedAll: "Не удалось загрузить последние сеансы.",
       failedProviders: "Не удалось загрузить сеансы для{{providers}}.",
       failedImport: "Не удалось импортировать выбранный сеанс.",
+      alreadyImportedHidden: "Скрыто уже импортированных сеансов: {{count}}.",
     },
     actions: {
       refresh: "Обновить сеансы",
@@ -619,6 +620,7 @@ export const ru: TranslationResources = {
         splitDown: "Разделить панель вниз",
         terminalProfilesMenu: "Terminal profiles",
         editTerminalProfiles: "Edit profiles…",
+        reopenClosedSessions: "Повторно открыть закрытые сеансы",
         pinTarget: "Закрепить",
         unpinTarget: "Открепить",
       },
