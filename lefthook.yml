@@ -7,10 +7,13 @@ pre-commit:
     - name: format
       env:
         MSYSTEM: ""
-      glob: "*.{css,js,json,jsonc,jsx,md,ts,tsx,yaml,yml}"
+      glob: "*.{css,js,json,jsonc,jsx,md,mjs,ts,tsx,yaml,yml}"
       exclude:
         - "package-lock.json"
         - "**/package-lock.json"
+        - "**/*.gen.js"
+        - "**/*.gen.ts"
+        - "**/*.gen.tsx"
       run: "PATH=/d/node.js:$PATH npm.cmd run format:check:files -- {staged_files}"
     - name: lint
       env:

@@ -12,8 +12,34 @@ const require = createRequire(import.meta.url);
 const pdfEntry = require.resolve("pdfjs-dist/build/pdf.mjs");
 const pdfWorkerEntry = require.resolve("pdfjs-dist/build/pdf.worker.min.mjs");
 
+// Metro 的 Babel 解析器不支持非字面量动态 import(this.workerSrc)，会在 expo export 阶段直接报错。
+// 运行时 Worker 通过离线 Blob URL（GlobalWorkerOptions.workerSrc）启动；若环境不支持 Worker 且未注入
+// globalThis.pdfjsWorker，则在伪 Worker 分支显式抛错，避免保留动态 import() 语法节点。
+const fakeWorkerDynamicImportPattern =
+  /const\s+worker\s*=\s*await\s+import\(\s*\/\*webpackIgnore:\s*true\*\/\s*this\.workerSrc\s*\)\s*;\s*return\s+worker\.WorkerMessageHandler\s*;/;
+
+const stripDynamicWorkerImportPlugin = {
+  name: "strip-pdfjs-dynamic-worker-import",
+  setup(build) {
+    build.onLoad({ filter: /[/\\]pdfjs-dist[/\\]build[/\\]pdf\.mjs$/ }, async (args) => {
+      const source = await fs.readFile(args.path, "utf8");
+      if (!fakeWorkerDynamicImportPattern.test(source)) {
+        throw new Error(
+          `未能匹配 pdf.mjs 中的伪 Worker 动态 import 语句，请检查 pdfjs-dist 版本：${args.path}`,
+        );
+      }
+      const patched = source.replace(
+        fakeWorkerDynamicImportPattern,
+        'throw new Error("PDF Web Worker 启动失败，且当前环境不支持动态导入 Worker 脚本。");',
+      );
+      return { contents: patched, loader: "js" };
+    });
+  },
+};
+
 const pdfBundleResult = await esbuild.build({
   entryPoints: [pdfEntry],
+  plugins: [stripDynamicWorkerImportPlugin],
   bundle: true,
   write: false,
   format: "cjs",
