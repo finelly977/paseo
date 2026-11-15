@@ -1,4 +1,3 @@
-import { isMaxEffort } from "./max-effort";
 import type { RenderComposerControls } from "./toolbar-slots";
 import { DesktopModelMenuContent, DesktopThinkingMenuContent } from "./desktop-model-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -825,13 +824,9 @@ function ControlledAgentControls({
   );
 
   if (!hasAnyControl && !renderControls) return null;
-  const maxEffort = isMaxEffort(formattedThinkingOptions, selectedThinkingOptionId);
   const sheetModeControl = renderControls ? null : modeControl;
-  const controls = (
-    <View
-      style={[styles.container, renderControls && styles.slottedControls]}
-      onLayout={handleLayout}
-    >
+  return (
+    <ComposerControlLayoutProvider value={layoutContextValue}>
       {!isCompact ? (
         <DesktopAgentControlsContent
           isPaneFocused={isPaneFocused}
@@ -860,7 +855,9 @@ function ControlledAgentControls({
           handleProviderSelect={handleProviderSelect}
           handleThinkingSelect={handleThinkingSelect}
           handleDesktopModelSelect={handleDesktopModelSelect}
-          modeControl={sheetModeControl}
+          modeControl={modeControl}
+          renderControls={renderControls}
+          onLayout={handleLayout}
           glyphSize={layoutContextValue.glyphSize}
           modelSelectorServerId={modelSelectorServerId}
           codexProviderInjections={codexProviderInjections}
@@ -869,55 +866,54 @@ function ControlledAgentControls({
           canSelectCodexProviderInjection={canSelectCodexProviderInjection}
         />
       ) : (
-        <SheetAgentControlsContent
-          providerLocked={providerLocked}
-          provider={provider}
-          selectedModelId={selectedModelId}
-          selectedThinkingOptionId={selectedThinkingOptionId}
-          features={features}
-          onSetFeature={onSetFeature}
+        <ComposerControlLayout
+          renderControls={renderControls}
+          modeControl={modeControl}
           onDropdownClose={onDropdownClose}
-          onModelSelectorOpen={onModelSelectorOpen}
-          onRetryModelProvider={onRetryModelProvider}
-          isRetryingModelProvider={isRetryingModelProvider}
-          disabled={disabled}
-          isModelLoading={isModelLoading}
-          canSelectModel={canSelectModel}
-          canSelectThinking={canSelectThinking}
-          modelSelectorProviders={effectiveModelSelectorProviders}
-          modelDisabled={modelDisabled}
-          comboboxThinkingOptions={comboboxThinkingOptions}
-          openSelector={openSelector}
-          displayThinking={displayThinking}
-          activeSheet={activeSheet}
-          handleOpenSheet={handleOpenSheet}
-          handleCloseSheet={handleCloseSheet}
-          handleSheetModelSelect={handleSheetModelSelect}
-          handleSelectThinkingAndClose={handleSelectThinkingAndClose}
-          handleOpenChange={handleSheetOpenChange}
-          renderThinkingOption={renderThinkingOption}
-          modeControl={sheetModeControl}
-          glyphSize={layoutContextValue.glyphSize}
-          modelSelectorServerId={modelSelectorServerId}
-          codexProviderInjections={codexProviderInjections}
-          selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
-          onSelectCodexProviderInjection={onSelectCodexProviderInjection}
-          canSelectCodexProviderInjection={canSelectCodexProviderInjection}
-        />
+          isCompact
+        >
+          <View
+            style={[styles.container, renderControls && styles.slottedControls]}
+            onLayout={handleLayout}
+          >
+            <SheetAgentControlsContent
+              providerLocked={providerLocked}
+              provider={provider}
+              selectedModelId={selectedModelId}
+              selectedThinkingOptionId={selectedThinkingOptionId}
+              features={features}
+              onSetFeature={onSetFeature}
+              onDropdownClose={onDropdownClose}
+              onModelSelectorOpen={onModelSelectorOpen}
+              onRetryModelProvider={onRetryModelProvider}
+              isRetryingModelProvider={isRetryingModelProvider}
+              disabled={disabled}
+              isModelLoading={isModelLoading}
+              canSelectModel={canSelectModel}
+              canSelectThinking={canSelectThinking}
+              modelSelectorProviders={effectiveModelSelectorProviders}
+              modelDisabled={modelDisabled}
+              comboboxThinkingOptions={comboboxThinkingOptions}
+              openSelector={openSelector}
+              displayThinking={displayThinking}
+              activeSheet={activeSheet}
+              handleOpenSheet={handleOpenSheet}
+              handleCloseSheet={handleCloseSheet}
+              handleSheetModelSelect={handleSheetModelSelect}
+              handleSelectThinkingAndClose={handleSelectThinkingAndClose}
+              handleOpenChange={handleSheetOpenChange}
+              renderThinkingOption={renderThinkingOption}
+              modeControl={sheetModeControl}
+              glyphSize={layoutContextValue.glyphSize}
+              modelSelectorServerId={modelSelectorServerId}
+              codexProviderInjections={codexProviderInjections}
+              selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+              onSelectCodexProviderInjection={onSelectCodexProviderInjection}
+              canSelectCodexProviderInjection={canSelectCodexProviderInjection}
+            />
+          </View>
+        </ComposerControlLayout>
       )}
-    </View>
-  );
-  return (
-    <ComposerControlLayoutProvider value={layoutContextValue}>
-      <ComposerControlLayout
-        renderControls={renderControls}
-        modeControl={modeControl}
-        onDropdownClose={onDropdownClose}
-        isCompact={isCompact}
-        maxEffort={maxEffort}
-      >
-        {controls}
-      </ComposerControlLayout>
     </ComposerControlLayoutProvider>
   );
 }
@@ -928,28 +924,31 @@ function ComposerControlLayout({
   modeControl,
   onDropdownClose,
   isCompact,
-  maxEffort,
+  thinking,
 }: {
   renderControls: RenderComposerControls | undefined;
   children: ReactElement;
   modeControl: AgentModeControlValue | null | undefined;
   onDropdownClose: (() => void) | undefined;
   isCompact: boolean;
-  maxEffort: boolean;
+  thinking?: ReactElement | null;
 }) {
   const permission = modeControl ? (
     <AgentModeControl {...modeControl} onClose={onDropdownClose} />
   ) : null;
-  if (renderControls) return renderControls({ permission, models: children, maxEffort });
+  if (renderControls) return renderControls({ permission, thinking, models: children });
   return (
     <View style={styles.container}>
-      {children}
       {!isCompact ? permission : null}
+      {thinking}
+      {children}
     </View>
   );
 }
 
 export interface DesktopAgentControlsContentProps {
+  renderControls?: RenderComposerControls;
+  onLayout?: (event: LayoutChangeEvent) => void;
   isPaneFocused: boolean;
   providerLocked: boolean;
   provider: string;
@@ -985,12 +984,12 @@ export interface DesktopAgentControlsContentProps {
   canSelectCodexProviderInjection: boolean;
 }
 
+// 浮层状态放在输入框外层，再把按钮分配到两侧，不能随输入框内部更新重挂。
 function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
   const { onDropdownClose, onModelSelectorOpen } = props;
   const { width } = useWindowDimensions();
   const [openMenu, setOpenMenu] = useState<"model" | "thinking" | null>(null);
-  const maxEffort = isMaxEffort(props.thinkingOptions, props.selectedThinkingOptionId);
   const modelAccessibilityState = useMemo(() => ({ expanded: openMenu === "model" }), [openMenu]);
   const thinkingAccessibilityState = useMemo(
     () => ({ expanded: openMenu === "thinking" }),
@@ -1029,13 +1028,6 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     ],
     [props.disabled],
   );
-  const thinkingChipStyle = useCallback(
-    (state: { hovered: boolean; pressed: boolean; open: boolean }) => [
-      chipStyle(state),
-      maxEffort && styles.maxEffortChip,
-    ],
-    [chipStyle, maxEffort],
-  );
   const hasInjection =
     props.canSelectCodexProviderInjection &&
     props.codexProviderInjections &&
@@ -1066,9 +1058,9 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
         ))}
       </>
     ) : null;
-  return (
-    <>
-      {props.canSelectThinking ? (
+  const thinking = useMemo(
+    () =>
+      props.canSelectThinking ? (
         <DropdownMenu
           compact
           open={props.isPaneFocused && openMenu === "thinking"}
@@ -1081,17 +1073,10 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             accessibilityLabel={`思考强度：${props.displayThinking}`}
             accessibilityState={thinkingAccessibilityState}
             testID="agent-thinking-selector"
-            style={thinkingChipStyle}
+            style={chipStyle}
           >
-            <AgentControlIconGlyph
-              icon={Sparkles}
-              size={13}
-              tone={maxEffort ? "purple" : "muted"}
-            />
-            <Text
-              numberOfLines={1}
-              style={[styles.roleThinkingText, maxEffort && styles.maxEffortText]}
-            >
+            <AgentControlIconGlyph icon={Sparkles} size={13} tone="muted" />
+            <Text numberOfLines={1} style={styles.roleThinkingText}>
               {props.displayThinking}
             </Text>
           </DropdownMenuTrigger>
@@ -1107,41 +1092,56 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             <DesktopThinkingMenuContent controls={props} />
           </DropdownMenuContent>
         </DropdownMenu>
-      ) : null}
-      <DropdownMenu
-        compact
-        open={props.isPaneFocused && openMenu === "model"}
-        onOpenChange={handleMenuOpenChange}
-        selectionCloseScope="current"
+      ) : null,
+    [props, openMenu, thinkingAccessibilityState, chipStyle, handleThinkingOpenChange],
+  );
+  return (
+    <ComposerControlLayout
+      renderControls={props.renderControls}
+      modeControl={props.modeControl}
+      onDropdownClose={props.onDropdownClose}
+      isCompact={false}
+      thinking={thinking}
+    >
+      <View
+        style={[styles.container, props.renderControls && styles.slottedControls]}
+        onLayout={props.onLayout}
       >
-        <DropdownMenuTrigger
-          disabled={props.disabled}
-          accessibilityRole="button"
-          accessibilityLabel={`${t("agentControls.model.title")}：${label}`}
-          accessibilityState={modelAccessibilityState}
-          testID="agent-role-selector"
-          style={chipStyle}
+        <DropdownMenu
+          compact
+          open={props.isPaneFocused && openMenu === "model"}
+          onOpenChange={handleMenuOpenChange}
+          selectionCloseScope="current"
         >
-          <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
-          <FastModeIndicator features={props.features} />
-          <Text numberOfLines={1} style={styles.roleChipText}>
-            {label}
-          </Text>
-          <AgentControlIconGlyph icon={ChevronDown} size={12} />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side="top"
-          align="start"
-          offset={8}
-          modal={false}
-          width={Math.min(props.providerLocked ? 300 : 360, width - 32)}
-          style={styles.promptMenu}
-          testID="agent-role-menu"
-        >
-          <DesktopModelMenuContent controls={props} advanced={advanced} />
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
+          <DropdownMenuTrigger
+            disabled={props.disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`${t("agentControls.model.title")}：${label}`}
+            accessibilityState={modelAccessibilityState}
+            testID="agent-role-selector"
+            style={chipStyle}
+          >
+            <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
+            <FastModeIndicator features={props.features} />
+            <Text numberOfLines={1} style={styles.roleChipText}>
+              {label}
+            </Text>
+            <AgentControlIconGlyph icon={ChevronDown} size={12} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="top"
+            align="start"
+            offset={8}
+            modal={false}
+            width={Math.min(props.providerLocked ? 300 : 360, width - 32)}
+            style={styles.promptMenu}
+            testID="agent-role-menu"
+          >
+            <DesktopModelMenuContent controls={props} advanced={advanced} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </View>
+    </ComposerControlLayout>
   );
 }
 
@@ -1791,7 +1791,7 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[1.5],
+    paddingHorizontal: theme.spacing[1],
     borderRadius: theme.borderRadius.lg,
   },
   roleChipActive: { backgroundColor: theme.colors.surface3 },
@@ -1800,13 +1800,6 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
-  },
-  maxEffortChip: { backgroundColor: theme.colors.palette.purple[300] + "22" },
-  maxEffortText: {
-    color:
-      theme.colorScheme === "dark"
-        ? theme.colors.palette.purple[300]
-        : theme.colors.palette.purple[600],
   },
   promptMenu: {
     backgroundColor: theme.colors.surface2,

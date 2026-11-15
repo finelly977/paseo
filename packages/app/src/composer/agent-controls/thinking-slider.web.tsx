@@ -1,14 +1,23 @@
-import { useCallback, useMemo, useState, type ChangeEvent, type CSSProperties } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FocusEvent,
+  type CSSProperties,
+} from "react";
 import { withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
 import { MOTION_DURATION, MOTION_EASING_CSS } from "@/styles/motion";
 import type { ThinkingSliderProps } from "./thinking-slider.types";
 import { useReducedMotion } from "react-native-reanimated";
+import { ThinkingSliderParticles } from "./thinking-slider-particles.web";
 
 interface SliderColors {
   track: string;
   fill: string;
-  thumb: string;
+  blue: string;
   dot: string;
   focus: string;
   spark: string;
@@ -18,7 +27,7 @@ function sliderColors(theme: Theme): SliderColors {
   return {
     track: theme.colors.surface1,
     fill: theme.colors.surface3,
-    thumb: theme.colors.foreground,
+    blue: theme.colors.palette.blue[600],
     dot: theme.colors.foregroundMuted,
     focus: theme.colors.accent,
     spark:
@@ -38,6 +47,7 @@ const rangeStyle: CSSProperties = {
   opacity: 0,
   cursor: "pointer",
   touchAction: "none",
+  outline: "none",
 };
 const pointAt = (index: number, count: number) =>
   `calc(11px + (100% - 22px) * ${index / Math.max(1, count - 1)})`;
@@ -50,25 +60,41 @@ function Slider({
   onSelect,
   track,
   fill,
-  thumb,
+  blue,
   dot,
   focus,
   spark,
 }: ThinkingSliderProps & SliderColors) {
   const [focused, setFocused] = useState(false);
+  const pointerFocus = useRef(false);
   const reducedMotion = useReducedMotion();
   const change = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => onSelect(event.currentTarget.valueAsNumber),
     [onSelect],
   );
   const index = Math.max(0, selectedIndex);
-  const handleFocus = useCallback(() => setFocused(true), []);
-  const handleBlur = useCallback(() => setFocused(false), []);
+  const handleFocus = useCallback(
+    (event: FocusEvent<HTMLInputElement>) =>
+      setFocused(!pointerFocus.current && event.currentTarget.matches(":focus-visible")),
+    [],
+  );
+  const handleBlur = useCallback(() => {
+    pointerFocus.current = false;
+    setFocused(false);
+  }, []);
+  const handlePointerDown = useCallback(() => {
+    pointerFocus.current = true;
+    setFocused(false);
+  }, []);
+  const handleKeyDown = useCallback(() => {
+    pointerFocus.current = false;
+    setFocused(true);
+  }, []);
   const surfaceStyle = useMemo<CSSProperties>(
     () => ({
       ...trackStyle,
       background: track,
-      outline: focused ? `2px solid ${focus}` : undefined,
+      outline: focused ? `2px solid ${focus}` : "none",
       outlineOffset: 3,
       opacity: disabled ? 0.5 : 1,
     }),
@@ -80,9 +106,9 @@ function Slider({
       inset: 0,
       width: pointAt(index, options.length),
       borderRadius: 11,
-      background: maxed ? `${spark}59` : fill,
+      background: maxed ? `linear-gradient(100deg, ${blue}, ${spark} 55%, ${blue})` : fill,
     }),
-    [index, options.length, maxed, spark, fill],
+    [index, options.length, maxed, spark, fill, blue],
   );
   const points = useMemo(
     () =>
@@ -109,19 +135,20 @@ function Slider({
       height: 28,
       marginLeft: -7,
       borderRadius: 7,
-      background: maxed ? spark : thumb,
+      background: spark,
       transition: reducedMotion
         ? "none"
         : `left ${MOTION_DURATION.base}ms ${MOTION_EASING_CSS.standard}`,
     }),
-    [index, options.length, maxed, spark, thumb, reducedMotion],
+    [index, options.length, spark, reducedMotion],
   );
   return (
     <div style={surfaceStyle}>
       <div aria-hidden style={fillStyle} />
-      {options.map((option, i) => (
-        <span key={option.id} aria-hidden style={points[i]} />
-      ))}
+      {maxed ? <ThinkingSliderParticles /> : null}
+      {!maxed
+        ? options.map((option, i) => <span key={option.id} aria-hidden style={points[i]} />)
+        : null}
       <span aria-hidden style={thumbStyle} />
       <input
         type="range"
@@ -135,6 +162,8 @@ function Slider({
         onChange={change}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        onPointerDown={handlePointerDown}
+        onKeyDown={handleKeyDown}
         style={rangeStyle}
       />
     </div>

@@ -36,7 +36,7 @@ describe("composer control layout", () => {
     expect(resolveComposerControlPresentation("tight")).toEqual({
       showCarets: false,
       showThinkingLabel: false,
-      showModeLabel: false,
+      showModeLabel: true,
       showInjectionLabel: false,
       aggregateFeatures: true,
     });

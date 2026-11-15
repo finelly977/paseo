@@ -76,12 +76,14 @@ export function AgentControlIconGlyph({
   tone?: AgentControlIconTone;
 }) {
   return (
-    <ThemedAgentControlIcon
-      icon={icon}
-      size={size}
-      tone={tone}
-      uniProps={agentControlIconColorMapping}
-    />
+    <View style={styles.glyph(size)} pointerEvents="none">
+      <ThemedAgentControlIcon
+        icon={icon}
+        size={size}
+        tone={tone}
+        uniProps={agentControlIconColorMapping}
+      />
+    </View>
   );
 }
 
@@ -176,6 +178,13 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
 );
 
 const styles = StyleSheet.create((theme) => ({
+  glyph: (size: number) => ({
+    width: size,
+    height: size,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  }),
   toolbarControl: {
     height: 28,
     minWidth: 0,
@@ -183,8 +192,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[2],
-    borderRadius: theme.borderRadius["2xl"],
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.lg,
     backgroundColor: "transparent",
   },
   toolbarIconOnly: {

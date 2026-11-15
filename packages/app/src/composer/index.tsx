@@ -2243,7 +2243,7 @@ export function Composer({
                 focusInput,
                 isCompactLayout,
                 isPaneFocused,
-                renderControls: ({ permission, models, maxEffort }) => (
+                renderControls: ({ permission, thinking, models }) => (
                   <StableMessageInput
                     ref={messageInputRef}
                     value={userInput}
@@ -2269,9 +2269,13 @@ export function Composer({
                     autoFocusKey={`${serverId}:${agentId}:${autoFocusKey ?? ""}`}
                     disabled={isSubmitLoading}
                     isPaneFocused={isPaneFocused}
-                    leftContent={permission}
+                    leftContent={
+                      <>
+                        {permission}
+                        {thinking}
+                      </>
+                    }
                     modelContent={models}
-                    maxEffort={maxEffort}
                     beforeVoiceContent={beforeVoiceContent}
                     rightContent={rightContent}
                     voiceServerId={serverId}

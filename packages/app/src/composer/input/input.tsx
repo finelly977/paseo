@@ -1,5 +1,4 @@
 import { resolveComposerSubmitVisibility } from "./state";
-import { EffortEffect } from "./effort-effect";
 import {
   View,
   Text,
@@ -131,7 +130,6 @@ export interface MessageInputProps {
   /** Content to render on the left side of the composer toolbar (e.g., AgentControls) */
   leftContent?: React.ReactNode;
   modelContent?: React.ReactNode;
-  maxEffort?: boolean;
   /** Content to render on the right side before the voice button (e.g., context window meter) */
   beforeVoiceContent?: React.ReactNode;
   /** Content to render on the right side after voice button (e.g., realtime button, cancel button) */
@@ -1119,7 +1117,6 @@ interface ResolvedMessageInputProps {
   isPaneFocused: boolean;
   leftContent: React.ReactNode;
   modelContent: React.ReactNode;
-  maxEffort: boolean;
   beforeVoiceContent: React.ReactNode;
   rightContent: React.ReactNode;
   voiceServerId: string | undefined;
@@ -1163,7 +1160,6 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     isPaneFocused: props.isPaneFocused ?? true,
     leftContent: props.leftContent,
     modelContent: props.modelContent,
-    maxEffort: props.maxEffort ?? false,
     beforeVoiceContent: props.beforeVoiceContent,
     rightContent: props.rightContent,
     voiceServerId: props.voiceServerId,
@@ -1215,7 +1211,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       isPaneFocused,
       leftContent,
       modelContent,
-      maxEffort,
       beforeVoiceContent,
       rightContent,
       voiceServerId,
@@ -1820,7 +1815,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           style={inputWrapperCombinedStyle}
           pointerEvents={surfacePresentation.input.pointerEvents}
         >
-          <EffortEffect active={maxEffort} focused={isPaneFocused} value={value} />
           {attachmentSlot}
           {/* Text input */}
           <View style={styles.textInputScrollWrapper}>
@@ -2002,7 +1996,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   leftButtonGroup: {
     minWidth: 0,
-    flexShrink: 1,
+    flexShrink: 0,
     flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",

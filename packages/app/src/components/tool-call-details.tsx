@@ -27,6 +27,8 @@ import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
 import { isWeb } from "@/constants/platform";
+import { MarkdownRenderer } from "@/components/markdown/renderer";
+import { resolveReasoningMarkdown } from "@/tool-calls/reasoning";
 
 const ScrollView = isWeb ? RNScrollView : GHScrollView;
 
@@ -494,7 +496,15 @@ function FetchDetailSection({ url, result, ds }: FetchDetailProps) {
   );
 }
 
-function ScrollablePlainTextSection({ text, ds }: { text: string; ds: DetailStyles }) {
+function ScrollablePlainTextSection({
+  text,
+  ds,
+  markdown = false,
+}: {
+  text: string;
+  ds: DetailStyles;
+  markdown?: boolean;
+}) {
   return (
     <View style={styles.section}>
       <ScrollView
@@ -503,9 +513,13 @@ function ScrollablePlainTextSection({ text, ds }: { text: string; ds: DetailStyl
         nestedScrollEnabled
         showsVerticalScrollIndicator
       >
-        <Text selectable style={styles.plainText}>
-          {text}
-        </Text>
+        {markdown ? (
+          <MarkdownRenderer text={text} conversation enableHtmlish={false} />
+        ) : (
+          <Text selectable style={styles.plainText}>
+            {text}
+          </Text>
+        )}
       </ScrollView>
     </View>
   );
@@ -804,7 +818,11 @@ function ToolCallDetailsContentInner({
   const ds = useDetailStyles(detail, resolvedMaxHeight, fillAvailableHeight, appearance);
   const diffLines = useDiffLines(detail);
 
-  const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
+  const reasoning = resolveReasoningMarkdown(toolName, detail);
+  const sections: ReactNode[] =
+    reasoning !== null
+      ? [<ScrollablePlainTextSection key="reasoning" text={reasoning} ds={ds} markdown />]
+      : buildDetailSections(toolName, detail, diffLines, ds, t);
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);

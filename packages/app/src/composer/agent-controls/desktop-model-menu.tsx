@@ -30,6 +30,7 @@ import { AgentControlIconGlyph } from "./control";
 import type { DesktopAgentControlsContentProps } from "./index";
 import { resolveDesktopModelMenuHeight } from "./layout";
 import { ThinkingSlider } from "./thinking-slider";
+import { isMaxEffort } from "./max-effort";
 
 type Controls = DesktopAgentControlsContentProps;
 const NO_THINKING_OPTIONS: NonNullable<Controls["thinkingOptions"]> = [];
@@ -215,7 +216,7 @@ export function DesktopThinkingMenuContent({ controls }: { controls: Controls })
         options={options}
         selectedIndex={selectedIndex}
         disabled={controls.disabled}
-        maxed={selectedIndex === options.length - 1 && options.length > 1}
+        maxed={isMaxEffort(options, controls.selectedThinkingOptionId)}
         onSelect={select}
       />
     </View>

@@ -1574,12 +1574,6 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
     overflow: "hidden",
   },
-  commandPanelTitle: {
-    paddingHorizontal: theme.spacing[3],
-    paddingTop: theme.spacing[2],
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
-  },
   commandPanelStatus: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -2669,6 +2663,7 @@ interface ExpandableBadgeProps {
   disableOuterSpacing?: boolean;
   borderlessWhenExpanded?: boolean;
   trailingChevron?: boolean;
+  hideChevron?: boolean;
   testID?: string;
 }
 
@@ -3002,6 +2997,16 @@ function buildShimmerTextStyle(input: {
   });
 }
 
+function shouldShowLeadingChevron(
+  hidden: boolean,
+  trailing: boolean,
+  interactive: boolean,
+  hovered: boolean,
+  expanded: boolean,
+) {
+  return !hidden && !trailing && interactive && (hovered || expanded);
+}
+
 export const ExpandableBadge = memo(function ExpandableBadge({
   label,
   style,
@@ -3018,6 +3023,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   disableOuterSpacing,
   borderlessWhenExpanded = false,
   trailingChevron = false,
+  hideChevron = false,
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
@@ -3248,7 +3254,13 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
     expanded: isExpanded,
-    showChevron: !trailingChevron && isInteractive && (isHovered || isExpanded),
+    showChevron: shouldShowLeadingChevron(
+      hideChevron,
+      trailingChevron,
+      isInteractive,
+      isHovered,
+      isExpanded,
+    ),
     chevronStyle: expandableBadgeStylesheet.chevron,
     iconNode,
   });
@@ -3302,7 +3314,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
             onOpenFileHoverIn={handleOpenFileHoverIn}
             onOpenFileHoverOut={handleOpenFileHoverOut}
           />
-          {trailingChevron && isInteractive ? (
+          {!hideChevron && trailingChevron && isInteractive ? (
             <DisclosureChevron expanded={isExpanded} style={expandableBadgeStylesheet.chevron}>
               <ThemedChevronRightIcon size={12} uniProps={foregroundMutedColorMapping} />
             </DisclosureChevron>
@@ -3340,6 +3352,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
   if (previous.borderlessWhenExpanded !== next.borderlessWhenExpanded) return false;
   if (previous.trailingChevron !== next.trailingChevron) return false;
+  if (previous.hideChevron !== next.hideChevron) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
@@ -3524,9 +3537,6 @@ export const ToolCall = memo(function ToolCall({
       return (
         <View style={expandableBadgeStylesheet.commandDetails}>
           <View style={expandableBadgeStylesheet.commandPanel} testID="command-output-panel">
-            <Text style={expandableBadgeStylesheet.commandPanelTitle}>
-              {presentation.displayName}
-            </Text>
             <ToolCallDetailsContent
               appearance="plain"
               toolName={toolName}
@@ -3562,7 +3572,6 @@ export const ToolCall = memo(function ToolCall({
     maxDetailHeight,
     isCommand,
     renderedStatus,
-    presentation.displayName,
   ]);
 
   if (presentation.isPlan && effectiveDetail?.type === "plan") {
@@ -3580,6 +3589,7 @@ export const ToolCall = memo(function ToolCall({
       testID="tool-call-badge"
       borderlessWhenExpanded
       trailingChevron
+      hideChevron={isCommand}
       label={
         isCommand ? (presentation.summary ?? presentation.displayName) : presentation.displayName
       }

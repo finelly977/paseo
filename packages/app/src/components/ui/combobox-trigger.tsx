@@ -113,6 +113,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   chevronContainer: {
     flexShrink: 0,
-    transform: [{ translateY: 1 }],
+    width: ICON_SIZE.sm,
+    height: ICON_SIZE.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
 }));
