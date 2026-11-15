@@ -28,16 +28,16 @@ import {
   type ViewStyle,
   type StyleProp,
 } from "react-native";
-import { Keyframe, runOnJS } from "react-native-reanimated";
+import { runOnJS } from "react-native-reanimated";
 import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { Check, CheckCircle, ChevronRight } from "lucide-react-native";
 import { FloatingScrollView, FloatingSurface } from "@/components/ui/floating";
+import { dropdownMenuEntering, dropdownMenuExiting } from "@/components/ui/dropdown-menu-motion";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isWeb } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useDismissKeyboardOnOpen } from "@/components/ui/keyboard-dismiss";
 import { getOverlayRoot, OVERLAY_Z, registerActiveWebOverlay } from "@/lib/overlay-root";
-import { MOTION_DURATION } from "@/styles/motion";
 import { activateDropdownMenuTrigger } from "@/components/ui/dropdown-menu-trigger";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
 import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
@@ -247,11 +247,11 @@ function renderDropdownSurface(input: {
       testID={testID}
       style={surfaceStyle}
       frameStyle={frameStyle}
-      entering={contentEntering}
+      entering={dropdownMenuEntering}
       exiting={
         isWeb
           ? undefined
-          : contentExiting.withCallback((finished) => {
+          : dropdownMenuExiting.withCallback((finished) => {
               "worklet";
               if (finished) {
                 runOnJS(onExited)();
@@ -544,58 +544,6 @@ function getTransformOrigin(placement: Placement, alignment: Alignment): string 
   return `${vertical} ${horizontal}`;
 }
 
-const CONTENT_ENTERING_DURATION_MS = MOTION_DURATION.fast;
-
-const contentEntering = new Keyframe({
-  0: { opacity: 0, transform: [{ scale: 0.97 }] },
-  100: { opacity: 1, transform: [{ scale: 1 }] },
-}).duration(CONTENT_ENTERING_DURATION_MS);
-
-const contentExiting = new Keyframe({
-  0: { opacity: 1, transform: [{ scale: 1 }] },
-  100: { opacity: 0, transform: [{ scale: 0.97 }] },
-}).duration(MOTION_DURATION.instant);
-
-function releaseFixedMenuHeight(surfaceNativeID: string): void {
-  if (!isWeb) return;
-  document.getElementById(surfaceNativeID)?.style.removeProperty("height");
-}
-
-function useReleaseFixedMenuHeight({
-  contentSize,
-  enabled,
-  surfaceNativeID,
-}: {
-  contentSize: Size | null;
-  enabled: boolean;
-  surfaceNativeID: string;
-}): void {
-  useEffect(() => {
-    if (!enabled) return undefined;
-
-    // Reanimated web entering animations leave the measured menu surface with
-    // an inline height snapshot. Once the menu is open, height must return to
-    // content-sized so rows can grow in place (for example service script URLs).
-    const release = () => {
-      releaseFixedMenuHeight(surfaceNativeID);
-      if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(() => releaseFixedMenuHeight(surfaceNativeID));
-      }
-    };
-    const timers: ReturnType<typeof setTimeout>[] = [
-      setTimeout(release, CONTENT_ENTERING_DURATION_MS),
-    ];
-
-    if (contentSize) {
-      timers.push(setTimeout(release, 0));
-    }
-
-    return () => {
-      for (const timer of timers) clearTimeout(timer);
-    };
-  }, [contentSize, enabled, surfaceNativeID]);
-}
-
 interface DropdownOutsidePressOptions {
   modal: boolean;
   open: boolean;
@@ -710,12 +658,6 @@ export function DropdownMenuContent({
       flushPendingSelect();
     }
   }, [flushPendingSelect, modalVisible, open]);
-
-  useReleaseFixedMenuHeight({
-    contentSize,
-    enabled: modalVisible,
-    surfaceNativeID,
-  });
 
   const handleClose = useCallback(() => {
     setOpen(false);

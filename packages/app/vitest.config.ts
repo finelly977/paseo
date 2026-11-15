@@ -31,6 +31,41 @@ export default defineConfig({
       },
       {
         extends: true,
+        define: {
+          __DEV__: true,
+          global: "globalThis",
+          "process.env.EXPO_OS": JSON.stringify("web"),
+          "process.env.JEST_WORKER_ID": "undefined",
+        },
+        optimizeDeps: {
+          entries: [],
+          include: [
+            "react",
+            "react-dom/client",
+            "react-native",
+            "react-native-reanimated",
+            "react-native-worklets",
+            "i18next",
+            "react-i18next",
+          ],
+          esbuildOptions: {
+            jsx: "automatic",
+            resolveExtensions: [".web.ts", ".web.tsx", ".web.js", ".ts", ".tsx", ".js", ".json"],
+          },
+        },
+        resolve: {
+          // 库的预编译入口固定导入原生 .js；源码入口按 .web.* 解析真实网页动画。
+          alias: [
+            {
+              find: /^react-native-reanimated$/,
+              replacement: path.resolve(rootNodeModules, "react-native-reanimated/src/index.ts"),
+            },
+            {
+              find: /^react-native-worklets$/,
+              replacement: path.resolve(rootNodeModules, "react-native-worklets/src/index.ts"),
+            },
+          ],
+        },
         test: {
           name: "browser",
           fileParallelism: false,

@@ -213,6 +213,20 @@ Do not treat `onChange(-1)` as a close by itself. In a stacked
 another pushed sheet. Close React state from `onDismiss`; use `onChange` only to
 track phase.
 
+## 网页下拉菜单：入场清理不能恢复测量占位坐标
+
+下拉菜单先放在 `top/left: -9999` 测量内容，再根据按钮与内容尺寸定位。
+Reanimated 网页自定义 `Keyframe` 在入场结束时保存位置，约五倍动画时长后清理时
+把该快照写回元素。发送准备或工具运行使首次测量变慢时，入场先结束，快照仍在屏幕外；
+后续定位即使正确，也会被延迟清理覆盖。此时菜单仍挂载、逻辑上仍打开且焦点正常，
+没有触发任何关闭事件，单查关闭回调或鼠标离开逻辑无法发现问题。
+
+`dropdown-menu-motion.ts` 在网页使用预置 `FadeIn`，避免自定义动画清理写回位置和尺寸；
+原生保留原有缩放淡入。不要加延时重设坐标、强制重开菜单或清理固定高度的补丁。
+验证时同时观察逻辑开关与真实 DOM 坐标，并覆盖入场结束后才完成定位的顺序。
+`dropdown-menu-motion.browser.test.tsx` 使用真实 Chromium、Reanimated 与浮层组件，
+等待真实动画结束后再定位和改变尺寸，经过清理期限仍须可见且能选择。
+
 ## Recipe for a new anchored panel
 
 Before you write a new one, ask:
