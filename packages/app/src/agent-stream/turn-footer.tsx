@@ -9,7 +9,12 @@ import {
   collectAssistantTurnContentForStreamRenderStrategy,
   type StreamStrategy,
 } from "./strategy";
-import { resolveAssistantTurnForkBoundary, type AssistantTurnForkBoundary } from "./turn-boundary";
+import {
+  resolveAssistantTurnForkBoundary,
+  resolveNativeTurnError,
+  type AssistantTurnForkBoundary,
+} from "./turn-boundary";
+import { Alert } from "@/components/ui/alert";
 import { AssistantTurnFooter, LiveElapsed, type AssistantForkTarget } from "@/components/message";
 import type { TurnFooterHost } from "./layout";
 import { SyncedLoader } from "@/components/synced-loader";
@@ -86,8 +91,20 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   supportsNativeTurn?: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
 }) {
+  const error = useMemo(
+    () => resolveNativeTurnError({ strategy, items, startIndex }),
+    [strategy, items, startIndex],
+  );
   return (
     <TurnFooterRow>
+      {error !== null ? (
+        <Alert
+          variant="error"
+          title="本轮处理未完成"
+          description={error}
+          testID="native-turn-error"
+        />
+      ) : null}
       <CompletedTurnFooter
         strategy={strategy}
         items={items}
@@ -200,6 +217,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   turnFooterRow: {
     marginTop: theme.spacing[2],
+    gap: theme.spacing[2],
   },
   turnFooterSlot: {
     flexDirection: "row",

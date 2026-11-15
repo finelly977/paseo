@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type MutableRefObject } from "react";
 import { View, Text, Pressable, type PressableStateCallbackType } from "react-native";
-import { ChevronRight, Folder, MoreHorizontal } from "lucide-react-native";
+import { ChevronRight, GripVertical, MoreHorizontal } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { GestureType } from "react-native-gesture-handler";
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
@@ -14,17 +14,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useSidebarRowHover } from "@/components/sidebar/use-sidebar-row-hover";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import type { Theme } from "@/styles/theme";
 import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
-import { partitionProjects, type ProjectGroup } from "./model";
+import { partitionProjects, getGroupOrder, type ProjectGroup } from "./model";
 import { useSidebarGroupsStore } from "./store";
 
 const ThemedChevron = withUnistyles(ChevronRight);
-const ThemedFolder = withUnistyles(Folder);
+const ThemedGrip = withUnistyles(GripVertical);
 const ThemedMore = withUnistyles(MoreHorizontal);
 const iconColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const NOOP_DRAG = () => {};
@@ -39,10 +39,39 @@ interface GroupedProjectListProps {
   nestable: boolean;
   parentGestureRef?: MutableRefObject<GestureType | undefined>;
 }
+interface GroupSection {
+  id: string;
+  group: ProjectGroup | null;
+  projects: SidebarProjectEntry[];
+  collapsed: boolean;
+}
+type GroupSortState =
+  | { status: "idle" | "dragging" }
+  | { status: "saving"; order: (string | null)[] }
+  | { status: "error"; order: (string | null)[]; message: string };
+const groupKey = (section: GroupSection) => section.id;
+
 export function GroupedProjectList(props: GroupedProjectListProps) {
   const data = useSidebarGroupsStore((state) => state.data);
-  const sections = useMemo(() => partitionProjects(data, props.projects), [data, props.projects]);
-  const reorder = useCallback(
+  const [sort, setSort] = useState<GroupSortState>({ status: "idle" });
+  const sections = useMemo(() => {
+    const partition = partitionProjects(data, props.projects);
+    const byId = new Map(partition.groups.map((group) => [group.id, group]));
+    const order = sort.status === "saving" ? sort.order : getGroupOrder(data);
+    return order.map((id): GroupSection => {
+      if (id === null)
+        return {
+          id: "ungrouped",
+          group: null,
+          projects: partition.ungrouped,
+          collapsed: data.ungroupedCollapsed,
+        };
+      const group = byId.get(id);
+      if (!group) throw new Error("工作区分组不存在");
+      return { id, group, projects: group.projects, collapsed: group.collapsed };
+    });
+  }, [data, props.projects, sort]);
+  const reorderProjects = useCallback(
     (next: SidebarProjectEntry[]) => {
       const keys = new Set(next.map(projectKey));
       let index = 0;
@@ -52,31 +81,83 @@ export function GroupedProjectList(props: GroupedProjectListProps) {
     },
     [props],
   );
+  const saveOrder = useCallback((order: (string | null)[]) => {
+    setSort({ status: "saving", order });
+    void useSidebarGroupsStore
+      .getState()
+      .setGroupOrder(order)
+      .then(() => setSort({ status: "idle" }))
+      .catch((error: unknown) =>
+        setSort({
+          status: "error",
+          order,
+          message:
+            error instanceof Error && error.name === "QuotaExceededError"
+              ? "本地存储空间不足，排序未保存"
+              : "排序未保存",
+        }),
+      );
+  }, []);
+  const reorder = useCallback(
+    (next: GroupSection[]) => {
+      const order = next.map((section) => (section.group === null ? null : section.id));
+      const current = getGroupOrder(data);
+      if (order.every((id, index) => id === current[index])) return;
+      saveOrder(order);
+    },
+    [saveOrder, data],
+  );
+  const retry = useCallback(() => {
+    if (sort.status === "error") saveOrder(sort.order);
+  }, [sort, saveOrder]);
+  const begin = useCallback(() => setSort({ status: "dragging" }), []);
+  const release = useCallback(
+    () => setSort((current) => (current.status === "dragging" ? { status: "idle" } : current)),
+    [],
+  );
+  const renderSection = useCallback(
+    ({ item, index, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<GroupSection>) => (
+      <ProjectGroupSection
+        {...props}
+        projects={item.projects}
+        group={item.group}
+        collapsed={item.collapsed}
+        index={index}
+        groupCount={sections.length}
+        onReorder={reorderProjects}
+        sorting={sort.status === "dragging"}
+        drag={drag}
+        dragging={isActive}
+        dragHandleProps={dragHandleProps}
+      />
+    ),
+    [props, sections.length, reorderProjects, sort.status],
+  );
   return (
     <View>
-      {sections.groups.map((group, index) => (
-        <ProjectGroupSection
-          key={group.id}
-          {...props}
-          group={group}
-          collapsed={group.collapsed}
-          projects={group.projects}
-          index={index}
-          groupCount={sections.groups.length}
-          onReorder={reorder}
-        />
-      ))}
-      {sections.ungrouped.length > 0 ? (
-        <ProjectGroupSection
-          {...props}
-          group={null}
-          collapsed={data.ungroupedCollapsed}
-          projects={sections.ungrouped}
-          index={0}
-          groupCount={0}
-          onReorder={reorder}
-        />
+      {sort.status === "error" ? (
+        <Pressable
+          onPress={retry}
+          accessibilityRole="button"
+          testID="sidebar-groups-order-retry"
+          style={styles.sortError}
+        >
+          <Text style={styles.sortErrorText}>{sort.message}，重试</Text>
+        </Pressable>
       ) : null}
+      <DraggableList
+        data={sections}
+        keyExtractor={groupKey}
+        renderItem={renderSection}
+        onDragEnd={reorder}
+        onDragBegin={begin}
+        onDragRelease={release}
+        scrollEnabled={false}
+        useDragHandle
+        nestable={props.nestable}
+        simultaneousGestureRef={props.parentGestureRef}
+        testID="sidebar-custom-groups"
+      />
     </View>
   );
 }
@@ -86,6 +167,10 @@ interface ProjectGroupSectionProps extends GroupedProjectListProps {
   collapsed: boolean;
   index: number;
   groupCount: number;
+  sorting: boolean;
+  dragging: boolean;
+  drag: () => void;
+  dragHandleProps?: DraggableRenderItemInfo<GroupSection>["dragHandleProps"];
 }
 function ProjectGroupSection({
   group,
@@ -99,6 +184,10 @@ function ProjectGroupSection({
   extraData,
   nestable,
   parentGestureRef,
+  sorting,
+  dragging,
+  drag,
+  dragHandleProps,
 }: ProjectGroupSectionProps) {
   const { isHovered, hoverHandlers, revalidateHover } = useSidebarRowHover();
   const compact = useIsCompactFormFactor();
@@ -128,18 +217,16 @@ function ProjectGroupSection({
     [group],
   );
   const moveUp = useCallback(() => {
-    if (group)
-      void useSidebarGroupsStore
-        .getState()
-        .reorderGroup({ groupId: group.id, offset: -1 })
-        .catch(reportError);
+    void useSidebarGroupsStore
+      .getState()
+      .reorderGroup({ groupId: group === null ? null : group.id, offset: -1 })
+      .catch(reportError);
   }, [group, reportError]);
   const moveDown = useCallback(() => {
-    if (group)
-      void useSidebarGroupsStore
-        .getState()
-        .reorderGroup({ groupId: group.id, offset: 1 })
-        .catch(reportError);
+    void useSidebarGroupsStore
+      .getState()
+      .reorderGroup({ groupId: group === null ? null : group.id, offset: 1 })
+      .catch(reportError);
   }, [group, reportError]);
   const remove = useCallback(() => {
     if (!group) return;
@@ -164,7 +251,11 @@ function ProjectGroupSection({
   );
   return (
     <View style={styles.section} testID={`sidebar-custom-group-${id}`}>
-      <View style={styles.header} {...hoverHandlers}>
+      <View style={[styles.header, pending && styles.pending]} {...hoverHandlers}>
+        <View
+          style={[styles.headerBackground, dragging && styles.draggingHeader]}
+          pointerEvents="none"
+        />
         <Pressable
           style={headerStyle}
           onPress={toggle}
@@ -179,7 +270,6 @@ function ProjectGroupSection({
           <DisclosureChevron expanded={!collapsed}>
             <ThemedChevron size={12} uniProps={iconColor} />
           </DisclosureChevron>
-          <ThemedFolder size={13} uniProps={iconColor} />
           <Text numberOfLines={1} style={styles.name}>
             {name}
           </Text>
@@ -187,68 +277,129 @@ function ProjectGroupSection({
             {projects.length}
           </Text>
         </Pressable>
-        {group ? (
-          <View style={actionStyle} pointerEvents={menuVisible ? "auto" : "none"}>
-            <DropdownMenu typography="sidebar" compact onOpenChange={onMenuChange}>
-              <DropdownMenuTrigger
-                onFocus={onFocus}
-                onBlur={onBlur}
-                accessibilityLabel={`${name}分组操作`}
-                style={styles.more}
-                testID={`sidebar-group-menu-${id}`}
-              >
-                <ThemedMore size={14} uniProps={iconColor} />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" width={180}>
+        <View style={actionStyle} pointerEvents={menuVisible ? "auto" : "none"}>
+          <GroupDragHandle
+            id={id}
+            name={name}
+            pending={pending}
+            drag={drag}
+            dragHandleProps={dragHandleProps}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+          <DropdownMenu typography="sidebar" compact onOpenChange={onMenuChange}>
+            <DropdownMenuTrigger
+              onFocus={onFocus}
+              onBlur={onBlur}
+              accessibilityLabel={`${name}分组操作`}
+              style={styles.more}
+              testID={`sidebar-group-menu-${id}`}
+            >
+              <ThemedMore size={14} uniProps={iconColor} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" width={180}>
+              {group ? (
                 <DropdownMenuItem onSelect={openRename} disabled={pending}>
                   重命名分组
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={moveUp} disabled={pending || index === 0}>
-                  上移
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={moveDown}
-                  disabled={pending || index === groupCount - 1}
-                >
-                  下移
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={remove} disabled={pending} destructive>
-                  删除分组
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </View>
-        ) : null}
+              ) : null}
+              <DropdownMenuItem onSelect={moveUp} disabled={pending || index === 0}>
+                上移
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={moveDown} disabled={pending || index === groupCount - 1}>
+                下移
+              </DropdownMenuItem>
+              {group ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={remove} disabled={pending} destructive>
+                    删除分组
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </View>
       </View>
-      <DisclosureContent expanded={!collapsed}>
-        {() => (
-          <View style={styles.members}>
-            {reorderEnabled ? (
-              <DraggableList
-                data={projects}
-                keyExtractor={projectKey}
-                renderItem={renderItem}
-                onDragEnd={onReorder}
-                extraData={extraData}
-                useDragHandle
-                scrollEnabled={false}
-                nestable={nestable}
-                simultaneousGestureRef={parentGestureRef}
-                testID={`sidebar-group-members-${id}`}
-              />
-            ) : (
-              projects.map((item, itemIndex) => (
-                <View key={item.projectKey}>
-                  {renderItem({ item, index: itemIndex, drag: NOOP_DRAG, isActive: false })}
-                </View>
-              ))
-            )}
-            {projects.length === 0 ? <Text style={styles.empty}>暂无工作区</Text> : null}
-          </View>
-        )}
-      </DisclosureContent>
+      <View style={sorting ? styles.sortingMembers : undefined}>
+        <DisclosureContent expanded={!collapsed}>
+          {() => (
+            <View style={styles.members}>
+              {reorderEnabled ? (
+                <DraggableList
+                  data={projects}
+                  keyExtractor={projectKey}
+                  renderItem={renderItem}
+                  onDragEnd={onReorder}
+                  extraData={extraData}
+                  useDragHandle
+                  scrollEnabled={false}
+                  nestable={nestable}
+                  simultaneousGestureRef={parentGestureRef}
+                  testID={`sidebar-group-members-${id}`}
+                />
+              ) : (
+                projects.map((item, itemIndex) => (
+                  <View key={item.projectKey}>
+                    {renderItem({ item, index: itemIndex, drag: NOOP_DRAG, isActive: false })}
+                  </View>
+                ))
+              )}
+              {projects.length === 0 ? <Text style={styles.empty}>暂无工作区</Text> : null}
+            </View>
+          )}
+        </DisclosureContent>
+      </View>
     </View>
+  );
+}
+
+interface GroupDragHandleProps {
+  id: string;
+  name: string;
+  pending: boolean;
+  drag(): void;
+  dragHandleProps?: DraggableRenderItemInfo<GroupSection>["dragHandleProps"];
+  onFocus(): void;
+  onBlur(): void;
+}
+function GroupDragHandle({
+  id,
+  name,
+  pending,
+  drag,
+  dragHandleProps,
+  onFocus,
+  onBlur,
+}: GroupDragHandleProps) {
+  return isWeb ? (
+    <View
+      {...dragHandleProps?.attributes}
+      {...(pending ? undefined : dragHandleProps?.listeners)}
+      ref={dragHandleProps?.setActivatorNodeRef}
+      style={styles.more}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      accessibilityRole="button"
+      accessibilityLabel={`拖动分组：${name}`}
+      aria-disabled={pending}
+      tabIndex={pending ? -1 : 0}
+      testID={`sidebar-group-drag-${id}`}
+    >
+      <ThemedGrip size={12} uniProps={iconColor} />
+    </View>
+  ) : (
+    <Pressable
+      onLongPress={drag}
+      delayLongPress={180}
+      disabled={pending}
+      style={styles.more}
+      accessibilityRole="button"
+      accessibilityLabel={`拖动分组：${name}`}
+      testID={`sidebar-group-drag-${id}`}
+    >
+      <ThemedGrip size={12} uniProps={iconColor} />
+    </Pressable>
   );
 }
 
@@ -256,18 +407,24 @@ function headerStyle({ hovered, pressed }: PressableStateCallbackType) {
   return [styles.toggle, (hovered || pressed) && styles.hovered];
 }
 const styles = StyleSheet.create((theme) => ({
-  section: { marginTop: 2 },
+  pending: { opacity: 0.6 },
+  sortingMembers: { display: "none" },
+  headerBackground: { position: "absolute", inset: 0, borderRadius: theme.borderRadius.md },
+  draggingHeader: { backgroundColor: theme.colors.surfaceSidebarHover },
+  sortError: { padding: theme.spacing[2] },
+  sortErrorText: { color: theme.colors.destructive, fontSize: theme.fontSize.sidebar },
+  section: { marginTop: theme.spacing[3] },
   header: {
     flexDirection: "row",
     alignItems: "center",
     position: "relative",
-    paddingLeft: 14,
-    minHeight: { xs: 44, md: 30 },
+    paddingLeft: theme.spacing[2],
+    minHeight: { xs: 48, md: 32 },
   },
   toggle: {
     flex: 1,
     minWidth: 0,
-    minHeight: { xs: 44, md: 30 },
+    minHeight: { xs: 48, md: 32 },
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -279,18 +436,20 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sidebar,
+    fontSize: theme.fontSize.sidebar * 0.875,
+    fontWeight: theme.fontWeight.semibold,
+    letterSpacing: 0.2,
   },
   count: {
     fontSize: theme.fontSize.base * 0.75,
     color: theme.colors.foregroundMuted,
     paddingHorizontal: 3,
   },
-  action: { width: { xs: 44, md: 28 }, alignItems: "center" },
+  action: { width: { xs: 96, md: 56 }, flexDirection: "row", alignItems: "center" },
   hidden: { opacity: 0 },
   more: {
-    minWidth: { xs: 44, md: 28 },
-    minHeight: { xs: 44, md: 28 },
+    minWidth: { xs: 48, md: 28 },
+    minHeight: { xs: 48, md: 28 },
     alignItems: "center",
     justifyContent: "center",
   },

@@ -6,6 +6,8 @@ import {
   removeGroup,
   renameGroup,
   reorderGroup,
+  getGroupOrder,
+  setGroupOrder,
   SidebarGroupsSchema,
   validateGroupName,
   type SidebarGroups,
@@ -21,6 +23,27 @@ const project: SidebarGroups = {
 };
 
 describe("工作区目录分组", () => {
+  it("所有分组包含未分组都能排序，成员与折叠状态不变", () => {
+    expect(getGroupOrder(project)).toEqual(["one", "two", null]);
+    const reordered = setGroupOrder(project, [null, "two", "one"]);
+    expect(getGroupOrder(reordered)).toEqual([null, "two", "one"]);
+    expect(reordered.membership).toEqual(project.membership);
+    expect(reordered.groups).toEqual([project.groups[1], project.groups[0]]);
+    expect(reordered.ungroupedCollapsed).toBe(true);
+    expect(getGroupOrder(reorderGroup(reordered, { groupId: null, offset: 1 }))).toEqual([
+      "two",
+      null,
+      "one",
+    ]);
+  });
+  it("删除分组保留未分组的位置，非法排序不能丢失或重复分组", () => {
+    const ordered = setGroupOrder(project, ["two", null, "one"]);
+    expect(getGroupOrder(removeGroup(ordered, "two"))).toEqual([null, "one"]);
+    expect(() => setGroupOrder(project, [null, "one"])).toThrow();
+    expect(() => setGroupOrder(project, [null, "one", "one"])).toThrow();
+    expect(() => setGroupOrder(project, [null, "one", "gone"])).toThrow();
+    expect(() => SidebarGroupsSchema.parse({ ...project, ungroupedIndex: 3 })).toThrow();
+  });
   it("按稳定工作区标识分类，保留组内顺序且不重复工作区", () => {
     const rows = ["host-b:one", "host-a:one", "host-a:two"].map((projectKey) => ({
       projectKey,

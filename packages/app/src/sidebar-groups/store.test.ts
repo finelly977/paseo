@@ -22,6 +22,20 @@ function memoryStorage() {
 }
 
 describe("工作区目录分组保存", () => {
+  it("拖动未分组的位置能重开恢复，失败不改原顺序且可重试", async () => {
+    const storage = memoryStorage();
+    const store = createSidebarGroupsStore({ storage, createId: randomUUID });
+    await store.getState().createGroup({ projectKey: "p", name: "开发" });
+    const id = store.getState().data.groups[0].id;
+    storage.failNextWrite = true;
+    await expect(store.getState().setGroupOrder([null, id])).rejects.toThrow("存储已满");
+    expect(store.getState().data.ungroupedIndex).toBeUndefined();
+    await store.getState().setGroupOrder([null, id]);
+    const reopened = createSidebarGroupsStore({ storage, createId: randomUUID });
+    await reopened.getState().load();
+    expect(reopened.getState().data.ungroupedIndex).toBe(0);
+    expect(reopened.getState().data.membership).toEqual({ p: id });
+  });
   it("整目录移动、重命名、折叠与排序可重开恢复", async () => {
     const storage = memoryStorage();
     const store = createSidebarGroupsStore({ storage, createId: randomUUID });

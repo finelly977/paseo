@@ -138,6 +138,7 @@ export function DraggableList<T>({
   useDragHandle = false,
   // simultaneousGestureRef is native-only, ignored on web
   onDragBegin,
+  onDragRelease,
   nestable: _nestable = false,
 }: DraggableListProps<T>) {
   const { activeId, items, handlers } = useDragReorderState({
@@ -145,6 +146,7 @@ export function DraggableList<T>({
     keyExtractor,
     onDragEnd,
     onDragBegin,
+    onDragRelease,
   });
   const activationConstraints = getDragActivationConstraints(useDragHandle, DRAG_ACTIVATION_CONFIG);
 

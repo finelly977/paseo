@@ -55,7 +55,7 @@ export interface DraggableListProps<T> {
   onDragBegin?: () => void;
   /** Called immediately before invoking row `drag()` to lock outer owners. */
   onDragIntent?: () => void;
-  /** Called when drag interaction ends (finger released). */
+  /** 拖动完成或取消后调用；原生端等待落位动画结束再触发。 */
   onDragRelease?: () => void;
   /**
    * Native-only: use the nestable draggable-flatlist variant for nested drag

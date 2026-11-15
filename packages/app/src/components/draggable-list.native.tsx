@@ -32,6 +32,7 @@ export function DraggableList<T>({
   simultaneousGestureRef,
   waitFor,
   onDragBegin: onDragBeginProp,
+  onDragRelease: onDragReleaseProp,
   nestable = false,
 }: DraggableListProps<T>) {
   const { theme } = useUnistyles();
@@ -66,9 +67,10 @@ export function DraggableList<T>({
   const handleDragEnd = useCallback(
     ({ data: newData }: { data: T[] }) => {
       setIsDragging(false);
+      onDragReleaseProp?.();
       onDragEnd(newData);
     },
-    [onDragEnd],
+    [onDragEnd, onDragReleaseProp],
   );
 
   const handleDragBegin = useCallback(() => {

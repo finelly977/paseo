@@ -137,9 +137,6 @@ export function NativeHistoryProcess({
             </DisclosureChevron>
           </Pressable>
         </ConversationDivider>
-        {item.error !== null && (
-          <Alert variant="error" title="本轮处理未完成" description={item.error} />
-        )}
         {expanded && (
           <View>
             {error && <Alert variant="error" title="加载处理过程失败" description={error} />}

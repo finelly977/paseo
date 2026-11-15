@@ -1,6 +1,51 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
-import { resolveAssistantTurnForkBoundary } from "./turn-boundary";
+import { resolveAssistantTurnForkBoundary, resolveNativeTurnError } from "./turn-boundary";
+import { resolveStreamRenderStrategy } from "./strategy-resolver";
+import { orderTailForStreamRenderStrategy } from "./strategy";
+
+it.each(["web", "android"] as const)("%s 的错误归属回合底部，不能带到下一轮", (platform) => {
+  const strategy = resolveStreamRenderStrategy({ platform, isMobileBreakpoint: false });
+  const process: StreamItem = {
+    kind: "native_history_process",
+    id: "process",
+    turnId: "native",
+    nativeTurnId: "native",
+    timestamp: new Date(1000),
+    status: "failed",
+    durationMs: 4000,
+    summaryMessageIds: [],
+    summaryRevision: "r",
+    error: "额度不足",
+  };
+  const last: StreamItem = {
+    kind: "assistant_message",
+    id: "last",
+    nativeTurnId: "native",
+    text: "中断前的说明",
+    timestamp: new Date(3000),
+  };
+  const items = orderTailForStreamRenderStrategy({ strategy, streamItems: [process, last] });
+  expect(resolveNativeTurnError({ strategy, items, startIndex: items.indexOf(last) })).toBe(
+    "额度不足",
+  );
+  expect(resolveNativeTurnError({ strategy, items, startIndex: items.indexOf(process) })).toBe(
+    "额度不足",
+  );
+  const next = userMessage("next", 5);
+  const nextReply = assistantMessage("reply", 6);
+  const nextItems = orderTailForStreamRenderStrategy({
+    strategy,
+    streamItems: [process, last, next, nextReply],
+  });
+  expect(
+    resolveNativeTurnError({
+      strategy,
+      items: nextItems,
+      startIndex: nextItems.indexOf(nextReply),
+    }),
+  ).toBeNull();
+});
 
 function timestamp(seed: number): Date {
   return new Date(`2026-01-01T00:00:${seed.toString().padStart(2, "0")}.000Z`);

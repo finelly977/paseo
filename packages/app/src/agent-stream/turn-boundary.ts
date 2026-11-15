@@ -1,4 +1,26 @@
 import type { StreamItem, TimelinePosition } from "@/types/stream";
+import type { StreamStrategy } from "./strategy";
+import { continuesTurn } from "./turn-membership";
+
+export function resolveNativeTurnError(input: {
+  items: readonly StreamItem[];
+  startIndex: number;
+  strategy: Pick<StreamStrategy, "getNeighborIndex">;
+}): string | null {
+  let later: StreamItem | null = null;
+  for (
+    let index = input.startIndex;
+    index >= 0 && index < input.items.length;
+    index = input.strategy.getNeighborIndex(index, "above")
+  ) {
+    const item = input.items[index];
+    if (item.kind === "user_message" || (later && !continuesTurn(item, later))) return null;
+    if (item.kind === "native_history_process")
+      return item.status === "inProgress" ? null : item.error;
+    later = item;
+  }
+  return null;
+}
 
 export type AssistantTurnForkBoundary =
   | { boundaryCursor: TimelinePosition; boundaryMessageId?: string }

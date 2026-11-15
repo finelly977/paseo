@@ -10,6 +10,7 @@ export const SidebarGroupsSchema = z
     groups: z.array(GroupSchema),
     membership: z.record(z.string(), z.string()),
     ungroupedCollapsed: z.boolean(),
+    ungroupedIndex: z.number().int().nonnegative().optional(),
   })
   .superRefine((project, context) => {
     const ids = new Set(project.groups.map((group) => group.id));
@@ -18,6 +19,8 @@ export const SidebarGroupsSchema = z
       context.addIssue({ code: "custom", message: "分组名称或标识重复" });
     if (Object.values(project.membership).some((id) => !ids.has(id)))
       context.addIssue({ code: "custom", message: "工作区所属分组不存在" });
+    if (project.ungroupedIndex !== undefined && project.ungroupedIndex > project.groups.length)
+      context.addIssue({ code: "custom", message: "未分组的位置超出分组范围" });
   });
 export type SidebarGroups = z.infer<typeof SidebarGroupsSchema>;
 export type ProjectGroup = z.infer<typeof GroupSchema>;
@@ -40,7 +43,7 @@ interface ProjectAssignment {
   groupId: string | null;
 }
 interface GroupReorder {
-  groupId: string;
+  groupId: string | null;
   offset: -1 | 1;
 }
 export function validateGroupName(
@@ -81,14 +84,18 @@ export function renameGroup(project: SidebarGroups, { groupId, name }: GroupRena
 
 export function removeGroup(project: SidebarGroups, groupId: string): SidebarGroups {
   requireGroup(project, groupId);
-  return {
-    ...project,
-    groups: project.groups.filter((group) => group.id !== groupId),
-    membership: Object.fromEntries(
-      Object.entries(project.membership).filter(([, id]) => id !== groupId),
-    ),
-    ungroupedCollapsed: false,
-  };
+  const order = getGroupOrder(project).filter((id) => id !== groupId);
+  return setGroupOrder(
+    {
+      ...project,
+      groups: project.groups.filter((group) => group.id !== groupId),
+      membership: Object.fromEntries(
+        Object.entries(project.membership).filter(([, id]) => id !== groupId),
+      ),
+      ungroupedCollapsed: false,
+    },
+    order,
+  );
 }
 
 export function assignProject(
@@ -115,13 +122,31 @@ export function reorderGroup(
   project: SidebarGroups,
   { groupId, offset }: GroupReorder,
 ): SidebarGroups {
-  requireGroup(project, groupId);
-  const index = project.groups.findIndex((group) => group.id === groupId);
+  if (groupId !== null) requireGroup(project, groupId);
+  const order = getGroupOrder(project);
+  const index = order.indexOf(groupId);
   const target = index + offset;
-  if (target < 0 || target >= project.groups.length) return project;
-  const groups = [...project.groups];
-  [groups[index], groups[target]] = [groups[target], groups[index]];
-  return { ...project, groups };
+  if (target < 0 || target >= order.length) return project;
+  [order[index], order[target]] = [order[target], order[index]];
+  return setGroupOrder(project, order);
+}
+
+export function getGroupOrder(project: SidebarGroups): (string | null)[] {
+  const order: (string | null)[] = project.groups.map((group) => group.id);
+  order.splice(project.ungroupedIndex ?? project.groups.length, 0, null);
+  return order;
+}
+
+export function setGroupOrder(
+  project: SidebarGroups,
+  order: readonly (string | null)[],
+): SidebarGroups {
+  const ids = new Set(order);
+  const complete =
+    order.length === project.groups.length + 1 && ids.size === order.length && ids.has(null);
+  if (!complete) throw new Error("分组顺序不完整，请重新拖动");
+  const groups = order.flatMap((id) => (id === null ? [] : [requireGroup(project, id)]));
+  return { ...project, groups, ungroupedIndex: order.indexOf(null) };
 }
 
 interface GroupedProject {

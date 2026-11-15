@@ -219,7 +219,7 @@ The row anatomy is a content column with an optional trailing slot. Inside a car
 
 Rows that drill into a detail lead with a chevron in the trailing slot (`ChevronRight`, `iconSize.sm`, `foregroundMuted`). The whole row is the `<Pressable>`. Pair-device row (`packages/app/src/screens/settings/host-page.tsx:644-668`), provider row (`packages/app/src/screens/settings/providers-section.tsx:92-132`), project row in the projects list. Chevron means navigation.
 
-侧栏菜单使用 `typography="sidebar"`，嵌套菜单继承该作用域，实际浮层根保留 `SIDEBAR_TYPOGRAPHY_DATASET`，避免 Portal 丢失字号变量；菜单文字与会话悬停卡片均使用 `fontSize.sidebar`。自定义分组放在工作区目录外层，使用紧凑的折叠标题行、细文件夹图标与当前可见目录数量，不添加常驻教程；组操作在桌面悬停或键盘聚焦时显示，触控端常显，标题与操作按钮保留独立命中区。新建和改名复用 360 像素宽的单字段名称弹窗，重名等校验就近显示。分组名称弹窗由侧栏持有，不能挂在关闭即卸载的菜单项内；从工作区目录菜单创建时，创建与整目录归类一次保存，会话菜单不提供归组入口。
+侧栏菜单使用 `typography="sidebar"`，嵌套菜单继承该作用域，实际浮层根保留 `SIDEBAR_TYPOGRAPHY_DATASET`，避免 Portal 丢失字号变量；菜单文字与会话悬停卡片均使用 `fontSize.sidebar`。自定义分组放在工作区目录外层，使用侧栏字号 87.5% 的半粗折叠标题与当前可见目录数量，移除容易混同目录的文件夹图标；标题靠左，目录和会话逐层缩进，分组前使用 12 像素留白，不添加常驻教程；拖动抓手和组操作在桌面悬停或键盘聚焦时显示，触控端常显并保留 48 像素命中区；“未分组”参与同一排序列表，只有自定义组能改名和删除。拖动期间临时隐藏组内容但不卸载目录，结束或取消后恢复，避免长列表拉伸拖动区域或丢失“显示更多”状态。排序保存期间展示待保存顺序并禁止重复提交，失败回到原顺序并在列表内保留重试入口。新建和改名复用 360 像素宽的单字段名称弹窗，重名等校验就近显示。分组名称弹窗由侧栏持有，不能挂在关闭即卸载的菜单项内；从工作区目录菜单创建时，创建与整目录归类一次保存，会话菜单不提供归组入口。
 Kebab menus (`<DropdownMenu>` with `<MoreVertical size={14} />` trigger) are for actions on the row, not navigation. Trigger style: `padding: 2`, `borderRadius: 4`, hover background `surface2`. Menu position: `align="end"`. Items use `<DropdownMenuItem leading={<Icon size={14} color={foregroundMuted} />} ...>`. Visibility is `isHovered || isTouchPlatform` — hover-revealed on web, always visible on native (`packages/app/src/components/sidebar-workspace-list.tsx:684-770`).
 
 A row may carry both a chevron and a kebab when both navigation and row-level actions apply. Chevron sits at the end; kebab sits before it.
@@ -309,6 +309,8 @@ Stream entrance animations play only when an item arrives live. History restore,
 对话与 Markdown 文档引用块使用细边框和轻微灰底，内边距 12×8 像素，不使用粗亮侧边条。桌面模型菜单使用星标/提供方图标栏、可搜索模型列表和思考强度三栏；列表提供收藏与拖动抓手，收藏置顶，组内顺序持久化到当前客户端的主机级偏好；不再提供 Agent 预设配置。长模型名在列表单行省略，悬停显示完整名称与标识，不展示 Ctrl 数字徽标。底栏只保留标准/快速与更多选项，权限入口紧跟工具栏的模型与思考强度，完全访问统一使用中性 `ShieldOff` 图标；工具栏模型按钮高 28 像素并收紧四周留白。移动端保留原有底部面板，收藏与排序的查询和错误提示在调用者上下文中读取，再将状态传入独立浮层根，不能在隔离面板内重新读取 Toast 或 Query 上下文；模型行与星标、抓手保留 44 像素触控区域。Fast 状态在两端首层入口用黄色闪电表达。主机筛选独立放在工作区标题操作区，保留显示偏好中的项目筛选与分组设置。
 
 动效统一走 `styles/motion.ts` 的时长、曲线与弹簧 token；按压反馈为缩放（文本按钮 0.95、小圆形图标钮 0.92），禁用态保持纯透明度。Claude 主题对齐 Claude Desktop 暖色阶梯：表面、侧栏、边框与文字换成暖炭黑与暖中性色，陶土色强调不变。桌面与 Electron 的输入框采用单层 1px 边框叠加极淡环境影，聚焦与失焦使用同一边框和环境影，不增加选中描边或聚焦光晕；键盘焦点、输入快捷键和原生输入行为保持不变。
+
+原生回合错误由回合底部统一展示，位于最后一段回复与操作栏之间，不放在过程入口中；展开或收起过程不改变错误的归属。
 
 命令、思考等单条工具详情在时间线内展开时使用无边框、无卡片底色的内容块，正文缩进对齐标题文字；保留独立折叠、代码高亮、差异语义色及双轴滚动，详情面板仍沿用原样式。
 
