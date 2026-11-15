@@ -7,6 +7,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AssistantMarkdownImage } from "@/components/message";
 import { DisclosureChevron, DisclosureContent } from "@/components/ui/disclosure";
 import type { Theme } from "@/styles/theme";
+import type { StandaloneMarkdownImage } from "./provider-image-message-model";
 
 const ThemedImageIcon = withUnistyles(Images);
 const ThemedChevronDown = withUnistyles(ChevronDown);
@@ -17,12 +18,13 @@ const EXPANDED_ACCESSIBILITY_STATE = { expanded: true } as const;
 
 type ProviderImageMessageProps = Pick<
   ComponentProps<typeof AssistantMarkdownImage>,
-  "source" | "alt" | "client" | "workspaceRoot" | "serverId"
->;
+  "client" | "workspaceRoot" | "serverId"
+> & { images: readonly StandaloneMarkdownImage[] };
 
-export const ProviderImageMessage = memo(function ProviderImageMessage(
-  imageProps: ProviderImageMessageProps,
-) {
+export const ProviderImageMessage = memo(function ProviderImageMessage({
+  images,
+  ...imageProps
+}: ProviderImageMessageProps) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -36,7 +38,7 @@ export const ProviderImageMessage = memo(function ProviderImageMessage(
     ({ pressed }: PressableStateCallbackType) => [styles.toggle, pressed && styles.togglePressed],
     [],
   );
-  const label = t("message.attachments.viewedImage");
+  const label = t("message.attachments.viewedImage", { count: images.length });
 
   return (
     <View style={styles.container}>
@@ -72,7 +74,16 @@ export const ProviderImageMessage = memo(function ProviderImageMessage(
       <DisclosureContent expanded={isExpanded} testID="provider-image-collapse-content">
         {() => (
           <View style={styles.imageContent}>
-            <AssistantMarkdownImage {...imageProps} hasLeadingContent={false} display="thumbnail" />
+            {images.map((image) => (
+              <AssistantMarkdownImage
+                key={image.key}
+                {...imageProps}
+                source={image.source}
+                alt={image.alt}
+                hasLeadingContent={false}
+                display="thumbnail"
+              />
+            ))}
           </View>
         )}
       </DisclosureContent>
@@ -86,6 +97,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   imageContent: {
     paddingTop: theme.spacing[1],
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing[2],
   },
   toggle: {
     minHeight: 32,

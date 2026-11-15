@@ -1074,6 +1074,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             accessibilityState={thinkingAccessibilityState}
             testID="agent-thinking-selector"
             style={chipStyle}
+            hitSlop={4}
           >
             <AgentControlIconGlyph icon={Sparkles} size={13} tone="muted" />
             <Text numberOfLines={1} style={styles.roleThinkingText}>
@@ -1120,6 +1121,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             accessibilityState={modelAccessibilityState}
             testID="agent-role-selector"
             style={chipStyle}
+            hitSlop={4}
           >
             <ModelProviderGlyph provider={props.provider} size={props.glyphSize} />
             <FastModeIndicator features={props.features} />
@@ -1787,12 +1789,12 @@ const styles = StyleSheet.create((theme) => ({
   roleChip: {
     minWidth: 0,
     flexShrink: 1,
-    height: 28,
+    height: 20,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[1],
-    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: 0,
+    borderRadius: theme.borderRadius.sm,
   },
   roleChipActive: { backgroundColor: theme.colors.surface3 },
   roleChipText: {

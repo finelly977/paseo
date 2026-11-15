@@ -136,7 +136,10 @@ import type { AgentConversationIndexEntry } from "@/stores/session-store";
 import { ProviderImageMessage } from "./provider-image-message";
 import { renderCompletedProcessRow } from "./completed-process-row";
 import { placeCompletedTurnToolsBeforeFinalReply } from "./completed-turn-tool-order";
-import { getStandaloneMarkdownImages } from "./provider-image-message-model";
+import {
+  getStandaloneMarkdownImages,
+  groupProviderImageSegments,
+} from "./provider-image-message-model";
 import { useIsLocalDaemon } from "@/hooks/use-is-local-daemon";
 import { useOpenInFileManager } from "@/workspace/open-in-file-manager/use-open-in-file-manager";
 import { PluginTimelineItemView } from "@/plugins/timeline";
@@ -943,15 +946,22 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [context.status, projectedToolCalls],
     );
 
+    const imageSegments = useMemo(
+      () =>
+        context.provider === "codex"
+          ? groupProviderImageSegments(orderedToolCalls.tail, orderedToolCalls.head)
+          : { tail: orderedToolCalls.tail, head: orderedToolCalls.head },
+      [context.provider, orderedToolCalls.tail, orderedToolCalls.head],
+    );
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
         agentStatus: context.status,
-        tail: orderedToolCalls.tail,
-        head: orderedToolCalls.head,
+        tail: imageSegments.tail,
+        head: imageSegments.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
       });
-    }, [context.status, isMobile, orderedToolCalls.head, orderedToolCalls.tail]);
+    }, [context.status, isMobile, imageSegments.head, imageSegments.tail]);
     const streamLayout = useMemo(
       () =>
         layoutStream({
@@ -1260,18 +1270,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             toast={toast}
           >
             {providerImages ? (
-              <View>
-                {providerImages.map((image) => (
-                  <ProviderImageMessage
-                    key={image.key}
-                    source={image.source}
-                    alt={image.alt}
-                    client={client}
-                    workspaceRoot={workspaceRoot}
-                    serverId={resolvedServerId}
-                  />
-                ))}
-              </View>
+              <ProviderImageMessage
+                images={providerImages}
+                client={client}
+                workspaceRoot={workspaceRoot}
+                serverId={resolvedServerId}
+              />
             ) : (
               <AssistantMessage {...messageProps} />
             )}

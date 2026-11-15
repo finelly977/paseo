@@ -2000,7 +2000,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[0],
+    gap: theme.spacing[2],
   },
   rightButtonGroup: {
     minWidth: 0,

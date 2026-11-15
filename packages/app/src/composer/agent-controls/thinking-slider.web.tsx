@@ -15,8 +15,6 @@ import { useReducedMotion } from "react-native-reanimated";
 import { ThinkingSliderParticles } from "./thinking-slider-particles.web";
 
 interface SliderColors {
-  track: string;
-  fill: string;
   blue: string;
   dot: string;
   focus: string;
@@ -25,8 +23,6 @@ interface SliderColors {
 
 function sliderColors(theme: Theme): SliderColors {
   return {
-    track: theme.colors.surface1,
-    fill: theme.colors.surface3,
     blue: theme.colors.palette.blue[600],
     dot: theme.colors.foregroundMuted,
     focus: theme.colors.accent,
@@ -58,8 +54,6 @@ function Slider({
   disabled,
   maxed,
   onSelect,
-  track,
-  fill,
   blue,
   dot,
   focus,
@@ -93,12 +87,12 @@ function Slider({
   const surfaceStyle = useMemo<CSSProperties>(
     () => ({
       ...trackStyle,
-      background: track,
-      outline: focused ? `2px solid ${focus}` : "none",
+      background: `${spark}33`,
+      outline: "none",
       outlineOffset: 3,
       opacity: disabled ? 0.5 : 1,
     }),
-    [track, focused, focus, disabled],
+    [spark, disabled],
   );
   const fillStyle = useMemo<CSSProperties>(
     () => ({
@@ -106,9 +100,9 @@ function Slider({
       inset: 0,
       width: pointAt(index, options.length),
       borderRadius: 11,
-      background: maxed ? `linear-gradient(100deg, ${blue}, ${spark} 55%, ${blue})` : fill,
+      background: maxed ? `linear-gradient(100deg, ${blue}, ${spark} 55%, ${blue})` : `${spark}77`,
     }),
-    [index, options.length, maxed, spark, fill, blue],
+    [index, options.length, maxed, spark, blue],
   );
   const points = useMemo(
     () =>
@@ -136,11 +130,13 @@ function Slider({
       marginLeft: -7,
       borderRadius: 7,
       background: spark,
+      outline: focused ? `1px solid ${focus}` : "none",
+      outlineOffset: 2,
       transition: reducedMotion
         ? "none"
         : `left ${MOTION_DURATION.base}ms ${MOTION_EASING_CSS.standard}`,
     }),
-    [index, options.length, spark, reducedMotion],
+    [index, options.length, spark, reducedMotion, focus, focused],
   );
   return (
     <div style={surfaceStyle}>

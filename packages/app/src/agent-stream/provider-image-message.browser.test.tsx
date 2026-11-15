@@ -24,7 +24,9 @@ beforeAll(async () => {
   await i18n.init({
     lng: "zh-CN",
     resources: {
-      "zh-CN": { translation: { message: { attachments: { viewedImage: "已查看 1 张图像" } } } },
+      "zh-CN": {
+        translation: { message: { attachments: { viewedImage: "已查看 {{count}} 张图像" } } },
+      },
     },
   });
 });
@@ -42,8 +44,13 @@ test("已查看图像默认收起，用户点击后才挂载预览", async () =>
   root.render(
     <I18nextProvider i18n={i18n}>
       <ProviderImageMessage
-        source="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
-        alt="预览"
+        images={[
+          {
+            key: "preview",
+            source: "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+            alt: "预览",
+          },
+        ]}
         client={null}
         workspaceRoot="C:\\repo"
         serverId="host"

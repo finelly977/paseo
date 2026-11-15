@@ -151,6 +151,7 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         testID={testID}
+        hitSlop={isSheet ? undefined : 4}
         chevron={showCaret ? chevron : null}
       >
         {isSheet ? (
@@ -186,14 +187,14 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   }),
   toolbarControl: {
-    height: 28,
+    height: 20,
     minWidth: 0,
     flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[1],
-    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: 0,
+    borderRadius: theme.borderRadius.sm,
     backgroundColor: "transparent",
   },
   toolbarIconOnly: {
