@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type MutableRefObject } from "react";
+import { useCallback, useMemo, useState, type MutableRefObject, type ReactNode } from "react";
 import { View, Text, Pressable, type PressableStateCallbackType } from "react-native";
-import { ChevronRight, GripVertical, MoreHorizontal } from "lucide-react-native";
+import { ChevronRight, MoreHorizontal } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { GestureType } from "react-native-gesture-handler";
 import { DraggableList, type DraggableRenderItemInfo } from "@/components/draggable-list";
@@ -24,7 +24,7 @@ import { partitionProjects, getGroupOrder, type ProjectGroup } from "./model";
 import { useSidebarGroupsStore } from "./store";
 
 const ThemedChevron = withUnistyles(ChevronRight);
-const ThemedGrip = withUnistyles(GripVertical);
+const GROUP_HOLD_DELAY_MS = 220;
 const ThemedMore = withUnistyles(MoreHorizontal);
 const iconColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const NOOP_DRAG = () => {};
@@ -116,14 +116,12 @@ export function GroupedProjectList(props: GroupedProjectListProps) {
     [],
   );
   const renderSection = useCallback(
-    ({ item, index, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<GroupSection>) => (
+    ({ item, drag, isActive, dragHandleProps }: DraggableRenderItemInfo<GroupSection>) => (
       <ProjectGroupSection
         {...props}
         projects={item.projects}
         group={item.group}
         collapsed={item.collapsed}
-        index={index}
-        groupCount={sections.length}
         onReorder={reorderProjects}
         sorting={sort.status === "dragging"}
         drag={drag}
@@ -131,7 +129,7 @@ export function GroupedProjectList(props: GroupedProjectListProps) {
         dragHandleProps={dragHandleProps}
       />
     ),
-    [props, sections.length, reorderProjects, sort.status],
+    [props, reorderProjects, sort.status],
   );
   return (
     <View>
@@ -154,6 +152,7 @@ export function GroupedProjectList(props: GroupedProjectListProps) {
         onDragRelease={release}
         scrollEnabled={false}
         useDragHandle
+        holdDelayMs={GROUP_HOLD_DELAY_MS}
         nestable={props.nestable}
         simultaneousGestureRef={props.parentGestureRef}
         testID="sidebar-custom-groups"
@@ -165,8 +164,6 @@ export function GroupedProjectList(props: GroupedProjectListProps) {
 interface ProjectGroupSectionProps extends GroupedProjectListProps {
   group: ProjectGroup | null;
   collapsed: boolean;
-  index: number;
-  groupCount: number;
   sorting: boolean;
   dragging: boolean;
   drag: () => void;
@@ -175,8 +172,6 @@ interface ProjectGroupSectionProps extends GroupedProjectListProps {
 function ProjectGroupSection({
   group,
   collapsed,
-  index,
-  groupCount,
   projects,
   reorderEnabled,
   renderItem,
@@ -198,7 +193,6 @@ function ProjectGroupSection({
   const toast = useToast();
   const pending = useSidebarGroupsStore((state) => state.pending > 0);
   const name = group === null ? "未分组" : group.name;
-  const accessibilityState = useMemo(() => ({ expanded: !collapsed }), [collapsed]);
   const id = group === null ? "ungrouped" : group.id;
   const menuVisible = isHovered || isNative || compact || menuOpen || focused;
   const actionStyle = useMemo(() => [styles.action, !menuVisible && styles.hidden], [menuVisible]);
@@ -216,18 +210,6 @@ function ProjectGroupSection({
     () => useSidebarGroupsStore.getState().openDialog({ projectKey: null, group }),
     [group],
   );
-  const moveUp = useCallback(() => {
-    void useSidebarGroupsStore
-      .getState()
-      .reorderGroup({ groupId: group === null ? null : group.id, offset: -1 })
-      .catch(reportError);
-  }, [group, reportError]);
-  const moveDown = useCallback(() => {
-    void useSidebarGroupsStore
-      .getState()
-      .reorderGroup({ groupId: group === null ? null : group.id, offset: 1 })
-      .catch(reportError);
-  }, [group, reportError]);
   const remove = useCallback(() => {
     if (!group) return;
     void confirmDialog({
@@ -256,70 +238,52 @@ function ProjectGroupSection({
           style={[styles.headerBackground, dragging && styles.draggingHeader]}
           pointerEvents="none"
         />
-        <Pressable
-          style={headerStyle}
+        <GroupHeaderToggle
+          name={name}
+          id={id}
+          pending={pending}
+          drag={drag}
+          dragHandleProps={dragHandleProps}
           onPress={toggle}
           onFocus={onFocus}
           onBlur={onBlur}
-          disabled={pending}
-          accessibilityRole="button"
-          accessibilityLabel={name}
-          accessibilityState={accessibilityState}
-          testID={`sidebar-group-toggle-${id}`}
+          expanded={!collapsed}
+          hovered={isHovered}
         >
-          <DisclosureChevron expanded={!collapsed}>
-            <ThemedChevron size={12} uniProps={iconColor} />
-          </DisclosureChevron>
           <Text numberOfLines={1} style={styles.name}>
             {name}
           </Text>
           <Text dataSet={COMPACT_LABEL_DATASET} style={styles.count}>
             {projects.length}
           </Text>
-        </Pressable>
-        <View style={actionStyle} pointerEvents={menuVisible ? "auto" : "none"}>
-          <GroupDragHandle
-            id={id}
-            name={name}
-            pending={pending}
-            drag={drag}
-            dragHandleProps={dragHandleProps}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
-          <DropdownMenu typography="sidebar" compact onOpenChange={onMenuChange}>
-            <DropdownMenuTrigger
-              onFocus={onFocus}
-              onBlur={onBlur}
-              accessibilityLabel={`${name}分组操作`}
-              style={styles.more}
-              testID={`sidebar-group-menu-${id}`}
-            >
-              <ThemedMore size={14} uniProps={iconColor} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" width={180}>
-              {group ? (
+          <DisclosureChevron expanded={!collapsed}>
+            <ThemedChevron size={12} uniProps={iconColor} />
+          </DisclosureChevron>
+        </GroupHeaderToggle>
+        {group ? (
+          <View style={actionStyle} pointerEvents={menuVisible ? "auto" : "none"}>
+            <DropdownMenu typography="sidebar" compact onOpenChange={onMenuChange}>
+              <DropdownMenuTrigger
+                onFocus={onFocus}
+                onBlur={onBlur}
+                accessibilityLabel={`${name}分组操作`}
+                style={styles.more}
+                testID={`sidebar-group-menu-${id}`}
+              >
+                <ThemedMore size={14} uniProps={iconColor} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" width={180}>
                 <DropdownMenuItem onSelect={openRename} disabled={pending}>
                   重命名分组
                 </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onSelect={moveUp} disabled={pending || index === 0}>
-                上移
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={moveDown} disabled={pending || index === groupCount - 1}>
-                下移
-              </DropdownMenuItem>
-              {group ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={remove} disabled={pending} destructive>
-                    删除分组
-                  </DropdownMenuItem>
-                </>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </View>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={remove} disabled={pending} destructive>
+                  删除分组
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </View>
+        ) : null}
       </View>
       <View style={sorting ? styles.sortingMembers : undefined}>
         <DisclosureContent expanded={!collapsed}>
@@ -354,7 +318,7 @@ function ProjectGroupSection({
   );
 }
 
-interface GroupDragHandleProps {
+interface GroupHeaderToggleProps {
   id: string;
   name: string;
   pending: boolean;
@@ -362,8 +326,12 @@ interface GroupDragHandleProps {
   dragHandleProps?: DraggableRenderItemInfo<GroupSection>["dragHandleProps"];
   onFocus(): void;
   onBlur(): void;
+  onPress(): void;
+  expanded: boolean;
+  hovered: boolean;
+  children: ReactNode;
 }
-function GroupDragHandle({
+function GroupHeaderToggle({
   id,
   name,
   pending,
@@ -371,34 +339,45 @@ function GroupDragHandle({
   dragHandleProps,
   onFocus,
   onBlur,
-}: GroupDragHandleProps) {
+  onPress,
+  expanded,
+  hovered,
+  children,
+}: GroupHeaderToggleProps) {
+  const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
   return isWeb ? (
     <View
       {...dragHandleProps?.attributes}
       {...(pending ? undefined : dragHandleProps?.listeners)}
       ref={dragHandleProps?.setActivatorNodeRef}
-      style={styles.more}
+      style={[styles.toggle, hovered && styles.hovered]}
+      onClick={pending ? undefined : onPress}
+      aria-expanded={expanded}
       onFocus={onFocus}
       onBlur={onBlur}
       accessibilityRole="button"
-      accessibilityLabel={`拖动分组：${name}`}
+      accessibilityLabel={name}
       aria-disabled={pending}
       tabIndex={pending ? -1 : 0}
-      testID={`sidebar-group-drag-${id}`}
+      testID={`sidebar-group-toggle-${id}`}
     >
-      <ThemedGrip size={12} uniProps={iconColor} />
+      {children}
     </View>
   ) : (
     <Pressable
       onLongPress={drag}
-      delayLongPress={180}
+      delayLongPress={GROUP_HOLD_DELAY_MS}
+      onPress={onPress}
+      onFocus={onFocus}
+      onBlur={onBlur}
       disabled={pending}
-      style={styles.more}
+      style={headerStyle}
+      accessibilityState={accessibilityState}
       accessibilityRole="button"
-      accessibilityLabel={`拖动分组：${name}`}
-      testID={`sidebar-group-drag-${id}`}
+      accessibilityLabel={name}
+      testID={`sidebar-group-toggle-${id}`}
     >
-      <ThemedGrip size={12} uniProps={iconColor} />
+      {children}
     </Pressable>
   );
 }
@@ -413,22 +392,22 @@ const styles = StyleSheet.create((theme) => ({
   draggingHeader: { backgroundColor: theme.colors.surfaceSidebarHover },
   sortError: { padding: theme.spacing[2] },
   sortErrorText: { color: theme.colors.destructive, fontSize: theme.fontSize.sidebar },
-  section: { marginTop: theme.spacing[3] },
+  section: { marginTop: 2 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     position: "relative",
-    paddingLeft: theme.spacing[2],
-    minHeight: { xs: 48, md: 32 },
+    minHeight: { xs: 48, md: 24 },
   },
   toggle: {
     flex: 1,
     minWidth: 0,
-    minHeight: { xs: 48, md: 32 },
+    minHeight: { xs: 48, md: 24 },
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 5,
+    paddingHorizontal: theme.spacing[2],
+    userSelect: "none",
     borderRadius: theme.borderRadius.md,
   },
   hovered: { backgroundColor: theme.colors.surfaceSidebarHover },
@@ -445,11 +424,11 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     paddingHorizontal: 3,
   },
-  action: { width: { xs: 96, md: 56 }, flexDirection: "row", alignItems: "center" },
+  action: { width: { xs: 48, md: 24 }, flexDirection: "row", alignItems: "center" },
   hidden: { opacity: 0 },
   more: {
-    minWidth: { xs: 48, md: 28 },
-    minHeight: { xs: 48, md: 28 },
+    minWidth: { xs: 48, md: 24 },
+    minHeight: { xs: 48, md: 24 },
     alignItems: "center",
     justifyContent: "center",
   },

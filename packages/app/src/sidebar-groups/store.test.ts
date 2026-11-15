@@ -45,7 +45,7 @@ describe("工作区目录分组保存", () => {
     await store.getState().assignProject({ projectKey: "host:second", groupId: one.id });
     await store.getState().renameGroup({ groupId: one.id, name: "实现" });
     await store.getState().toggleCollapsed(one.id);
-    await store.getState().reorderGroup({ groupId: two.id, offset: -1 });
+    await store.getState().setGroupOrder([two.id, one.id, null]);
     const reopened = createSidebarGroupsStore({ storage, createId: randomUUID });
     await reopened.getState().load();
     expect(reopened.getState().data).toEqual(store.getState().data);

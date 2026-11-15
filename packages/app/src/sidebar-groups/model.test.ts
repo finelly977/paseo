@@ -5,7 +5,6 @@ import {
   partitionProjects,
   removeGroup,
   renameGroup,
-  reorderGroup,
   getGroupOrder,
   setGroupOrder,
   SidebarGroupsSchema,
@@ -30,11 +29,6 @@ describe("工作区目录分组", () => {
     expect(reordered.membership).toEqual(project.membership);
     expect(reordered.groups).toEqual([project.groups[1], project.groups[0]]);
     expect(reordered.ungroupedCollapsed).toBe(true);
-    expect(getGroupOrder(reorderGroup(reordered, { groupId: null, offset: 1 }))).toEqual([
-      "two",
-      null,
-      "one",
-    ]);
   });
   it("删除分组保留未分组的位置，非法排序不能丢失或重复分组", () => {
     const ordered = setGroupOrder(project, ["two", null, "one"]);
@@ -75,10 +69,9 @@ describe("工作区目录分组", () => {
   it("重命名与组排序不改变所属关系", () => {
     const renamed = renameGroup(project, { groupId: "one", name: "  产品  " });
     expect(renamed.groups[0].name).toBe("产品");
-    const reordered = reorderGroup(renamed, { groupId: "one", offset: 1 });
+    const reordered = setGroupOrder(renamed, ["two", "one", null]);
     expect(reordered.groups.map((group) => group.id)).toEqual(["two", "one"]);
     expect(reordered.membership).toEqual(project.membership);
-    expect(reorderGroup(project, { groupId: "one", offset: -1 })).toBe(project);
   });
   it.each(["", "   ", "未分组", "x".repeat(41), "开发"])("拒绝不可用的分组名称：%s", (value) => {
     expect(validateGroupName(project, { value, exceptId: null })).not.toBeNull();

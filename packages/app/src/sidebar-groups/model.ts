@@ -42,10 +42,6 @@ interface ProjectAssignment {
   projectKey: string;
   groupId: string | null;
 }
-interface GroupReorder {
-  groupId: string | null;
-  offset: -1 | 1;
-}
 export function validateGroupName(
   project: SidebarGroups,
   { value, exceptId }: GroupNameValidation,
@@ -116,19 +112,6 @@ export function assignProject(
       group.id === groupId ? { ...group, collapsed: false } : group,
     ),
   };
-}
-
-export function reorderGroup(
-  project: SidebarGroups,
-  { groupId, offset }: GroupReorder,
-): SidebarGroups {
-  if (groupId !== null) requireGroup(project, groupId);
-  const order = getGroupOrder(project);
-  const index = order.indexOf(groupId);
-  const target = index + offset;
-  if (target < 0 || target >= order.length) return project;
-  [order[index], order[target]] = [order[target], order[index]];
-  return setGroupOrder(project, order);
 }
 
 export function getGroupOrder(project: SidebarGroups): (string | null)[] {

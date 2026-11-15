@@ -9,7 +9,6 @@ import {
   renameGroup,
   removeGroup,
   assignProject,
-  reorderGroup,
   setGroupOrder,
   type SidebarGroups,
   type ProjectGroup,
@@ -40,10 +39,6 @@ interface AssignProjectInput {
   projectKey: string;
   groupId: string | null;
 }
-interface ReorderGroupInput {
-  groupId: string | null;
-  offset: -1 | 1;
-}
 type GroupsLoadState =
   | { status: "loading" }
   | { status: "ready" }
@@ -60,7 +55,6 @@ interface SidebarGroupsState {
   renameGroup(input: RenameGroupInput): Promise<void>;
   removeGroup(groupId: string): Promise<void>;
   assignProject(input: AssignProjectInput): Promise<void>;
-  reorderGroup(input: ReorderGroupInput): Promise<void>;
   setGroupOrder(order: readonly (string | null)[]): Promise<void>;
   toggleCollapsed(groupId: string | null): Promise<void>;
 }
@@ -134,8 +128,6 @@ export function createSidebarGroupsStore({ storage, createId }: SidebarGroupsDep
       removeGroup: (groupId) => update((project) => removeGroup(project, groupId)),
       assignProject: ({ projectKey, groupId }) =>
         update((project) => assignProject(project, { projectKey, groupId })),
-      reorderGroup: ({ groupId, offset }) =>
-        update((project) => reorderGroup(project, { groupId, offset })),
       setGroupOrder: (order) => update((project) => setGroupOrder(project, order)),
       toggleCollapsed: (groupId) =>
         update((project) => {

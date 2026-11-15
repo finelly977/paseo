@@ -136,6 +136,7 @@ export function DraggableList<T>({
   scrollEnabled = true,
   extraData: _extraData,
   useDragHandle = false,
+  holdDelayMs,
   // simultaneousGestureRef is native-only, ignored on web
   onDragBegin,
   onDragRelease,
@@ -148,7 +149,10 @@ export function DraggableList<T>({
     onDragBegin,
     onDragRelease,
   });
-  const activationConstraints = getDragActivationConstraints(useDragHandle, DRAG_ACTIVATION_CONFIG);
+  const activationConstraints = getDragActivationConstraints(useDragHandle, {
+    ...DRAG_ACTIVATION_CONFIG,
+    holdDelayMs,
+  });
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
