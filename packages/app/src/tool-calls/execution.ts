@@ -12,6 +12,23 @@ export function resolveToolCallStatus(
   return status;
 }
 
+export function getToolCallStatusLabel(input: {
+  status: ReturnType<typeof resolveToolCallStatus>;
+  executionActive: boolean;
+}): string {
+  switch (input.status) {
+    case "completed":
+      return "成功";
+    case "failed":
+      return "失败";
+    case "canceled":
+      return "已取消";
+    case "running":
+    case "executing":
+      return input.executionActive ? "运行中" : "已结束，未收到结果";
+  }
+}
+
 export function toolCallHasExitResult(item: ToolCallItem): boolean {
   if (item.payload.source !== "agent") return false;
   const detail = item.payload.data.detail;

@@ -34,6 +34,7 @@ import {
 } from "lucide-react-native";
 import Animated from "react-native-reanimated";
 import { FOOTER_HEIGHT, MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
+import type { RenderComposerControls } from "./agent-controls/toolbar-slots";
 import {
   AgentControls,
   DraftAgentControls,
@@ -182,12 +183,6 @@ function resolveCompactLayout(override: boolean | undefined, formFactor: boolean
   return override ?? formFactor;
 }
 
-function resolveMessagePlaceholder(isDesktopWebBreakpoint: boolean, t: TFunction): string {
-  return isDesktopWebBreakpoint
-    ? t("composer.placeholders.desktop")
-    : t("composer.placeholders.mobile");
-}
-
 function resolveGithubSearchEnabled(
   isGithubPickerOpen: boolean,
   isConnected: boolean,
@@ -271,7 +266,8 @@ function resolveContextWindowPlacement(
   return reserveSlot ? <View style={styles.contextWindowMeterSlot}>{meter}</View> : null;
 }
 
-interface RenderLeftContentArgs {
+interface RenderComposerWithControlsArgs {
+  renderControls: RenderComposerControls;
   agentControls: DraftAgentControlsProps | undefined;
   agentId: string;
   serverId: string;
@@ -280,10 +276,25 @@ interface RenderLeftContentArgs {
   isPaneFocused: boolean;
 }
 
-function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
-  const { agentControls, agentId, serverId, focusInput, isCompactLayout, isPaneFocused } = args;
+function renderComposerWithControls(args: RenderComposerWithControlsArgs): ReactElement {
+  const {
+    agentControls,
+    agentId,
+    serverId,
+    focusInput,
+    isCompactLayout,
+    isPaneFocused,
+    renderControls,
+  } = args;
   if (resolveAgentControlsMode(agentControls) === "draft" && agentControls) {
-    return <DraftAgentControls {...agentControls} isCompactLayout={isCompactLayout} />;
+    return (
+      <DraftAgentControls
+        {...agentControls}
+        isCompactLayout={isCompactLayout}
+        isPaneFocused={isPaneFocused}
+        renderControls={renderControls}
+      />
+    );
   }
   return (
     <AgentControls
@@ -292,6 +303,7 @@ function renderLeftContent(args: RenderLeftContentArgs): ReactElement {
       isPaneFocused={isPaneFocused}
       onDropdownClose={focusInput}
       isCompactLayout={isCompactLayout}
+      renderControls={renderControls}
     />
   );
 }
@@ -1121,8 +1133,7 @@ export function Composer({
   const isCompactFormFactor = useIsCompactFormFactor();
   const isCompactLayout = resolveCompactLayout(isCompactLayoutOverride, isCompactFormFactor);
   const isDesktopWebBreakpoint = resolveIsDesktopWebBreakpoint(isCompactFormFactor);
-  const isDesktopLayout = resolveIsDesktopWebBreakpoint(isCompactLayout);
-  const messagePlaceholder = resolveMessagePlaceholder(isDesktopLayout, t);
+  const messagePlaceholder = "Ask anything";
   const userInput = value;
   const setUserInput = onChangeText;
   const workspaceAttachments = useWorkspaceAttachmentsForScopes(attachmentScopeKeys);
@@ -2056,18 +2067,7 @@ export function Composer({
     ],
   );
 
-  const leftContent = useMemo(
-    () =>
-      renderLeftContent({
-        agentControls,
-        agentId,
-        serverId,
-        focusInput,
-        isCompactLayout,
-        isPaneFocused,
-      }),
-    [agentControls, agentId, focusInput, isCompactLayout, isPaneFocused, serverId],
-  );
+  const messageInputContainerRef = useRef<View>(null);
 
   const handleAttachButtonRef = useCallback((node: View | null) => {
     attachButtonRef.current = node;
@@ -2168,8 +2168,6 @@ export function Composer({
     [handleEditQueuedMessage, handleSendQueuedNow, queuedMessages, t],
   );
 
-  const messageInputContainerRef = useRef<View>(null);
-
   const isSubmitBusy =
     isProcessing ||
     isSubmitLoading ||
@@ -2238,49 +2236,61 @@ export function Composer({
               />
 
               {/* MessageInput handles everything: text, dictation, attachments, all buttons */}
-              <StableMessageInput
-                ref={messageInputRef}
-                value={userInput}
-                onChangeText={setUserInput}
-                onSubmit={handleSubmit}
-                hasExternalContent={hasExternalContent}
-                allowEmptySubmit={allowEmptySubmit}
-                submitButtonAccessibilityLabel={submitButtonAccessibilityLabel}
-                submitButtonTestID={submitButtonTestID}
-                submitIcon={submitIcon}
-                isSubmitDisabled={isSubmitBusy}
-                isSubmitLoading={isSubmitBusy}
-                preserveHeightOnSubmit={submitBehavior === "preserve-and-lock"}
-                attachments={selectedAttachments}
-                cwd={cwd}
-                attachmentMenuItems={attachmentMenuItems}
-                onAttachButtonRef={handleAttachButtonRef}
-                onAddImages={addImages}
-                client={client}
-                isReadyForDictation={isDictationReady}
-                placeholder={messagePlaceholder}
-                autoFocus={messageInputAutoFocus}
-                autoFocusKey={`${serverId}:${agentId}:${autoFocusKey ?? ""}`}
-                disabled={isSubmitLoading}
-                isPaneFocused={isPaneFocused}
-                leftContent={leftContent}
-                beforeVoiceContent={beforeVoiceContent}
-                rightContent={rightContent}
-                voiceServerId={serverId}
-                voiceAgentId={agentId}
-                isAgentRunning={isAgentRunning}
-                defaultSendBehavior={activeSendBehavior}
-                onQueue={handleQueue}
-                // 仅此发送入口支持右键/长按定时设置；新会话会提示先创建。
-                onScheduleMessage={openSchedule}
-                onSubmitLoadingPress={submitLoadingPressHandler}
-                onKeyPress={handleCommandKeyPress}
-                onSelectionChange={handleSelectionChange}
-                onFocusChange={handleFocusChange}
-                onHeightChange={onComposerHeightChange}
-                inputWrapperStyle={inputWrapperStyle}
-                attachmentSlot={attachmentTray}
-              />
+              {renderComposerWithControls({
+                agentControls,
+                agentId,
+                serverId,
+                focusInput,
+                isCompactLayout,
+                isPaneFocused,
+                renderControls: ({ permission, models, maxEffort }) => (
+                  <StableMessageInput
+                    ref={messageInputRef}
+                    value={userInput}
+                    onChangeText={setUserInput}
+                    onSubmit={handleSubmit}
+                    hasExternalContent={hasExternalContent}
+                    allowEmptySubmit={allowEmptySubmit}
+                    submitButtonAccessibilityLabel={submitButtonAccessibilityLabel}
+                    submitButtonTestID={submitButtonTestID}
+                    submitIcon={submitIcon}
+                    isSubmitDisabled={isSubmitBusy}
+                    isSubmitLoading={isSubmitBusy}
+                    preserveHeightOnSubmit={submitBehavior === "preserve-and-lock"}
+                    attachments={selectedAttachments}
+                    cwd={cwd}
+                    attachmentMenuItems={attachmentMenuItems}
+                    onAttachButtonRef={handleAttachButtonRef}
+                    onAddImages={addImages}
+                    client={client}
+                    isReadyForDictation={isDictationReady}
+                    placeholder={messagePlaceholder}
+                    autoFocus={messageInputAutoFocus}
+                    autoFocusKey={`${serverId}:${agentId}:${autoFocusKey ?? ""}`}
+                    disabled={isSubmitLoading}
+                    isPaneFocused={isPaneFocused}
+                    leftContent={permission}
+                    modelContent={models}
+                    maxEffort={maxEffort}
+                    beforeVoiceContent={beforeVoiceContent}
+                    rightContent={rightContent}
+                    voiceServerId={serverId}
+                    voiceAgentId={agentId}
+                    isAgentRunning={isAgentRunning}
+                    defaultSendBehavior={activeSendBehavior}
+                    onQueue={handleQueue}
+                    // 仅此发送入口支持右键/长按定时设置；新会话会提示先创建。
+                    onScheduleMessage={openSchedule}
+                    onSubmitLoadingPress={submitLoadingPressHandler}
+                    onKeyPress={handleCommandKeyPress}
+                    onSelectionChange={handleSelectionChange}
+                    onFocusChange={handleFocusChange}
+                    onHeightChange={onComposerHeightChange}
+                    inputWrapperStyle={inputWrapperStyle}
+                    attachmentSlot={attachmentTray}
+                  />
+                ),
+              })}
               <Combobox
                 options={githubSearchOptions}
                 value=""

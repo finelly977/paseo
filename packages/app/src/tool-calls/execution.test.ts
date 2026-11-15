@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCallItem, StreamItem } from "@/types/stream";
-import { activeToolCallIds, resolveToolCallStatus } from "./execution";
+import { activeToolCallIds, getToolCallStatusLabel, resolveToolCallStatus } from "./execution";
 
 function tool(id: string, turnId: string, exitCode?: number): ToolCallItem {
   return {
@@ -23,6 +23,15 @@ function tool(id: string, turnId: string, exitCode?: number): ToolCallItem {
 }
 
 describe("工具运行状态展示", () => {
+  it("命令面板按真实结果显示状态，中断前未结束的命令不显示成功", () => {
+    expect(getToolCallStatusLabel({ status: "completed", executionActive: false })).toBe("成功");
+    expect(getToolCallStatusLabel({ status: "failed", executionActive: true })).toBe("失败");
+    expect(getToolCallStatusLabel({ status: "canceled", executionActive: false })).toBe("已取消");
+    expect(getToolCallStatusLabel({ status: "running", executionActive: true })).toBe("运行中");
+    expect(getToolCallStatusLabel({ status: "executing", executionActive: false })).toBe(
+      "已结束，未收到结果",
+    );
+  });
   it("回合结束后停止缺失结束结果的工具动效，不伪造输出", () => {
     const call = tool("one", "turn-1");
     expect([

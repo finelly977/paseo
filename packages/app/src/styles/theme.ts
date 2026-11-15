@@ -97,6 +97,7 @@ export const baseColors = {
 
   // Purple scale
   purple: {
+    300: "#b39dff",
     500: "#a855f7",
     600: "#9333ea",
   },

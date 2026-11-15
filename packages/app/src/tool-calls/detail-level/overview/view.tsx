@@ -113,6 +113,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
           testID="tool-call-group"
           label={aggregateSummary}
           icon={Wrench}
+          trailingChevron
           isLoading={group.isLoading && executionActive}
           isExpanded={false}
           isLastInSequence={isLastInSequence}
@@ -141,15 +142,20 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
       onToggle={toggle}
       renderDetails={renderDetails}
       borderlessWhenExpanded
+      trailingChevron
     />
   );
 });
 
-const styles = StyleSheet.create({
+const styles = StyleSheet.create((theme) => ({
   scroll: {
     maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
   },
   content: {
-    paddingHorizontal: 13,
+    marginLeft: theme.spacing[4],
+    paddingLeft: theme.spacing[2],
+    paddingRight: 13,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.colors.border,
   },
-});
+}));

@@ -305,12 +305,8 @@ export function useKeyboardShortcuts({
       }
 
       const key = event.key ?? "";
-      if (
-        key === "Escape" &&
-        pathname.startsWith("/settings") &&
-        !isMobile &&
-        hasActiveWebOverlay()
-      ) {
+      // Escape 优先交给当前浮层，不能关闭模型菜单的同时中断正在运行的会话。
+      if (key === "Escape" && hasActiveWebOverlay()) {
         return;
       }
       if (key === badgeModifierKey && !event.shiftKey) {

@@ -9,12 +9,14 @@ import {
 
 describe("composer control layout", () => {
   it.each([
-    [1000, 2, 3, 129],
-    [1000, 19, 6, 280],
-    [400, 19, 6, 240],
-    [1000, null, 0, 140],
-  ] as const)("模型浮层根据窗口和真实选项数量收缩", (height, models, thinking, expected) => {
-    expect(resolveDesktopModelMenuHeight(height, models, thinking)).toBe(expected);
+    [1000, 1, false, 40],
+    [1000, 2, false, 72],
+    [1000, 2, true, 108],
+    [1000, 19, true, 280],
+    [400, 19, true, 240],
+    [1000, null, true, 148],
+  ] as const)("模型浮层根据窗口和真实选项数量收缩", (height, models, search, expected) => {
+    expect(resolveDesktopModelMenuHeight(height, models, search)).toBe(expected);
   });
   it("removes labels in priority order as the toolbar narrows", () => {
     expect(resolveComposerControlPresentation("full")).toEqual({

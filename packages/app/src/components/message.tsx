@@ -63,7 +63,7 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "reac
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
-import { resolveToolCallStatus } from "@/tool-calls/execution";
+import { getToolCallStatusLabel, resolveToolCallStatus } from "@/tool-calls/execution";
 import type {
   StreamItem,
   TaskActivity,
@@ -1561,6 +1561,34 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderBottomRightRadius: 0,
   },
   inlineDetails: { paddingLeft: 22 },
+  commandDetails: {
+    paddingLeft: 22,
+    paddingRight: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+  },
+  commandPanel: {
+    minWidth: 0,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface2,
+    overflow: "hidden",
+  },
+  commandPanelTitle: {
+    paddingHorizontal: theme.spacing[3],
+    paddingTop: theme.spacing[2],
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base,
+  },
+  commandPanelStatus: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[3],
+    paddingBottom: theme.spacing[2],
+  },
+  commandPanelStatusText: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base },
   shimmerOverlay: {
     position: "absolute",
     top: 0,
@@ -2640,6 +2668,7 @@ interface ExpandableBadgeProps {
   isLastInSequence?: boolean;
   disableOuterSpacing?: boolean;
   borderlessWhenExpanded?: boolean;
+  trailingChevron?: boolean;
   testID?: string;
 }
 
@@ -2988,6 +3017,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   isLastInSequence = false,
   disableOuterSpacing,
   borderlessWhenExpanded = false,
+  trailingChevron = false,
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
@@ -3180,10 +3210,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const labelStyle = useMemo(
     () => [
       expandableBadgeStylesheet.label,
+      !secondaryLabel && { flexShrink: 1, minWidth: 0 },
       isActive && expandableBadgeStylesheet.labelActive,
       isLoading && expandableBadgeStylesheet.labelLoading,
     ],
-    [isActive, isLoading],
+    [isActive, isLoading, secondaryLabel],
   );
 
   const secondaryLabelStyle = useMemo(
@@ -3217,7 +3248,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
     expanded: isExpanded,
-    showChevron: isInteractive && (isHovered || isExpanded),
+    showChevron: !trailingChevron && isInteractive && (isHovered || isExpanded),
     chevronStyle: expandableBadgeStylesheet.chevron,
     iconNode,
   });
@@ -3271,6 +3302,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
             onOpenFileHoverIn={handleOpenFileHoverIn}
             onOpenFileHoverOut={handleOpenFileHoverOut}
           />
+          {trailingChevron && isInteractive ? (
+            <DisclosureChevron expanded={isExpanded} style={expandableBadgeStylesheet.chevron}>
+              <ThemedChevronRightIcon size={12} uniProps={foregroundMutedColorMapping} />
+            </DisclosureChevron>
+          ) : null}
         </View>
       </Pressable>
       <DisclosureContent
@@ -3303,12 +3339,46 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.isLastInSequence !== next.isLastInSequence) return false;
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
   if (previous.borderlessWhenExpanded !== next.borderlessWhenExpanded) return false;
+  if (previous.trailingChevron !== next.trailingChevron) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
   if (previous.onDetailHoverChange !== next.onDetailHoverChange) return false;
   if (previous.renderDetails !== next.renderDetails) return false;
   return true;
+}
+
+function CommandOutputStatus({
+  status,
+  executionActive,
+}: {
+  status: ReturnType<typeof resolveToolCallStatus>;
+  executionActive: boolean;
+}) {
+  return (
+    <View style={expandableBadgeStylesheet.commandPanelStatus} testID="command-output-status">
+      {status === "completed" ? (
+        <ThemedTodoCheckIcon size={12} uniProps={foregroundMutedColorMapping} />
+      ) : null}
+      {status === "failed" ? (
+        <ThemedTriangleAlertIcon size={12} uniProps={destructiveColorMapping} />
+      ) : null}
+      <Text style={expandableBadgeStylesheet.commandPanelStatusText}>
+        {getToolCallStatusLabel({ status, executionActive })}
+      </Text>
+    </View>
+  );
+}
+
+function toolCallSecondaryLabel(
+  isCommand: boolean,
+  executionActive: boolean,
+  status: ReturnType<typeof resolveToolCallStatus>,
+  summary: string | undefined,
+): string | undefined {
+  if (!executionActive && (status === "running" || status === "executing"))
+    return "回合已结束，未收到工具结束结果";
+  return isCommand ? undefined : summary;
 }
 
 interface ToolCallProps {
@@ -3356,6 +3426,7 @@ export const ToolCall = memo(function ToolCall({
   const isMobile = useIsCompactFormFactor();
   const shouldRenderInline = !isMobile || forceInline;
   const renderedStatus = resolveToolCallStatus(status, detail);
+  const isCommand = detail?.type === "shell";
 
   const effectiveDetail = useMemo<ToolCallDetail | undefined>(() => {
     if (detail) {
@@ -3449,6 +3520,26 @@ export const ToolCall = memo(function ToolCall({
   // Render inline details for desktop
   const renderDetails = useCallback(() => {
     if (!shouldRenderInline) return null;
+    if (isCommand) {
+      return (
+        <View style={expandableBadgeStylesheet.commandDetails}>
+          <View style={expandableBadgeStylesheet.commandPanel} testID="command-output-panel">
+            <Text style={expandableBadgeStylesheet.commandPanelTitle}>
+              {presentation.displayName}
+            </Text>
+            <ToolCallDetailsContent
+              appearance="plain"
+              toolName={toolName}
+              detail={effectiveDetail}
+              errorText={presentation.errorText}
+              maxHeight={maxDetailHeight}
+              showLoadingSkeleton={presentation.isLoadingDetails && executionActive}
+            />
+            <CommandOutputStatus status={renderedStatus} executionActive={executionActive} />
+          </View>
+        </View>
+      );
+    }
     return (
       <View style={expandableBadgeStylesheet.inlineDetails}>
         <ToolCallDetailsContent
@@ -3469,6 +3560,9 @@ export const ToolCall = memo(function ToolCall({
     presentation.isLoadingDetails,
     executionActive,
     maxDetailHeight,
+    isCommand,
+    renderedStatus,
+    presentation.displayName,
   ]);
 
   if (presentation.isPlan && effectiveDetail?.type === "plan") {
@@ -3485,12 +3579,16 @@ export const ToolCall = memo(function ToolCall({
     <ExpandableBadge
       testID="tool-call-badge"
       borderlessWhenExpanded
-      label={presentation.displayName}
-      secondaryLabel={
-        !executionActive && (renderedStatus === "running" || renderedStatus === "executing")
-          ? "回合已结束，未收到工具结束结果"
-          : presentation.summary
+      trailingChevron
+      label={
+        isCommand ? (presentation.summary ?? presentation.displayName) : presentation.displayName
       }
+      secondaryLabel={toolCallSecondaryLabel(
+        isCommand,
+        executionActive,
+        renderedStatus,
+        presentation.summary,
+      )}
       icon={presentation.icon}
       isExpanded={shouldRenderInline && isExpanded}
       onToggle={presentation.canOpenDetails ? handleToggle : undefined}

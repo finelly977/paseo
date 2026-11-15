@@ -1,10 +1,20 @@
-import { DesktopModelMenuContent } from "./desktop-model-menu";
+import { isMaxEffort } from "./max-effort";
+import type { RenderComposerControls } from "./toolbar-slots";
+import { DesktopModelMenuContent, DesktopThinkingMenuContent } from "./desktop-model-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Keyboard, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
-import { Brain, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
+import {
+  Brain,
+  ChevronDown,
+  ListTodo,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+} from "lucide-react-native";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import {
   DropdownMenu,
@@ -79,6 +89,8 @@ interface AgentControlOption {
 type AgentControlSelector = "provider" | "mode" | "model" | "thinking" | `feature-${string}`;
 
 interface ControlledAgentControlsProps {
+  isPaneFocused?: boolean;
+  renderControls?: RenderComposerControls;
   providerLocked: boolean;
   provider: string;
   providerOptions?: AgentControlOption[];
@@ -109,6 +121,8 @@ interface ControlledAgentControlsProps {
 }
 
 export interface DraftAgentControlsProps {
+  isPaneFocused?: boolean;
+  renderControls?: RenderComposerControls;
   providerDefinitions: AgentProviderDefinition[];
   selectedProvider: AgentProvider | null;
   onSelectProvider: (provider: AgentProvider) => void;
@@ -140,6 +154,7 @@ export interface DraftAgentControlsProps {
 }
 
 interface AgentControlsProps {
+  renderControls?: RenderComposerControls;
   agentId: string;
   serverId: string;
   isPaneFocused: boolean;
@@ -581,6 +596,8 @@ function resolveControlledControlCapabilities(input: {
 }
 
 function ControlledAgentControls({
+  isPaneFocused = true,
+  renderControls,
   providerLocked,
   provider,
   providerOptions,
@@ -807,91 +824,133 @@ function ControlledAgentControls({
     [onSelectModel, onSelectProvider, onSelectProviderAndModel, provider],
   );
 
-  if (!hasAnyControl) {
-    return null;
-  }
-
+  if (!hasAnyControl && !renderControls) return null;
+  const maxEffort = isMaxEffort(formattedThinkingOptions, selectedThinkingOptionId);
+  const sheetModeControl = renderControls ? null : modeControl;
+  const controls = (
+    <View
+      style={[styles.container, renderControls && styles.slottedControls]}
+      onLayout={handleLayout}
+    >
+      {!isCompact ? (
+        <DesktopAgentControlsContent
+          isPaneFocused={isPaneFocused}
+          providerLocked={providerLocked}
+          provider={provider}
+          providerOptions={providerOptions}
+          selectedProviderId={selectedProviderId}
+          selectedModelId={selectedModelId}
+          thinkingOptions={formattedThinkingOptions}
+          selectedThinkingOptionId={selectedThinkingOptionId}
+          features={features}
+          onSetFeature={onSetFeature}
+          onDropdownClose={onDropdownClose}
+          onModelSelectorOpen={onModelSelectorOpen}
+          onRetryModelProvider={onRetryModelProvider}
+          isRetryingModelProvider={isRetryingModelProvider}
+          disabled={disabled}
+          isModelLoading={isModelLoading}
+          canSelectProvider={canSelectProvider}
+          canSelectModel={canSelectModel}
+          canSelectThinking={canSelectThinking}
+          modelSelectorProviders={effectiveModelSelectorProviders}
+          modelDisabled={modelDisabled}
+          displayProvider={displayProvider}
+          displayThinking={displayThinking}
+          handleProviderSelect={handleProviderSelect}
+          handleThinkingSelect={handleThinkingSelect}
+          handleDesktopModelSelect={handleDesktopModelSelect}
+          modeControl={sheetModeControl}
+          glyphSize={layoutContextValue.glyphSize}
+          modelSelectorServerId={modelSelectorServerId}
+          codexProviderInjections={codexProviderInjections}
+          selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+          onSelectCodexProviderInjection={onSelectCodexProviderInjection}
+          canSelectCodexProviderInjection={canSelectCodexProviderInjection}
+        />
+      ) : (
+        <SheetAgentControlsContent
+          providerLocked={providerLocked}
+          provider={provider}
+          selectedModelId={selectedModelId}
+          selectedThinkingOptionId={selectedThinkingOptionId}
+          features={features}
+          onSetFeature={onSetFeature}
+          onDropdownClose={onDropdownClose}
+          onModelSelectorOpen={onModelSelectorOpen}
+          onRetryModelProvider={onRetryModelProvider}
+          isRetryingModelProvider={isRetryingModelProvider}
+          disabled={disabled}
+          isModelLoading={isModelLoading}
+          canSelectModel={canSelectModel}
+          canSelectThinking={canSelectThinking}
+          modelSelectorProviders={effectiveModelSelectorProviders}
+          modelDisabled={modelDisabled}
+          comboboxThinkingOptions={comboboxThinkingOptions}
+          openSelector={openSelector}
+          displayThinking={displayThinking}
+          activeSheet={activeSheet}
+          handleOpenSheet={handleOpenSheet}
+          handleCloseSheet={handleCloseSheet}
+          handleSheetModelSelect={handleSheetModelSelect}
+          handleSelectThinkingAndClose={handleSelectThinkingAndClose}
+          handleOpenChange={handleSheetOpenChange}
+          renderThinkingOption={renderThinkingOption}
+          modeControl={sheetModeControl}
+          glyphSize={layoutContextValue.glyphSize}
+          modelSelectorServerId={modelSelectorServerId}
+          codexProviderInjections={codexProviderInjections}
+          selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
+          onSelectCodexProviderInjection={onSelectCodexProviderInjection}
+          canSelectCodexProviderInjection={canSelectCodexProviderInjection}
+        />
+      )}
+    </View>
+  );
   return (
     <ComposerControlLayoutProvider value={layoutContextValue}>
-      <View style={styles.container} onLayout={handleLayout}>
-        {!isCompact ? (
-          <DesktopAgentControlsContent
-            providerLocked={providerLocked}
-            provider={provider}
-            providerOptions={providerOptions}
-            selectedProviderId={selectedProviderId}
-            selectedModelId={selectedModelId}
-            thinkingOptions={formattedThinkingOptions}
-            selectedThinkingOptionId={selectedThinkingOptionId}
-            features={features}
-            onSetFeature={onSetFeature}
-            onDropdownClose={onDropdownClose}
-            onModelSelectorOpen={onModelSelectorOpen}
-            onRetryModelProvider={onRetryModelProvider}
-            isRetryingModelProvider={isRetryingModelProvider}
-            disabled={disabled}
-            isModelLoading={isModelLoading}
-            canSelectProvider={canSelectProvider}
-            canSelectModel={canSelectModel}
-            canSelectThinking={canSelectThinking}
-            modelSelectorProviders={effectiveModelSelectorProviders}
-            modelDisabled={modelDisabled}
-            displayProvider={displayProvider}
-            displayThinking={displayThinking}
-            handleProviderSelect={handleProviderSelect}
-            handleThinkingSelect={handleThinkingSelect}
-            handleDesktopModelSelect={handleDesktopModelSelect}
-            modeControl={modeControl}
-            glyphSize={layoutContextValue.glyphSize}
-            modelSelectorServerId={modelSelectorServerId}
-            codexProviderInjections={codexProviderInjections}
-            selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
-            onSelectCodexProviderInjection={onSelectCodexProviderInjection}
-            canSelectCodexProviderInjection={canSelectCodexProviderInjection}
-          />
-        ) : (
-          <SheetAgentControlsContent
-            providerLocked={providerLocked}
-            provider={provider}
-            selectedModelId={selectedModelId}
-            selectedThinkingOptionId={selectedThinkingOptionId}
-            features={features}
-            onSetFeature={onSetFeature}
-            onDropdownClose={onDropdownClose}
-            onModelSelectorOpen={onModelSelectorOpen}
-            onRetryModelProvider={onRetryModelProvider}
-            isRetryingModelProvider={isRetryingModelProvider}
-            disabled={disabled}
-            isModelLoading={isModelLoading}
-            canSelectModel={canSelectModel}
-            canSelectThinking={canSelectThinking}
-            modelSelectorProviders={effectiveModelSelectorProviders}
-            modelDisabled={modelDisabled}
-            comboboxThinkingOptions={comboboxThinkingOptions}
-            openSelector={openSelector}
-            displayThinking={displayThinking}
-            activeSheet={activeSheet}
-            handleOpenSheet={handleOpenSheet}
-            handleCloseSheet={handleCloseSheet}
-            handleSheetModelSelect={handleSheetModelSelect}
-            handleSelectThinkingAndClose={handleSelectThinkingAndClose}
-            handleOpenChange={handleSheetOpenChange}
-            renderThinkingOption={renderThinkingOption}
-            modeControl={modeControl}
-            glyphSize={layoutContextValue.glyphSize}
-            modelSelectorServerId={modelSelectorServerId}
-            codexProviderInjections={codexProviderInjections}
-            selectedCodexProviderInjectionId={selectedCodexProviderInjectionId}
-            onSelectCodexProviderInjection={onSelectCodexProviderInjection}
-            canSelectCodexProviderInjection={canSelectCodexProviderInjection}
-          />
-        )}
-      </View>
+      <ComposerControlLayout
+        renderControls={renderControls}
+        modeControl={modeControl}
+        onDropdownClose={onDropdownClose}
+        isCompact={isCompact}
+        maxEffort={maxEffort}
+      >
+        {controls}
+      </ComposerControlLayout>
     </ComposerControlLayoutProvider>
   );
 }
 
+function ComposerControlLayout({
+  renderControls,
+  children,
+  modeControl,
+  onDropdownClose,
+  isCompact,
+  maxEffort,
+}: {
+  renderControls: RenderComposerControls | undefined;
+  children: ReactElement;
+  modeControl: AgentModeControlValue | null | undefined;
+  onDropdownClose: (() => void) | undefined;
+  isCompact: boolean;
+  maxEffort: boolean;
+}) {
+  const permission = modeControl ? (
+    <AgentModeControl {...modeControl} onClose={onDropdownClose} />
+  ) : null;
+  if (renderControls) return renderControls({ permission, models: children, maxEffort });
+  return (
+    <View style={styles.container}>
+      {children}
+      {!isCompact ? permission : null}
+    </View>
+  );
+}
+
 export interface DesktopAgentControlsContentProps {
+  isPaneFocused: boolean;
   providerLocked: boolean;
   provider: string;
   providerOptions?: AgentControlOption[];
@@ -930,7 +989,16 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
   const { onDropdownClose, onModelSelectorOpen } = props;
   const { width } = useWindowDimensions();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<"model" | "thinking" | null>(null);
+  const maxEffort = isMaxEffort(props.thinkingOptions, props.selectedThinkingOptionId);
+  const modelAccessibilityState = useMemo(() => ({ expanded: openMenu === "model" }), [openMenu]);
+  const thinkingAccessibilityState = useMemo(
+    () => ({ expanded: openMenu === "thinking" }),
+    [openMenu],
+  );
+  useEffect(() => {
+    if (!props.isPaneFocused) setOpenMenu(null);
+  }, [props.isPaneFocused]);
   const modelLabel = resolveSelectedModelLabel({
     providers: props.modelSelectorProviders,
     selectedProvider: props.provider,
@@ -940,11 +1008,18 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const label = buildSelectedTriggerLabel(modelLabel);
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
-      setMenuOpen(open);
+      setOpenMenu(open ? "model" : null);
       if (open) onModelSelectorOpen?.();
       else onDropdownClose?.();
     },
     [onDropdownClose, onModelSelectorOpen],
+  );
+  const handleThinkingOpenChange = useCallback(
+    (open: boolean) => {
+      setOpenMenu(open ? "thinking" : null);
+      if (!open) onDropdownClose?.();
+    },
+    [onDropdownClose],
   );
   const chipStyle = useCallback(
     ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
@@ -954,11 +1029,20 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     ],
     [props.disabled],
   );
+  const thinkingChipStyle = useCallback(
+    (state: { hovered: boolean; pressed: boolean; open: boolean }) => [
+      chipStyle(state),
+      maxEffort && styles.maxEffortChip,
+    ],
+    [chipStyle, maxEffort],
+  );
   const hasInjection =
     props.canSelectCodexProviderInjection &&
     props.codexProviderInjections &&
     props.onSelectCodexProviderInjection;
-  const otherFeatures = props.features?.filter((feature) => feature.id !== "fast_mode") ?? [];
+  const otherFeatures =
+    props.features?.filter((feature) => feature.id !== "fast_mode" || !props.canSelectThinking) ??
+    [];
   const advanced =
     hasInjection || otherFeatures.length > 0 ? (
       <>
@@ -984,16 +1068,57 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     ) : null;
   return (
     <>
+      {props.canSelectThinking ? (
+        <DropdownMenu
+          compact
+          open={props.isPaneFocused && openMenu === "thinking"}
+          onOpenChange={handleThinkingOpenChange}
+          selectionCloseScope="current"
+        >
+          <DropdownMenuTrigger
+            disabled={props.disabled}
+            accessibilityRole="button"
+            accessibilityLabel={`思考强度：${props.displayThinking}`}
+            accessibilityState={thinkingAccessibilityState}
+            testID="agent-thinking-selector"
+            style={thinkingChipStyle}
+          >
+            <AgentControlIconGlyph
+              icon={Sparkles}
+              size={13}
+              tone={maxEffort ? "purple" : "muted"}
+            />
+            <Text
+              numberOfLines={1}
+              style={[styles.roleThinkingText, maxEffort && styles.maxEffortText]}
+            >
+              {props.displayThinking}
+            </Text>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="top"
+            align="start"
+            offset={8}
+            width={248}
+            modal={false}
+            style={styles.promptMenu}
+            testID="agent-thinking-popup"
+          >
+            <DesktopThinkingMenuContent controls={props} />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
       <DropdownMenu
         compact
-        open={menuOpen}
+        open={props.isPaneFocused && openMenu === "model"}
         onOpenChange={handleMenuOpenChange}
         selectionCloseScope="current"
       >
         <DropdownMenuTrigger
           disabled={props.disabled}
           accessibilityRole="button"
-          accessibilityLabel={`${t("agentControls.model.title")}：${label}${props.canSelectThinking ? ` · ${props.displayThinking}` : ""}`}
+          accessibilityLabel={`${t("agentControls.model.title")}：${label}`}
+          accessibilityState={modelAccessibilityState}
           testID="agent-role-selector"
           style={chipStyle}
         >
@@ -1002,25 +1127,20 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <Text numberOfLines={1} style={styles.roleChipText}>
             {label}
           </Text>
-          {props.canSelectThinking ? (
-            <Text
-              numberOfLines={1}
-              style={styles.roleThinkingText}
-            >{`· ${props.displayThinking}`}</Text>
-          ) : null}
+          <AgentControlIconGlyph icon={ChevronDown} size={12} />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           side="top"
           align="start"
-          width={Math.min(480, width - 32)}
+          offset={8}
+          modal={false}
+          width={Math.min(props.providerLocked ? 300 : 360, width - 32)}
+          style={styles.promptMenu}
           testID="agent-role-menu"
         >
           <DesktopModelMenuContent controls={props} advanced={advanced} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {props.modeControl ? (
-        <AgentModeControl {...props.modeControl} onClose={props.onDropdownClose} />
-      ) : null}
     </>
   );
 }
@@ -1419,6 +1539,7 @@ function ThinkingComboboxOption({
 }
 
 export const AgentControls = memo(function AgentControls({
+  renderControls,
   agentId,
   serverId,
   isPaneFocused,
@@ -1518,6 +1639,9 @@ export const AgentControls = memo(function AgentControls({
 
   return (
     <ControlledAgentControls
+      key={`${serverId}:${agentId}`}
+      isPaneFocused={isPaneFocused}
+      renderControls={renderControls}
       providerLocked
       provider={agent.provider}
       modelSelectorProviders={agentModelSelectorProviders}
@@ -1543,6 +1667,8 @@ export const AgentControls = memo(function AgentControls({
 });
 
 export function DraftAgentControls({
+  isPaneFocused = true,
+  renderControls,
   providerDefinitions,
   selectedProvider,
   onSelectProvider,
@@ -1609,6 +1735,8 @@ export function DraftAgentControls({
 
   return (
     <ControlledAgentControls
+      isPaneFocused={isPaneFocused}
+      renderControls={renderControls}
       providerLocked={false}
       provider={selectedProvider ?? ""}
       providerOptions={providerOptions}
@@ -1673,6 +1801,19 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
   },
+  maxEffortChip: { backgroundColor: theme.colors.palette.purple[300] + "22" },
+  maxEffortText: {
+    color:
+      theme.colorScheme === "dark"
+        ? theme.colors.palette.purple[300]
+        : theme.colors.palette.purple[600],
+  },
+  promptMenu: {
+    backgroundColor: theme.colors.surface2,
+    paddingVertical: 0,
+    borderWidth: 0,
+    borderRadius: theme.borderRadius.lg,
+  },
   roleThinkingText: {
     flexShrink: 0,
     fontSize: theme.fontSize.sm,
@@ -1698,6 +1839,7 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     color: theme.colors.foregroundMuted,
   },
+  slottedControls: { flexGrow: 0 },
   container: {
     minWidth: 0,
     flexGrow: 1,

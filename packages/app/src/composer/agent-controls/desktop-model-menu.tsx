@@ -2,7 +2,6 @@ import { ModelLibraryList } from "@/model-library/model-list";
 import { useModelLibrary, type ModelLibrary } from "@/model-library/use-model-library";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   Text,
@@ -12,9 +11,10 @@ import {
   type PressableStateCallbackType,
 } from "react-native";
 import { Check, RefreshCw, Search, Settings2, Star, Zap } from "lucide-react-native";
-import { StyleSheet } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +29,13 @@ import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { AgentControlIconGlyph } from "./control";
 import type { DesktopAgentControlsContentProps } from "./index";
 import { resolveDesktopModelMenuHeight } from "./layout";
+import { ThinkingSlider } from "./thinking-slider";
 
 type Controls = DesktopAgentControlsContentProps;
+const NO_THINKING_OPTIONS: NonNullable<Controls["thinkingOptions"]> = [];
+const MutedLoadingSpinner = withUnistyles(LoadingSpinner, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
 interface ChoiceProps {
   id: string;
   label: string;
@@ -39,7 +44,6 @@ interface ChoiceProps {
   selected?: boolean;
   disabled?: boolean;
   iconOnly?: boolean;
-  segmented?: boolean;
   onSelect: (id: string) => void;
   testID?: string;
   icon?: typeof Settings2;
@@ -53,7 +57,6 @@ function MenuChoice({
   selected = false,
   disabled = false,
   iconOnly = false,
-  segmented = false,
   onSelect,
   testID,
   icon,
@@ -64,13 +67,12 @@ function MenuChoice({
     ({ hovered, pressed }: PressableStateCallbackType) => [
       iconOnly && styles.railButton,
       !iconOnly && styles.row,
-      segmented && styles.segmentButton,
-      (hovered || pressed || ((iconOnly || segmented) && selected)) && styles.active,
+      (hovered || pressed || (iconOnly && selected)) && styles.active,
       disabled && styles.disabled,
     ],
-    [disabled, iconOnly, segmented, selected],
+    [disabled, iconOnly, selected],
   );
-  const glyphSize = segmented ? 12 : 16;
+  const glyphSize = 16;
   return (
     <Tooltip delayDuration={400} enabledOnMobile={false}>
       <TooltipTrigger asChild>
@@ -88,13 +90,11 @@ function MenuChoice({
           ) : null}
           {icon ? <AgentControlIconGlyph icon={icon} size={glyphSize} /> : null}
           {!iconOnly ? (
-            <Text numberOfLines={1} style={segmented ? styles.segmentLabel : styles.label}>
+            <Text numberOfLines={1} style={styles.label}>
               {label}
             </Text>
           ) : null}
-          {!iconOnly && !segmented && selected ? (
-            <AgentControlIconGlyph icon={Check} size={14} />
-          ) : null}
+          {!iconOnly && selected ? <AgentControlIconGlyph icon={Check} size={14} /> : null}
         </Pressable>
       </TooltipTrigger>
       <TooltipContent side="top" align="start" maxWidth={420}>
@@ -133,7 +133,7 @@ function ModelChoices({
   if (!favoritesOnly && active?.modelSelection.kind === "loading")
     return (
       <View style={styles.state}>
-        <ActivityIndicator size="small" />
+        <MutedLoadingSpinner size={14} />
         <Text style={styles.muted}>正在读取模型…</Text>
       </View>
     );
@@ -165,81 +165,80 @@ function ModelChoices({
   );
 }
 
-function ThinkingChoices({ controls, visible }: { controls: Controls; visible: boolean }) {
-  if (!controls.canSelectThinking) return null;
-  return (
-    <View style={styles.thinking} testID="agent-thinking-menu">
-      <View style={styles.thinkingHeader}>
-        <Text style={styles.muted}>思考强度</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.listContent}>
-        {visible ? (
-          controls.thinkingOptions?.map((option) => (
-            <MenuChoice
-              key={option.id}
-              id={option.id}
-              label={option.label}
-              selected={option.id === controls.selectedThinkingOptionId}
-              disabled={controls.disabled}
-              onSelect={controls.handleThinkingSelect}
-            />
-          ))
-        ) : (
-          <Text style={styles.empty}>选择模型后调整</Text>
-        )}
-      </ScrollView>
-    </View>
+export function DesktopThinkingMenuContent({ controls }: { controls: Controls }) {
+  const options = controls.thinkingOptions ?? NO_THINKING_OPTIONS;
+  const { handleThinkingSelect, onSetFeature } = controls;
+  const selectedIndex = options.findIndex(
+    (option) => option.id === controls.selectedThinkingOptionId,
   );
-}
-
-function MenuFooter({ controls, advanced }: { controls: Controls; advanced: ReactNode }) {
-  const { onSetFeature } = controls;
+  const select = useCallback(
+    (index: number) => handleThinkingSelect(options[index].id),
+    [handleThinkingSelect, options],
+  );
   const fast = controls.features?.find(
     (feature) => feature.id === "fast_mode" && feature.type === "toggle",
   );
-  const setFast = useCallback(
-    (id: string) => onSetFeature?.("fast_mode", id === "fast"),
-    [onSetFeature],
+  const toggleFast = useCallback(
+    () => onSetFeature?.("fast_mode", !fast?.value),
+    [onSetFeature, fast],
   );
-  if (!fast && !advanced) return null;
+  const fastState = useMemo(
+    () => ({ checked: Boolean(fast?.value), disabled: controls.disabled }),
+    [fast, controls.disabled],
+  );
   return (
-    <View style={styles.footer}>
-      {fast ? (
-        <View style={styles.segment}>
-          <MenuChoice
-            id="standard"
-            label="标准"
-            segmented
-            selected={!fast.value}
-            disabled={controls.disabled || !onSetFeature}
-            onSelect={setFast}
-          />
-          <MenuChoice
-            id="fast"
-            label="快速"
-            segmented
-            icon={Zap}
-            selected={Boolean(fast.value)}
-            disabled={controls.disabled || !onSetFeature}
-            onSelect={setFast}
-          />
-        </View>
-      ) : null}
-      {advanced ? (
-        <DropdownMenu compact selectionCloseScope="current">
-          <DropdownMenuTrigger accessibilityLabel="更多模型选项" style={styles.more}>
-            <AgentControlIconGlyph icon={Settings2} size={14} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" width={250} maxHeight={300} scrollable>
-            {advanced}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
+    <View dataSet={COMPACT_LABEL_DATASET} style={styles.thinking} testID="agent-thinking-menu">
+      <View style={styles.thinkingHeader}>
+        <Text style={styles.muted}>思考强度</Text>
+        <Text style={styles.label}>{controls.displayThinking}</Text>
+        {fast ? (
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="Fast"
+            accessibilityState={fastState}
+            aria-checked={Boolean(fast.value)}
+            onPress={toggleFast}
+            disabled={controls.disabled || !controls.onSetFeature}
+            style={[styles.fastButton, fast.value && styles.active]}
+            testID="thinking-fast-toggle"
+          >
+            <AgentControlIconGlyph icon={Zap} size={12} tone={fast.value ? "yellow" : "muted"} />
+            <Text style={styles.fastLabel}>Fast</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={styles.thinkingEnds}>
+        <Text style={styles.muted}>更快</Text>
+        <Text style={styles.muted}>更深入</Text>
+      </View>
+      <ThinkingSlider
+        options={options}
+        selectedIndex={selectedIndex}
+        disabled={controls.disabled}
+        maxed={selectedIndex === options.length - 1 && options.length > 1}
+        onSelect={select}
+      />
     </View>
   );
 }
 
-/** 模型、收藏与思考强度共用一个浮层，选择后保留主面板。 */
+function MenuFooter({ advanced }: { advanced: ReactNode }) {
+  if (!advanced) return null;
+  return (
+    <View style={styles.footer}>
+      <DropdownMenu compact selectionCloseScope="current">
+        <DropdownMenuTrigger accessibilityLabel="更多模型选项" style={styles.more}>
+          <AgentControlIconGlyph icon={Settings2} size={14} />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" width={250} maxHeight={300} scrollable>
+          {advanced}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </View>
+  );
+}
+
+/** 当前会话只展示模型；新会话同时保留智能体切换与收藏。 */
 export function DesktopModelMenuContent({
   controls,
   advanced,
@@ -278,59 +277,65 @@ export function DesktopModelMenuContent({
         library.preferences.favorites.includes(row.favoriteKey),
       ).length
     : getMenuModelCount(active);
-  const menuHeight = resolveDesktopModelMenuHeight(
-    height,
-    modelCount,
-    controls.thinkingOptions?.length ?? 0,
-  );
+  const showSearch =
+    !controls.providerLocked || favoritesOnly || modelCount === null || modelCount > 7;
+  const menuHeight = resolveDesktopModelMenuHeight(height, modelCount, showSearch);
   return (
-    <View dataSet={COMPACT_LABEL_DATASET} style={styles.menu}>
+    <View dataSet={COMPACT_LABEL_DATASET} style={styles.menu} testID="desktop-model-picker-content">
       <View style={styles.columns(menuHeight)}>
-        <ScrollView style={styles.rail} contentContainerStyle={styles.railContent}>
-          <MenuChoice
-            id="favorites"
-            label="收藏模型"
-            icon={Star}
-            iconOnly
-            selected={favoritesOnly}
-            onSelect={showFavorites}
-          />
-          {providers.map((entry) => (
+        {!controls.providerLocked ? (
+          <ScrollView
+            style={styles.rail}
+            contentContainerStyle={styles.railContent}
+            testID="agent-model-provider-rail"
+          >
             <MenuChoice
-              key={entry.id}
-              id={entry.id}
-              label={entry.label}
-              provider={entry.id}
+              id="favorites"
+              label="收藏模型"
+              icon={Star}
               iconOnly
-              selected={!favoritesOnly && entry.id === active?.id}
-              disabled={controls.disabled}
-              onSelect={selectProvider}
+              selected={favoritesOnly}
+              onSelect={showFavorites}
             />
-          ))}
-        </ScrollView>
-        <View style={styles.models}>
-          <View style={styles.search}>
-            <AgentControlIconGlyph icon={Search} size={14} />
-            <TextInput
-              autoFocus
-              value={query}
-              onChangeText={setQuery}
-              placeholder={favoritesOnly ? "搜索收藏模型…" : "搜索模型…"}
-              accessibilityLabel="搜索模型"
-              testID="agent-model-search"
-              style={styles.input}
-            />
-            {!favoritesOnly && onRetryModelProvider ? (
+            {providers.map((entry) => (
               <MenuChoice
-                id="refresh"
-                label="刷新模型目录"
-                icon={RefreshCw}
+                key={entry.id}
+                id={entry.id}
+                label={entry.label}
+                provider={entry.id}
                 iconOnly
-                onSelect={retryActive}
-                disabled={controls.isRetryingModelProvider || !active}
+                selected={!favoritesOnly && entry.id === active?.id}
+                disabled={controls.disabled}
+                onSelect={selectProvider}
               />
-            ) : null}
-          </View>
+            ))}
+          </ScrollView>
+        ) : null}
+        <View style={styles.models}>
+          {showSearch ? (
+            <View style={styles.search}>
+              <AgentControlIconGlyph icon={Search} size={14} />
+              <TextInput
+                autoFocus
+                value={query}
+                onChangeText={setQuery}
+                placeholder={favoritesOnly ? "搜索收藏模型…" : "搜索模型…"}
+                accessibilityLabel="搜索模型"
+                testID="agent-model-search"
+                style={styles.input}
+              />
+              {!favoritesOnly && onRetryModelProvider ? (
+                <MenuChoice
+                  id="refresh"
+                  label="刷新模型目录"
+                  icon={RefreshCw}
+                  iconOnly
+                  onSelect={retryActive}
+                  disabled={controls.isRetryingModelProvider || !active}
+                />
+              ) : null}
+            </View>
+          ) : null}
           <ModelChoices
             active={active}
             providers={providers}
@@ -340,12 +345,8 @@ export function DesktopModelMenuContent({
             favoritesOnly={favoritesOnly}
           />
         </View>
-        <ThinkingChoices
-          controls={controls}
-          visible={favoritesOnly || active?.id === controls.provider}
-        />
       </View>
-      <MenuFooter controls={controls} advanced={advanced} />
+      <MenuFooter advanced={advanced} />
     </View>
   );
 }
@@ -362,8 +363,6 @@ const styles = StyleSheet.create((theme) => ({
     width: 38,
     flexGrow: 0,
     flexShrink: 0,
-    borderRightWidth: 1,
-    borderRightColor: theme.colors.border,
   },
   railContent: { padding: 4, gap: 4 },
   railButton: {
@@ -380,20 +379,16 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     gap: 6,
     marginHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   input: {
     flex: 1,
     minWidth: 0,
     height: 30,
     padding: 0,
-    fontSize: theme.fontSize.base * 0.875,
+    fontSize: theme.fontSize.base * 0.8125,
     color: theme.colors.foreground,
     outlineWidth: 0,
   },
-  list: { flex: 1, minHeight: 0 },
-  listContent: { padding: 4, gap: 1 },
   row: {
     minHeight: 28,
     paddingVertical: 3,
@@ -407,19 +402,29 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base * 0.875,
+    fontSize: theme.fontSize.base * 0.8125,
     lineHeight: 18,
   },
-  segmentLabel: {
-    color: theme.colors.foreground,
-    fontSize: theme.fontSize.xs,
-    lineHeight: 16,
-  },
-  muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
+  muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.75 },
   disabled: { opacity: 0.5 },
-  active: { backgroundColor: theme.colors.surface2 },
-  thinking: { width: 144, borderLeftWidth: 1, borderLeftColor: theme.colors.border },
-  thinkingHeader: { height: 36, justifyContent: "center", paddingHorizontal: 10 },
+  active: { backgroundColor: theme.colors.surface3 },
+  thinking: { padding: theme.spacing[2], gap: theme.spacing[2] },
+  thinkingHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
+  fastButton: {
+    minHeight: 24,
+    paddingHorizontal: theme.spacing[1.5],
+    borderRadius: theme.borderRadius.md,
+    flexDirection: "row",
+    gap: theme.spacing[1],
+    alignItems: "center",
+    marginLeft: "auto",
+  },
+  fastLabel: { fontSize: theme.fontSize.base * 0.75, color: theme.colors.foreground },
+  thinkingEnds: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: theme.spacing[1],
+  },
   empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.875, padding: 8 },
   state: { padding: 8, gap: 6, alignItems: "flex-start" },
   footer: {
@@ -430,22 +435,6 @@ const styles = StyleSheet.create((theme) => ({
     gap: 6,
     flexDirection: "row",
     alignItems: "center",
-  },
-  segment: {
-    flexDirection: "row",
-    padding: 2,
-    backgroundColor: theme.colors.surface1,
-    borderRadius: theme.borderRadius.md,
-  },
-  segmentButton: {
-    minHeight: 22,
-    paddingVertical: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 7,
-    height: 22,
-    borderRadius: theme.borderRadius.sm,
   },
   more: {
     width: 24,

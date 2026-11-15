@@ -63,6 +63,7 @@ interface Size {
 }
 
 interface DropdownMenuContextValue {
+  familyId: string;
   typography: "default" | "sidebar";
   selectionCloseScope: "all" | "current";
   open: boolean;
@@ -200,7 +201,7 @@ function computePosition({
 }
 
 function renderDropdownSurface(input: {
-  typography: "default" | "sidebar";
+  dataSet: Record<string, string>;
   frameStyle: StyleProp<ViewStyle>;
   testID?: string;
   surfaceStyle: StyleProp<ViewStyle>;
@@ -212,7 +213,7 @@ function renderDropdownSurface(input: {
   contentRef: React.RefObject<View | null>;
 }): ReactElement {
   const {
-    typography,
+    dataSet,
     frameStyle,
     testID,
     surfaceStyle,
@@ -239,7 +240,7 @@ function renderDropdownSurface(input: {
 
   return (
     <FloatingSurface
-      dataSet={typographyDataSets[typography]}
+      dataSet={dataSet}
       ref={contentRef}
       collapsable={false}
       nativeID={surfaceNativeID}
@@ -285,6 +286,8 @@ export function DropdownMenu({
   const parentCloseAll = useContext(DropdownMenuDismissContext);
   const isCompact = useIsCompactFormFactor();
   const parentMenu = useContext(DropdownMenuContext);
+  const menuId = useId();
+  const familyId = parentMenu?.familyId ?? menuId;
   const typography = typographyProp ?? parentMenu?.typography ?? "default";
   const selectionCloseScope = scopeProp ?? parentMenu?.selectionCloseScope ?? "all";
   const compact = compactProp ?? parentMenu?.compact ?? false;
@@ -349,6 +352,7 @@ export function DropdownMenu({
 
   const value = useMemo<DropdownMenuContextValue>(
     () => ({
+      familyId,
       typography,
       selectionCloseScope,
       open: isOpen,
@@ -362,6 +366,7 @@ export function DropdownMenu({
       passThroughBackdrop,
     }),
     [
+      familyId,
       typography,
       activateTrigger,
       flushPendingSelect,
@@ -591,6 +596,36 @@ function useReleaseFixedMenuHeight({
   }, [contentSize, enabled, surfaceNativeID]);
 }
 
+interface DropdownOutsidePressOptions {
+  modal: boolean;
+  open: boolean;
+  familyId: string;
+  triggerRef: React.RefObject<View | null>;
+  handleClose: () => void;
+}
+function useDropdownOutsidePress({
+  modal,
+  open,
+  familyId,
+  triggerRef,
+  handleClose,
+}: DropdownOutsidePressOptions) {
+  useEffect(() => {
+    if (!isWeb || modal || !open) return;
+    const outsidePress = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const trigger = triggerRef.current as unknown as HTMLElement | null;
+      if (trigger && trigger.contains(target)) return;
+      const owner = target.closest("[data-dropdown-family]");
+      if (owner && owner.getAttribute("data-dropdown-family") === familyId) return;
+      handleClose();
+    };
+    document.addEventListener("pointerdown", outsidePress);
+    return () => document.removeEventListener("pointerdown", outsidePress);
+  }, [familyId, handleClose, modal, open, triggerRef]);
+}
+
 export function DropdownMenuContent({
   children,
   side = "bottom",
@@ -603,6 +638,8 @@ export function DropdownMenuContent({
   fullWidth = false,
   horizontalPadding = 16,
   scrollable = false,
+  style,
+  modal,
   testID,
 }: PropsWithChildren<{
   side?: Placement;
@@ -615,10 +652,14 @@ export function DropdownMenuContent({
   fullWidth?: boolean;
   horizontalPadding?: number;
   scrollable?: boolean;
+  style?: StyleProp<ViewStyle>;
+  /** 网页端允许点击工作区和相邻控件，同时只在真正点击菜单外部时关闭。 */
+  modal?: boolean;
   testID?: string;
 }>): ReactElement | null {
   const { t } = useTranslation();
   const {
+    familyId,
     open,
     setOpen,
     triggerRef,
@@ -628,6 +669,7 @@ export function DropdownMenuContent({
     passThroughBackdrop,
     flushPendingSelect,
   } = useDropdownMenuContext("DropdownMenuContent");
+  const isModal = modal !== false;
   const [modalVisible, setModalVisible] = useState(false);
   const surfaceNativeID = useId();
   const [closing, setClosing] = useState(false);
@@ -679,11 +721,18 @@ export function DropdownMenuContent({
     setOpen(false);
   }, [setOpen]);
 
+  useDropdownOutsidePress({ modal: isModal, open, familyId, triggerRef, handleClose });
+  const dataSet = useMemo(
+    () => ({ ...typographyDataSets[typography], dropdownFamily: familyId }),
+    [familyId, typography],
+  );
+
   useEffect(() => {
     if (!isWeb || !modalVisible || typeof window === "undefined") return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isImeComposingKeyboardEvent(event)) return;
       if (event.key !== "Escape") return;
+      event.preventDefault();
       event.stopPropagation();
       handleClose();
     };
@@ -770,7 +819,10 @@ export function DropdownMenuContent({
     [],
   );
 
-  const surfaceStyle = useMemo(() => [styles.content, compact && styles.contentCompact], [compact]);
+  const surfaceStyle = useMemo(
+    () => [styles.content, compact && styles.contentCompact, style],
+    [compact, style],
+  );
   const frameStyle = useMemo(() => {
     const { width: screenWidth } = Dimensions.get("window");
     const resolvedWidthStyle: ViewStyle = fullWidth
@@ -816,19 +868,19 @@ export function DropdownMenuContent({
   const overlay = (
     <View
       style={[styles.overlay, isWeb ? styles.overlayWeb : null]}
-      pointerEvents={isWeb && passThroughBackdrop ? "box-none" : "auto"}
+      pointerEvents={isWeb && (passThroughBackdrop || !isModal) ? "box-none" : "auto"}
     >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("menu.backdrop")}
-        pointerEvents={isWeb && passThroughBackdrop ? "none" : "auto"}
+        pointerEvents={isWeb && (passThroughBackdrop || !isModal) ? "none" : "auto"}
         style={styles.backdrop}
         onPress={handleClose}
         testID={testID ? `${testID}-backdrop` : undefined}
       />
       {!closing
         ? renderDropdownSurface({
-            typography,
+            dataSet,
             frameStyle,
             testID,
             surfaceStyle,
@@ -843,6 +895,20 @@ export function DropdownMenuContent({
     </View>
   );
 
+  return renderDropdownOverlay({ overlay, modalVisible, flushPendingSelect, handleClose });
+}
+
+function renderDropdownOverlay({
+  overlay,
+  modalVisible,
+  flushPendingSelect,
+  handleClose,
+}: {
+  overlay: ReactElement;
+  modalVisible: boolean;
+  flushPendingSelect: () => void;
+  handleClose: () => void;
+}) {
   if (isWeb && typeof document !== "undefined") {
     return createPortal(overlay, getOverlayRoot());
   }

@@ -1,4 +1,5 @@
 import { resolveComposerSubmitVisibility } from "./state";
+import { EffortEffect } from "./effort-effect";
 import {
   View,
   Text,
@@ -129,6 +130,8 @@ export interface MessageInputProps {
   isPaneFocused?: boolean;
   /** Content to render on the left side of the composer toolbar (e.g., AgentControls) */
   leftContent?: React.ReactNode;
+  modelContent?: React.ReactNode;
+  maxEffort?: boolean;
   /** Content to render on the right side before the voice button (e.g., context window meter) */
   beforeVoiceContent?: React.ReactNode;
   /** Content to render on the right side after voice button (e.g., realtime button, cancel button) */
@@ -1115,6 +1118,8 @@ interface ResolvedMessageInputProps {
   disabled: boolean;
   isPaneFocused: boolean;
   leftContent: React.ReactNode;
+  modelContent: React.ReactNode;
+  maxEffort: boolean;
   beforeVoiceContent: React.ReactNode;
   rightContent: React.ReactNode;
   voiceServerId: string | undefined;
@@ -1157,6 +1162,8 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     disabled: props.disabled ?? false,
     isPaneFocused: props.isPaneFocused ?? true,
     leftContent: props.leftContent,
+    modelContent: props.modelContent,
+    maxEffort: props.maxEffort ?? false,
     beforeVoiceContent: props.beforeVoiceContent,
     rightContent: props.rightContent,
     voiceServerId: props.voiceServerId,
@@ -1207,6 +1214,8 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       disabled,
       isPaneFocused,
       leftContent,
+      modelContent,
+      maxEffort,
       beforeVoiceContent,
       rightContent,
       voiceServerId,
@@ -1811,6 +1820,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           style={inputWrapperCombinedStyle}
           pointerEvents={surfacePresentation.input.pointerEvents}
         >
+          <EffortEffect active={maxEffort} focused={isPaneFocused} value={value} />
           {attachmentSlot}
           {/* Text input */}
           <View style={styles.textInputScrollWrapper}>
@@ -1875,6 +1885,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                 voiceMuteToggleKeys={voiceMuteToggleKeys}
                 dictationToggleKeys={dictationToggleKeys}
               />
+              {modelContent}
               {rightContent}
               <SendButtonTooltip
                 onScheduleMessage={handleScheduleMessage}
@@ -1998,7 +2009,8 @@ const styles = StyleSheet.create((theme: Theme) => ({
     gap: theme.spacing[0],
   },
   rightButtonGroup: {
-    flexShrink: 0,
+    minWidth: 0,
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],

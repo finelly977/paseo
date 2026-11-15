@@ -1,14 +1,14 @@
 export type ComposerControlDensity = "full" | "condensed" | "tight";
 
-/** 少量选项按内容收缩，长列表和较矮窗口保留可见底栏。 */
+/** 单列菜单按模型行和搜索栏收缩，长列表限制可见高度。 */
 export function resolveDesktopModelMenuHeight(
   viewportHeight: number,
   modelCount: number | null,
-  thinkingCount: number,
+  showSearch: boolean,
 ): number {
-  const modelsHeight = modelCount === null ? 140 : 42 + modelCount * 29;
-  const contentHeight = Math.max(112, modelsHeight, 42 + thinkingCount * 29);
-  return Math.min(280, Math.max(100, viewportHeight - 160), contentHeight);
+  const contentHeight = modelCount === null ? 112 : Math.max(40, 8 + modelCount * 32);
+  const menuHeight = contentHeight + (showSearch ? 36 : 0);
+  return Math.min(280, Math.max(100, viewportHeight - 160), menuHeight);
 }
 
 export interface ComposerControlPresence {

@@ -69,7 +69,10 @@ function FavoriteModelRow({
   const startDrag = useCallback(() => {
     if (library.ready && !library.busy) drag();
   }, [drag, library.busy, library.ready]);
-  const rowStyle = useMemo(() => [styles.row(touch), isActive && styles.active], [touch, isActive]);
+  const rowStyle = useMemo(
+    () => [styles.row(touch), (isActive || selected) && styles.active],
+    [touch, isActive, selected],
+  );
   const selectStyle = useCallback(
     ({ hovered, pressed }: PressableStateCallbackType) => [
       styles.select(touch),
@@ -251,7 +254,7 @@ const styles = StyleSheet.create((theme) => ({
   row: (touch: boolean) => ({
     flexDirection: "row",
     alignItems: "center",
-    minHeight: touch ? 44 : 30,
+    minHeight: touch ? 44 : 32,
     borderRadius: theme.borderRadius.md,
   }),
   select: (touch: boolean) => ({
@@ -269,7 +272,7 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base * 0.875,
+    fontSize: theme.fontSize.base * 0.8125,
     lineHeight: 20,
   },
   tooltip: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
@@ -280,7 +283,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     flexShrink: 0,
   }),
-  active: { backgroundColor: theme.colors.surface2 },
+  active: { backgroundColor: theme.colors.surface3 },
   empty: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, padding: 12 },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm, padding: 8 },
 }));
