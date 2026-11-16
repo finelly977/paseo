@@ -62,6 +62,19 @@ const CuaNodeRuntimeManifestSchema = z.object({
   node_repl_path: z.string().min(1),
 });
 const VersionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/);
+const DesktopPluginCatalogSchema = z.object({
+  marketplaces: z.array(
+    z.object({
+      plugins: z.array(
+        z.object({
+          id: z.string(),
+          installed: z.boolean(),
+          localVersion: z.string().nullish(),
+        }),
+      ),
+    }),
+  ),
+});
 const TurnNotificationSchema = z.object({
   threadId: z.string().min(1),
   turn: z.object({ id: z.string().min(1).optional(), status: z.string().optional() }),
@@ -457,6 +470,54 @@ interface ChromePluginRuntime {
   installScriptPath: string;
 }
 
+async function readUnifiedDesktopPlugin(
+  client: Pick<CodexAppServerClient, "request">,
+  codexHome: string,
+): Promise<z.infer<typeof StdioSchema>> {
+  // App 写入的环境版本可能落后于已更新的插件，只信任 Codex 本地目录登记的版本。
+  const catalog = DesktopPluginCatalogSchema.parse(
+    await client.request(
+      "plugin/list",
+      { forceRefetch: false, marketplaceKinds: ["local"] },
+      15000,
+    ),
+  );
+  const installed = catalog.marketplaces
+    .flatMap((marketplace) => marketplace.plugins)
+    .find((plugin) => plugin.id === CUA_PLUGIN);
+  if (!installed || !installed.installed) {
+    throw new Error(
+      "未找到已安装的 Codex 统一桌面工具插件，请在 Codex App 中安装并启用 Computer Use 或 Chrome 插件后重试",
+    );
+  }
+  const version = VersionSchema.safeParse(installed.localVersion);
+  if (!version.success) {
+    throw new Error("Codex 统一桌面工具插件的本地版本无效，请在 Codex App 中重新安装插件后重试", {
+      cause: version.error,
+    });
+  }
+  const pluginPath = path.join(
+    codexHome,
+    "plugins/cache/openai-bundled/unified-computer-use",
+    version.data,
+    ".mcp.json",
+  );
+  let raw: string;
+  try {
+    raw = await readFile(pluginPath, "utf8");
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    throw new Error(
+      `Codex 统一桌面工具插件（${version.data}）的配置文件缺失，请在 Codex App 中重新安装插件后重试`,
+      { cause: error },
+    );
+  }
+  const plugin = z
+    .object({ mcpServers: z.object({ cua_repl: StdioSchema }) })
+    .parse(JSON.parse(raw));
+  return plugin.mcpServers.cua_repl;
+}
+
 async function resolveChromePluginRuntime(codexHome: string): Promise<ChromePluginRuntime> {
   const root = path.join(codexHome, "plugins", "cache", "openai-bundled", "chrome");
   const candidates = [path.join(root, "latest")];
@@ -817,16 +878,11 @@ export async function acquireCodexDesktopTools(
     };
     const servers = ["node_repl"];
     if (unified) {
-      const version = VersionSchema.parse(requiredEnv(source.env, "BROWSER_USE_CODEX_APP_VERSION"));
-      const pluginPath = path.join(
+      const cuaServer = await readUnifiedDesktopPlugin(
+        options.client,
         requiredEnv(source.env, "CODEX_HOME"),
-        "plugins/cache/openai-bundled/unified-computer-use",
-        version,
-        ".mcp.json",
       );
-      const raw: unknown = JSON.parse(await readFile(pluginPath, "utf8"));
-      const plugin = z.object({ mcpServers: z.object({ cua_repl: StdioSchema }) }).parse(raw);
-      const cua = await resolveCurrentCuaNodeRuntime(plugin.mcpServers.cua_repl, options.platform);
+      const cua = await resolveCurrentCuaNodeRuntime(cuaServer, options.platform);
       const configuredSurfaces = configuredDesktopSurfaces(cua.env);
       const surfaces = configuredSurfaces.filter(
         (surface) => (surface === "computer" && computer) || (surface === "browser" && chrome),

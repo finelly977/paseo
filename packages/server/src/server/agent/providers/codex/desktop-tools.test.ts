@@ -29,7 +29,7 @@ describe("Codex 独立桌面工具配置", () => {
     cleanups.length = 0;
   });
 
-  async function fixture() {
+  async function fixture(localVersion: string | null = "26.908.40834") {
     const home = await mkdtemp(path.join(os.tmpdir(), "paseo-desktop-tools-"));
     cleanups.push(() => rm(home, { recursive: true, force: true }));
     const pluginPath = path.join(
@@ -93,6 +93,12 @@ describe("Codex 独立桌面工具配置", () => {
       },
       mcp_servers: { node_repl: { command: nodeReplPath, enabled: true, env } },
     };
+    const installedPlugin = {
+      id: CUA_PLUGIN,
+      installed: true,
+      localVersion,
+    };
+    const catalog = { marketplaces: [{ name: "openai-bundled", plugins: [installedPlugin] }] };
     const starts: Parameters<typeof startCodexDesktopBridge>[0][] = [];
     const endedTurns: DesktopToolTurn[] = [];
     const requests: ToolRequest[] = [];
@@ -115,6 +121,7 @@ describe("Codex 独立桌面工具配置", () => {
         async request(method: string, params: unknown) {
           requests.push({ method, params });
           if (method === "config/read") return { config: configuration };
+          if (method === "plugin/list") return catalog;
           if (method === "mcpServer/tool/call") return { content: [], isError: false };
           throw new Error(`Unexpected request: ${method}`);
         },
@@ -150,6 +157,8 @@ describe("Codex 独立桌面工具配置", () => {
       browserServicePath,
       installScriptPath,
       configuration,
+      installedPlugin,
+      catalog,
       cua,
       writePlugin,
       options,
@@ -161,6 +170,98 @@ describe("Codex 独立桌面工具配置", () => {
       stopCount: () => stops,
     };
   }
+
+  test("App 版本已过期时按 Codex 登记的本地插件版本读取统一工具，不拼接旧版目录", async () => {
+    const f = await fixture();
+    f.configuration.mcp_servers.node_repl.env.BROWSER_USE_CODEX_APP_VERSION = "26.907.11111";
+
+    const tools = await f.acquire();
+    expect(tools.config["mcp_servers.cua_repl"]).toMatchObject({
+      args: f.cua.args,
+      env: { BROWSER_USE_CODEX_APP_VERSION: "26.908.40834" },
+    });
+    expect(f.requests).toEqual([
+      {
+        method: "plugin/list",
+        params: { forceRefetch: false, marketplaceKinds: ["local"] },
+      },
+    ]);
+    expect(f.configuration.mcp_servers.node_repl.env.BROWSER_USE_CODEX_APP_VERSION).toBe(
+      "26.907.11111",
+    );
+  });
+
+  test("本地保留多个插件版本时只读取 Codex 登记的版本，不猜测最新目录", async () => {
+    const f = await fixture("26.907.11111");
+    const registeredPath = path.join(
+      f.home,
+      "plugins/cache/openai-bundled/unified-computer-use/26.907.11111/.mcp.json",
+    );
+    await mkdir(path.dirname(registeredPath), { recursive: true });
+    await writeFile(
+      registeredPath,
+      JSON.stringify({ mcpServers: { cua_repl: { ...f.cua, args: ["registered-cua.mjs"] } } }),
+    );
+
+    const tools = await f.acquire();
+    expect(tools.config["mcp_servers.cua_repl"]).toMatchObject({ args: ["registered-cua.mjs"] });
+  });
+
+  test.each(["未登记", "未安装"])("统一插件%s时明确失败，不使用残留缓存", async (state) => {
+    const f = await fixture();
+    if (state === "未登记") f.catalog.marketplaces = [];
+    else f.installedPlugin.installed = false;
+
+    await expect(f.acquire()).rejects.toThrow("未找到已安装的 Codex 统一桌面工具插件");
+    expect(f.stopCount()).toBe(1);
+  });
+
+  test.each([null, "", "../26.908.40834"])(
+    "本地版本无效（%s）时不回退到旧 App 版本",
+    async (version) => {
+      const f = await fixture(version);
+      await expect(f.acquire()).rejects.toThrow("Codex 统一桌面工具插件的本地版本无效");
+      expect(f.stopCount()).toBe(1);
+    },
+  );
+
+  test("登记版本缺少配置时显示可恢复错误，不改用其他缓存版本", async () => {
+    const f = await fixture("26.909.11111");
+    await expect(f.acquire()).rejects.toThrow(
+      "Codex 统一桌面工具插件（26.909.11111）的配置文件缺失，请在 Codex App 中重新安装插件后重试",
+    );
+    expect(f.stopCount()).toBe(1);
+  });
+
+  test("已登记插件配置损坏时保留解析错误并释放宿主", async () => {
+    const f = await fixture();
+    await writeFile(f.pluginPath, "not-json");
+    await expect(f.acquire()).rejects.toThrow(SyntaxError);
+    expect(f.stopCount()).toBe(1);
+  });
+
+  test("本地插件目录读取失败时保留原始错误，不隐藏失败", async () => {
+    const f = await fixture();
+    const error = new Error("本地插件目录不可读取");
+    f.options.client = {
+      async request() {
+        throw error;
+      },
+    };
+    await expect(f.acquire()).rejects.toBe(error);
+    expect(f.stopCount()).toBe(1);
+  });
+
+  test("未启用统一插件时不请求插件目录，继续使用已有 Node REPL", async () => {
+    const f = await fixture();
+    f.configuration.plugins[CUA_PLUGIN].enabled = false;
+    const tools = await f.acquire();
+    expect(tools.config["mcp_servers.node_repl.env"]).toMatchObject({
+      SKY_CUA_NATIVE_PIPE_DIRECTORY: "paseo-owned-pipe",
+    });
+    expect(tools.config).not.toHaveProperty("mcp_servers.cua_repl");
+    expect(f.requests).toEqual([]);
+  });
 
   test("Codex 更新后从当前 npm 启动器解析新的原生 CLI，不沿用失效的哈希路径", async () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "paseo-codex-cli-"));
@@ -609,8 +710,12 @@ describe("Codex 独立桌面工具配置", () => {
       turn: { id: "turn", status: "interrupted" },
     });
     await tools.dispose();
-    expect(f.requests).toEqual(
-      ["node_repl", "cua_repl"].map((server) => ({
+    expect(f.requests).toEqual([
+      {
+        method: "plugin/list",
+        params: { forceRefetch: false, marketplaceKinds: ["local"] },
+      },
+      ...["node_repl", "cua_repl"].map((server) => ({
         method: "mcpServer/tool/call",
         params: {
           threadId: "thread",
@@ -623,7 +728,7 @@ describe("Codex 独立桌面工具配置", () => {
           },
         },
       })),
-    );
+    ]);
     expect(f.endedTurns).toEqual([{ sessionId: "thread", turnId: "turn" }]);
   });
 });

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { View, Text, Keyboard, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
-import { Brain, ChevronDown, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
+import { Brain, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import {
   DropdownMenu,
@@ -1067,9 +1067,6 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             {props.canSelectThinking ? (
               <Text style={styles.roleChipEffort}>· {props.displayThinking}</Text>
             ) : null}
-            <View style={styles.roleCaret}>
-              <AgentControlIconGlyph icon={ChevronDown} size={12} />
-            </View>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             side="top"
@@ -1757,7 +1754,6 @@ const styles = StyleSheet.create((theme) => ({
     includeFontPadding: false,
     color: theme.colors.foreground,
   },
-  roleCaret: { height: "100%", justifyContent: "center", flexShrink: 0 },
   roleChipEffort: {
     flexShrink: 0,
     fontSize: theme.fontSize.sm,

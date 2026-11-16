@@ -1,2 +1,2 @@
-/** 桌面全局浮层统一占窗口宽、高的 80%；紧凑布局仍使用全屏页面。 */
-export const WORKSPACE_OVERLAY_FRACTION = 0.8;
+/** 桌面设置与插件浮层占视口面积的 90%，等比缩放；紧凑布局仍使用全屏页面。 */
+export const WORKSPACE_OVERLAY_FRACTION = Math.sqrt(0.9);

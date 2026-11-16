@@ -15,6 +15,7 @@ import { AgentControlIconGlyph } from "@/composer/agent-controls/control";
 import type { ProviderSelectionModelRow } from "@/provider-selection/provider-selection";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { orderModelRows, reorderVisibleModels, toggleFavoriteModel } from "./preferences";
 import type { ModelLibrary } from "./use-model-library";
 import type { Theme } from "@/styles/theme";
@@ -100,9 +101,15 @@ function FavoriteModelRow({
             {selected ? <AgentControlIconGlyph icon={Check} size={12} /> : null}
           </Pressable>
         </TooltipTrigger>
-        <TooltipContent side="top" align="start" maxWidth={420}>
-          <Text style={styles.tooltip}>
-            {row.modelLabel === row.modelId ? row.modelLabel : `${row.modelLabel}\n${row.modelId}`}
+        <TooltipContent
+          side="top"
+          align="start"
+          maxWidth={420}
+          style={styles.tooltipSurface}
+          testID={`model-tooltip-${row.favoriteKey}`}
+        >
+          <Text style={styles.tooltip} dataSet={COMPACT_LABEL_DATASET}>
+            {row.modelLabel}
           </Text>
         </TooltipContent>
       </Tooltip>
@@ -274,7 +281,16 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     lineHeight: theme.fontSize.base * 1.25,
   },
-  tooltip: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
+  tooltipSurface: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: theme.borderRadius.md,
+  },
+  tooltip: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base * 0.8125,
+    lineHeight: theme.fontSize.base,
+  },
   action: (touch: boolean) => ({
     width: touch ? 44 : 22,
     minHeight: touch ? 44 : 28,

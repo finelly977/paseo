@@ -7,7 +7,7 @@ export interface PluginCenterLayout {
   twoColumns: boolean;
 }
 
-/** 与自适应浮层的80% 窗口尺寸、1px 边框保持一致，首帧不等待内容测量。 */
+/** 与自适应浮层的 90% 面积缩放和 1px 边框保持一致，首帧不等待内容测量。 */
 export function resolvePluginCenterLayout(
   viewportWidth: number,
   compact: boolean,
