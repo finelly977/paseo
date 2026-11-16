@@ -58,3 +58,22 @@ test("新挂载区域、内容文字和可视区尺寸改变后自动重新判�
   stop = undefined;
   expect(nested.hasAttribute("data-scrollbar-y")).toBe(false);
 });
+
+test("同一批挂载的嵌套区域与动画后的正文尺寸合并更新，重复开合不丢失滚动条", async () => {
+  setup();
+  const nested = document.createElement("div");
+  nested.style.cssText = "width:120px;height:80px;overflow:auto";
+  const content = document.createElement("div");
+  content.style.height = "400px";
+  nested.append(content);
+  host.append(nested);
+  await expect.poll(() => nested.hasAttribute("data-scrollbar-y")).toBe(true);
+  content.style.height = "20px";
+  content.append(document.createElement("span"));
+  await expect.poll(() => nested.hasAttribute("data-scrollbar-y")).toBe(false);
+  content.style.height = "400px";
+  await expect.poll(() => nested.hasAttribute("data-scrollbar-y")).toBe(true);
+  nested.remove();
+  await new Promise(requestAnimationFrame);
+  expect(nested.isConnected).toBe(false);
+});

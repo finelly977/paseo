@@ -177,6 +177,7 @@ interface WebHistoryRowProps {
   items: StreamItem[];
   renderRow: StreamRenderInput["renderers"]["renderHistoryVirtualizedRow"];
   measure?: (node: HTMLDivElement | null) => void;
+  revision?: unknown;
 }
 
 const WebHistoryRow = memo(function WebHistoryRow({
@@ -186,11 +187,23 @@ const WebHistoryRow = memo(function WebHistoryRow({
   renderRow,
   measure,
 }: WebHistoryRowProps) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
+  const setRowRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      rowRef.current = node;
+      measure?.(node);
+    },
+    [measure],
+  );
+  useLayoutEffect(() => {
+    // 补页改变索引但不重挂节点，也不一定触发 ResizeObserver；提交前重新登记当前位置。
+    if (measure && rowRef.current) measure(rowRef.current);
+  }, [index, measure]);
   return (
     <div
       data-index={measure ? index : undefined}
       data-stream-row-id={item.id}
-      ref={measure}
+      ref={setRowRef}
       style={mountedRowStyle}
     >
       {renderRow(item, index, items)}
@@ -309,9 +322,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     [sourceSegments, collapsedHeights],
   );
   const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const viewportSizeRef = useRef({ width: 0, height: 0 });
   const contentRef = useRef<HTMLElement | null>(null);
   const handleScrollContainerRef = useCallback((node: HTMLElement | null) => {
     scrollContainerRef.current = node;
+    if (node) viewportSizeRef.current = { width: node.clientWidth, height: node.clientHeight };
   }, []);
   const handleContentRef = useCallback((node: HTMLElement | null) => {
     contentRef.current = node;
@@ -447,6 +462,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   );
   const rowVirtualizer = useVirtualizer({
     useFlushSync: false,
+    initialRect: viewportSizeRef.current,
+    initialOffset: () => scrollContainerRef.current?.scrollTop ?? 0,
     count: segments.historyVirtualized.length,
     enabled: shouldUseVirtualizer,
     getScrollElement,
@@ -644,6 +661,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       onNearBottomChange(true);
       return;
     }
+    viewportSizeRef.current = {
+      width: scrollContainer.clientWidth,
+      height: scrollContainer.clientHeight,
+    };
     syncNearBottom(scrollContainer, onNearBottomChange);
   }, [onNearBottomChange]);
 
@@ -1011,26 +1032,71 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const mountedHistoryRows = useMemo(() => {
     return segments.historyMounted.map((item, index) => (
       <WebHistoryRow
-        key={item.id}
+        key={processAnchorIdByItemId?.get(item.id) ?? item.id}
         item={item}
         index={index}
         items={segments.historyMounted}
         renderRow={renderHistoryMountedRow}
       />
     ));
-  }, [renderHistoryMountedRow, segments.historyMounted]);
+  }, [renderHistoryMountedRow, segments.historyMounted, processAnchorIdByItemId]);
   const liveHeadRows = useMemo(() => {
     void liveHeadRowRevision;
     return segments.liveHead.map((item, index) => (
-      <div key={item.id} data-stream-row-id={item.id} style={mountedRowStyle}>
-        {renderLiveHeadRow(item, index, segments.liveHead)}
-      </div>
+      <WebHistoryRow
+        key={processAnchorIdByItemId?.get(item.id) ?? item.id}
+        item={item}
+        index={index}
+        items={segments.liveHead}
+        renderRow={renderLiveHeadRow}
+        revision={liveHeadRowRevision}
+      />
     ));
-  }, [liveHeadRowRevision, renderLiveHeadRow, segments.liveHead]);
-  const mountedRows = useMemo(
-    () => [...mountedHistoryRows, ...liveHeadRows],
-    [liveHeadRows, mountedHistoryRows],
+  }, [liveHeadRowRevision, renderLiveHeadRow, segments.liveHead, processAnchorIdByItemId]);
+  const virtualTopStyle = useMemo<CSSProperties>(
+    () => ({
+      paddingTop: virtualRowsContainerStyle.paddingTop,
+      flexShrink: 0,
+      display: "flex",
+      flexDirection: "column",
+    }),
+    [virtualRowsContainerStyle.paddingTop],
   );
+  const virtualBottomStyle = useMemo<CSSProperties>(
+    () => ({ height: virtualRowsContainerStyle.paddingBottom, flexShrink: 0 }),
+    [virtualRowsContainerStyle.paddingBottom],
+  );
+  // 虚拟行与常驻行共用一个 keyed 兄弟列表；跨区不能更换父节点、重挂图片和工具内容。
+  const historyRows = useMemo(() => {
+    const rows: ReactNode[] = [];
+    for (const virtualRow of virtualRows) {
+      const item = segments.historyVirtualized[virtualRow.index];
+      if (!item) continue;
+      rows.push(
+        <WebHistoryRow
+          key={processAnchorIdByItemId?.get(item.id) ?? item.id}
+          item={item}
+          index={virtualRow.index}
+          items={segments.historyVirtualized}
+          measure={measureVirtualizedRowElement}
+          renderRow={renderHistoryVirtualizedRow}
+        />,
+      );
+    }
+    rows.push(
+      <div key="virtual-window-end" data-virtual-spacer="end" style={virtualBottomStyle} />,
+    );
+    return [...rows, ...mountedHistoryRows, ...liveHeadRows];
+  }, [
+    virtualBottomStyle,
+    virtualRows,
+    segments.historyVirtualized,
+    processAnchorIdByItemId,
+    measureVirtualizedRowElement,
+    renderHistoryVirtualizedRow,
+    mountedHistoryRows,
+    liveHeadRows,
+  ]);
   const liveAuxiliary = useMemo(() => {
     return renderLiveAuxiliary();
   }, [renderLiveAuxiliary]);
@@ -1261,27 +1327,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         isToggleAnchoring={isToggleAnchoring}
       >
         {historyStartSlot}
-        {shouldUseVirtualizer ? (
-          <div style={virtualRowsContainerStyle}>
-            {virtualRows.map((virtualRow) => {
-              const item = segments.historyVirtualized[virtualRow.index];
-              if (!item) {
-                return null;
-              }
-              return (
-                <WebHistoryRow
-                  key={virtualRow.key}
-                  item={item}
-                  index={virtualRow.index}
-                  items={segments.historyVirtualized}
-                  measure={measureVirtualizedRowElement}
-                  renderRow={renderHistoryVirtualizedRow}
-                />
-              );
-            })}
-          </div>
-        ) : null}
-        {mountedRows}
+        <div style={virtualTopStyle} data-history-rows>
+          {historyRows}
+        </div>
         {liveAuxiliary}
         {shouldRenderEmpty ? listEmptyComponent : null}
       </HistoryContent>

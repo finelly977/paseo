@@ -10,7 +10,8 @@ import {
   useWindowDimensions,
   type PressableStateCallbackType,
 } from "react-native";
-import { Check, RefreshCw, Search, Settings2, Star, Zap } from "lucide-react-native";
+import { Check, RefreshCw, Search, Settings2, Star } from "lucide-react-native";
+import { FastModeToggle } from "./fast-mode-indicator";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -168,7 +169,7 @@ function ModelChoices({
 
 export function DesktopThinkingMenuContent({ controls }: { controls: Controls }) {
   const options = controls.thinkingOptions ?? NO_THINKING_OPTIONS;
-  const { handleThinkingSelect, onSetFeature } = controls;
+  const { handleThinkingSelect } = controls;
   const selectedIndex = options.findIndex(
     (option) => option.id === controls.selectedThinkingOptionId,
   );
@@ -176,37 +177,16 @@ export function DesktopThinkingMenuContent({ controls }: { controls: Controls })
     (index: number) => handleThinkingSelect(options[index].id),
     [handleThinkingSelect, options],
   );
-  const fast = controls.features?.find(
-    (feature) => feature.id === "fast_mode" && feature.type === "toggle",
-  );
-  const toggleFast = useCallback(
-    () => onSetFeature?.("fast_mode", !fast?.value),
-    [onSetFeature, fast],
-  );
-  const fastState = useMemo(
-    () => ({ checked: Boolean(fast?.value), disabled: controls.disabled }),
-    [fast, controls.disabled],
-  );
   return (
     <View dataSet={COMPACT_LABEL_DATASET} style={styles.thinking} testID="agent-thinking-menu">
       <View style={styles.thinkingHeader}>
         <Text style={styles.muted}>思考强度</Text>
         <Text style={styles.label}>{controls.displayThinking}</Text>
-        {fast ? (
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel="Fast"
-            accessibilityState={fastState}
-            aria-checked={Boolean(fast.value)}
-            onPress={toggleFast}
-            disabled={controls.disabled || !controls.onSetFeature}
-            style={[styles.fastButton, fast.value && styles.active]}
-            testID="thinking-fast-toggle"
-          >
-            <AgentControlIconGlyph icon={Zap} size={12} tone={fast.value ? "yellow" : "muted"} />
-            <Text style={styles.fastLabel}>Fast</Text>
-          </Pressable>
-        ) : null}
+        <FastModeToggle
+          features={controls.features}
+          disabled={controls.disabled}
+          onSetFeature={controls.onSetFeature}
+        />
       </View>
       <View style={styles.thinkingEnds}>
         <Text style={styles.muted}>更快</Text>
@@ -280,9 +260,10 @@ export function DesktopModelMenuContent({
     : getMenuModelCount(active);
   const showSearch =
     !controls.providerLocked || favoritesOnly || modelCount === null || modelCount > 7;
-  const menuHeight = resolveDesktopModelMenuHeight(height, modelCount, showSearch);
+  const reservedHeight = (controls.canSelectThinking ? 120 : 0) + (advanced ? 35 : 0);
+  const menuHeight = resolveDesktopModelMenuHeight(height, modelCount, showSearch, reservedHeight);
   return (
-    <View dataSet={COMPACT_LABEL_DATASET} style={styles.menu} testID="desktop-model-picker-content">
+    <View style={styles.menu} testID="desktop-model-picker-content">
       <View style={styles.columns(menuHeight)}>
         {!controls.providerLocked ? (
           <ScrollView
@@ -347,6 +328,11 @@ export function DesktopModelMenuContent({
           />
         </View>
       </View>
+      {controls.canSelectThinking ? (
+        <View style={styles.thinkingSection}>
+          <DesktopThinkingMenuContent controls={controls} />
+        </View>
+      ) : null}
       <MenuFooter advanced={advanced} />
     </View>
   );
@@ -386,7 +372,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     height: 30,
     padding: 0,
-    fontSize: theme.fontSize.base * 0.8125,
+    fontSize: theme.fontSize.base,
     color: theme.colors.foreground,
     outlineWidth: 0,
   },
@@ -403,24 +389,15 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base * 0.8125,
-    lineHeight: 18,
+    fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.25,
   },
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.75 },
   disabled: { opacity: 0.5 },
   active: { backgroundColor: theme.colors.surface3 },
+  thinkingSection: { borderTopWidth: 1, borderTopColor: theme.colors.border },
   thinking: { padding: theme.spacing[2], gap: theme.spacing[2] },
   thinkingHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
-  fastButton: {
-    minHeight: 24,
-    paddingHorizontal: theme.spacing[1.5],
-    borderRadius: theme.borderRadius.md,
-    flexDirection: "row",
-    gap: theme.spacing[1],
-    alignItems: "center",
-    marginLeft: "auto",
-  },
-  fastLabel: { fontSize: theme.fontSize.base * 0.75, color: theme.colors.foreground },
   thinkingEnds: {
     flexDirection: "row",
     justifyContent: "space-between",

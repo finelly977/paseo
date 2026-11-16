@@ -130,8 +130,8 @@ export const AgentControlTrigger = forwardRef<View, AgentControlTriggerProps>(
       ({ pressed, hovered }: PressableStateCallbackType) => [
         isSheet ? styles.sheetRow : styles.toolbarControl,
         !isSheet && !showToolbarLabel && styles.toolbarIconOnly,
-        hovered && (isSheet ? styles.sheetRowInteractive : styles.hovered),
-        (pressed || open) && (isSheet ? styles.sheetRowInteractive : styles.pressed),
+        isSheet && hovered && styles.sheetRowInteractive,
+        isSheet && (pressed || open) && styles.sheetRowInteractive,
         disabled && styles.disabled,
       ],
       [disabled, isSheet, open, showToolbarLabel],
@@ -189,7 +189,7 @@ const styles = StyleSheet.create((theme) => ({
   toolbarControl: {
     height: 20,
     minWidth: 0,
-    flexShrink: 1,
+    flexShrink: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
@@ -208,6 +208,8 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.25,
+    includeFontPadding: false,
     fontWeight: theme.fontWeight.normal,
   },
   sheetRow: {
@@ -245,12 +247,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-  },
-  hovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  pressed: {
-    backgroundColor: theme.colors.surface0,
   },
   disabled: {
     opacity: 0.5,

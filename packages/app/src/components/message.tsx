@@ -63,7 +63,7 @@ import Svg, { Defs, LinearGradient as SvgLinearGradient, Rect, Stop } from "reac
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { MarkdownRenderer, type MarkdownStyles } from "@/components/markdown/renderer";
-import { getToolCallStatusLabel, resolveToolCallStatus } from "@/tool-calls/execution";
+import { resolveToolCallStatus } from "@/tool-calls/execution";
 import type {
   StreamItem,
   TaskActivity,
@@ -1574,15 +1574,6 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
     overflow: "hidden",
   },
-  commandPanelStatus: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[3],
-    paddingBottom: theme.spacing[2],
-  },
-  commandPanelStatusText: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base },
   shimmerOverlay: {
     position: "absolute",
     top: 0,
@@ -3361,28 +3352,6 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   return true;
 }
 
-function CommandOutputStatus({
-  status,
-  executionActive,
-}: {
-  status: ReturnType<typeof resolveToolCallStatus>;
-  executionActive: boolean;
-}) {
-  return (
-    <View style={expandableBadgeStylesheet.commandPanelStatus} testID="command-output-status">
-      {status === "completed" ? (
-        <ThemedTodoCheckIcon size={12} uniProps={foregroundMutedColorMapping} />
-      ) : null}
-      {status === "failed" ? (
-        <ThemedTriangleAlertIcon size={12} uniProps={destructiveColorMapping} />
-      ) : null}
-      <Text style={expandableBadgeStylesheet.commandPanelStatusText}>
-        {getToolCallStatusLabel({ status, executionActive })}
-      </Text>
-    </View>
-  );
-}
-
 function toolCallSecondaryLabel(
   isCommand: boolean,
   executionActive: boolean,
@@ -3545,7 +3514,6 @@ export const ToolCall = memo(function ToolCall({
               maxHeight={maxDetailHeight}
               showLoadingSkeleton={presentation.isLoadingDetails && executionActive}
             />
-            <CommandOutputStatus status={renderedStatus} executionActive={executionActive} />
           </View>
         </View>
       );
@@ -3571,7 +3539,6 @@ export const ToolCall = memo(function ToolCall({
     executionActive,
     maxDetailHeight,
     isCommand,
-    renderedStatus,
   ]);
 
   if (presentation.isPlan && effectiveDetail?.type === "plan") {

@@ -5,10 +5,11 @@ export function resolveDesktopModelMenuHeight(
   viewportHeight: number,
   modelCount: number | null,
   showSearch: boolean,
+  reservedHeight = 0,
 ): number {
   const contentHeight = modelCount === null ? 112 : Math.max(40, 8 + modelCount * 32);
   const menuHeight = contentHeight + (showSearch ? 36 : 0);
-  return Math.min(280, Math.max(100, viewportHeight - 160), menuHeight);
+  return Math.min(280, Math.max(100, viewportHeight - 160 - reservedHeight), menuHeight);
 }
 
 export interface ComposerControlPresence {

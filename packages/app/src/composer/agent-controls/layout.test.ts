@@ -8,6 +8,10 @@ import {
 } from "./layout";
 
 describe("composer control layout", () => {
+  it("小视口为模型列表下方的思考设置和更多选项留出高度", () => {
+    expect(resolveDesktopModelMenuHeight(500, 19, true, 155)).toBe(185);
+    expect(resolveDesktopModelMenuHeight(500, 2, false, 155)).toBe(72);
+  });
   it.each([
     [1000, 1, false, 40],
     [1000, 2, false, 72],

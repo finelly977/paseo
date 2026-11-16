@@ -4,6 +4,7 @@ import {
   useCallback,
   useMemo,
   useState,
+  useRef,
   useSyncExternalStore,
   type CSSProperties,
   type TransitionEvent,
@@ -25,9 +26,16 @@ const subscribeReducedMotion = (notify: () => void) => {
   query.addEventListener("change", notify);
   return () => query.removeEventListener("change", notify);
 };
-const contentStyle: CSSProperties = { minHeight: 0, overflow: "hidden" };
+const contentStyle: CSSProperties = { minHeight: 0, display: "flow-root" };
+const measuredContentStyle: CSSProperties = {
+  ...contentStyle,
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+};
 
-// CSS Grid 自然测量内容，组件不逐帧设置高度或触发 React 渲染。
+// 正文脱离过渡视口的高度约束，避免每一动画帧重新计算长输出的内在尺寸。
 export function DisclosureContent({
   expanded,
   children,
@@ -43,6 +51,20 @@ export function DisclosureContent({
   const [retained, setRetained] = useState(expanded);
   const hasContent = expanded || retained;
   const content = useMemo(() => (hasContent ? children() : null), [hasContent, children]);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node || !hasContent || !animateLayout) return;
+    const measure = () => {
+      const bounds = node.getBoundingClientRect();
+      if (bounds.width > 0) setContentHeight(bounds.height);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [animateLayout, hasContent]);
   useLayoutEffect(() => {
     if (expanded || reducedMotion || !active) setRetained(expanded);
   }, [active, expanded, reducedMotion]);
@@ -58,7 +80,7 @@ export function DisclosureContent({
   const duration = expanded ? MOTION_DURATION.base : MOTION_DURATION.fast;
   const transition = reducedMotion
     ? "none"
-    : `grid-template-rows ${duration}ms ${MOTION_EASING_CSS.standard}, opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
+    : `height ${duration}ms ${MOTION_EASING_CSS.standard}, opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
   const opacityTransition = reducedMotion
     ? "none"
     : `opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
@@ -66,22 +88,23 @@ export function DisclosureContent({
     (event: TransitionEvent<HTMLDivElement>) => {
       if (
         event.target === event.currentTarget &&
-        (event.propertyName === "grid-template-rows" || event.propertyName === "opacity") &&
+        (event.propertyName === "height" || event.propertyName === "opacity") &&
         !expanded
       )
         setRetained(false);
     },
     [expanded],
   );
+  const expandedHeight = expanded ? (contentHeight ?? 0) : 0;
   const viewportStyle = useMemo<CSSProperties>(
     () => ({
-      display: "grid",
-      gridTemplateRows: expanded ? "1fr" : "0fr",
+      position: "relative",
+      height: animateLayout ? expandedHeight : undefined,
       opacity: expanded ? 1 : 0,
       overflow: "hidden",
       transition: animateLayout ? transition : opacityTransition,
     }),
-    [animateLayout, expanded, opacityTransition, transition],
+    [animateLayout, expandedHeight, expanded, opacityTransition, transition],
   );
   return (
     <div
@@ -91,7 +114,9 @@ export function DisclosureContent({
       onTransitionEnd={finishClosing}
       style={viewportStyle}
     >
-      <div style={contentStyle}>{content}</div>
+      <div ref={contentRef} style={animateLayout ? measuredContentStyle : contentStyle}>
+        {content}
+      </div>
     </div>
   );
 }

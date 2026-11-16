@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Keyboard, ScrollView, Text, View, type PressableStateCallbackType } from "react-native";
+import { Keyboard, ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { AgentProvider, AgentFeature } from "@getpaseo/protocol/agent-types";
 import { FastModeIndicator } from "./fast-mode-indicator";
@@ -34,6 +34,7 @@ interface CompactModelSheetProps {
   serverId?: string | null;
   glyphSize: number;
   features?: readonly AgentFeature[];
+  thinkingLabel?: string;
   children: ReactNode;
 }
 
@@ -57,6 +58,7 @@ export function CompactModelSheet({
   serverId = null,
   glyphSize,
   features,
+  thinkingLabel,
   children,
 }: CompactModelSheetProps) {
   const { t } = useTranslation();
@@ -116,13 +118,8 @@ export function CompactModelSheet({
   }, [close, isOpen, open]);
 
   const triggerStyle = useCallback(
-    ({ hovered, pressed }: PressableStateCallbackType) => [
-      styles.trigger,
-      hovered && styles.triggerHovered,
-      (pressed || isOpen) && styles.triggerPressed,
-      disabled && styles.triggerDisabled,
-    ],
-    [disabled, isOpen],
+    () => [styles.trigger, disabled && styles.triggerDisabled],
+    [disabled],
   );
 
   return (
@@ -137,6 +134,7 @@ export function CompactModelSheet({
           model: browser.selectedModelLabel,
         })}
         testID="combined-model-selector"
+        hitSlop={12}
         chevron={null}
       >
         {ProviderIcon ? (
@@ -144,10 +142,11 @@ export function CompactModelSheet({
             <ProviderIcon size={glyphSize} color={styles.providerIcon.color} />
           </ComposerToolbarGlyph>
         ) : null}
+        <FastModeIndicator features={features} />
         <Text style={styles.triggerText} numberOfLines={1}>
           {shortModelLabel(browser.triggerLabel)}
         </Text>
-        <FastModeIndicator features={features} />
+        {thinkingLabel ? <Text style={styles.triggerEffort}>· {thinkingLabel}</Text> : null}
       </ComboboxTrigger>
 
       <AdaptiveModalSheet
@@ -198,21 +197,15 @@ export function CompactModelSheet({
 
 const styles = StyleSheet.create((theme) => ({
   trigger: {
-    height: 28,
+    height: 20,
     minWidth: 0,
     flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
-    paddingHorizontal: theme.spacing[2],
+    paddingHorizontal: 0,
     borderRadius: theme.borderRadius["2xl"],
     backgroundColor: "transparent",
-  },
-  triggerHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  triggerPressed: {
-    backgroundColor: theme.colors.surface0,
   },
   triggerDisabled: {
     opacity: 0.5,
@@ -223,6 +216,15 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
+    lineHeight: theme.fontSize.sm * 1.25,
+    includeFontPadding: false,
+  },
+  triggerEffort: {
+    flexShrink: 0,
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.25,
+    includeFontPadding: false,
   },
   providerIcon: {
     color: theme.colors.foregroundMuted,

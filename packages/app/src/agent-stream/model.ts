@@ -36,6 +36,8 @@ export interface AgentStreamRenderModel {
 
 export interface BuildAgentStreamRenderModelInput {
   agentStatus: string;
+  model?: string | null;
+  timingSource?: Pick<BuildAgentStreamRenderModelInput, "tail" | "head">;
   tail: StreamItem[];
   head: StreamItem[];
   platform: "web" | "native";
@@ -58,6 +60,25 @@ const turnTimingCache = new WeakMap<
   StreamItem[],
   WeakMap<StreamItem[], Map<string, StreamTurnTiming>>
 >();
+const visibleGptItemsCache = new WeakMap<StreamItem[], StreamItem[]>();
+
+export function visibleModelItems(
+  items: StreamItem[],
+  model: string | null | undefined,
+): StreamItem[] {
+  if (!model || !/(?:^|[/:])gpt(?:[-_.\s]|\d|$)/i.test(model)) return items;
+  const cached = visibleGptItemsCache.get(items);
+  if (cached) return cached;
+  const visible = items.filter((item) => {
+    if (item.kind === "thought") return false;
+    if (item.kind !== "tool_call") return true;
+    const payload = item.payload;
+    const name = payload.source === "agent" ? payload.data.name : payload.data.toolName;
+    return name !== "thinking";
+  });
+  visibleGptItemsCache.set(items, visible);
+  return visible;
+}
 
 function getOrderedItems(params: {
   cache: WeakMap<StreamItem[], Map<string, StreamItem[]>>;
@@ -183,27 +204,28 @@ export function buildAgentStreamRenderModel(
       }),
   });
   const splitHistory = splitOrderedTail({
-    orderedTail,
+    orderedTail: visibleModelItems(orderedTail, input.model),
     platform: input.platform,
     isMobileBreakpoint: input.isMobileBreakpoint,
   });
   const turnTiming = getTurnTiming({
     agentStatus: input.agentStatus,
-    tail: input.tail,
-    head: input.head,
+    tail: input.timingSource ? input.timingSource.tail : input.tail,
+    head: input.timingSource ? input.timingSource.head : input.head,
   });
+  const visibleHead = visibleModelItems(orderedHead, input.model);
 
   return {
     history: splitHistory.history,
     segments: {
       ...splitHistory.segments,
-      liveHead: orderedHead,
+      liveHead: visibleHead,
     },
     turnTiming,
     boundary: {
       hasVirtualizedHistory: splitHistory.segments.historyVirtualized.length > 0,
       hasMountedHistory: splitHistory.segments.historyMounted.length > 0,
-      hasLiveHead: orderedHead.length > 0,
+      hasLiveHead: visibleHead.length > 0,
     },
     auxiliary: EMPTY_AUXILIARY,
   };

@@ -34,6 +34,21 @@ function sliderColors(theme: Theme): SliderColors {
 }
 
 const trackStyle: CSSProperties = { position: "relative", height: 22, borderRadius: 11 };
+const sliderStyle: CSSProperties = {
+  position: "relative",
+  width: "100%",
+  minWidth: 0,
+  height: 28,
+  paddingBlock: 3,
+  boxSizing: "border-box",
+};
+const paintStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  borderRadius: "inherit",
+  overflow: "hidden",
+  pointerEvents: "none",
+};
 const rangeStyle: CSSProperties = {
   position: "absolute",
   inset: "-7px 0",
@@ -48,7 +63,7 @@ const rangeStyle: CSSProperties = {
 const pointAt = (index: number, count: number) =>
   `calc(11px + (100% - 22px) * ${index / Math.max(1, count - 1)})`;
 
-function Slider({
+export function ThinkingSliderView({
   options,
   selectedIndex,
   disabled,
@@ -98,7 +113,7 @@ function Slider({
     () => ({
       position: "absolute",
       inset: 0,
-      width: pointAt(index, options.length),
+      width: maxed ? "100%" : pointAt(index, options.length),
       borderRadius: 11,
       background: maxed ? `linear-gradient(100deg, ${blue}, ${spark} 55%, ${blue})` : `${spark}77`,
     }),
@@ -139,31 +154,33 @@ function Slider({
     [index, options.length, spark, reducedMotion, focus, focused],
   );
   return (
-    <div style={surfaceStyle}>
-      <div aria-hidden style={fillStyle} />
-      {maxed ? <ThinkingSliderParticles /> : null}
-      {!maxed
-        ? options.map((option, i) => <span key={option.id} aria-hidden style={points[i]} />)
-        : null}
-      <span aria-hidden style={thumbStyle} />
-      <input
-        type="range"
-        min={0}
-        max={Math.max(0, options.length - 1)}
-        step={1}
-        value={index}
-        disabled={disabled || options.length < 2}
-        aria-label="思考强度"
-        aria-valuetext={options[index]?.label ?? ""}
-        onChange={change}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        onPointerDown={handlePointerDown}
-        onKeyDown={handleKeyDown}
-        style={rangeStyle}
-      />
+    <div style={sliderStyle} data-testid="thinking-slider">
+      <div style={surfaceStyle} data-testid="thinking-slider-track">
+        <div aria-hidden style={paintStyle} data-testid="thinking-slider-paint">
+          <div style={fillStyle} />
+          {maxed ? <ThinkingSliderParticles /> : null}
+          {!maxed ? options.map((option, i) => <span key={option.id} style={points[i]} />) : null}
+        </div>
+        <span aria-hidden style={thumbStyle} data-testid="thinking-slider-thumb" />
+        <input
+          type="range"
+          min={0}
+          max={Math.max(0, options.length - 1)}
+          step={1}
+          value={index}
+          disabled={disabled || options.length < 2}
+          aria-label="思考强度"
+          aria-valuetext={options[index]?.label ?? ""}
+          onChange={change}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onPointerDown={handlePointerDown}
+          onKeyDown={handleKeyDown}
+          style={rangeStyle}
+        />
+      </div>
     </div>
   );
 }
 
-export const ThinkingSlider = withUnistyles(Slider, sliderColors);
+export const ThinkingSlider = withUnistyles(ThinkingSliderView, sliderColors);

@@ -25,6 +25,110 @@ function assistantMessage(id: string, seed: number): StreamItem {
 }
 
 describe("buildAgentStreamRenderModel", () => {
+  it.each(["gpt-6.1-sol", "openai/GPT-5.4", "proxy:openai/gpt-5.4-mini"])(
+    "当前使用 %s 时历史和实时思考均不显示，原始记录和耗时保持不变",
+    (selectedModel) => {
+      const thought: StreamItem = {
+        kind: "thought",
+        id: "thinking",
+        text: "**内部摘要**",
+        timestamp: createTimestamp(2),
+        status: "ready",
+      };
+      const toolThought: StreamItem = {
+        kind: "tool_call",
+        id: "thinking-tool",
+        timestamp: createTimestamp(3),
+        payload: {
+          source: "agent",
+          data: {
+            provider: "codex",
+            callId: "thinking-tool",
+            name: "thinking",
+            status: "completed",
+            error: null,
+            detail: { type: "plain_text", text: "思考摘要" },
+          },
+        },
+      };
+      const tail = [userMessage("user", 1), thought];
+      const head = [toolThought, assistantMessage("answer", 4)];
+      const input = {
+        agentStatus: "idle",
+        tail,
+        head,
+        platform: "web" as const,
+        isMobileBreakpoint: false,
+      };
+      const original = buildAgentStreamRenderModel(input);
+      const hidden = buildAgentStreamRenderModel({ ...input, model: selectedModel });
+      expect(hidden.history.map((item) => item.id)).toEqual(["user"]);
+      expect(hidden.segments.liveHead.map((item) => item.id)).toEqual(["answer"]);
+      expect(hidden.turnTiming).toBe(original.turnTiming);
+      expect(tail).toEqual([userMessage("user", 1), thought]);
+      expect(head).toEqual([toolThought, assistantMessage("answer", 4)]);
+      const restored = buildAgentStreamRenderModel({ ...input, model: "claude-opus-4-6" });
+      expect(restored.history).toBe(original.history);
+      expect(restored.segments.liveHead).toBe(original.segments.liveHead);
+      expect(buildAgentStreamRenderModel({ ...input, model: selectedModel }).history).toBe(
+        hidden.history,
+      );
+    },
+  );
+
+  it.each(["claude-opus-4-6", "deepseek-V4-Pro", "grok-4.6", "gemini-3.8-pro", "not-gpt-6", null])(
+    "非 GPT 或未确认的模型 %s 保留思考",
+    (selectedModel) => {
+      const tail: StreamItem[] = [
+        {
+          kind: "thought",
+          id: "thought",
+          text: "思考",
+          timestamp: createTimestamp(2),
+          status: "loading",
+        },
+      ];
+      const model = buildAgentStreamRenderModel({
+        agentStatus: "running",
+        tail,
+        head: [],
+        platform: "web",
+        isMobileBreakpoint: false,
+        model: selectedModel,
+      });
+      expect(model.history).toBe(tail);
+      expect(model.history.map((item) => item.id)).toEqual(["thought"]);
+    },
+  );
+
+  it("原生端同样隐藏 GPT 思考，仅思考被隐藏时保留原始回合耗时", () => {
+    const thought: StreamItem = {
+      kind: "thought",
+      id: "thought",
+      text: "思考",
+      timestamp: createTimestamp(4),
+      status: "ready",
+    };
+    const tail = [userMessage("user", 1), assistantMessage("answer", 3), thought];
+    const input = {
+      agentStatus: "idle",
+      tail,
+      head: [],
+      platform: "native" as const,
+      isMobileBreakpoint: true,
+    };
+    const original = buildAgentStreamRenderModel(input);
+    const visible = buildAgentStreamRenderModel({ ...input, model: "gpt-6" });
+    expect(visible.segments.historyMounted.map((item) => item.id)).toEqual(["answer", "user"]);
+    expect(visible.turnTiming).toBe(original.turnTiming);
+    const prefiltered = buildAgentStreamRenderModel({
+      ...input,
+      tail: [tail[0], tail[1]],
+      timingSource: input,
+    });
+    expect(prefiltered.turnTiming).toBe(original.turnTiming);
+  });
+
   it("keeps head separate from committed history on desktop web", () => {
     const tail: StreamItem[] = [];
     for (let index = 0; index < 60; index += 1) {

@@ -15,7 +15,6 @@ import { AgentControlIconGlyph } from "@/composer/agent-controls/control";
 import type { ProviderSelectionModelRow } from "@/provider-selection/provider-selection";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
-import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { orderModelRows, reorderVisibleModels, toggleFavoriteModel } from "./preferences";
 import type { ModelLibrary } from "./use-model-library";
 import type { Theme } from "@/styles/theme";
@@ -227,7 +226,7 @@ export function ModelLibraryList({
     void library.retry();
   }, [library]);
   return (
-    <View style={styles.list} dataSet={COMPACT_LABEL_DATASET}>
+    <View style={styles.list}>
       {library.error ? (
         <Pressable onPress={retry} accessibilityRole="button">
           <Text style={styles.error}>模型偏好读取失败，点击重试</Text>
@@ -272,8 +271,8 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     color: theme.colors.foreground,
-    fontSize: theme.fontSize.base * 0.8125,
-    lineHeight: 20,
+    fontSize: theme.fontSize.base,
+    lineHeight: theme.fontSize.base * 1.25,
   },
   tooltip: { color: theme.colors.foreground, fontSize: theme.fontSize.sm },
   action: (touch: boolean) => ({

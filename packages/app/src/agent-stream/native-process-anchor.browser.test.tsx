@@ -66,6 +66,8 @@ const TAIL: StreamItem[] = [
   ),
 ];
 const ROW_STYLE = { height: 80, flexShrink: 0 };
+const IMAGE_PIXEL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aYioAAAAASUVORK5CYII=";
 const CASES = [40, 200, 1600].map((count) => ({
   count,
   detail: { ...DETAIL, items: ITEMS.slice(0, count) },
@@ -131,7 +133,18 @@ function Harness({ detail }: { detail: typeof DETAIL }) {
         dividerSpacing={8}
       />
     ) : (
-      <div style={ROW_STYLE}>{item.id}</div>
+      <div style={ROW_STYLE}>
+        {item.id}
+        {item.id === "old-17" ? (
+          <img
+            data-testid="previous-user-picture"
+            src={IMAGE_PIXEL}
+            width={48}
+            height={48}
+            alt="上一条用户消息的图片"
+          />
+        ) : null}
+      </div>
     );
   return strategy.render({
     agentId: "agent",
@@ -198,6 +211,8 @@ test.each(CASES)(
       const initial = findToggle();
       if (!initial) throw new Error("未挂载用时入口");
       const before = initial.getBoundingClientRect().top;
+      const picture = host.querySelector('[data-testid="previous-user-picture"]');
+      expect(picture).not.toBeNull();
       initial.click();
       for (let frame = 0; frame < 24; frame++) {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -205,6 +220,10 @@ test.each(CASES)(
         expect(current, `展开第 ${frame} 帧入口未挂载`).not.toBeNull();
         if (!current) throw new Error("入口离开虚拟窗口");
         expect(Math.abs(current.getBoundingClientRect().top - before)).toBeLessThan(1);
+        expect(
+          host.querySelector('[data-testid="previous-user-picture"]'),
+          `展开第 ${frame} 帧不重挂上一条图片`,
+        ).toBe(picture);
       }
       expect(host.querySelectorAll("[data-stream-row-id]").length).toBeLessThan(60);
       const expanded = findToggle();
@@ -215,6 +234,10 @@ test.each(CASES)(
         const current = findToggle();
         if (!current) throw new Error("收起后缺少入口");
         expect(Math.abs(current.getBoundingClientRect().top - before)).toBeLessThan(1);
+        expect(
+          host.querySelector('[data-testid="previous-user-picture"]'),
+          `收起第 ${frame} 帧不重挂上一条图片`,
+        ).toBe(picture);
       }
     } finally {
       root.unmount();

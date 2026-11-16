@@ -1,19 +1,11 @@
 import type { RenderComposerControls } from "./toolbar-slots";
-import { DesktopModelMenuContent, DesktopThinkingMenuContent } from "./desktop-model-menu";
+import { DesktopModelMenuContent } from "./desktop-model-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { View, Text, Keyboard, useWindowDimensions, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useShallow } from "zustand/shallow";
-import {
-  Brain,
-  ChevronDown,
-  ListTodo,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  Zap,
-} from "lucide-react-native";
+import { Brain, ChevronDown, ListTodo, Settings2, ShieldCheck, Zap } from "lucide-react-native";
 import { ModelProviderGlyph } from "@/components/model-browser";
 import {
   DropdownMenu,
@@ -77,7 +69,7 @@ import {
   type AgentControlIconTone,
 } from "@/composer/agent-controls/control";
 import { CompactModelSheet } from "@/composer/agent-controls/model-sheet";
-import { FastModeIndicator } from "./fast-mode-indicator";
+import { FastModeIndicator, FastModeToggle } from "./fast-mode-indicator";
 import { CodexProviderInjectionControl } from "@/composer/agent-controls/codex-provider-injection-control";
 
 interface AgentControlOption {
@@ -924,24 +916,21 @@ function ComposerControlLayout({
   modeControl,
   onDropdownClose,
   isCompact,
-  thinking,
 }: {
   renderControls: RenderComposerControls | undefined;
   children: ReactElement;
   modeControl: AgentModeControlValue | null | undefined;
   onDropdownClose: (() => void) | undefined;
   isCompact: boolean;
-  thinking?: ReactElement | null;
 }) {
   const permission = modeControl ? (
     <AgentModeControl {...modeControl} onClose={onDropdownClose} />
   ) : null;
-  if (renderControls) return renderControls({ permission, thinking, models: children });
+  if (renderControls) return renderControls({ permission, models: children });
   return (
     <View style={styles.container}>
-      {!isCompact ? permission : null}
-      {thinking}
       {children}
+      {!isCompact ? permission : null}
     </View>
   );
 }
@@ -984,17 +973,13 @@ export interface DesktopAgentControlsContentProps {
   canSelectCodexProviderInjection: boolean;
 }
 
-// 浮层状态放在输入框外层，再把按钮分配到两侧，不能随输入框内部更新重挂。
+// 浮层状态保留在输入框外层，不能随输入框内部更新重挂。
 function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
   const { t } = useTranslation();
   const { onDropdownClose, onModelSelectorOpen } = props;
   const { width } = useWindowDimensions();
-  const [openMenu, setOpenMenu] = useState<"model" | "thinking" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"model" | null>(null);
   const modelAccessibilityState = useMemo(() => ({ expanded: openMenu === "model" }), [openMenu]);
-  const thinkingAccessibilityState = useMemo(
-    () => ({ expanded: openMenu === "thinking" }),
-    [openMenu],
-  );
   useEffect(() => {
     if (!props.isPaneFocused) setOpenMenu(null);
   }, [props.isPaneFocused]);
@@ -1005,6 +990,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     isLoading: props.isModelLoading,
   });
   const label = buildSelectedTriggerLabel(modelLabel);
+  const triggerLabel = props.canSelectThinking ? `${label} · ${props.displayThinking}` : label;
   const handleMenuOpenChange = useCallback(
     (open: boolean) => {
       setOpenMenu(open ? "model" : null);
@@ -1013,19 +999,8 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
     },
     [onDropdownClose, onModelSelectorOpen],
   );
-  const handleThinkingOpenChange = useCallback(
-    (open: boolean) => {
-      setOpenMenu(open ? "thinking" : null);
-      if (!open) onDropdownClose?.();
-    },
-    [onDropdownClose],
-  );
-  const chipStyle = useCallback(
-    ({ hovered, pressed, open }: { hovered: boolean; pressed: boolean; open: boolean }) => [
-      styles.roleChip,
-      (hovered || pressed || open) && styles.roleChipActive,
-      props.disabled && styles.disabledBadge,
-    ],
+  const chipStyle = useMemo(
+    () => [styles.roleChip, props.disabled && styles.disabledBadge],
     [props.disabled],
   );
   const hasInjection =
@@ -1058,51 +1033,12 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
         ))}
       </>
     ) : null;
-  const thinking = useMemo(
-    () =>
-      props.canSelectThinking ? (
-        <DropdownMenu
-          compact
-          open={props.isPaneFocused && openMenu === "thinking"}
-          onOpenChange={handleThinkingOpenChange}
-          selectionCloseScope="current"
-        >
-          <DropdownMenuTrigger
-            disabled={props.disabled}
-            accessibilityRole="button"
-            accessibilityLabel={`思考强度：${props.displayThinking}`}
-            accessibilityState={thinkingAccessibilityState}
-            testID="agent-thinking-selector"
-            style={chipStyle}
-            hitSlop={4}
-          >
-            <AgentControlIconGlyph icon={Sparkles} size={13} tone="muted" />
-            <Text numberOfLines={1} style={styles.roleThinkingText}>
-              {props.displayThinking}
-            </Text>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="top"
-            align="start"
-            offset={8}
-            width={248}
-            modal={false}
-            style={styles.promptMenu}
-            testID="agent-thinking-popup"
-          >
-            <DesktopThinkingMenuContent controls={props} />
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null,
-    [props, openMenu, thinkingAccessibilityState, chipStyle, handleThinkingOpenChange],
-  );
   return (
     <ComposerControlLayout
       renderControls={props.renderControls}
       modeControl={props.modeControl}
       onDropdownClose={props.onDropdownClose}
       isCompact={false}
-      thinking={thinking}
     >
       <View
         style={[styles.container, props.renderControls && styles.slottedControls]}
@@ -1117,7 +1053,7 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
           <DropdownMenuTrigger
             disabled={props.disabled}
             accessibilityRole="button"
-            accessibilityLabel={`${t("agentControls.model.title")}：${label}`}
+            accessibilityLabel={`${t("agentControls.model.title")}：${triggerLabel}`}
             accessibilityState={modelAccessibilityState}
             testID="agent-role-selector"
             style={chipStyle}
@@ -1128,7 +1064,12 @@ function DesktopAgentControlsContent(props: DesktopAgentControlsContentProps) {
             <Text numberOfLines={1} style={styles.roleChipText}>
               {label}
             </Text>
-            <AgentControlIconGlyph icon={ChevronDown} size={12} />
+            {props.canSelectThinking ? (
+              <Text style={styles.roleChipEffort}>· {props.displayThinking}</Text>
+            ) : null}
+            <View style={styles.roleCaret}>
+              <AgentControlIconGlyph icon={ChevronDown} size={12} />
+            </View>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             side="top"
@@ -1291,22 +1232,32 @@ function SheetAgentControlsContent(props: SheetAgentControlsContentProps) {
         />
       ) : null}
 
-      {(features ?? []).map((feature) => (
-        <SheetFeatureItem
-          key={`feature-${feature.id}`}
-          feature={feature}
-          disabled={disabled}
-          openSelector={openSelector}
-          handleOpenChange={handleOpenChange}
-          onSetFeature={onSetFeature}
-        />
-      ))}
+      {(features ?? []).map((feature) =>
+        feature.id === "fast_mode" && feature.type === "toggle" ? (
+          <FastModeToggle
+            key={feature.id}
+            features={features}
+            disabled={disabled}
+            onSetFeature={onSetFeature}
+          />
+        ) : (
+          <SheetFeatureItem
+            key={`feature-${feature.id}`}
+            feature={feature}
+            disabled={disabled}
+            openSelector={openSelector}
+            handleOpenChange={handleOpenChange}
+            onSetFeature={onSetFeature}
+          />
+        ),
+      )}
     </View>
   );
 
   return canSelectModel ? (
     <CompactModelSheet
       features={features}
+      thinkingLabel={canSelectThinking ? displayThinking : undefined}
       providerLocked={providerLocked}
       providers={modelSelectorProviders}
       selectedProvider={provider}
@@ -1377,6 +1328,8 @@ function RoleMenuFeature({
     ),
     [feature.value],
   );
+  if (feature.id === "fast_mode" && feature.type === "toggle")
+    return <FastModeToggle features={[feature]} disabled={disabled} onSetFeature={onSetFeature} />;
   if (feature.type === "toggle")
     return (
       <DropdownMenuItem
@@ -1796,23 +1749,27 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: 0,
     borderRadius: theme.borderRadius.sm,
   },
-  roleChipActive: { backgroundColor: theme.colors.surface3 },
   roleChipText: {
     minWidth: 0,
     flexShrink: 1,
     fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.25,
+    includeFontPadding: false,
     color: theme.colors.foreground,
+  },
+  roleCaret: { height: "100%", justifyContent: "center", flexShrink: 0 },
+  roleChipEffort: {
+    flexShrink: 0,
+    fontSize: theme.fontSize.sm,
+    lineHeight: theme.fontSize.sm * 1.25,
+    includeFontPadding: false,
+    color: theme.colors.foregroundMuted,
   },
   promptMenu: {
     backgroundColor: theme.colors.surface2,
     paddingVertical: 0,
     borderWidth: 0,
     borderRadius: theme.borderRadius.lg,
-  },
-  roleThinkingText: {
-    flexShrink: 0,
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.foregroundMuted,
   },
   roleMenuRow: {
     marginHorizontal: theme.spacing[1],

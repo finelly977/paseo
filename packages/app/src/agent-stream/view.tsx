@@ -69,7 +69,11 @@ import {
   projectToolCallDetailLevel,
 } from "@/tool-calls/detail-level/projection";
 import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
-import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
+import {
+  type AgentStreamRenderModel,
+  buildAgentStreamRenderModel,
+  visibleModelItems,
+} from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import {
@@ -448,6 +452,10 @@ function buildNativeForkAttachment(input: {
   };
 }
 
+function resolveStreamModel(agent: AgentScreenAgent): string | undefined | null {
+  return agent.model ?? agent.runtimeInfo?.model;
+}
+
 function buildForkDraftSetup(agent: AgentScreenAgent): WorkspaceDraftTabSetup | undefined {
   if (!agent.provider) {
     return undefined;
@@ -462,7 +470,7 @@ function buildForkDraftSetup(agent: AgentScreenAgent): WorkspaceDraftTabSetup | 
     provider: agent.provider,
     cwd: agent.cwd,
     modeId: agent.currentModeId ?? agent.runtimeInfo?.modeId ?? null,
-    model: agent.model ?? agent.runtimeInfo?.model ?? null,
+    model: resolveStreamModel(agent) ?? null,
     codexProviderInjectionId: null,
     thinkingOptionId: agent.thinkingOptionId ?? agent.runtimeInfo?.thinkingOptionId ?? null,
     featureValues,
@@ -899,6 +907,15 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
     const effectiveStreamItems = nativeProcesses.tail;
     const effectiveStreamHead = nativePresentation.head;
+    const selectedModel = resolveStreamModel(context);
+    const visibleTail = useMemo(
+      () => visibleModelItems(effectiveStreamItems, selectedModel),
+      [effectiveStreamItems, selectedModel],
+    );
+    const visibleHead = useMemo(
+      () => visibleModelItems(effectiveStreamHead ?? EMPTY_STREAM_HEAD, selectedModel),
+      [effectiveStreamHead, selectedModel],
+    );
     const executingToolIds = useMemo(
       () =>
         activeToolCallIds({
@@ -911,25 +928,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
     // Keep retained history outside the 48ms live-head flush path.
     const preparedToolCallHistory = useMemo(
-      () => prepareToolCallHistory(toolCallDetailLevel, effectiveStreamItems),
-      [effectiveStreamItems, toolCallDetailLevel],
+      () => prepareToolCallHistory(toolCallDetailLevel, visibleTail),
+      [visibleTail, toolCallDetailLevel],
     );
     const projectedToolCalls = useMemo(
       () =>
         projectToolCallDetailLevel({
           level: toolCallDetailLevel,
-          tail: effectiveStreamItems,
-          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+          tail: visibleTail,
+          head: visibleHead,
           preparedHistory: preparedToolCallHistory,
           isTurnActive: context.status === "running",
         }),
-      [
-        context.status,
-        effectiveStreamHead,
-        effectiveStreamItems,
-        preparedToolCallHistory,
-        toolCallDetailLevel,
-      ],
+      [context.status, visibleHead, visibleTail, preparedToolCallHistory, toolCallDetailLevel],
     );
     const orderedToolCalls = useMemo(
       () => ({
@@ -956,12 +967,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
         agentStatus: context.status,
+        timingSource: {
+          tail: effectiveStreamItems,
+          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+        },
         tail: imageSegments.tail,
         head: imageSegments.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
       });
-    }, [context.status, isMobile, imageSegments.head, imageSegments.tail]);
+    }, [
+      context.status,
+      effectiveStreamItems,
+      effectiveStreamHead,
+      isMobile,
+      imageSegments.head,
+      imageSegments.tail,
+    ]);
     const streamLayout = useMemo(
       () =>
         layoutStream({

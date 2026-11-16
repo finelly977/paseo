@@ -129,7 +129,6 @@ export interface MessageInputProps {
   isPaneFocused?: boolean;
   /** Content to render on the left side of the composer toolbar (e.g., AgentControls) */
   leftContent?: React.ReactNode;
-  modelContent?: React.ReactNode;
   /** Content to render on the right side before the voice button (e.g., context window meter) */
   beforeVoiceContent?: React.ReactNode;
   /** Content to render on the right side after voice button (e.g., realtime button, cancel button) */
@@ -1116,7 +1115,6 @@ interface ResolvedMessageInputProps {
   disabled: boolean;
   isPaneFocused: boolean;
   leftContent: React.ReactNode;
-  modelContent: React.ReactNode;
   beforeVoiceContent: React.ReactNode;
   rightContent: React.ReactNode;
   voiceServerId: string | undefined;
@@ -1159,7 +1157,6 @@ function resolveMessageInputProps(props: MessageInputProps): ResolvedMessageInpu
     disabled: props.disabled ?? false,
     isPaneFocused: props.isPaneFocused ?? true,
     leftContent: props.leftContent,
-    modelContent: props.modelContent,
     beforeVoiceContent: props.beforeVoiceContent,
     rightContent: props.rightContent,
     voiceServerId: props.voiceServerId,
@@ -1210,7 +1207,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       disabled,
       isPaneFocused,
       leftContent,
-      modelContent,
       beforeVoiceContent,
       rightContent,
       voiceServerId,
@@ -1228,6 +1224,10 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     } = resolveMessageInputProps(props);
     const { t } = useTranslation();
     const isCompact = useIsCompactFormFactor();
+    const leftButtonGroupStyle = useMemo(
+      () => [styles.leftButtonGroup, isCompact && styles.leftButtonGroupCompact],
+      [isCompact],
+    );
     const { height: windowHeight } = useWindowDimensions();
     const maxInputHeight = resolveMaxInputHeight(windowHeight);
     const buttonIconSize = isWeb ? ICON_SIZE.md : ICON_SIZE.lg;
@@ -1852,7 +1852,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           {/* Button row */}
           <View style={styles.buttonRow}>
             {/* Toolbar left: attachment button + agent controls */}
-            <View style={styles.leftButtonGroup}>
+            <View style={leftButtonGroupStyle}>
               <AttachmentDropdown
                 isConnected={isConnected}
                 disabled={disabled}
@@ -1879,7 +1879,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                 voiceMuteToggleKeys={voiceMuteToggleKeys}
                 dictationToggleKeys={dictationToggleKeys}
               />
-              {modelContent}
               {rightContent}
               <SendButtonTooltip
                 onScheduleMessage={handleScheduleMessage}
@@ -1993,10 +1992,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     justifyContent: "space-between",
     marginHorizontal: -6,
+    flexWrap: "wrap",
+    rowGap: theme.spacing[2],
   },
   leftButtonGroup: {
     minWidth: 0,
-    flexShrink: 0,
+    flexShrink: 1,
     flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -2008,7 +2009,9 @@ const styles = StyleSheet.create((theme: Theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+    marginLeft: "auto",
   },
+  leftButtonGroupCompact: { flexBasis: "100%", flexGrow: 0 },
   attachButton: {
     width: 28,
     height: 28,
@@ -2042,7 +2045,7 @@ const styles = StyleSheet.create((theme: Theme) => ({
     marginLeft: theme.spacing[1],
   },
   iconButtonHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: "transparent",
   },
   iconButtonPressed: {
     transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
