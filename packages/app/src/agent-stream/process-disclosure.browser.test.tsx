@@ -10,6 +10,27 @@ const CONTENT_STYLE = { height: 120 };
 const DIVIDER_LABEL_STYLE = { lineHeight: "24px" };
 const NESTED_TOGGLE_STYLE = { display: "block", boxSizing: "border-box", height: 24 } as const;
 
+function GrowingOutputHarness() {
+  const [expanded, setExpanded] = React.useState(false);
+  const [height, setHeight] = React.useState(120);
+  const toggle = useCallback(() => setExpanded((value) => !value), []);
+  const grow = useCallback(() => setHeight((previous) => previous + 120), []);
+  const outputStyle = React.useMemo(() => ({ height }), [height]);
+  return (
+    <>
+      <button type="button" onClick={toggle} data-output-toggle>
+        展开命令输出
+      </button>
+      <button type="button" onClick={grow} data-output-grow>
+        追加输出
+      </button>
+      <DisclosureContent expanded={expanded} testID="growing-output">
+        {() => <div style={outputStyle}>命令输出</div>}
+      </DisclosureContent>
+    </>
+  );
+}
+
 function NestedDisclosureHarness() {
   const [expanded, setExpanded] = React.useState(false);
   const toggle = useCallback(() => setExpanded((value) => !value), []);
@@ -74,6 +95,43 @@ function SettledProcessHarness() {
 }
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+test("展开途中追加命令输出时继续过渡，不强行跳到全部高度", async () => {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  try {
+    root.render(<GrowingOutputHarness />);
+    await expect.poll(() => host.querySelector("[data-output-toggle]")).not.toBeNull();
+    const toggle = host.querySelector<HTMLButtonElement>("[data-output-toggle]");
+    const grow = host.querySelector<HTMLButtonElement>("[data-output-grow]");
+    const content = host.querySelector('[data-testid="growing-output"]');
+    if (!toggle || !grow || !content) throw new Error("缺少命令输出入口");
+    toggle.click();
+    await nextFrame();
+    await nextFrame();
+    grow.click();
+    await nextFrame();
+    await nextFrame();
+    expect(content.getBoundingClientRect().height).toBeGreaterThan(0);
+    expect(content.getBoundingClientRect().height).toBeLessThan(240);
+    let previousHeight = content.getBoundingClientRect().height;
+    for (let update = 0; update < 2; update++) {
+      grow.click();
+      for (let frame = 0; frame < 2; frame++) {
+        await nextFrame();
+        const currentHeight = content.getBoundingClientRect().height;
+        expect(currentHeight).toBeGreaterThanOrEqual(previousHeight - 0.5);
+        previousHeight = currentHeight;
+      }
+    }
+    for (let frame = 0; frame < 36; frame++) await nextFrame();
+    expect(content.getBoundingClientRect().height).toBe(480);
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+});
 test("子命令展开收起时父层跟随自然高度，不叠加第二次高度动画", async () => {
   const host = document.createElement("div");
   document.body.appendChild(host);

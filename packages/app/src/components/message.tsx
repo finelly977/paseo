@@ -3196,6 +3196,19 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     ],
     [borderlessWhenExpanded],
   );
+  const renderDisclosureDetails = useCallback(
+    () => (
+      <Pressable
+        ref={detailWrapperRef}
+        style={detailWrapperStyle}
+        onHoverIn={handleDetailHoverIn}
+        onHoverOut={handleDetailHoverOut}
+      >
+        {renderDetails?.()}
+      </Pressable>
+    ),
+    [detailWrapperStyle, handleDetailHoverIn, handleDetailHoverOut, renderDetails],
+  );
 
   const accessibilityState = useMemo(
     () => (isInteractive ? { expanded: isExpanded } : undefined),
@@ -3316,16 +3329,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
         expanded={hasDetailContent && isExpanded}
         testID="expandable-badge-content"
       >
-        {() => (
-          <Pressable
-            ref={detailWrapperRef}
-            style={detailWrapperStyle}
-            onHoverIn={handleDetailHoverIn}
-            onHoverOut={handleDetailHoverOut}
-          >
-            {renderDetails?.()}
-          </Pressable>
-        )}
+        {renderDisclosureDetails}
       </DisclosureContent>
     </View>
   );

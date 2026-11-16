@@ -74,10 +74,12 @@ export function DisclosureContent({
       { height: `${fromHeight}px`, ...opacityFrames[0] },
       { height: `${targetHeight}px`, ...opacityFrames[1] },
     ];
-    const animation = viewport.animate(animateLayout ? heightFrames : opacityFrames, {
+    const effect = new KeyframeEffect(viewport, animateLayout ? heightFrames : opacityFrames, {
       duration: expanded ? MOTION_DURATION.base : MOTION_DURATION.fast,
       easing: MOTION_EASING_CSS.standard,
     });
+    const animation = new Animation(effect, document.timeline);
+    animation.play();
     animationRef.current = animation;
     animation.onfinish = () => {
       if (animationRef.current !== animation) return;
@@ -87,9 +89,22 @@ export function DisclosureContent({
       if (!expanded) setRetained(false);
     };
     if (!expanded || !animateLayout) return;
+    let measuredHeight = bodyHeight;
     const observer = new ResizeObserver(() => {
-      // 展开期间子项又改变尺寸时立即回归自然布局，不把它的每一帧再做一遍父层动画。
-      if (node.getBoundingClientRect().height !== bodyHeight) animation.finish();
+      const nextHeight = node.getBoundingClientRect().height;
+      if (nextHeight === measuredHeight) return;
+      measuredHeight = nextHeight;
+      const progress = effect.getComputedTiming().progress ?? 0;
+      if (progress >= 1) return;
+      // 保留当前画面与原截止时间，只修改剩余轨迹，不能 finish() 跳到新高度或反复重启动画。
+      effect.setKeyframes([
+        {
+          height: `${viewport.getBoundingClientRect().height}px`,
+          opacity: getComputedStyle(viewport).opacity,
+          offset: progress,
+        },
+        { height: `${nextHeight}px`, opacity: 1, offset: 1 },
+      ]);
     });
     resizeRef.current = observer;
     observer.observe(node);
