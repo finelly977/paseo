@@ -1,13 +1,10 @@
 import {
   useLayoutEffect,
-  useEffect,
-  useCallback,
   useMemo,
   useState,
   useRef,
   useSyncExternalStore,
   type CSSProperties,
-  type TransitionEvent,
 } from "react";
 import { View } from "react-native";
 import { isWeb } from "@/constants/platform";
@@ -27,15 +24,8 @@ const subscribeReducedMotion = (notify: () => void) => {
   return () => query.removeEventListener("change", notify);
 };
 const contentStyle: CSSProperties = { minHeight: 0, display: "flow-root" };
-const measuredContentStyle: CSSProperties = {
-  ...contentStyle,
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: 0,
-};
 
-// 正文脱离过渡视口的高度约束，避免每一动画帧重新计算长输出的内在尺寸。
+// 只为主动开合创建动画；静止时使用自然高度，子命令和流式输出不能触发父层追赶动画。
 export function DisclosureContent({
   expanded,
   children,
@@ -52,69 +42,83 @@ export function DisclosureContent({
   const hasContent = expanded || retained;
   const content = useMemo(() => (hasContent ? children() : null), [hasContent, children]);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const previousExpanded = useRef(expanded);
+  const animationRef = useRef<Animation | null>(null);
+  const resizeRef = useRef<ResizeObserver | null>(null);
   useLayoutEffect(() => {
+    const viewport = viewportRef.current;
     const node = contentRef.current;
-    if (!node || !hasContent || !animateLayout) return;
-    const measure = () => {
-      const bounds = node.getBoundingClientRect();
-      if (bounds.width > 0) setContentHeight(bounds.height);
+    if (!viewport || !node) return;
+    const wasExpanded = previousExpanded.current;
+    previousExpanded.current = expanded;
+    const running = animationRef.current;
+    const bodyHeight = node.getBoundingClientRect().height;
+    const restingHeight = wasExpanded ? bodyHeight : 0;
+    const restingOpacity = wasExpanded ? 1 : 0;
+    const fromHeight = running ? viewport.getBoundingClientRect().height : restingHeight;
+    const fromOpacity = running ? getComputedStyle(viewport).opacity : restingOpacity;
+    running?.cancel();
+    resizeRef.current?.disconnect();
+    animationRef.current = null;
+    resizeRef.current = null;
+    if (reducedMotion || !active) {
+      setRetained(expanded);
+      return;
+    }
+    if (wasExpanded === expanded) return;
+    if (expanded) setRetained(true);
+    const opacityFrames = [{ opacity: fromOpacity }, { opacity: expanded ? 1 : 0 }];
+    const targetHeight = expanded ? bodyHeight : 0;
+    const heightFrames = [
+      { height: `${fromHeight}px`, ...opacityFrames[0] },
+      { height: `${targetHeight}px`, ...opacityFrames[1] },
+    ];
+    const animation = viewport.animate(animateLayout ? heightFrames : opacityFrames, {
+      duration: expanded ? MOTION_DURATION.base : MOTION_DURATION.fast,
+      easing: MOTION_EASING_CSS.standard,
+    });
+    animationRef.current = animation;
+    animation.onfinish = () => {
+      if (animationRef.current !== animation) return;
+      animationRef.current = null;
+      resizeRef.current?.disconnect();
+      resizeRef.current = null;
+      if (!expanded) setRetained(false);
     };
-    measure();
-    const observer = new ResizeObserver(measure);
+    if (!expanded || !animateLayout) return;
+    const observer = new ResizeObserver(() => {
+      // 展开期间子项又改变尺寸时立即回归自然布局，不把它的每一帧再做一遍父层动画。
+      if (node.getBoundingClientRect().height !== bodyHeight) animation.finish();
+    });
+    resizeRef.current = observer;
     observer.observe(node);
-    return () => observer.disconnect();
-  }, [animateLayout, hasContent]);
-  useLayoutEffect(() => {
-    if (expanded || reducedMotion || !active) setRetained(expanded);
-  }, [active, expanded, reducedMotion]);
-  useEffect(() => {
-    if (expanded || !retained || reducedMotion || !active) return;
-    // 同一帧内开合时 CSS 可能没有产生过渡事件，也必须释放隐藏正文。
-    const timer = setTimeout(
-      () => setRetained(false),
-      MOTION_DURATION.fast + MOTION_DURATION.instant,
-    );
-    return () => clearTimeout(timer);
-  }, [active, expanded, reducedMotion, retained]);
-  const duration = expanded ? MOTION_DURATION.base : MOTION_DURATION.fast;
-  const transition = reducedMotion
-    ? "none"
-    : `height ${duration}ms ${MOTION_EASING_CSS.standard}, opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
-  const opacityTransition = reducedMotion
-    ? "none"
-    : `opacity ${duration}ms ${MOTION_EASING_CSS.standard}`;
-  const finishClosing = useCallback(
-    (event: TransitionEvent<HTMLDivElement>) => {
-      if (
-        event.target === event.currentTarget &&
-        (event.propertyName === "height" || event.propertyName === "opacity") &&
-        !expanded
-      )
-        setRetained(false);
+  }, [active, animateLayout, expanded, reducedMotion]);
+  useLayoutEffect(
+    () => () => {
+      animationRef.current?.cancel();
+      resizeRef.current?.disconnect();
     },
-    [expanded],
+    [],
   );
-  const expandedHeight = expanded ? (contentHeight ?? 0) : 0;
   const viewportStyle = useMemo<CSSProperties>(
     () => ({
       position: "relative",
-      height: animateLayout ? expandedHeight : undefined,
+      height: animateLayout && !expanded ? 0 : undefined,
       opacity: expanded ? 1 : 0,
       overflow: "hidden",
-      transition: animateLayout ? transition : opacityTransition,
     }),
-    [animateLayout, expandedHeight, expanded, opacityTransition, transition],
+    [animateLayout, expanded],
   );
   return (
     <div
       data-testid={testID}
       aria-hidden={!expanded}
       inert={!expanded}
-      onTransitionEnd={finishClosing}
+      ref={viewportRef}
       style={viewportStyle}
     >
-      <div ref={contentRef} style={animateLayout ? measuredContentStyle : contentStyle}>
+      <div ref={contentRef} style={contentStyle}>
         {content}
       </div>
     </div>

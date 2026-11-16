@@ -23,6 +23,11 @@ export function ProcessDisclosure({
   );
   useLayoutEffect(() => {
     if (ready) return;
+    // 网页在同一次布局提交中准备展开，不把正文挂载推迟到下一帧。
+    if (isWeb) {
+      setReady(true);
+      return;
+    }
     const frame = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(frame);
   }, [ready]);
