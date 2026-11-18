@@ -132,6 +132,45 @@ const COPILOT_MODES: AgentProviderModeDefinition[] = [
   },
 ];
 
+export const AGY_MODES: AgentProviderModeDefinition[] = [
+  {
+    id: "plan",
+    label: "Plan",
+    description: "Plan carefully before executing a task.",
+    icon: "ShieldEllipsis",
+    colorTier: "planning",
+  },
+  {
+    id: "default",
+    label: "Default",
+    description: "Ask before edits and commands, per your permission settings.",
+    icon: "Shield",
+    colorTier: "safe",
+  },
+  {
+    id: "accept-edits",
+    label: "Accept edits",
+    description: "Approve file edits in the workspace without asking.",
+    icon: "ShieldPlus",
+    colorTier: "moderate",
+  },
+  {
+    id: "auto",
+    label: "Auto",
+    description: "Approve edits and safe commands; ask before irreversible actions.",
+    icon: "ShieldCheck",
+    colorTier: "moderate",
+  },
+  {
+    id: "allow-all",
+    label: "Allow All",
+    description: "Automatically approves all Antigravity tool and command permission requests.",
+    icon: "ShieldOff",
+    colorTier: "dangerous",
+    isUnattended: true,
+  },
+];
+
 const OPENCODE_MODES: AgentProviderModeDefinition[] = [
   {
     id: "build",
@@ -250,6 +289,14 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     description: "GitHub Copilot via Agent Client Protocol with dynamic modes and session support",
     defaultModeId: "https://agentclientprotocol.com/protocol/session-modes#agent",
     modes: COPILOT_MODES,
+  },
+  {
+    id: "agy",
+    label: "Antigravity",
+    description:
+      "Google Antigravity CLI via Agent Client Protocol with multi-model and reasoning support",
+    defaultModeId: "default",
+    modes: AGY_MODES,
   },
   {
     id: "opencode",

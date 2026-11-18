@@ -8,7 +8,9 @@ This guide walks through adding a new agent provider end-to-end. There are two i
 
 Extend `ACPAgentClient` from `packages/server/src/server/agent/providers/acp-agent.ts`. The base class handles process spawning, stdio transport, session lifecycle, streaming, permissions, and model discovery. You provide configuration (command, modes, capabilities) and optionally override `isAvailable()` for auth checks.
 
-The only built-in ACP provider today is `copilot` (`copilot-acp-agent.ts`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/custom-providers.md](custom-providers.md).
+The built-in ACP providers today are `copilot` (`copilot-acp-agent.ts`) and `agy` (`agy-acp-agent.ts`, Google Antigravity CLI via `agy acp`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/custom-providers.md](custom-providers.md).
+
+Antigravity CLI（`agy`）通过 `agy acp` 启动并优先使用现代 `configOptions` 暴露基础模型与逐模型 `thought_level`（因此会剥离旧版重复的 `models.availableModels` 变体列表）；同时通过 `_meta.antigravity.systemPrompt.append` 传入 Paseo 系统提示词，提供衍生 `allow-all` 无审批模式，并在 Windows 上规范化 `session/list` 与工具快照中的 `/C:/...`、`/e%3A/...` 路径格式。
 
 Copilot custom agents are exposed through ACP session config, not the slash-command list. When custom agents are available, Copilot returns a select config option with `id: "agent"` and `category: "_agent"`; Paseo maps that to the `agent` provider feature. Copilot uses the agent display name as the option value, and the blank value means the default Copilot agent.
 

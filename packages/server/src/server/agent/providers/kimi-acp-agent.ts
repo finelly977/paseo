@@ -3,10 +3,8 @@ import type { Logger } from "pino";
 import type { AgentModelDefinition } from "../agent-sdk-types.js";
 import {
   type ACPCatalogModelResolverContext,
-  deriveSelectorOptions,
-  findSelectConfigOption,
+  resolvePerModelThinkingCatalog,
 } from "./acp-agent.js";
-import { toDiagnosticErrorMessage } from "./diagnostic-utils.js";
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
 
 interface KimiACPAgentClientOptions {
@@ -26,60 +24,16 @@ interface KimiACPAgentClientOptions {
  * session defaulted to, so every other model would otherwise inherit that one model's
  * thinking options.
  *
- * Reuse the single catalog probe session to switch through each candidate model in turn and
- * read back its real thinking options, rather than spawning a probe per model. Skipped
- * entirely when the provider reports one model or no thinking picker, so a misbehaving ACP
- * that only advertises a single model pays no extra round trips.
- *
- * This lives on the Kimi client, not the base ACP adapter: only Kimi needs the extra
- * `setSessionConfigOption` round trips, so no other ACP provider risks a slow or
- * nonconforming agent stalling its catalog probe on model switching.
+ * Delegates to the shared {@link resolvePerModelThinkingCatalog} helper while keeping the
+ * Kimi-specific guard (`probeWhenInitialThoughtLevelMissing: false`) so probes without a
+ * thinking picker pay zero extra round trips.
  */
-export async function resolveKimiCatalogModels({
-  connection,
-  sessionId,
-  models,
-  configOptions,
-  runRequest,
-  transformConfigOptions,
-  logger,
-  provider,
-}: ACPCatalogModelResolverContext): Promise<AgentModelDefinition[]> {
-  if (models.length <= 1) {
-    return models;
-  }
-  const modelOption = findSelectConfigOption({ configOptions, category: "model" });
-  if (!modelOption || !findSelectConfigOption({ configOptions, category: "thought_level" })) {
-    return models;
-  }
-
-  const resolved: AgentModelDefinition[] = [];
-  for (const model of models) {
-    try {
-      const response = await runRequest(() =>
-        connection.setSessionConfigOption({
-          sessionId,
-          configId: modelOption.id,
-          value: model.id,
-        }),
-      );
-      const modelConfigOptions = transformConfigOptions(response.configOptions ?? []);
-      const thinkingOptions = deriveSelectorOptions(modelConfigOptions, "thought_level");
-      resolved.push({
-        ...model,
-        thinkingOptions: thinkingOptions.length > 0 ? thinkingOptions : undefined,
-        defaultThinkingOptionId:
-          thinkingOptions.find((option) => option.isDefault)?.id ?? undefined,
-      });
-    } catch (error) {
-      logger.warn(
-        { modelId: model.id, error: toDiagnosticErrorMessage(error) },
-        `${provider} catalog probe could not resolve thinking options for model "${model.id}"; keeping its default options`,
-      );
-      resolved.push(model);
-    }
-  }
-  return resolved;
+export async function resolveKimiCatalogModels(
+  context: ACPCatalogModelResolverContext,
+): Promise<AgentModelDefinition[]> {
+  return resolvePerModelThinkingCatalog(context, {
+    probeWhenInitialThoughtLevelMissing: false,
+  });
 }
 
 export class KimiACPAgentClient extends GenericACPAgentClient {

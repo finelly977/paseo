@@ -720,3 +720,24 @@
 - `packages/app/src/components/message.tsx`
 - `packages/app/src/components/diff-stat.tsx`
 - `packages/app/src/components/context-window-meter.tsx`
+
+### 30. 内置支持通过 ACP 控制 Antigravity CLI（`agy`）
+
+- 将 Antigravity CLI（提供方标识 `agy`，默认启动命令 `agy acp`）作为内置 ACP 提供方接入 Paseo，支持在新建会话、模型选择器、状态页、诊断与会话导入中开箱即用；支持衍生配置档案（`extends: "agy"`），未安装 `agy` 的主机在可用性检测阶段直接标记为不可用，不启动 ACP 子进程。Windows 上除检查 `PATH` 外还会检查 `%LOCALAPPDATA%\agy\bin\agy.exe`。
+- 模型目录优先消费 `agy acp` 返回的 `configOptions`（基础模型与逐模型 `thought_level`），过滤旧版扁平 `<model>-<effort>` 重复项，并在单次探测会话内逐个模型读取对应的思考强度选项（支持 `low`/`medium`/`high`/`xhigh` 以及无思考强度的模型）；切换模型后同步更新或清除不再适用的 `thinkingOptionId`。
+- 完整支持 Antigravity 的 `default`、`accept-edits`、`auto`、`plan` 四种原生模式及衍生 `allow-all`（Allow All）无审批模式：`allow-all` 使用原生 `default` 承载，由 Paseo 在当前会话自动批准 ACP 工具与命令权限请求，不依赖 Auto 的系统沙箱或开通条件，也不修改全局权限设置。审批策略仅在原生模式切换成功后生效，失败保留原策略；切换模型、更新思考强度及恢复会话时保留已选 Allow All，成功切回其他模式后按该原生模式审批。原生 Auto 仍遵守 Antigravity 自身的沙箱限制，不做静默替换。通过 `_meta.antigravity.systemPrompt.append` 注入 Paseo 会话与守护进程系统提示词；监听 ACP `usage_update` 实时同步上下文窗口占用与用量。
+- 导入会话列表、恢复与工具快照均兼容并规范化 Windows 驱动器 URI 路径（如 `/C:/...`、`/e%3A/...`、`file:///D:/...`），并在按工作目录筛选导入会话时规避 `agy acp` 忽略服务端 `cwd` 参数导致的提前截断；工具快照同时兼容 Antigravity 的 PascalCase 输入字段（`Path`、`CommandLine`、`Cwd` 等）与 `exit_code` 输出字段。原生认证仍由本机 `agy` 凭据管理，ACP 不额外暴露原生会话改名与回退接口。
+
+主要涉及：
+
+- `packages/protocol/src/provider-manifest.ts`
+- `packages/protocol/src/provider-config.ts`
+- `packages/protocol/src/provider-icon-names.ts`
+- `packages/server/src/server/persisted-config.ts`
+- `packages/server/src/server/agent/provider-launch-config.ts`
+- `packages/server/src/server/agent/provider-registry.ts`
+- `packages/server/src/server/agent/providers/acp-agent.ts`
+- `packages/server/src/server/agent/providers/agy-acp-agent.ts`
+- `packages/server/src/server/agent/providers/kimi-acp-agent.ts`
+- `packages/app/src/components/icons/agy-icon.tsx`
+- `packages/app/src/components/provider-icons.ts`

@@ -101,6 +101,7 @@ import {
   getProviderLaunchAvailability,
   createProviderEnvSpec,
   resolveProviderLaunch,
+  type ProviderLaunchDefault,
   type ProviderRuntimeSettings,
 } from "../provider-launch-config.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
@@ -396,11 +397,77 @@ export type ACPCatalogModelResolver = (
   context: ACPCatalogModelResolverContext,
 ) => Promise<AgentModelDefinition[]>;
 
+export interface PerModelThinkingResolverOptions {
+  /** Probe every model even when the initial probe session lacks `thought_level`. */
+  probeWhenInitialThoughtLevelMissing?: boolean;
+}
+
+/**
+ * Resolves per-model thinking-effort options using a single live probe session by switching
+ * through each candidate model and reading back its `thought_level` config option.
+ */
+export async function resolvePerModelThinkingCatalog(
+  {
+    connection,
+    sessionId,
+    models,
+    configOptions,
+    runRequest,
+    transformConfigOptions,
+    logger,
+    provider,
+  }: ACPCatalogModelResolverContext,
+  options: PerModelThinkingResolverOptions = {},
+): Promise<AgentModelDefinition[]> {
+  if (models.length <= 1) {
+    return models;
+  }
+  const modelOption = findSelectConfigOption({ configOptions, category: "model" });
+  if (!modelOption) {
+    return models;
+  }
+  if (
+    !options.probeWhenInitialThoughtLevelMissing &&
+    !findSelectConfigOption({ configOptions, category: "thought_level" })
+  ) {
+    return models;
+  }
+
+  const resolved: AgentModelDefinition[] = [];
+  for (const model of models) {
+    try {
+      const response = await runRequest(() =>
+        connection.setSessionConfigOption({
+          sessionId,
+          configId: modelOption.id,
+          value: model.id,
+        }),
+      );
+      const modelConfigOptions = transformConfigOptions(response.configOptions ?? []);
+      const thinkingOptions = deriveSelectorOptions(modelConfigOptions, "thought_level");
+      resolved.push({
+        ...model,
+        thinkingOptions: thinkingOptions.length > 0 ? thinkingOptions : undefined,
+        defaultThinkingOptionId:
+          thinkingOptions.find((option) => option.isDefault)?.id ?? undefined,
+      });
+    } catch (error) {
+      logger.warn(
+        { modelId: model.id, error: toDiagnosticErrorMessage(error) },
+        `${provider} catalog probe could not resolve thinking options for model "${model.id}"; keeping its default options`,
+      );
+      resolved.push(model);
+    }
+  }
+  return resolved;
+}
+
 interface ACPAgentClientOptions {
   provider: string;
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   defaultCommand: [string, ...string[]];
+  defaultBinary?: string | ProviderLaunchDefault;
   defaultModes?: AgentMode[];
   catalogModelResolver?: ACPCatalogModelResolver;
   modelTransformer?: (models: AgentModelDefinition[]) => AgentModelDefinition[];
@@ -420,6 +487,7 @@ interface ACPAgentClientOptions {
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
+  buildNewSessionMeta?: (config: AgentSessionConfig) => Record<string, unknown> | undefined;
   capabilities?: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   waitForInitialCommands?: boolean;
@@ -433,6 +501,7 @@ export interface ACPAgentSessionOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
   defaultCommand: [string, ...string[]];
+  defaultBinary?: string | ProviderLaunchDefault;
   defaultModes: AgentMode[];
   modelTransformer?: (models: AgentModelDefinition[]) => AgentModelDefinition[];
   sessionResponseTransformer?: (response: SessionStateResponse) => SessionStateResponse;
@@ -451,6 +520,7 @@ export interface ACPAgentSessionOptions {
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
+  buildNewSessionMeta?: (config: AgentSessionConfig) => Record<string, unknown> | undefined;
   capabilities: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   handle?: AgentPersistenceHandle;
@@ -738,6 +808,7 @@ export class ACPAgentClient implements AgentClient {
   protected readonly logger: Logger;
   protected readonly runtimeSettings?: ProviderRuntimeSettings;
   protected readonly defaultCommand: [string, ...string[]];
+  protected readonly defaultBinary?: string | ProviderLaunchDefault;
   protected readonly defaultModes: AgentMode[];
   private readonly catalogModelResolver?: ACPCatalogModelResolver;
   private readonly modelTransformer?: (models: AgentModelDefinition[]) => AgentModelDefinition[];
@@ -763,6 +834,9 @@ export class ACPAgentClient implements AgentClient {
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
+  private readonly buildNewSessionMeta?: (
+    config: AgentSessionConfig,
+  ) => Record<string, unknown> | undefined;
   private readonly waitForInitialCommands: boolean;
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
@@ -779,6 +853,7 @@ export class ACPAgentClient implements AgentClient {
     });
     this.runtimeSettings = options.runtimeSettings;
     this.defaultCommand = options.defaultCommand;
+    this.defaultBinary = options.defaultBinary;
     this.defaultModes = options.defaultModes ?? [];
     this.catalogModelResolver = options.catalogModelResolver;
     this.modelTransformer = options.modelTransformer;
@@ -792,6 +867,7 @@ export class ACPAgentClient implements AgentClient {
     this.providerModeWriter = options.providerModeWriter;
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
+    this.buildNewSessionMeta = options.buildNewSessionMeta;
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
@@ -811,6 +887,7 @@ export class ACPAgentClient implements AgentClient {
         logger: this.logger,
         runtimeSettings: this.runtimeSettings,
         defaultCommand: this.defaultCommand,
+        defaultBinary: this.defaultBinary,
         defaultModes: this.defaultModes,
         modelTransformer: this.modelTransformer,
         sessionResponseTransformer: this.sessionResponseTransformer,
@@ -823,6 +900,7 @@ export class ACPAgentClient implements AgentClient {
         providerModeWriter: this.providerModeWriter,
         beforeModeWriter: this.beforeModeWriter,
         thinkingOptionWriter: this.thinkingOptionWriter,
+        buildNewSessionMeta: this.buildNewSessionMeta,
         capabilities: this.capabilities,
         agentId: launchContext?.agentId,
         launchEnv: launchContext?.env,
@@ -867,6 +945,7 @@ export class ACPAgentClient implements AgentClient {
       logger: this.logger,
       runtimeSettings: this.runtimeSettings,
       defaultCommand: this.defaultCommand,
+      defaultBinary: this.defaultBinary,
       defaultModes: this.defaultModes,
       modelTransformer: this.modelTransformer,
       sessionResponseTransformer: this.sessionResponseTransformer,
@@ -879,6 +958,7 @@ export class ACPAgentClient implements AgentClient {
       providerModeWriter: this.providerModeWriter,
       beforeModeWriter: this.beforeModeWriter,
       thinkingOptionWriter: this.thinkingOptionWriter,
+      buildNewSessionMeta: this.buildNewSessionMeta,
       capabilities: this.capabilities,
       handle,
       agentId: launchContext?.agentId,
@@ -1384,18 +1464,12 @@ export class ACPAgentClient implements AgentClient {
   }
 
   protected async resolveLaunchCommand(): Promise<{ command: string; args: string[] }> {
-    const prefix = await resolveProviderLaunch({
-      commandConfig: this.runtimeSettings?.command,
-      defaultBinary: this.defaultCommand[0],
+    return resolveACPLaunchCommand({
+      provider: this.provider,
+      runtimeSettings: this.runtimeSettings,
+      defaultCommand: this.defaultCommand,
+      defaultBinary: this.defaultBinary,
     });
-    const availability = await getProviderLaunchAvailability(prefix);
-    if (!availability.available) {
-      throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
-    }
-    return {
-      command: prefix.command,
-      args: [...prefix.args, ...this.defaultCommand.slice(1)],
-    };
   }
 
   private assertProvider(config: AgentSessionConfig): void {
@@ -1425,6 +1499,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;
   private readonly defaultCommand: [string, ...string[]];
+  private readonly defaultBinary?: string | ProviderLaunchDefault;
   private readonly defaultModes: AgentMode[];
   protected readonly modelTransformer?: (models: AgentModelDefinition[]) => AgentModelDefinition[];
   private readonly sessionResponseTransformer?: (
@@ -1449,6 +1524,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
+  private readonly buildNewSessionMeta?: (
+    config: AgentSessionConfig,
+  ) => Record<string, unknown> | undefined;
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -1497,6 +1575,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.logger = options.logger.child({ module: "agent", provider: options.provider });
     this.runtimeSettings = options.runtimeSettings;
     this.defaultCommand = options.defaultCommand;
+    this.defaultBinary = options.defaultBinary;
     this.defaultModes = options.defaultModes;
     this.modelTransformer = options.modelTransformer;
     this.sessionResponseTransformer = options.sessionResponseTransformer;
@@ -1509,6 +1588,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.providerModeWriter = options.providerModeWriter;
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
+    this.buildNewSessionMeta = options.buildNewSessionMeta;
     this.availableModes = options.defaultModes;
     this.agentId = options.agentId;
     this.launchEnv = options.launchEnv;
@@ -1536,10 +1616,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.connection = spawned.connection;
       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
 
+      const sessionMeta = this.buildNewSessionMeta?.(this.config);
       const response = await this.runACPRequest(() =>
         this.connection!.newSession({
           cwd: this.config.cwd,
           mcpServers: this.acpMcpServers(),
+          ...(sessionMeta ? { _meta: sessionMeta } : {}),
         }),
       );
       this.sessionId = response.sessionId;
@@ -1572,6 +1654,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       this.sessionId = handle.sessionId;
       this.bootstrapThreadEventPending = true;
 
+      const sessionMeta = this.buildNewSessionMeta?.(this.config);
       const sessionCapabilities = this.agentCapabilities?.sessionCapabilities;
       if (this.agentCapabilities?.loadSession) {
         this.replayingHistory = true;
@@ -1580,6 +1663,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
             sessionId: handle.sessionId,
             cwd: this.config.cwd,
             mcpServers: this.acpMcpServers(),
+            ...(sessionMeta ? { _meta: sessionMeta } : {}),
           }),
         );
         this.deliverTranslatedEvents(this.flushPendingUserMessage());
@@ -1592,6 +1676,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
             sessionId: handle.sessionId,
             cwd: this.config.cwd,
             mcpServers: this.acpMcpServers(),
+            ...(sessionMeta ? { _meta: sessionMeta } : {}),
           }),
         );
         this.applySessionState(response);
@@ -1736,11 +1821,19 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return this.runtimeInfo();
   }
 
+  async getUsage(): Promise<AgentUsage | undefined> {
+    return this.currentTurnUsage ? { ...this.currentTurnUsage } : undefined;
+  }
+
   async getAvailableModes(): Promise<AgentMode[]> {
     return [...this.availableModes];
   }
 
   async getCurrentMode(): Promise<string | null> {
+    return this.currentMode;
+  }
+
+  protected getCurrentModeSync(): string | null {
     return this.currentMode;
   }
 
@@ -2027,6 +2120,15 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       requestedValue: modelId,
       label: "model",
     });
+    const nextThinkingOptionId = deriveCurrentConfigValue(this.configOptions, "thought_level");
+    if (nextThinkingOptionId !== this.thinkingOptionId) {
+      this.thinkingOptionId = nextThinkingOptionId;
+      this.pushEvent({
+        type: "thinking_option_changed",
+        provider: this.provider,
+        thinkingOptionId: this.thinkingOptionId,
+      });
+    }
     this.pushEvent({
       type: "model_changed",
       provider: this.provider,
@@ -2524,17 +2626,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   private async spawnProcess(): Promise<SpawnedACPProcess> {
-    const prefix = await resolveProviderLaunch({
-      commandConfig: this.runtimeSettings?.command,
-      defaultBinary: this.defaultCommand[0],
+    const { command, args } = await resolveACPLaunchCommand({
+      provider: this.provider,
+      runtimeSettings: this.runtimeSettings,
+      defaultCommand: this.defaultCommand,
+      defaultBinary: this.defaultBinary,
     });
-    const availability = await getProviderLaunchAvailability(prefix);
-    if (!availability.available) {
-      throw new Error(`${this.provider} command '${this.defaultCommand[0]}' not found`);
-    }
-
-    const command = prefix.command;
-    const args = [...prefix.args, ...this.defaultCommand.slice(1)];
     const child = spawnProcess(command, args, {
       cwd: this.config.cwd,
       ...createProviderEnvSpec({
@@ -2732,9 +2829,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       case "session_info_update":
         this.handleSessionInfoUpdate(update);
         return pendingUserEvents;
-      case "usage_update":
-        this.handleUsageUpdate(update);
-        return pendingUserEvents;
+      case "usage_update": {
+        const usageEvent = this.handleUsageUpdate(update);
+        return usageEvent ? [...pendingUserEvents, usageEvent] : pendingUserEvents;
+      }
       case "available_commands_update":
         this.cachedCommands = update.availableCommands.map((command) => ({
           name: command.name,
@@ -2894,12 +2992,58 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
-  private handleUsageUpdate(update: UsageUpdate): void {
-    void update;
+  private handleUsageUpdate(update: UsageUpdate): AgentStreamEvent | null {
+    const contextWindowMaxTokens =
+      typeof update.size === "number" && Number.isFinite(update.size) && update.size > 0
+        ? update.size
+        : undefined;
+    const contextWindowUsedTokens =
+      typeof update.used === "number" && Number.isFinite(update.used) && update.used >= 0
+        ? update.used
+        : undefined;
+    const totalCostUsd =
+      update.cost &&
+      update.cost.currency === "USD" &&
+      typeof update.cost.amount === "number" &&
+      Number.isFinite(update.cost.amount)
+        ? update.cost.amount
+        : undefined;
+
+    if (
+      contextWindowMaxTokens === undefined &&
+      contextWindowUsedTokens === undefined &&
+      totalCostUsd === undefined
+    ) {
+      return null;
+    }
+
+    this.currentTurnUsage = {
+      ...this.currentTurnUsage,
+      ...(contextWindowMaxTokens !== undefined ? { contextWindowMaxTokens } : {}),
+      ...(contextWindowUsedTokens !== undefined ? { contextWindowUsedTokens } : {}),
+      ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+    };
+
+    if (this.replayingHistory) {
+      return null;
+    }
+
+    return {
+      type: "usage_updated",
+      provider: this.provider,
+      usage: { ...this.currentTurnUsage },
+      ...(this.activeForegroundTurnId ? { turnId: this.activeForegroundTurnId } : {}),
+    };
   }
 
   private handlePromptResponse(response: PromptResponse, turnId: string): void {
-    this.currentTurnUsage = mapACPUsage(response.usage) ?? this.currentTurnUsage;
+    const promptUsage = mapACPUsage(response.usage);
+    if (promptUsage) {
+      this.currentTurnUsage = {
+        ...this.currentTurnUsage,
+        ...promptUsage,
+      };
+    }
 
     switch (response.stopReason) {
       case "cancelled":
@@ -3582,7 +3726,37 @@ function mapPermissionRequest(
   };
 }
 
-function selectPermissionOption(
+async function resolveACPLaunchCommand({
+  provider,
+  runtimeSettings,
+  defaultCommand,
+  defaultBinary,
+}: {
+  provider: string;
+  runtimeSettings?: ProviderRuntimeSettings;
+  defaultCommand: [string, ...string[]];
+  defaultBinary?: string | ProviderLaunchDefault;
+}): Promise<{ command: string; args: string[] }> {
+  const binarySpec = defaultBinary ?? defaultCommand[0];
+  const prefix = await resolveProviderLaunch({
+    commandConfig: runtimeSettings?.command,
+    defaultBinary: binarySpec,
+  });
+  const availability = await getProviderLaunchAvailability(
+    prefix,
+    typeof binarySpec === "object" ? binarySpec : undefined,
+  );
+  if (!availability.available) {
+    throw new Error(`${provider} command '${defaultCommand[0]}' not found`);
+  }
+  return {
+    command:
+      prefix.source === "default" ? (availability.resolvedPath ?? prefix.command) : prefix.command,
+    args: [...prefix.args, ...defaultCommand.slice(1)],
+  };
+}
+
+export function selectPermissionOption(
   options: PermissionOption[],
   response: AgentPermissionResponse,
 ): PermissionOption | null {

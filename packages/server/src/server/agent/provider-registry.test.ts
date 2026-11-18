@@ -23,6 +23,7 @@ const mockState = vi.hoisted(() => {
       claude: [] as ConstructorEntry[],
       codex: [] as ConstructorEntry[],
       copilot: [] as ConstructorEntry[],
+      agy: [] as ConstructorEntry[],
       cursor: [] as Array<{
         command: string[];
         env?: Record<string, string>;
@@ -55,6 +56,7 @@ const mockState = vi.hoisted(() => {
       this.constructorArgs.claude = [];
       this.constructorArgs.codex = [];
       this.constructorArgs.copilot = [];
+      this.constructorArgs.agy = [];
       this.constructorArgs.cursor = [];
       this.constructorArgs.trae = [];
       this.constructorArgs.kimi = [];
@@ -187,6 +189,57 @@ vi.mock("./providers/copilot-acp-agent.js", () => ({
     constructor(options: { runtimeSettings?: unknown }) {
       this.runtimeSettings = options.runtimeSettings;
       mockState.constructorArgs.copilot.push({
+        runtimeSettings: options.runtimeSettings,
+      });
+    }
+
+    async createSession(): Promise<never> {
+      throw new Error("not implemented");
+    }
+
+    async resumeSession(): Promise<never> {
+      throw new Error("not implemented");
+    }
+
+    async fetchCatalog(): Promise<ProviderCatalog> {
+      return {
+        models: mockState.runtimeModels.get(this.provider) ?? [],
+        modes: [],
+      };
+    }
+
+    async isAvailable(): Promise<boolean> {
+      const command: { mode?: string; argv?: string[] } | undefined =
+        typeof this.runtimeSettings === "object" && this.runtimeSettings !== null
+          ? Reflect.get(this.runtimeSettings, "command")
+          : undefined;
+      if (command?.mode === "replace") {
+        const { isCommandAvailable } =
+          await import("../../executable-resolution/executable-resolution.js");
+        return await isCommandAvailable(command.argv?.[0] ?? "");
+      }
+      return true;
+    }
+  },
+}));
+
+vi.mock("./providers/agy-acp-agent.js", () => ({
+  AgyACPAgentClient: class AgyACPAgentClient {
+    readonly capabilities = {
+      supportsStreaming: true,
+      supportsSessionPersistence: true,
+      supportsSessionListing: true,
+      supportsDynamicModes: true,
+      supportsMcpServers: true,
+      supportsReasoningStream: true,
+      supportsToolInvocations: true,
+    };
+    readonly provider = "agy";
+    readonly runtimeSettings?: unknown;
+
+    constructor(options: { runtimeSettings?: unknown }) {
+      this.runtimeSettings = options.runtimeSettings;
+      mockState.constructorArgs.agy.push({
         runtimeSettings: options.runtimeSettings,
       });
     }
@@ -887,6 +940,22 @@ test("kimi provider extending acp uses KimiACPAgentClient", () => {
     },
   ]);
   expect(mockState.constructorArgs.genericAcp).toEqual([]);
+});
+
+test("agy built-in and derived profiles use AgyACPAgentClient", () => {
+  const registry = buildProviderRegistry(logger, {
+    providerOverrides: {
+      "agy-work": {
+        extends: "agy",
+        label: "Antigravity Work",
+        env: { AGY_PROFILE: "work" },
+      },
+    },
+  });
+
+  expect(registry.agy.createClient(logger).provider).toBe("agy");
+  expect(registry["agy-work"].createClient(logger).provider).toBe("agy-work");
+  expect(mockState.constructorArgs.agy.length).toBeGreaterThanOrEqual(4);
 });
 
 test('extends: "acp" without command throws', () => {

@@ -9,6 +9,7 @@ import { resolveProviderIconName } from "./provider-icon-name";
 
 describe("resolveProviderIconName", () => {
   it("returns the built-in identifier for known provider ids", () => {
+    expect(resolveProviderIconName("agy")).toEqual({ kind: "builtin", id: "agy" });
     expect(resolveProviderIconName("kiro")).toEqual({ kind: "builtin", id: "kiro" });
     expect(resolveProviderIconName("claude")).toEqual({ kind: "builtin", id: "claude" });
     expect(resolveProviderIconName("omp")).toEqual({ kind: "builtin", id: "omp" });

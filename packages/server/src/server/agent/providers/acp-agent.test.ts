@@ -3532,4 +3532,33 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       mcpServers: [],
     });
   });
+
+  test("emits usage_updated on usage_update notifications and preserves context usage on turn_completed", async () => {
+    const session = createSession();
+    const internals = asInternals<ACPSessionInternals>(session);
+
+    const events = internals.translateSessionUpdate({
+      sessionUpdate: "usage_update",
+      size: 1_048_576,
+      used: 12_345,
+      cost: { amount: 0.25, currency: "USD" },
+    });
+
+    expect(events).toEqual([
+      {
+        type: "usage_updated",
+        provider: "claude-acp",
+        usage: {
+          contextWindowMaxTokens: 1_048_576,
+          contextWindowUsedTokens: 12_345,
+          totalCostUsd: 0.25,
+        },
+      },
+    ]);
+    await expect(session.getUsage?.()).resolves.toEqual({
+      contextWindowMaxTokens: 1_048_576,
+      contextWindowUsedTokens: 12_345,
+      totalCostUsd: 0.25,
+    });
+  });
 });

@@ -93,7 +93,7 @@ describe("ProviderSnapshotManager public surface", () => {
     try {
       const ids = manager.listRegisteredProviderIds();
       expect(ids).toEqual(
-        expect.arrayContaining(["claude", "codex", "opencode", "copilot", "pi", "omp"]),
+        expect.arrayContaining(["claude", "codex", "opencode", "copilot", "agy", "pi", "omp"]),
       );
     } finally {
       manager.destroy();
@@ -176,6 +176,7 @@ describe("ProviderSnapshotManager public surface", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -201,6 +202,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -395,6 +397,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -421,6 +424,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -449,6 +453,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -633,6 +638,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -661,6 +667,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -688,6 +695,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -722,6 +730,7 @@ describe("ProviderSnapshotManager public surface", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -729,7 +738,7 @@ describe("ProviderSnapshotManager public surface", () => {
     try {
       const entries = await manager.listProviders({ cwd: "/tmp/project", wait: true });
       const providers = entries.map((entry) => entry.provider).sort();
-      expect(providers).toEqual(["claude", "codex", "copilot", "omp", "opencode", "pi"]);
+      expect(providers).toEqual(["agy", "claude", "codex", "copilot", "omp", "opencode", "pi"]);
       for (const entry of entries) {
         expect(entry.enabled).toBe(false);
         expect(entry.status).toBe("unavailable");
@@ -1141,6 +1150,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1219,6 +1229,7 @@ describe("ProviderSnapshotManager public surface", () => {
       providerOverrides: {
         claude: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1279,6 +1290,7 @@ describe("ProviderSnapshotManager public surface", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         pi: { enabled: false },
       },
       extraClients: {
@@ -1331,6 +1343,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1383,6 +1396,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
         claude: { enabled: true },
         codex: { enabled: true },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1409,6 +1423,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1443,6 +1458,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
         claude: { enabled: false },
         codex: { enabled: true },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1486,6 +1502,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
         claude: { enabled: false },
         codex: { enabled: true },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1514,6 +1531,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
       claude: { enabled: false },
       codex: { enabled: true, label },
       copilot: { enabled: false },
+      agy: { enabled: false },
       omp: { enabled: false },
       opencode: { enabled: false },
       pi: { enabled: false },
@@ -1567,6 +1585,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1594,6 +1613,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1671,6 +1691,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },
@@ -1694,6 +1715,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
         claude: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
+        agy: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
       },

@@ -326,9 +326,11 @@ export class ProviderSnapshotManager {
     const target = resolveProviderSnapshotTarget(input.cwd);
     if (input.wait) {
       await this.warmUpSnapshotForCwd({ cwd: input.cwd, providers: input.providers });
+    } else if (input.providers?.length) {
+      void this.warmUpSnapshotForCwd({ cwd: input.cwd, providers: input.providers });
     }
     const providerFilter = input.providers ? new Set(input.providers) : null;
-    const entries = this.getSnapshotForTarget(target);
+    const entries = this.getSnapshotForTarget(target, { warm: !input.providers?.length });
     return providerFilter ? entries.filter((entry) => providerFilter.has(entry.provider)) : entries;
   }
 

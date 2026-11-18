@@ -4,7 +4,7 @@
 
 Paseo 是一款用于随时随地监控和控制本地 AI 编程智能体的移动应用。它把真实开发环境放进口袋，并直接连接用户本机，代码始终保留在用户自己的设备上。
 
-**支持的智能体：** Claude Code、Codex、GitHub Copilot、OpenCode 和 Pi。
+**支持的智能体：** Claude Code、Codex、GitHub Copilot、Antigravity（`agy`）、OpenCode、Pi 和 OMP。
 
 ## 仓库结构
 

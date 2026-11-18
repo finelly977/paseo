@@ -129,11 +129,20 @@ const launchAvailability = new LRUCache<string, Promise<ProviderLaunchAvailabili
 // 可用性检查与正式启动共享短期探测；手动诊断仍使用上面的实时检查。
 export function getProviderLaunchAvailability(
   launch: ResolvedProviderLaunch,
+  defaultBinary?: ProviderLaunchDefault,
 ): Promise<ProviderLaunchAvailability> {
-  const key = JSON.stringify([launch, process.env.PATH, process.env.PATHEXT, process.cwd()]);
+  const key = JSON.stringify([
+    launch,
+    defaultBinary?.command,
+    Boolean(defaultBinary?.resolvePath),
+    process.env.PATH,
+    process.env.PATHEXT,
+    process.env.LOCALAPPDATA,
+    process.cwd(),
+  ]);
   const existing = launchAvailability.get(key);
   if (existing) return existing;
-  const pending = checkProviderLaunchAvailable(launch).then(
+  const pending = checkProviderLaunchAvailable(launch, defaultBinary).then(
     (availability) => {
       if (launchAvailability.get(key) === pending) {
         if (availability.available) launchAvailability.set(key, pending, { ttl: 60_000 });

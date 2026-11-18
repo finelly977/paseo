@@ -115,6 +115,7 @@ async function createSnapshotStormDaemon(clients: SnapshotStormProviderClient[])
       claude: { enabled: false },
       codex: { enabled: false },
       copilot: { enabled: false },
+      agy: { enabled: false },
       opencode: { enabled: false },
       pi: { enabled: false },
       omp: { enabled: false },
