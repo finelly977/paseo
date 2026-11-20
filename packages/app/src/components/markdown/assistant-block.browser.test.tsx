@@ -81,3 +81,35 @@ it("复用正文块节点更新文本后，尺寸缓存归属新文本，隐藏�
   await expect.poll(() => host.getBoundingClientRect().width).toBe(MAX_CHAT_CONTENT_WIDTH - 16);
   expect(estimateAssistantMessageHeightFromCache("新正文")).toBe(150);
 });
+
+it("暂态流式尾块增长不重绑 ResizeObserver 且不污染终态缓存，完成后再缓存终态宽高", async () => {
+  host = document.createElement("div");
+  host.style.width = `${MAX_CHAT_CONTENT_WIDTH - 16}px`;
+  document.body.appendChild(host);
+  const observeSpy = vi.spyOn(ResizeObserver.prototype, "observe");
+  const unobserveSpy = vi.spyOn(ResizeObserver.prototype, "unobserve");
+  root = createRoot(host);
+
+  for (const partial of ["流式", "流式片段1", "流式片段12"]) {
+    root.render(
+      <AssistantMessageBlockContainer block={partial} marginBottom={0} measureFinalHeight={false}>
+        <div style={blockStyle}>{partial}</div>
+      </AssistantMessageBlockContainer>,
+    );
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  expect(observeSpy).not.toHaveBeenCalled();
+  expect(unobserveSpy).not.toHaveBeenCalled();
+  // 短暂文本没有被写入块高度缓存，仍走字数粗估而非缓存实测值 110
+  expect(estimateAssistantMessageHeightFromCache("流式片段1")).not.toBe(110);
+
+  root.render(
+    <AssistantMessageBlockContainer block="终态完整正文" marginBottom={0} measureFinalHeight>
+      <div style={tallerBlockStyle}>终态完整正文</div>
+    </AssistantMessageBlockContainer>,
+  );
+  await expect.poll(() => estimateAssistantMessageHeightFromCache("终态完整正文")).toBe(150);
+  expect(observeSpy).toHaveBeenCalledTimes(1);
+  expect(unobserveSpy).not.toHaveBeenCalled();
+});

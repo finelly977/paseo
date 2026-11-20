@@ -3,6 +3,8 @@ import {
   getMarkdownBlockGap,
   isStandaloneMarkdownHorizontalRule,
   splitMarkdownBlocks,
+  splitMarkdownBlocksIncremental,
+  type IncrementalMarkdownBlocksState,
 } from "../split-markdown-blocks";
 
 describe("splitMarkdownBlocks", () => {
@@ -89,5 +91,45 @@ describe("splitMarkdownBlocks", () => {
     expect(getMarkdownBlockGap("Before", "---", 8)).toBe(0);
     expect(getMarkdownBlockGap("---", "After", 8)).toBe(0);
     expect(getMarkdownBlockGap("Before", "After", 8)).toBe(8);
+  });
+
+  it("增量切分在任意字符和围栏边界下与全量切分严格等价，并复用前置稳定块", () => {
+    const sample = [
+      "# 标题",
+      "",
+      "第一段中英文混排 mixed content 👨‍👩‍👧‍👦 与 [链接](https://example.com)。",
+      "",
+      "---",
+      "",
+      "```ts",
+      "const a = 1;",
+      "",
+      "const b = 2;",
+      "```",
+      "",
+      "| Col1 | Col2 |",
+      "| ---- | ---- |",
+      "| val1 | val2 |",
+      "",
+      "- item 1",
+      "- item 2",
+      "",
+      "尾段内容",
+    ].join("\n");
+
+    let state: IncrementalMarkdownBlocksState | null = null;
+    for (let len = 1; len <= sample.length; len += 3) {
+      const prefix = sample.slice(0, len);
+      state = splitMarkdownBlocksIncremental(state, prefix);
+      expect(state.blocks).toEqual(splitMarkdownBlocks(prefix));
+    }
+    state = splitMarkdownBlocksIncremental(state, sample);
+    expect(state.blocks).toEqual(splitMarkdownBlocks(sample));
+    expect(state.stableBlockCount).toBe(state.blocks.length - 1);
+
+    // 缩短或切换文本时立即回退重新扫描
+    const reset = splitMarkdownBlocksIncremental(state, "全新短文本");
+    expect(reset.blocks).toEqual(["全新短文本"]);
+    expect(reset.stableBlockCount).toBe(0);
   });
 });

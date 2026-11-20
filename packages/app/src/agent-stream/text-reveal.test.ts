@@ -6,12 +6,14 @@ import {
   clampToSafeRevealBoundary,
   completeTextReveal,
   computeRevealStep,
+  createRevealedTextScheduler,
   nextTextRevealFrame,
   isTextRevealSettled,
   retargetTextReveal,
   TEXT_REVEAL_FRAME_INTERVAL_MS,
   TEXT_REVEAL_HORIZON_MS,
   visibleRevealedText,
+  type TextRevealState,
 } from "./text-reveal";
 
 describe("computeRevealStep", () => {
@@ -146,14 +148,15 @@ describe("clampToSafeRevealBoundary", () => {
 });
 
 describe("nextTextRevealFrame", () => {
-  it("caps a high-refresh frame clock at 60Hz", () => {
+  it("caps a high-refresh frame clock at 30Hz", () => {
     expect(nextTextRevealFrame(null, 0)).toEqual({
       elapsedMs: TEXT_REVEAL_FRAME_INTERVAL_MS,
       frameAtMs: 0,
     });
     expect(nextTextRevealFrame(0, 8)).toBeNull();
-    expect(nextTextRevealFrame(0, 17)).toEqual({
-      elapsedMs: 17,
+    expect(nextTextRevealFrame(0, 17)).toBeNull();
+    expect(nextTextRevealFrame(0, 34)).toEqual({
+      elapsedMs: 34,
       frameAtMs: expect.closeTo(TEXT_REVEAL_FRAME_INTERVAL_MS, 5),
     });
   });
@@ -269,5 +272,128 @@ describe("trailing fragments from arrival boundaries", () => {
   it("leaves ordinary trailing text alone", () => {
     const prose = "just some prose";
     expect(visibleRevealedText(beginTextReveal(prose), { streaming: true })).toBe(prose);
+  });
+});
+
+describe("createRevealedTextScheduler", () => {
+  function createFakeClock() {
+    let nextId = 1;
+    let requestCount = 0;
+    let cancelCount = 0;
+    const pending = new Map<number, (timestampMs: number) => void>();
+    return {
+      clock: {
+        requestFrame(callback: (timestampMs: number) => void) {
+          requestCount += 1;
+          const id = nextId++;
+          pending.set(id, callback);
+          return id;
+        },
+        cancelFrame(handle: number) {
+          cancelCount += 1;
+          pending.delete(handle);
+        },
+      },
+      flushNext(timestampMs: number) {
+        const first = pending.entries().next().value;
+        if (!first) return false;
+        pending.delete(first[0]);
+        first[1](timestampMs);
+        return true;
+      },
+      getRequestCount: () => requestCount,
+      getCancelCount: () => cancelCount,
+      getPendingCount: () => pending.size,
+    };
+  }
+
+  it("更新目标文本时只更新游标，不取消也不重建帧调度", () => {
+    const fake = createFakeClock();
+    const scheduler = createRevealedTextScheduler(fake.clock);
+    let state: TextRevealState = beginTextReveal("你好");
+    let notifications = 0;
+    const handle = {
+      getState: () => state,
+      setState: (next: TextRevealState) => {
+        state = next;
+      },
+      notify: () => {
+        notifications += 1;
+      },
+    };
+
+    scheduler.register("agent-1:msg-1", handle);
+    state = retargetTextReveal(state, `你好${"，世界".repeat(40)}`);
+    scheduler.activate("agent-1:msg-1", handle);
+
+    expect(fake.getRequestCount()).toBe(1);
+    expect(fake.getCancelCount()).toBe(0);
+
+    // 连续 3 次收到新批次增量：只改 target，不取消或重排 RAF
+    for (let batch = 1; batch <= 3; batch += 1) {
+      state = retargetTextReveal(state, `${state.target} 批次${batch}${"内容".repeat(20)}`);
+      scheduler.activate("agent-1:msg-1", handle);
+    }
+
+    expect(fake.getRequestCount()).toBe(1);
+    expect(fake.getCancelCount()).toBe(0);
+
+    fake.flushNext(100);
+    expect(notifications).toBe(1);
+    expect(state.revealed).toBeGreaterThan(2);
+    expect(state.revealed).toBeLessThan(state.target.length);
+  });
+
+  it("按会话与消息所有权隔离调度，注销旧所有者后立即停止无效帧", () => {
+    const fake = createFakeClock();
+    const scheduler = createRevealedTextScheduler(fake.clock);
+
+    let stateA: TextRevealState = retargetTextReveal(beginTextReveal("a"), `a${"x".repeat(200)}`);
+    let notifyA = 0;
+    const handleA = {
+      getState: () => stateA,
+      setState: (next: TextRevealState) => {
+        stateA = next;
+      },
+      notify: () => {
+        notifyA += 1;
+      },
+    };
+
+    let stateB: TextRevealState = retargetTextReveal(beginTextReveal("b"), `b${"y".repeat(200)}`);
+    let notifyB = 0;
+    const handleB = {
+      getState: () => stateB,
+      setState: (next: TextRevealState) => {
+        stateB = next;
+      },
+      notify: () => {
+        notifyB += 1;
+      },
+    };
+
+    scheduler.register("session-1:msg-1", handleA);
+    scheduler.activate("session-1:msg-1", handleA);
+    scheduler.register("session-2:msg-1", handleB);
+    scheduler.activate("session-2:msg-1", handleB);
+
+    // 两个所有者共享同一个单一帧循环
+    expect(fake.getRequestCount()).toBe(1);
+    expect(scheduler.getActiveCount()).toBe(2);
+
+    // 注销 session-1：session-2 继续推进，总循环仍为 1
+    scheduler.unregister("session-1:msg-1", handleA);
+    expect(scheduler.getActiveCount()).toBe(1);
+    expect(fake.getCancelCount()).toBe(0);
+
+    fake.flushNext(100);
+    expect(notifyA).toBe(0);
+    expect(notifyB).toBe(1);
+
+    // 注销最后一个所有者：立刻 cancelFrame
+    scheduler.unregister("session-2:msg-1", handleB);
+    expect(scheduler.getActiveCount()).toBe(0);
+    expect(scheduler.isFrameScheduled()).toBe(false);
+    expect(fake.getCancelCount()).toBe(1);
   });
 });

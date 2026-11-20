@@ -111,6 +111,7 @@ interface DesktopToolsOptions {
   inheritedEnvironment?: NodeJS.ProcessEnv;
   startBridge?: typeof startCodexDesktopBridge;
   installChromeNativeHost?: ChromeNativeHostInstaller;
+  resolveStoreInstallLocation?: () => Promise<string | null>;
 }
 
 interface SystemProxySettings {
@@ -347,6 +348,92 @@ interface CuaRuntimeLocation {
   relativePath: string;
 }
 
+function parseStoreCuaRuntime(value: string): { resources: string; directory: string } | null {
+  const api = path.win32;
+  if (!api.isAbsolute(value)) return null;
+  let directory = api.normalize(value);
+  while (api.basename(directory).toLowerCase() !== "cua_node") {
+    const parent = api.dirname(directory);
+    if (parent === directory) return null;
+    directory = parent;
+  }
+  const resources = api.dirname(directory);
+  const app = api.dirname(resources);
+  const pkg = api.dirname(app);
+  if (
+    api.basename(resources).toLowerCase() !== "resources" ||
+    api.basename(app).toLowerCase() !== "app" ||
+    api.basename(api.dirname(pkg)).toLowerCase() !== "windowsapps" ||
+    !/^OpenAI\.Codex_\d+(?:\.\d+){3}_(?:x64|arm64)__2p2nqsd0c76g0$/i.test(api.basename(pkg))
+  )
+    return null;
+  return { resources, directory };
+}
+
+async function resolveRegisteredCodexStoreInstall(): Promise<string | null> {
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$ErrorActionPreference = 'Stop'; Get-AppxPackage -Name OpenAI.Codex | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty InstallLocation",
+    ],
+    { windowsHide: true, timeout: 10_000 },
+  );
+  return stdout.trim() || null;
+}
+
+async function resolveStoreCuaRuntime(
+  source: z.infer<typeof StdioSchema>,
+  location: NonNullable<ReturnType<typeof parseStoreCuaRuntime>>,
+  resolveInstallLocation: () => Promise<string | null>,
+): Promise<z.infer<typeof StdioSchema>> {
+  const installed = await resolveInstallLocation();
+  if (!installed)
+    throw new Error("未找到当前注册的 Codex 商店版，请打开 Codex App 完成更新后重试。");
+  const api = path.win32;
+  const resources = api.join(installed, "app", "resources");
+  const directory = api.join(resources, "cua_node");
+  const manifest = CuaNodeRuntimeManifestSchema.parse(
+    JSON.parse(await readFile(api.join(directory, "manifest.json"), "utf8")),
+  );
+  if (manifest.arch !== process.arch) {
+    throw new Error(`Codex 商店版桌面运行时架构不匹配：${manifest.arch}`);
+  }
+  const node = resolveRuntimeManifestPath(api, directory, manifest.node_path);
+  const repl = resolveRuntimeManifestPath(api, directory, manifest.node_repl_path);
+  const modules = resolveRuntimeManifestPath(api, directory, manifest.node_modules);
+  await Promise.all([access(node), access(repl), access(modules)]);
+
+  const rewrite = (value: string) =>
+    value
+      .split(";")
+      .map((entry) => {
+        const parsed = parseStoreCuaRuntime(entry);
+        if (!parsed) return entry;
+        const relative = api.relative(parsed.directory, entry);
+        if (api.basename(relative).toLowerCase() === "node_modules") return modules;
+        return api.join(directory, relative);
+      })
+      .join(";");
+  const cli = requiredEnv(source.env, "CODEX_CLI_PATH");
+  const trusted = source.env.NODE_REPL_TRUSTED_CODE_PATHS;
+  return {
+    ...source,
+    command: repl,
+    env: {
+      ...source.env,
+      NODE_REPL_NODE_PATH: node,
+      NODE_REPL_NODE_MODULE_DIRS: rewrite(requiredEnv(source.env, "NODE_REPL_NODE_MODULE_DIRS")),
+      CODEX_CLI_PATH: sameWindowsPath(cli, api.join(location.resources, "codex.exe"))
+        ? api.join(resources, "codex.exe")
+        : cli,
+      ...(trusted ? { NODE_REPL_TRUSTED_CODE_PATHS: rewrite(trusted) } : {}),
+    },
+  };
+}
+
 function parseCuaRuntimeLocation(value: string): CuaRuntimeLocation | null {
   const api = value.includes("\\") || /^[a-z]:[\\/]/iu.test(value) ? path.win32 : path.posix;
   const directory = api.dirname(api.dirname(value));
@@ -366,13 +453,18 @@ function sameWindowsPath(left: string, right: string): boolean {
 }
 
 function resolveRuntimeManifestPath(
-  location: CuaRuntimeLocation,
+  api: CuaRuntimeLocation["api"],
   directory: string,
   declaredPath: string,
 ): string {
-  const candidate = location.api.resolve(directory, declaredPath);
-  const relative = location.api.relative(directory, candidate);
-  if (!relative || relative.startsWith("..") || location.api.isAbsolute(relative)) {
+  const candidate = api.resolve(directory, declaredPath);
+  const relative = api.relative(directory, candidate);
+  if (
+    !relative ||
+    relative === ".." ||
+    relative.startsWith(`..${api.sep}`) ||
+    api.isAbsolute(relative)
+  ) {
     throw new Error(`Codex 桌面运行时清单路径越界：${declaredPath}`);
   }
   return candidate;
@@ -397,6 +489,7 @@ function rewriteRuntimePathList(
 async function resolveCurrentCuaNodeRuntime(
   source: z.infer<typeof StdioSchema>,
   platform: NodeJS.Platform,
+  resolveStoreInstallLocation: () => Promise<string | null>,
 ): Promise<z.infer<typeof StdioSchema>> {
   if (platform !== "win32") return source;
   const moduleDirectories = requiredEnv(source.env, "NODE_REPL_NODE_MODULE_DIRS")
@@ -407,6 +500,9 @@ async function resolveCurrentCuaNodeRuntime(
     requiredEnv(source.env, "NODE_REPL_NODE_PATH"),
     ...moduleDirectories,
   ];
+  const storeLocation = declaredPaths.map(parseStoreCuaRuntime).find((entry) => entry !== null);
+  if (storeLocation)
+    return resolveStoreCuaRuntime(source, storeLocation, resolveStoreInstallLocation);
   const location = declaredPaths.map(parseCuaRuntimeLocation).find((entry) => entry !== null);
   if (!location) return source;
   let runtimeDirectories;
@@ -432,9 +528,9 @@ async function resolveCurrentCuaNodeRuntime(
         const manifest = CuaNodeRuntimeManifestSchema.parse(JSON.parse(raw));
         if (manifest.arch !== process.arch) return null;
         const paths = {
-          node: resolveRuntimeManifestPath(location, directory, manifest.node_path),
-          modules: resolveRuntimeManifestPath(location, directory, manifest.node_modules),
-          repl: resolveRuntimeManifestPath(location, directory, manifest.node_repl_path),
+          node: resolveRuntimeManifestPath(location.api, directory, manifest.node_path),
+          modules: resolveRuntimeManifestPath(location.api, directory, manifest.node_modules),
+          repl: resolveRuntimeManifestPath(location.api, directory, manifest.node_repl_path),
         };
         if ((await firstAccessibleFile([paths.node])) === null) return null;
         if ((await firstAccessibleFile([paths.repl])) === null) return null;
@@ -585,8 +681,13 @@ async function prepareDesktopRuntime(
   options: DesktopToolsOptions,
   source: z.infer<typeof StdioSchema>,
   chrome: boolean,
+  resolveStoreInstallLocation: () => Promise<string | null>,
 ): Promise<{ source: z.infer<typeof StdioSchema>; browserServicePath: string | null }> {
-  source = await resolveCurrentCuaNodeRuntime(source, options.platform);
+  source = await resolveCurrentCuaNodeRuntime(
+    source,
+    options.platform,
+    resolveStoreInstallLocation,
+  );
   const configuredCli = requiredEnv(source.env, "CODEX_CLI_PATH");
   const nativeCodexCliPath = await resolveCodexDesktopCliPath({
     launchCommand: options.codexLaunchCommand,
@@ -865,7 +966,18 @@ export async function acquireCodexDesktopTools(
   const runtime = selectDesktopRuntime(options.configuration);
   if (runtime === null) return null;
   const { computer, chrome, unified } = runtime;
-  const prepared = await prepareDesktopRuntime(options, runtime.source, chrome);
+  // 两个 MCP 服务共享一次包注册查询，避免更新过程中混用不同版本。
+  let storeInstall: Promise<string | null> | undefined;
+  const resolveStoreInstallLocation = () =>
+    (storeInstall ??= (
+      options.resolveStoreInstallLocation ?? resolveRegisteredCodexStoreInstall
+    )());
+  const prepared = await prepareDesktopRuntime(
+    options,
+    runtime.source,
+    chrome,
+    resolveStoreInstallLocation,
+  );
   const source = prepared.source;
   const bridge = computer ? await acquireBridge(options, source.env) : null;
   try {
@@ -882,7 +994,11 @@ export async function acquireCodexDesktopTools(
         options.client,
         requiredEnv(source.env, "CODEX_HOME"),
       );
-      const cua = await resolveCurrentCuaNodeRuntime(cuaServer, options.platform);
+      const cua = await resolveCurrentCuaNodeRuntime(
+        cuaServer,
+        options.platform,
+        resolveStoreInstallLocation,
+      );
       const configuredSurfaces = configuredDesktopSurfaces(cua.env);
       const surfaces = configuredSurfaces.filter(
         (surface) => (surface === "computer" && computer) || (surface === "browser" && chrome),

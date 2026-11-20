@@ -368,6 +368,101 @@ describe("Codex 独立桌面工具配置", () => {
     });
   });
 
+  test.skipIf(process.platform !== "win32")(
+    "用已注册的商店版运行时替换旧安装包路径，并让两个服务使用同一版本",
+    async () => {
+      const f = await fixture();
+      const installed = path.join(
+        f.home,
+        "WindowsApps",
+        "OpenAI.Codex_26.1111.9664.0_x64__2p2nqsd0c76g0",
+      );
+      const resources = path.join(installed, "app", "resources");
+      const current = path.join(resources, "cua_node");
+      const bin = path.join(current, "bin");
+      const modules = path.join(bin, "node_modules");
+      const cli = path.join(resources, "codex.exe");
+      const helper =
+        process.arch === "arm64" ? "codex-computer-use-arm64.exe" : "codex-computer-use.exe";
+      for (const file of [
+        cli,
+        path.join(bin, "node.exe"),
+        path.join(bin, "node_repl.exe"),
+        path.join(modules, "@oai/sky/package.json"),
+        path.join(modules, "@oai/sky/bin/windows", helper),
+        path.join(
+          modules,
+          "@oai/sky/dist/project/cua/sky_js/src/targets/windows/internal/helper_transport.js",
+        ),
+      ]) {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, "");
+      }
+      await writeFile(
+        path.join(current, "manifest.json"),
+        JSON.stringify({
+          platform: "windows",
+          arch: process.arch,
+          node_path: "bin/node.exe",
+          node_modules: "bin/node_modules",
+          node_repl_path: "bin/node_repl.exe",
+        }),
+      );
+      const staleResources = path.join(
+        f.home,
+        "WindowsApps",
+        "OpenAI.Codex_26.1111.2228.0_x64__2p2nqsd0c76g0",
+        "app",
+        "resources",
+      );
+      const staleBin = path.join(staleResources, "cua_node", "bin");
+      const staleModules = path.join(staleBin, "node_modules");
+      for (const server of [f.configuration.mcp_servers.node_repl, f.cua]) {
+        server.command = path.join(staleBin, "node_repl.exe");
+        Object.assign(server.env, {
+          NODE_REPL_NODE_PATH: path.join(staleBin, "node.exe"),
+          NODE_REPL_NODE_MODULE_DIRS: staleModules,
+          NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${staleModules};${path.dirname(staleBin)}`,
+          CODEX_CLI_PATH: path.join(staleResources, "codex.exe"),
+        });
+      }
+      await f.writePlugin();
+      await expect(
+        acquireCodexDesktopTools({
+          ...f.options,
+          async resolveStoreInstallLocation() {
+            return null;
+          },
+        }),
+      ).rejects.toThrow("未找到当前注册的 Codex 商店版");
+      expect(f.nativeHostInstalls).toHaveLength(0);
+      let lookups = 0;
+      const tools = await acquireCodexDesktopTools({
+        ...f.options,
+        async resolveStoreInstallLocation() {
+          lookups++;
+          return installed;
+        },
+      });
+      try {
+        const env = {
+          NODE_REPL_NODE_PATH: path.join(bin, "node.exe"),
+          NODE_REPL_NODE_MODULE_DIRS: modules,
+          NODE_REPL_TRUSTED_CODE_PATHS: `${f.home};${modules};${current}`,
+        };
+        expect(tools?.config).toMatchObject({
+          "mcp_servers.node_repl.command": path.join(bin, "node_repl.exe"),
+          "mcp_servers.node_repl.env": env,
+          "mcp_servers.cua_repl": { command: path.join(bin, "node_repl.exe"), env },
+        });
+        expect(f.nativeHostInstalls[0].runtimePaths.nodePath).toBe(path.join(bin, "node.exe"));
+        expect(lookups).toBe(1);
+      } finally {
+        await tools?.dispose();
+      }
+    },
+  );
+
   test("会话独立接管管道，保留工具限制且不修改官方配置文件", async () => {
     const f = await fixture();
     const original = await readFile(f.pluginPath, "utf8");

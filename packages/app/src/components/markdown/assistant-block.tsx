@@ -7,6 +7,7 @@ export function AssistantMessageBlockContainer({
 }: {
   block: string;
   marginBottom: number;
+  measureFinalHeight?: boolean;
   children: ReactNode;
 }) {
   const style = useMemo(() => (marginBottom > 0 ? { marginBottom } : undefined), [marginBottom]);

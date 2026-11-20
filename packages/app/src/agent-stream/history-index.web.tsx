@@ -463,6 +463,15 @@ export function ConversationHistoryIndex({
     if (!scrollContainer) {
       return;
     }
+    const distanceFromBottom =
+      scrollContainer.scrollHeight - scrollContainer.clientHeight - scrollContainer.scrollTop;
+    const isAtBottom = distanceFromBottom <= CONTENT_BOTTOM_EPSILON;
+    if (isAtBottom) {
+      // 贴底流式输出时直接选中最新轮次，避免遍历全部历史节点触发同步布局重排。
+      const closestEntry = visibleEntries[visibleEntries.length - 1] ?? null;
+      setActiveId(closestEntry ? getHistoryIndexEntryKey(closestEntry) : null);
+      return;
+    }
     const bounds = scrollContainer.getBoundingClientRect();
     const targetY = bounds.top + bounds.height * 0.35;
     const mountedEntries: MountedHistoryIndexEntry[] = [];
@@ -477,13 +486,11 @@ export function ConversationHistoryIndex({
       const targetBounds = target.getBoundingClientRect();
       mountedEntries.push({ entry, top: targetBounds.top, height: targetBounds.height });
     }
-    const distanceFromBottom =
-      scrollContainer.scrollHeight - scrollContainer.clientHeight - scrollContainer.scrollTop;
     const closestEntry = resolveActiveHistoryIndexEntry({
       entries: visibleEntries,
       mountedEntries,
       targetY,
-      isAtBottom: distanceFromBottom <= CONTENT_BOTTOM_EPSILON,
+      isAtBottom: false,
     });
     if (!closestEntry) {
       setActiveId(null);

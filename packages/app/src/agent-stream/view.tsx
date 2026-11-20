@@ -1275,6 +1275,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           client,
           spacing: layoutItem.assistantSpacing,
           phase: layoutItem.phase,
+          revealOwnerKey: `${agentId}:${item.id}`,
         } as const;
         const providerImages =
           context.provider === "codex" ? getStandaloneMarkdownImages(item.text) : null;
@@ -1305,6 +1306,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         );
       },
       [
+        agentId,
         canOpenInFileManager,
         client,
         context.provider,
@@ -1322,6 +1324,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         return (
           <ThoughtSlot
             itemId={item.id}
+            revealOwnerKey={`${agentId}:${item.id}`}
             onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
             text={item.text}
             status={item.status}
@@ -1330,7 +1333,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           />
         );
       },
-      [autoExpandReasoning, setInlineDetailsExpanded],
+      [agentId, autoExpandReasoning, setInlineDetailsExpanded],
     );
 
     const renderSingleToolCallItem = useCallback(
@@ -2015,6 +2018,7 @@ interface ToolCallSlotProps extends Omit<
 
 interface ThoughtSlotProps {
   itemId: string;
+  revealOwnerKey?: string;
   onInlineDetailsExpandedChangeByItemId: (itemId: string, expanded: boolean) => void;
   text: string;
   status: Extract<StreamItem, { kind: "thought" }>["status"];
@@ -2025,13 +2029,18 @@ interface ThoughtSlotProps {
 // 推理文字与助手正文使用同一套稳定显示节奏。
 function ThoughtSlot({
   itemId,
+  revealOwnerKey,
   onInlineDetailsExpandedChangeByItemId,
   text,
   status,
   isLastInSequence,
   defaultExpanded,
 }: ThoughtSlotProps) {
-  const revealedText = useRevealedText(text, status === "ready" ? "complete" : "streaming");
+  const revealedText = useRevealedText(
+    text,
+    status === "ready" ? "complete" : "streaming",
+    revealOwnerKey ? { ownerKey: revealOwnerKey } : undefined,
+  );
   return (
     <ToolCallSlot
       itemId={itemId}

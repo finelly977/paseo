@@ -84,7 +84,8 @@ import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import {
   getMarkdownBlockGap,
   isStandaloneMarkdownHorizontalRule,
-  splitMarkdownBlocks,
+  splitMarkdownBlocksIncremental,
+  type IncrementalMarkdownBlocksState,
 } from "@/utils/split-markdown-blocks";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { colorMarkdownLinkChildren } from "@/components/markdown/link-children";
@@ -957,6 +958,8 @@ interface AssistantMessageProps {
   client?: DaemonClient | null;
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
   phase: MarkdownPhase;
+  /** 会话或消息级所有权标识，确保流式节奏帧调度与尾块节流不会跨会话或跨消息串扰。 */
+  revealOwnerKey?: string;
 }
 
 const assistantMarkdownParser = createAssistantMarkdownParser();
@@ -1815,6 +1818,34 @@ function MarkdownListView({ baseStyle, spacing, children }: MarkdownListViewProp
   return <View style={style}>{children}</View>;
 }
 
+interface AssistantMessageBlockRowProps {
+  block: string;
+  marginBottom: number;
+  measureFinalHeight: boolean;
+  rules: RenderRules;
+  parser: MarkdownIt;
+  onLinkPress: (url: string) => boolean;
+}
+
+const AssistantMessageBlockRow = React.memo(function AssistantMessageBlockRow({
+  block,
+  marginBottom,
+  measureFinalHeight,
+  rules,
+  parser,
+  onLinkPress,
+}: AssistantMessageBlockRowProps) {
+  return (
+    <AssistantMessageBlockContainer
+      block={block}
+      marginBottom={marginBottom}
+      measureFinalHeight={measureFinalHeight}
+    >
+      <MemoizedMarkdownBlock text={block} rules={rules} parser={parser} onLinkPress={onLinkPress} />
+    </AssistantMessageBlockContainer>
+  );
+});
+
 export const AssistantMessage = memo(function AssistantMessage({
   message,
   timestamp: _timestamp,
@@ -1823,10 +1854,11 @@ export const AssistantMessage = memo(function AssistantMessage({
   client,
   spacing = "default",
   phase,
+  revealOwnerKey,
 }: AssistantMessageProps) {
   const messageParagraphSpacing = useSettings((settings) => settings.messageParagraphSpacing);
   // 只在回合流式输出期间逐步显示前缀，避免按服务端合并批次成块跳出。
-  const revealedMessage = useRevealedText(message, phase);
+  const revealedMessage = useRevealedText(message, phase, { ownerKey: revealOwnerKey });
 
   const fileLinkActions = useAssistantFileLinkActions();
   const handleMarkdownLinkPress = useStableEvent((url: string) => {
@@ -2144,16 +2176,26 @@ export const AssistantMessage = memo(function AssistantMessage({
     };
   }, [client, fileLinkActions, phase, serverId, workspaceRoot]);
 
-  const blocks = useMemo(
+  const incrementalBlocksRef = useRef<{
+    ownerKey: string | undefined;
+    state: IncrementalMarkdownBlocksState;
+  } | null>(null);
+  const blocksState = useMemo(() => {
+    const previousState =
+      incrementalBlocksRef.current && incrementalBlocksRef.current.ownerKey === revealOwnerKey
+        ? incrementalBlocksRef.current.state
+        : null;
+    const next = splitMarkdownBlocksIncremental(previousState, revealedMessage);
+    incrementalBlocksRef.current = { ownerKey: revealOwnerKey, state: next };
+    return next;
+  }, [revealOwnerKey, revealedMessage]);
+  // 段落只从末尾追加。尾段变成已完成段时，保留原槽位、DOM 和选区。
+  const displayBlocks = useMemo(
     () =>
-      splitMarkdownBlocks(revealedMessage).filter(
-        (block) => !isStandaloneMarkdownHorizontalRule(block),
-      ),
-    [revealedMessage],
-  );
-  const keyedBlocks = useMemo(
-    () => blocks.map((block, index) => ({ key: `block:${index}`, block })),
-    [blocks],
+      blocksState.blocks
+        .filter((block) => !isStandaloneMarkdownHorizontalRule(block))
+        .map((block, position) => ({ id: `block:${position}`, block })),
+    [blocksState.blocks],
   );
 
   const assistantContainerStyle = useMemo(
@@ -2169,23 +2211,20 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   return (
     <View testID="assistant-message" style={assistantContainerStyle}>
-      {keyedBlocks.map(({ key, block }, index) => (
-        <AssistantMessageBlockContainer
-          key={key}
+      {displayBlocks.map(({ id, block }, index) => (
+        <AssistantMessageBlockRow
+          key={id}
           block={block}
           marginBottom={getMarkdownBlockGap(
             block,
-            keyedBlocks[index + 1]?.block,
+            displayBlocks[index + 1]?.block,
             messageParagraphSpacing,
           )}
-        >
-          <MemoizedMarkdownBlock
-            text={block}
-            rules={markdownRules}
-            parser={assistantMarkdownParser}
-            onLinkPress={handleMarkdownLinkPress}
-          />
-        </AssistantMessageBlockContainer>
+          measureFinalHeight={phase !== "streaming" || index < displayBlocks.length - 1}
+          rules={markdownRules}
+          parser={assistantMarkdownParser}
+          onLinkPress={handleMarkdownLinkPress}
+        />
       ))}
     </View>
   );

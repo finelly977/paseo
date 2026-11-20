@@ -48,8 +48,12 @@ export function trackWebScrollbarVisibility(): () => void {
     }
     dirty.clear();
     for (const { element, x, y } of measurements) {
-      element.toggleAttribute("data-scrollbar-x", x);
-      element.toggleAttribute("data-scrollbar-y", y);
+      if (element.hasAttribute("data-scrollbar-x") !== x) {
+        element.toggleAttribute("data-scrollbar-x", x);
+      }
+      if (element.hasAttribute("data-scrollbar-y") !== y) {
+        element.toggleAttribute("data-scrollbar-y", y);
+      }
     }
   }
 

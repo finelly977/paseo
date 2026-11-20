@@ -100,6 +100,87 @@ function viewport(): HTMLElement {
   return node;
 }
 
+it("短会话开合跨过滚动边界时，正文列宽和位置保持不变", async () => {
+  const row = messages(0, 1);
+  const view = mountViewport({
+    segments: { historyVirtualized: [], historyMounted: row, liveHead: [] },
+    boundary: { hasVirtualizedHistory: false, hasMountedHistory: true, hasLiveHead: false },
+  });
+  const style = document.createElement("style");
+  style.textContent = '[data-testid="agent-chat-scroll"]::-webkit-scrollbar { width: 8px; }';
+  host.append(style);
+  await expect.poll(() => host.querySelector("[data-message-id]")).not.toBeNull();
+  await nextLayout();
+  const scroll = viewport();
+  const width = scroll.clientWidth;
+  const position = () => host.querySelector("[data-message-id]")?.getBoundingClientRect().left;
+  const left = position();
+  const expectGeometry = () => {
+    expect(scroll.clientWidth).toBe(width);
+    expect(position()).toBe(left);
+  };
+  expect(getComputedStyle(scroll).scrollbarGutter).toBe("stable");
+  expect(scroll.scrollHeight).toBe(scroll.clientHeight);
+  view.render({
+    segments: { historyVirtualized: [], historyMounted: messages(0, 20), liveHead: [] },
+  });
+  await expect.poll(() => scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+  expectGeometry();
+  view.render({ segments: { historyVirtualized: [], historyMounted: row, liveHead: [] } });
+  await expect.poll(() => scroll.scrollHeight).toBe(scroll.clientHeight);
+  expectGeometry();
+});
+
+it("上翻输入立即取消追尾，之后追加内容不会把阅读位置拉回去", async () => {
+  const view = mountViewport();
+  await expect.poll(() => host.querySelector("[data-message-id]")).not.toBeNull();
+  const scroll = viewport();
+  const head = messages(170, 6);
+  const renderWithMore = () =>
+    view.render({
+      segments: {
+        historyVirtualized: messages(0, 150),
+        historyMounted: messages(150, 20),
+        liveHead: head,
+      },
+      boundary: { hasVirtualizedHistory: true, hasMountedHistory: true, hasLiveHead: true },
+    });
+  const gap = () => scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+  await expect.poll(gap).toBeLessThanOrEqual(1);
+  // 在浏览器报告用户滚动之前提交新增内容，模拟流式尺寸变化抢占滚动事件。
+  scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -80 }));
+  renderWithMore();
+  await expect.poll(gap).toBeGreaterThan(350);
+  view.viewportRef.current?.scrollToBottom();
+  await expect.poll(gap).toBeLessThanOrEqual(1);
+});
+
+it("主动下滚回到底部后，继续跟随新增的流式内容", async () => {
+  const view = mountViewport();
+  await expect.poll(() => host.querySelector("[data-message-id]")).not.toBeNull();
+  const scroll = viewport();
+  const gap = () => scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop;
+  await expect.poll(gap).toBeLessThanOrEqual(1);
+  scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -500 }));
+  scroll.scrollTop -= 500;
+  await nextLayout();
+  expect(gap()).toBeGreaterThan(400);
+
+  scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: 600 }));
+  scroll.scrollTop = scroll.scrollHeight - scroll.clientHeight;
+  await nextLayout();
+  view.render({
+    segments: {
+      historyVirtualized: messages(0, 150),
+      historyMounted: messages(150, 20),
+      liveHead: messages(170, 8),
+    },
+    boundary: { hasVirtualizedHistory: true, hasMountedHistory: true, hasLiveHead: true },
+  });
+  await expect.poll(() => host.querySelector('[data-message-id="message-177"]')).not.toBeNull();
+  await expect.poll(gap).toBeLessThanOrEqual(1);
+});
+
 it("在底部展开长过程时保持入口，而不是继续跟随最终回复", async () => {
   let expanded = false;
   let view: ReturnType<typeof mountViewport>;

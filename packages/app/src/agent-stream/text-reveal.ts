@@ -14,8 +14,8 @@
 // 在这个时间范围内消化积压。过短会接近原始批次节奏，过长会在回合尾部产生可感知延迟。
 export const TEXT_REVEAL_HORIZON_MS = 150;
 
-/** 即使屏幕刷新率更高，也最多按 60Hz 提交一次显示进度。 */
-export const TEXT_REVEAL_FRAME_INTERVAL_MS = 1000 / 60;
+/** 每次显示进度都会推动尾部 Markdown 布局；同一节奏直接控制绘制，不再叠加一层计时。 */
+export const TEXT_REVEAL_FRAME_INTERVAL_MS = 1000 / 30;
 
 // 限制单帧使用的时间跨度，避免后台标签页或主线程阻塞后用一个巨大时间差造成突跳。
 const MAX_ELAPSED_MS = 250;
@@ -207,4 +207,182 @@ export function visibleRevealedText(
     return options?.streaming ? trimIncompleteTrailingCluster(state.target) : state.target;
   }
   return state.target.slice(0, clampToSafeRevealBoundary(state.target, state.revealed));
+}
+
+export interface RevealedTextSchedulerClock {
+  requestFrame: (callback: (timestampMs: number) => void) => number;
+  cancelFrame: (handle: number) => void;
+}
+
+export interface RevealedTextOwnerHandle {
+  getState: () => TextRevealState;
+  setState: (next: TextRevealState) => void;
+  notify: () => void;
+}
+
+interface SchedulerEntry {
+  handle: RevealedTextOwnerHandle;
+  active: boolean;
+  lastFrameAtMs: number | null;
+}
+
+export interface RevealedTextScheduler {
+  register: (ownerKey: string, handle: RevealedTextOwnerHandle) => void;
+  activate: (ownerKey: string, handle: RevealedTextOwnerHandle) => void;
+  unregister: (ownerKey: string, handle: RevealedTextOwnerHandle) => void;
+  getActiveCount: () => number;
+  isFrameScheduled: () => boolean;
+}
+
+function getGlobalFrameClock(): RevealedTextSchedulerClock | null {
+  if (typeof requestAnimationFrame !== "function" || typeof cancelAnimationFrame !== "function") {
+    return null;
+  }
+  return {
+    requestFrame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (id) => cancelAnimationFrame(id),
+  };
+}
+
+/**
+ * 按会话/消息所有权管理流式文字的单一帧调度器。
+ *
+ * 目标文本到达新批次时只需更新所有者状态中的目标游标并激活条目，不会为每一批增量
+ * 取消再重建 RAF；同一帧内只跑一次调度循环，切换会话、完成或停止时按所有者立即注销。
+ */
+export function createRevealedTextScheduler(
+  clock: RevealedTextSchedulerClock | null = getGlobalFrameClock(),
+): RevealedTextScheduler {
+  const entries = new Map<string, SchedulerEntry>();
+  let rafId: number | null = null;
+
+  const stopIfIdle = () => {
+    if (rafId === null) return;
+    for (const entry of entries.values()) {
+      if (entry.active) return;
+    }
+    clock?.cancelFrame(rafId);
+    rafId = null;
+  };
+
+  const tick = (timestampMs: number) => {
+    rafId = null;
+    const notifications: Array<() => void> = [];
+    let hasActiveEntry = false;
+
+    for (const entry of entries.values()) {
+      if (!entry.active) continue;
+      const currentState = entry.handle.getState();
+      if (isTextRevealSettled(currentState)) {
+        entry.active = false;
+        entry.lastFrameAtMs = null;
+        continue;
+      }
+
+      const frame = nextTextRevealFrame(entry.lastFrameAtMs, timestampMs);
+      if (!frame) {
+        hasActiveEntry = true;
+        continue;
+      }
+      entry.lastFrameAtMs = frame.frameAtMs;
+
+      // 长任务之后也分多个提交消化积压，避免迟到的一帧挤入整批文字。
+      const elapsedMs = Math.min(frame.elapsedMs, TEXT_REVEAL_FRAME_INTERVAL_MS * 2);
+      const nextState = advanceTextReveal(currentState, elapsedMs);
+      if (nextState !== currentState) {
+        entry.handle.setState(nextState);
+        const previousText = visibleRevealedText(currentState, { streaming: true });
+        const nextText = visibleRevealedText(nextState, { streaming: true });
+        if (nextText !== previousText) notifications.push(entry.handle.notify);
+      }
+      if (isTextRevealSettled(nextState)) {
+        entry.active = false;
+        entry.lastFrameAtMs = null;
+      } else {
+        hasActiveEntry = true;
+      }
+    }
+
+    if (hasActiveEntry && clock) {
+      rafId = clock.requestFrame(tick);
+    }
+
+    for (const notify of notifications) {
+      notify();
+    }
+  };
+
+  const ensureScheduled = () => {
+    if (rafId !== null || !clock) return;
+    rafId = clock.requestFrame(tick);
+  };
+
+  return {
+    register(ownerKey, handle) {
+      const existing = entries.get(ownerKey);
+      if (existing && existing.handle === handle) {
+        return;
+      }
+      entries.set(ownerKey, {
+        handle,
+        active: false,
+        lastFrameAtMs: null,
+      });
+      stopIfIdle();
+    },
+    activate(ownerKey, handle) {
+      if (!clock) {
+        const current = handle.getState();
+        const completed = completeTextReveal(current);
+        if (completed !== current) {
+          handle.setState(completed);
+          handle.notify();
+        }
+        return;
+      }
+
+      let entry = entries.get(ownerKey);
+      if (!entry || entry.handle !== handle) {
+        entry = {
+          handle,
+          active: false,
+          lastFrameAtMs: null,
+        };
+        entries.set(ownerKey, entry);
+      }
+      if (isTextRevealSettled(handle.getState())) {
+        entry.active = false;
+        entry.lastFrameAtMs = null;
+        stopIfIdle();
+        return;
+      }
+      entry.active = true;
+      ensureScheduled();
+    },
+    unregister(ownerKey, handle) {
+      const existing = entries.get(ownerKey);
+      if (!existing || existing.handle !== handle) return;
+      entries.delete(ownerKey);
+      stopIfIdle();
+    },
+    getActiveCount() {
+      let count = 0;
+      for (const entry of entries.values()) {
+        if (entry.active) count += 1;
+      }
+      return count;
+    },
+    isFrameScheduled() {
+      return rafId !== null;
+    },
+  };
+}
+
+let defaultRevealedTextScheduler: RevealedTextScheduler | null = null;
+
+export function getDefaultRevealedTextScheduler(): RevealedTextScheduler {
+  if (!defaultRevealedTextScheduler) {
+    defaultRevealedTextScheduler = createRevealedTextScheduler();
+  }
+  return defaultRevealedTextScheduler;
 }
