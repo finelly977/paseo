@@ -10,6 +10,7 @@ import { ScrollView as GHScrollView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { TriangleAlert } from "lucide-react-native";
 import { TwoAxisScrollView } from "@/components/ui/two-axis-scroll-view";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
@@ -29,6 +30,7 @@ import { getCodeInsets } from "./code-insets";
 import { isWeb } from "@/constants/platform";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { resolveReasoningMarkdown } from "@/tool-calls/reasoning";
+import { getToolFailureDetail } from "@/tool-calls/presentation";
 
 const ScrollView = isWeb ? RNScrollView : GHScrollView;
 
@@ -53,7 +55,6 @@ interface DetailStyles {
   scrollAreaFillStyle: StyleProp<ViewStyle>;
   scrollAreaStyle: StyleProp<ViewStyle>;
   jsonScrollCombined: StyleProp<ViewStyle>;
-  jsonScrollErrorCombined: StyleProp<ViewStyle>;
   fullBleedContainerStyle: StyleProp<ViewStyle>;
   loadingContainerStyle: StyleProp<ViewStyle>;
   resolvedMaxHeight: number | undefined;
@@ -121,10 +122,6 @@ function useDetailStyles(
     [resolvedMaxHeight, surfaceStyle],
   );
   const jsonScrollCombined = useMemo(() => [styles.jsonScroll, surfaceStyle], [surfaceStyle]);
-  const jsonScrollErrorCombined = useMemo(
-    () => [styles.jsonScroll, styles.jsonScrollError, surfaceStyle],
-    [surfaceStyle],
-  );
   const fullBleedContainerStyle = useMemo(
     () => [
       isFullBleed ? styles.fullBleedContainer : styles.paddedContainer,
@@ -147,7 +144,6 @@ function useDetailStyles(
     scrollAreaFillStyle,
     scrollAreaStyle,
     jsonScrollCombined,
-    jsonScrollErrorCombined,
     fullBleedContainerStyle,
     loadingContainerStyle,
     resolvedMaxHeight,
@@ -762,26 +758,17 @@ function buildDetailSections(
   return [];
 }
 
-function ErrorSection({ errorText, ds }: { errorText: string; ds: DetailStyles }) {
+function ErrorSection({ message }: { message: string | null }) {
   const { t } = useTranslation();
   return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, styles.errorText]}>{t("toolCallDetails.error")}</Text>
-      <ScrollView
-        horizontal
-        nestedScrollEnabled
-        style={ds.jsonScrollErrorCombined}
-        contentContainerStyle={styles.jsonContent}
-        showsHorizontalScrollIndicator={true}
-      >
-        <Text
-          selectable
-          style={[styles.scrollText, styles.errorText]}
-          dataSet={CODE_SURFACE_DATASET}
-        >
-          {errorText}
-        </Text>
-      </ScrollView>
+    <View style={styles.failureRow} testID="tool-call-failure">
+      <View style={styles.failureIconSlot}>
+        <TriangleAlert size={12} color={styles.failureIcon.color} />
+      </View>
+      <Text selectable={message !== null} style={styles.failureText}>
+        <Text style={styles.failureLabel}>{t("toolCallDetails.error")}</Text>
+        {message === null ? null : ` · ${message}`}
+      </Text>
     </View>
   );
 }
@@ -825,7 +812,8 @@ function ToolCallDetailsContentInner({
       : buildDetailSections(toolName, detail, diffLines, ds, t);
 
   if (errorText) {
-    sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);
+    const output = detail?.type === "shell" ? detail.output : undefined;
+    sections.push(<ErrorSection key="error" message={getToolFailureDetail(errorText, output)} />);
   }
 
   if (sections.length === 0) {
@@ -1028,14 +1016,35 @@ const styles = StyleSheet.create((theme) => {
       borderRadius: theme.borderRadius.base,
       backgroundColor: theme.colors.surface2,
     },
-    jsonScrollError: {
-      borderColor: theme.colors.destructive,
-    },
     jsonContent: {
       padding: insets.padding,
     },
-    errorText: {
+    failureRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: theme.spacing[2],
+      paddingHorizontal: theme.spacing[3],
+      paddingVertical: theme.spacing[2],
+      flexShrink: 0,
+      minWidth: 0,
+    },
+    failureIconSlot: {
+      height: Math.round(theme.fontSize.sm * 1.4),
+      justifyContent: "center",
+    },
+    failureIcon: {
       color: theme.colors.destructive,
+    },
+    failureLabel: {
+      color: theme.colors.foreground,
+    },
+    failureText: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: theme.fontSize.sm,
+      color: theme.colors.foregroundMuted,
+      lineHeight: Math.round(theme.fontSize.sm * 1.4),
+      overflowWrap: "anywhere",
     },
     emptyStateText: {
       color: theme.colors.foregroundMuted,

@@ -40,11 +40,9 @@ Codex 服务商注入属于 Paseo 会话的持久配置。创建或恢复提供�
 更新记录再调用 `ensureAgentLoaded()`；向已加载智能体应用选择时，调用
 `reloadAgentSession()` 关闭旧 Codex app-server，再恢复同一个持久线程。
 
-The daemon collects an eligible idle runtime after two minutes and sweeps every 15 seconds. Only
-unarchived, non-internal agents that are exactly `idle`, have no active or pending run, replacement,
-or permission, and have not been activated during the idle window are eligible. `running`,
-`initializing`, and `error` agents stay resident. Subagents are considered independently; collection
-does not cascade or change parentage.
+守护进程每 15 秒扫描一次，只回收已空闲满一小时、未归档且非内部的智能体运行时。
+正在处理或等待执行的回合、待替换任务与待处理权限都会阻止回收；运行中、初始化中或出错的
+智能体继续驻留。子智能体独立判断，回收不级联，也不改变父子关系。
 
 指向现有智能体的活动定时任务会保护该智能体不被回收。每个已连接客户端当前选中或在分栏中
 可见的智能体也会受到保护，即使客户端窗口被隐藏或失去焦点也不例外。已暂停、已完成以及新建

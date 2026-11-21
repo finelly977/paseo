@@ -68,6 +68,7 @@ export interface StreamHistoryRowRevision {
 export interface StreamRenderInput {
   agentId: string;
   segments: StreamRenderSegments;
+  processExit?: { turnId: string; rowIds: ReadonlySet<string>; onFinish: () => void } | null;
   historyRowRevision?: StreamHistoryRowRevision;
   liveHeadRowRevision?: unknown;
   boundary: StreamHistoryBoundary;

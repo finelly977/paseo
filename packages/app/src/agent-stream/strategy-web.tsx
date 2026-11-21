@@ -23,6 +23,7 @@ import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./
 import { createStreamStrategy } from "./strategy";
 import { useContentToggleAnchor } from "./use-content-toggle-anchor";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { MOTION_DURATION, MOTION_EASING_CSS } from "@/styles/motion";
 
 interface CreateWebStreamStrategyInput {
   isMobileBreakpoint: boolean;
@@ -286,6 +287,7 @@ class HistoryContent extends React.Component<
 function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: boolean }) {
   const {
     segments: sourceSegments,
+    processExit,
     historyRowRevision,
     liveHeadRowRevision,
     boundary,
@@ -747,6 +749,57 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     scheduleStickToBottom();
   }, [cancelPendingStickToBottom, scheduleStickToBottom, scrollMessagesToBottom]);
 
+  const alignProcessExitUntilRef = useRef(-Infinity);
+  const processExitId = processExit?.turnId;
+  const processExitRef = useRef(processExit);
+  processExitRef.current = processExit;
+  useLayoutEffect(() => {
+    const exit = processExitRef.current;
+    if (!exit) return;
+    const scroll = scrollContainerRef.current;
+    if (!scroll || !isPaneActive || !followOutputRef.current) {
+      exit.onFinish();
+      return;
+    }
+    forceStickToBottom();
+    const viewport = scroll.getBoundingClientRect();
+    const rows = Array.from(scroll.querySelectorAll<HTMLElement>("[data-stream-row-id]")).filter(
+      (row) => {
+        const id = row.dataset.streamRowId;
+        if (!id || !exit.rowIds.has(id)) return false;
+        const bounds = row.getBoundingClientRect();
+        return bounds.height > 0 && bounds.top < viewport.bottom && bounds.bottom > viewport.top;
+      },
+    );
+    if (!rows.length) {
+      exit.onFinish();
+      return;
+    }
+    alignProcessExitUntilRef.current = Infinity;
+    // 只淡出可见过程行；不逐行改高度，不对正文、图片或回合按钮做出场动画。
+    const fades = rows.map((row) =>
+      row.animate([{ opacity: 1 }, { opacity: 0 }], {
+        duration: MOTION_DURATION.fast,
+        easing: MOTION_EASING_CSS.standard,
+        fill: "forwards",
+      }),
+    );
+    const lastFade = fades[fades.length - 1];
+    lastFade.onfinish = exit.onFinish;
+    return () => {
+      lastFade.onfinish = null;
+      for (const fade of fades) fade.cancel();
+      // 折叠会使历史行换区，后续测得的真实行高也在绘制前对齐，避免露出旧偏移的一帧。
+      alignProcessExitUntilRef.current = performance.now() + MOTION_DURATION.base;
+    };
+  }, [forceStickToBottom, isPaneActive, processExitId]);
+
+  useLayoutEffect(() => {
+    if (followOutputRef.current && performance.now() <= alignProcessExitUntilRef.current) {
+      scrollMessagesToBottom();
+    }
+  });
+
   const updateScrollMetrics = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) {
@@ -978,12 +1031,17 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
 
     updateScrollMetrics();
     const observer = new ResizeObserver(() => {
-      updateScrollMetrics();
-      autoLoadOlderHistoryIfViewportIsTooShort();
-      if (!followOutputRef.current || historyAnchoringRef.current) {
-        return;
+      if (
+        followOutputRef.current &&
+        !historyAnchoringRef.current &&
+        performance.now() <= alignProcessExitUntilRef.current
+      ) {
+        scrollMessagesToBottom();
+      } else {
+        updateScrollMetrics();
+        if (followOutputRef.current && !historyAnchoringRef.current) scheduleStickToBottom();
       }
-      scheduleStickToBottom();
+      autoLoadOlderHistoryIfViewportIsTooShort();
     });
     observer.observe(scrollContainer);
     if (contentNode) {
@@ -992,7 +1050,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     return () => {
       observer.disconnect();
     };
-  }, [autoLoadOlderHistoryIfViewportIsTooShort, scheduleStickToBottom, updateScrollMetrics]);
+  }, [
+    autoLoadOlderHistoryIfViewportIsTooShort,
+    scheduleStickToBottom,
+    scrollMessagesToBottom,
+    updateScrollMetrics,
+  ]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;

@@ -1,5 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MOTION_DURATION } from "@/styles/motion";
+import { isWeb } from "@/constants/platform";
+import { useReducedMotionPreference } from "@/hooks/use-reduced-motion";
+import type { StreamItem } from "@/types/stream";
+import { findLiveProcessExit, type CompletedTurnProcessModel } from "./completed-turn-process";
 
 function initialExpansion(owner: string) {
   return {
@@ -68,4 +72,58 @@ export function useProcessExpansion(owner: string) {
     transitioningTurnIds: current.transitioning,
     toggle,
   };
+}
+
+/** 退场先保留现有过程行，再一次性提交最终折叠投影。 */
+export function useLiveProcessExit({
+  agentId,
+  activeTurnId,
+  isRunning,
+  isActive,
+  model,
+  tail,
+  head,
+}: {
+  agentId: string;
+  activeTurnId: string | null;
+  isRunning: boolean;
+  isActive: boolean;
+  model: CompletedTurnProcessModel;
+  tail: readonly StreamItem[];
+  head: readonly StreamItem[];
+}) {
+  const reducedMotion = useReducedMotionPreference();
+  const watchedTurn = useRef<{ agentId: string; turnId: string } | null>(null);
+  const [finishedTurn, setFinishedTurn] = useState<string | null>(null);
+  const canAnimate = isWeb && isActive && !reducedMotion;
+  useLayoutEffect(() => {
+    if (!canAnimate) watchedTurn.current = null;
+    else if (isRunning && activeTurnId) watchedTurn.current = { agentId, turnId: activeTurnId };
+  }, [activeTurnId, agentId, canAnimate, isRunning]);
+
+  const watched = watchedTurn.current;
+  const providerTurnId =
+    canAnimate && !isRunning && watched?.agentId === agentId && watched.turnId !== finishedTurn
+      ? watched.turnId
+      : null;
+  return useMemo(() => {
+    if (!providerTurnId) return { model, exit: null };
+    const exit = findLiveProcessExit(providerTurnId, model, [head, tail]);
+    if (!exit) return { model, exit: null };
+    return {
+      model: {
+        turnIdByProcessItemId: new Map(
+          [...model.turnIdByProcessItemId].filter(([, turnId]) => turnId !== exit.turnId),
+        ),
+        toggleByItemId: new Map(
+          [...model.toggleByItemId].filter(([, toggle]) => toggle.turnId !== exit.turnId),
+        ),
+      },
+      exit: {
+        turnId: providerTurnId,
+        rowIds: exit.rowIds,
+        onFinish: () => setFinishedTurn(providerTurnId),
+      },
+    };
+  }, [head, model, providerTurnId, tail]);
 }

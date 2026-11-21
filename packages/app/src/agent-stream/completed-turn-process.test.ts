@@ -3,6 +3,7 @@ import type { StreamItem } from "@/types/stream";
 import type { TurnFooterHost } from "./layout";
 import {
   buildCompletedTurnProcessModel,
+  findLiveProcessExit,
   formatCompletedTurnDuration,
 } from "./completed-turn-process";
 
@@ -37,6 +38,46 @@ function processItem(id: string): StreamItem {
 }
 
 describe("完成回合过程收起展示", () => {
+  it("自动退场只命中刚运行的回合，不命中旧过程或下一条用户消息", () => {
+    const watchedTurn = "current";
+    const process = { ...processItem("tool"), turnId: watchedTurn };
+    const answer = {
+      ...assistantBlock({
+        id: "final",
+        text: "最终结论",
+        blockGroupId: "final",
+        blockIndex: 0,
+        seconds: 8,
+      }),
+      turnId: watchedTurn,
+    };
+    const items = [process, answer];
+    const model = buildCompletedTurnProcessModel({
+      chronologicalItems: items,
+      hosts: [
+        {
+          kind: "assistant",
+          itemId: answer.id,
+          items,
+          startIndex: 1,
+          processItemIds: [process.id],
+        },
+      ],
+    });
+    expect(findLiveProcessExit(watchedTurn, model, [[answer], [process]])).toEqual({
+      turnId: answer.id,
+      rowIds: new Set([process.id]),
+    });
+    expect(findLiveProcessExit("different", model, [items])).toBeNull();
+    const next = {
+      kind: "user_message",
+      id: "next",
+      text: "下一轮",
+      timestamp: timestamp(9),
+    } as const;
+    expect(findLiveProcessExit(watchedTurn, model, [[next], items])).toBeNull();
+  });
+
   it.each(["loading", "completed"] as const)(
     "普通时间线的 %s 压缩只在完成后纳入用时过程",
     (status) => {

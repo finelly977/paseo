@@ -46,6 +46,20 @@ function displayDetail(detail: ToolCallDetail | undefined): ToolCallDetail {
   return detail ?? { type: "unknown", input: null, output: null };
 }
 
+function singleErrorMessage(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("message" in error)) return undefined;
+  if (Object.keys(error).length !== 1 || typeof error.message !== "string") return undefined;
+  return error.message.trim() || undefined;
+}
+
+export function getToolFailureDetail(errorText: string, output: string | null | undefined) {
+  const message = errorText.trim();
+  if (!message || /^tool call failed\.?$/i.test(message)) return null;
+  // 提供方可能同时把同一个失败原因放进输出和错误字段，只展示一次。
+  if (output?.includes(message)) return null;
+  return message;
+}
+
 export function buildToolCallPresentation(
   input: BuildToolCallPresentationInput,
 ): ToolCallPresentation {
@@ -68,7 +82,10 @@ export function buildToolCallPresentation(
   return {
     displayName: displayModel.displayName,
     summary: displayModel.summary,
-    errorText: displayModel.errorText,
+    errorText:
+      input.status === "failed"
+        ? (singleErrorMessage(input.error) ?? displayModel.errorText)
+        : undefined,
     icon: input.resolveIcon(input.toolName, input.detail),
     isLoadingDetails,
     hasDetails,

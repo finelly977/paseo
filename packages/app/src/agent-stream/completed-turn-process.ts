@@ -13,6 +13,28 @@ export interface CompletedTurnProcessModel {
 
 type AssistantMessageItem = Extract<StreamItem, { kind: "assistant_message" }>;
 
+/** 只允许已经在当前面板看到的实时回合自动退场；打开历史或补页不重播。 */
+export function findLiveProcessExit(
+  providerTurnId: string,
+  model: CompletedTurnProcessModel,
+  newestFirstSegments: readonly (readonly StreamItem[])[],
+) {
+  for (const items of newestFirstSegments) {
+    for (let index = items.length - 1; index >= 0; index--) {
+      const item = items[index];
+      if (item.kind === "user_message" && item.turnRole !== "steer") return null;
+      const toggle = model.toggleByItemId.get(item.id);
+      if (item.turnId !== providerTurnId || !toggle) continue;
+      const rowIds = new Set<string>();
+      for (const [rowId, turnId] of model.turnIdByProcessItemId) {
+        if (turnId === toggle.turnId) rowIds.add(rowId);
+      }
+      return { turnId: toggle.turnId, rowIds };
+    }
+  }
+  return null;
+}
+
 function findFirstFinalAssistantBlock(input: {
   host: TurnFooterHost;
   assistantById: ReadonlyMap<string, AssistantMessageItem>;

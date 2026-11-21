@@ -118,7 +118,7 @@ import { AgentFailure } from "@/components/agent-failure";
 import { NativeHistoryProcess } from "./native-history-process";
 import { ConversationDivider } from "@/components/conversation-divider";
 import { ProcessDisclosure } from "./process-disclosure";
-import { useProcessExpansion } from "./process-expansion";
+import { useLiveProcessExit, useProcessExpansion } from "./process-expansion";
 import { estimateStreamItemHeight } from "./web-virtualization";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
@@ -1004,7 +1004,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
       ],
     );
-    const completedTurnProcess = useMemo(() => {
+    const finishedProcesses = useMemo(() => {
       const hosts = [
         ...streamLayout.history.flatMap((item) =>
           item.completedFooter ? [item.completedFooter] : [],
@@ -1025,6 +1025,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       orderedToolCalls.tail,
       orderedToolCalls.head,
     ]);
+
+    const { model: completedTurnProcess, exit: processExit } = useLiveProcessExit({
+      agentId,
+      activeTurnId,
+      isRunning: context.status === "running",
+      isActive,
+      model: finishedProcesses,
+      head: orderedToolCalls.head,
+      tail: orderedToolCalls.tail,
+    });
 
     const completedProcessAnchors = useRef(new Map<string, View>());
     const registerCompletedProcessAnchor = useCallback(
@@ -1842,6 +1852,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             {streamRenderStrategy.render({
               agentId,
               segments: renderModel.segments,
+              processExit,
               historyRowRevision,
               liveHeadRowRevision: historyDisplayStateIds,
               boundary,

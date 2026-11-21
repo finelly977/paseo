@@ -131,6 +131,56 @@ it("短会话开合跨过滚动边界时，正文列宽和位置保持不变", a
   expectGeometry();
 });
 
+it("自动退场仅淡出可见过程行，同一回合补到数据不会重新播放", async () => {
+  const view = mountViewport();
+  await expect.poll(() => host.querySelector('[data-message-id="message-169"]')).not.toBeNull();
+  const row = host.querySelector<HTMLElement>('[data-stream-row-id="message-168"]');
+  if (!row) throw new Error("测试缺少可见过程行");
+  const animate = row.animate.bind(row);
+  const fades: Animation[] = [];
+  const spy = vi.spyOn(row, "animate").mockImplementation((keyframes, options) => {
+    const animation = animate(keyframes, options);
+    animation.pause();
+    fades.push(animation);
+    return animation;
+  });
+  try {
+    const onFinish = vi.fn();
+    const rowIds = new Set(["message-0", "message-168"]);
+    view.render({ processExit: { turnId: "finished", rowIds, onFinish } });
+    await expect.poll(() => fades.length).toBe(1);
+    expect(spy.mock.calls[0][0]).toEqual([{ opacity: 1 }, { opacity: 0 }]);
+    expect(host.querySelector('[data-stream-row-id="message-169"]')?.getAnimations()).toEqual([]);
+    view.render({ processExit: { turnId: "finished", rowIds: new Set(rowIds), onFinish } });
+    await nextLayout();
+    expect(fades).toHaveLength(1);
+    expect(onFinish).not.toHaveBeenCalled();
+    fades[0].finish();
+    await expect.poll(() => onFinish.mock.calls.length).toBe(1);
+    view.render({ processExit: null });
+    await nextLayout();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+it("上翻阅读时结束回合不播放退场，也不改变阅读位置", async () => {
+  const view = mountViewport();
+  await expect.poll(() => host.querySelector("[data-message-id]")).not.toBeNull();
+  const scroll = viewport();
+  scroll.dispatchEvent(new WheelEvent("wheel", { deltaY: -320 }));
+  scroll.scrollTop -= 320;
+  await nextLayout();
+  const position = visibleAnchor();
+  const onFinish = vi.fn();
+  view.render({
+    processExit: { turnId: "completed", rowIds: new Set([position.id]), onFinish },
+  });
+  await expect.poll(() => onFinish.mock.calls.length).toBe(1);
+  expect(visibleAnchor()).toEqual(position);
+  expect(scroll.getAnimations({ subtree: true })).toEqual([]);
+});
+
 it("上翻输入立即取消追尾，之后追加内容不会把阅读位置拉回去", async () => {
   const view = mountViewport();
   await expect.poll(() => host.querySelector("[data-message-id]")).not.toBeNull();
