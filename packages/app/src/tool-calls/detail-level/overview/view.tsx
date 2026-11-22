@@ -3,7 +3,7 @@ import { ScrollView, type NativeScrollEvent, type NativeSyntheticEvent } from "r
 import { useTranslation } from "react-i18next";
 import { Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { ExpandableBadge } from "@/components/message";
+import { CompactToolCallListProvider, ExpandableBadge } from "@/components/message";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { type OverviewSummary, type OverviewToolCallGroup } from "./model";
 import { OverviewToolCallGroupSheet } from "./sheet";
@@ -100,7 +100,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         showsVerticalScrollIndicator
         onScroll={handleScroll}
       >
-        {children()}
+        <CompactToolCallListProvider compact>{children()}</CompactToolCallListProvider>
       </ScrollView>
     ),
     [children, handleScroll],
@@ -125,7 +125,9 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
           itemCount={group.run.calls.length}
           onClose={close}
         >
-          {expanded ? children() : null}
+          {expanded ? (
+            <CompactToolCallListProvider compact>{children()}</CompactToolCallListProvider>
+          ) : null}
         </OverviewToolCallGroupSheet>
       </>
     );

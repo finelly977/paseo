@@ -84,4 +84,23 @@ describe("getMarkdownListSpacing", () => {
       marginBottom: 0,
     });
   });
+
+  it("trims top margin only for top-level lists when requested", () => {
+    const list = { type: "bullet_list" };
+    const body = { type: "body", children: [list] };
+    expect(getMarkdownListSpacing(list, [body], { trimTopMargin: true })).toEqual({
+      marginTop: 0,
+      marginBottom: 0,
+    });
+    expect(
+      getMarkdownListSpacing(
+        { type: "bullet_list" },
+        [{ type: "list_item" }, { type: "bullet_list" }, { type: "body" }],
+        { trimTopMargin: true },
+      ),
+    ).toEqual({
+      marginTop: 4,
+      marginBottom: 0,
+    });
+  });
 });

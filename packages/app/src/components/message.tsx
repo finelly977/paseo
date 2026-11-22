@@ -163,6 +163,7 @@ interface UserMessageProps {
 const EMPTY_PROVIDER_USER_IMAGES: AgentUserMessageImage[] = [];
 
 const MessageOuterSpacingContext = createContext(false);
+const CompactToolCallListContext = createContext(false);
 
 export function MessageOuterSpacingProvider({
   disableOuterSpacing,
@@ -175,6 +176,20 @@ export function MessageOuterSpacingProvider({
     <MessageOuterSpacingContext.Provider value={disableOuterSpacing}>
       {children}
     </MessageOuterSpacingContext.Provider>
+  );
+}
+
+export function CompactToolCallListProvider({
+  compact,
+  children,
+}: {
+  compact: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <CompactToolCallListContext.Provider value={compact}>
+      {children}
+    </CompactToolCallListContext.Provider>
   );
 }
 
@@ -1462,8 +1477,11 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderWidth: theme.borderWidth[1],
     borderColor: "transparent",
     paddingHorizontal: theme.spacing[2],
-    paddingVertical: theme.spacing[1],
+    paddingVertical: 2,
     overflow: "hidden",
+  },
+  pressableCompact: {
+    paddingVertical: 1,
   },
   pressablePressed: {
     opacity: 0.9,
@@ -1480,10 +1498,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     overflow: "hidden",
   },
   iconBadge: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     flexShrink: 0,
-    borderRadius: 11,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     marginRight: theme.spacing[1],
@@ -1492,7 +1510,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   label: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
-    lineHeight: theme.fontSize.base * 1.5,
+    lineHeight: Math.round(theme.fontSize.base * 1.35),
     fontWeight: theme.fontWeight.normal,
     flexShrink: 0,
   },
@@ -1508,7 +1526,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
-    lineHeight: theme.fontSize.base * 1.5,
+    lineHeight: Math.round(theme.fontSize.base * 1.35),
     fontWeight: theme.fontWeight.normal,
     marginLeft: theme.spacing[2],
   },
@@ -1563,9 +1581,9 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
   },
-  inlineDetails: { paddingLeft: 22 },
+  inlineDetails: { paddingLeft: 20 },
   commandDetails: {
-    paddingLeft: 22,
+    paddingLeft: 20,
     paddingRight: theme.spacing[3],
     paddingVertical: theme.spacing[1],
   },
@@ -1733,6 +1751,7 @@ function NativeShimmerPeakSvg({ gradientId }: { gradientId: string }) {
 
 interface MemoizedMarkdownBlockProps {
   text: string;
+  trimTopMargin: boolean;
   rules: RenderRules;
   parser: MarkdownIt;
   onLinkPress: (url: string) => boolean;
@@ -1740,6 +1759,7 @@ interface MemoizedMarkdownBlockProps {
 
 const MemoizedMarkdownBlock = React.memo(function MemoizedMarkdownBlock({
   text,
+  trimTopMargin,
   rules,
   parser,
   onLinkPress,
@@ -1748,6 +1768,7 @@ const MemoizedMarkdownBlock = React.memo(function MemoizedMarkdownBlock({
     <MarkdownRenderer
       text={text}
       conversation
+      trimTopMargin={trimTopMargin}
       enableHtmlish={false}
       rules={rules}
       markdownit={parser}
@@ -1821,6 +1842,7 @@ function MarkdownListView({ baseStyle, spacing, children }: MarkdownListViewProp
 interface AssistantMessageBlockRowProps {
   block: string;
   marginBottom: number;
+  trimTopMargin: boolean;
   measureFinalHeight: boolean;
   rules: RenderRules;
   parser: MarkdownIt;
@@ -1830,6 +1852,7 @@ interface AssistantMessageBlockRowProps {
 const AssistantMessageBlockRow = React.memo(function AssistantMessageBlockRow({
   block,
   marginBottom,
+  trimTopMargin,
   measureFinalHeight,
   rules,
   parser,
@@ -1841,7 +1864,13 @@ const AssistantMessageBlockRow = React.memo(function AssistantMessageBlockRow({
       marginBottom={marginBottom}
       measureFinalHeight={measureFinalHeight}
     >
-      <MemoizedMarkdownBlock text={block} rules={rules} parser={parser} onLinkPress={onLinkPress} />
+      <MemoizedMarkdownBlock
+        text={block}
+        trimTopMargin={trimTopMargin}
+        rules={rules}
+        parser={parser}
+        onLinkPress={onLinkPress}
+      />
     </AssistantMessageBlockContainer>
   );
 });
@@ -2081,7 +2110,9 @@ export const AssistantMessage = memo(function AssistantMessage({
         <MarkdownListView
           key={node.key}
           baseStyle={styles.bullet_list}
-          spacing={getMarkdownListSpacing(node, parent)}
+          spacing={getMarkdownListSpacing(node, parent, {
+            trimTopMargin: styles.bullet_list?.marginTop === 0,
+          })}
         >
           {children}
         </MarkdownListView>
@@ -2095,7 +2126,9 @@ export const AssistantMessage = memo(function AssistantMessage({
         <MarkdownListView
           key={node.key}
           baseStyle={styles.ordered_list}
-          spacing={getMarkdownListSpacing(node, parent)}
+          spacing={getMarkdownListSpacing(node, parent, {
+            trimTopMargin: styles.ordered_list?.marginTop === 0,
+          })}
         >
           {children}
         </MarkdownListView>
@@ -2220,6 +2253,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             displayBlocks[index + 1]?.block,
             messageParagraphSpacing,
           )}
+          trimTopMargin={index === 0 && spacing !== "compactTop" && spacing !== "compactBoth"}
           measureFinalHeight={phase !== "streaming" || index < displayBlocks.length - 1}
           rules={markdownRules}
           parser={assistantMarkdownParser}
@@ -3057,6 +3091,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const isCompactToolCallList = useContext(CompactToolCallListContext);
   const [isHovered, setIsHovered] = useState(false);
   const [isOpenFileHovered, setIsOpenFileHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -3221,11 +3256,12 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const pressableStyle = useMemo(
     () => [
       expandableBadgeStylesheet.pressable,
+      isCompactToolCallList && expandableBadgeStylesheet.pressableCompact,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpandedAttached,
     ],
-    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
+    [borderlessWhenExpanded, isCompactToolCallList, isExpanded, isInteractive, isPressed],
   );
 
   const detailWrapperStyle = useMemo(

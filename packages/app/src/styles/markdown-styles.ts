@@ -286,7 +286,9 @@ export function createMarkdownStyles(theme: Theme) {
     bullet_list_icon: {
       ...webSelectableTextStyle,
       color: theme.colors.foregroundMuted,
-      marginRight: 4,
+      // 显式归零，覆盖 react-native-markdown-display 默认的 marginLeft: 10 避免逐级过度缩进。
+      marginLeft: 0,
+      marginRight: 6,
       fontSize: theme.fontSize.base,
       lineHeight: 22,
     },
@@ -294,7 +296,8 @@ export function createMarkdownStyles(theme: Theme) {
     ordered_list_icon: {
       ...webSelectableTextStyle,
       color: theme.colors.foregroundMuted,
-      marginRight: 4,
+      marginLeft: 0,
+      marginRight: 6,
       fontSize: theme.fontSize.base,
       fontWeight: theme.fontWeight.normal,
       lineHeight: 22,
@@ -375,6 +378,35 @@ export function createConversationMarkdownStyles(theme: Theme) {
   };
 }
 
+/** 对话首块去掉顶部外边距，避免与上方“用时”分割线或消息间距双重叠加。 */
+export function createLeadingConversationMarkdownStyles(theme: Theme) {
+  const baseStyles = createConversationMarkdownStyles(theme);
+  const stripMarginVertical = <T extends { marginVertical?: number }>(
+    style: T,
+    marginBottom: number,
+  ) => {
+    const { marginVertical: _ignored, ...rest } = style;
+    return { ...rest, marginTop: 0, marginBottom };
+  };
+
+  return {
+    ...baseStyles,
+    heading1: { ...baseStyles.heading1, marginTop: 0 },
+    heading2: { ...baseStyles.heading2, marginTop: 0 },
+    heading3: { ...baseStyles.heading3, marginTop: 0 },
+    heading4: { ...baseStyles.heading4, marginTop: 0 },
+    heading5: { ...baseStyles.heading5, marginTop: 0 },
+    heading6: { ...baseStyles.heading6, marginTop: 0 },
+    bullet_list: { ...baseStyles.bullet_list, marginTop: 0 },
+    ordered_list: { ...baseStyles.ordered_list, marginTop: 0 },
+    blockquote: stripMarginVertical(baseStyles.blockquote, theme.spacing[2]),
+    code_block: stripMarginVertical(baseStyles.code_block, theme.spacing[2]),
+    fence: stripMarginVertical(baseStyles.fence, theme.spacing[3]),
+    pre: stripMarginVertical(baseStyles.pre, theme.spacing[2]),
+    table: stripMarginVertical(baseStyles.table, theme.spacing[3]),
+    image: stripMarginVertical(baseStyles.image, theme.spacing[2]),
+  };
+}
 /**
  * Creates a smaller variant of markdown styles for compact UI elements
  * like thought bubbles, tooltips, or side panels.

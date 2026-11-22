@@ -25,6 +25,55 @@ const subscribeReducedMotion = (notify: () => void) => {
 };
 const contentStyle: CSSProperties = { minHeight: 0, display: "flow-root" };
 
+function createDisclosureEffect(params: {
+  viewport: HTMLDivElement;
+  expanded: boolean;
+  animateLayout: boolean;
+  fromHeight: number;
+  targetHeight: number;
+  fromOpacity: string | number;
+}): KeyframeEffect {
+  const { viewport, expanded, animateLayout, fromHeight, targetHeight, fromOpacity } = params;
+  const opacityFrames = [{ opacity: fromOpacity }, { opacity: expanded ? 1 : 0 }];
+  const heightFrames = [
+    { height: `${fromHeight}px`, ...opacityFrames[0] },
+    { height: `${targetHeight}px`, ...opacityFrames[1] },
+  ];
+  return new KeyframeEffect(viewport, animateLayout ? heightFrames : opacityFrames, {
+    duration: expanded ? MOTION_DURATION.base : MOTION_DURATION.fast,
+    easing: expanded ? MOTION_EASING_CSS.standard : MOTION_EASING_CSS.snap,
+    // 收起保留终帧，避免 onfinish 触发卸载前最后一帧闪回自然高度。
+    fill: expanded ? "none" : "forwards",
+  });
+}
+
+function observeExpandingContentHeight(params: {
+  viewport: HTMLDivElement;
+  node: HTMLDivElement;
+  effect: KeyframeEffect;
+  initialHeight: number;
+}): ResizeObserver {
+  let measuredHeight = params.initialHeight;
+  const observer = new ResizeObserver(() => {
+    const nextHeight = params.node.getBoundingClientRect().height;
+    if (nextHeight === measuredHeight) return;
+    measuredHeight = nextHeight;
+    const progress = params.effect.getComputedTiming().progress ?? 0;
+    if (progress >= 1) return;
+    // 保留当前画面与原截止时间，只修改剩余轨迹，不能 finish() 跳到新高度或反复重启动画。
+    params.effect.setKeyframes([
+      {
+        height: `${params.viewport.getBoundingClientRect().height}px`,
+        opacity: getComputedStyle(params.viewport).opacity,
+        offset: progress,
+      },
+      { height: `${nextHeight}px`, opacity: 1, offset: 1 },
+    ]);
+  });
+  observer.observe(params.node);
+  return observer;
+}
+
 // 只为主动开合创建动画；静止时使用自然高度，子命令和流式输出不能触发父层追赶动画。
 export function DisclosureContent({
   expanded,
@@ -68,15 +117,17 @@ export function DisclosureContent({
     }
     if (wasExpanded === expanded) return;
     if (expanded) setRetained(true);
-    const opacityFrames = [{ opacity: fromOpacity }, { opacity: expanded ? 1 : 0 }];
-    const targetHeight = expanded ? bodyHeight : 0;
-    const heightFrames = [
-      { height: `${fromHeight}px`, ...opacityFrames[0] },
-      { height: `${targetHeight}px`, ...opacityFrames[1] },
-    ];
-    const effect = new KeyframeEffect(viewport, animateLayout ? heightFrames : opacityFrames, {
-      duration: expanded ? MOTION_DURATION.base : MOTION_DURATION.fast,
-      easing: MOTION_EASING_CSS.standard,
+    if (!expanded && animateLayout && fromHeight <= 0) {
+      setRetained(false);
+      return;
+    }
+    const effect = createDisclosureEffect({
+      viewport,
+      expanded,
+      animateLayout,
+      fromHeight,
+      targetHeight: expanded ? bodyHeight : 0,
+      fromOpacity,
     });
     const animation = new Animation(effect, document.timeline);
     animation.play();
@@ -86,28 +137,18 @@ export function DisclosureContent({
       animationRef.current = null;
       resizeRef.current?.disconnect();
       resizeRef.current = null;
-      if (!expanded) setRetained(false);
+      if (!expanded) {
+        setRetained(false);
+        animation.cancel();
+      }
     };
     if (!expanded || !animateLayout) return;
-    let measuredHeight = bodyHeight;
-    const observer = new ResizeObserver(() => {
-      const nextHeight = node.getBoundingClientRect().height;
-      if (nextHeight === measuredHeight) return;
-      measuredHeight = nextHeight;
-      const progress = effect.getComputedTiming().progress ?? 0;
-      if (progress >= 1) return;
-      // 保留当前画面与原截止时间，只修改剩余轨迹，不能 finish() 跳到新高度或反复重启动画。
-      effect.setKeyframes([
-        {
-          height: `${viewport.getBoundingClientRect().height}px`,
-          opacity: getComputedStyle(viewport).opacity,
-          offset: progress,
-        },
-        { height: `${nextHeight}px`, opacity: 1, offset: 1 },
-      ]);
+    resizeRef.current = observeExpandingContentHeight({
+      viewport,
+      node,
+      effect,
+      initialHeight: bodyHeight,
     });
-    resizeRef.current = observer;
-    observer.observe(node);
   }, [active, animateLayout, expanded, reducedMotion]);
   useLayoutEffect(
     () => () => {
@@ -153,15 +194,16 @@ export function DisclosureChevron({
     readServerReducedMotion,
   );
   const duration = expanded ? MOTION_DURATION.base : MOTION_DURATION.fast;
+  const easing = expanded ? MOTION_EASING_CSS.standard : MOTION_EASING_CSS.snap;
   const chevronStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       transform: `rotate(${expanded ? expandedRotation : collapsedRotation}deg)`,
-      transition: reducedMotion ? "none" : `transform ${duration}ms ${MOTION_EASING_CSS.standard}`,
+      transition: reducedMotion ? "none" : `transform ${duration}ms ${easing}`,
     }),
-    [collapsedRotation, duration, expanded, expandedRotation, reducedMotion],
+    [collapsedRotation, duration, easing, expanded, expandedRotation, reducedMotion],
   );
   return (
     <View style={style}>

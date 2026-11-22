@@ -60,6 +60,16 @@ export const AgentModelSchema = z
 // 30 seconds - surface friendly message before SDK tool timeout (~60s)
 export const AGENT_WAIT_TIMEOUT_MS = 30000;
 
+export interface WaitForAgentWithTimeoutResult extends WaitForAgentResult {
+  timedOut: boolean;
+}
+
+export function buildFinishNotificationGuidance(
+  target: "created agent" | "prompted agent",
+): string {
+  return `You will get notified when the ${target} finishes, errors, or needs permission. Do not sleep or poll for status. Continue with other work if you have any; if you have nothing else to do right now, briefly update the user and end your turn — Paseo will automatically wake you in a new turn when the notification arrives.`;
+}
+
 export interface ResolvedProviderModel {
   provider: AgentProvider;
   model: string | undefined;
@@ -97,8 +107,9 @@ export async function waitForAgentWithTimeout(
   options?: {
     signal?: AbortSignal;
     waitForActive?: boolean;
+    willNotifyOnFinish?: boolean;
   },
-): Promise<WaitForAgentResult> {
+): Promise<WaitForAgentWithTimeoutResult> {
   const timeoutController = new AbortController();
   const combinedController = new AbortController();
 
@@ -133,7 +144,10 @@ export async function waitForAgentWithTimeout(
       signal: combinedController.signal,
       waitForActive: options?.waitForActive,
     });
-    return result;
+    return {
+      ...result,
+      timedOut: false,
+    };
   } catch (error) {
     if (error instanceof Error && error.message === "wait timeout") {
       const snapshot = agentManager.getAgent(agentId);
@@ -145,11 +159,17 @@ export async function waitForAgentWithTimeout(
       });
       const recentActivity = curateAgentActivity(recent.items);
       const waitedSeconds = Math.round(AGENT_WAIT_TIMEOUT_MS / 1000);
-      const message = `Awaiting the agent timed out after ${waitedSeconds}s. This does not mean the agent failed - it is still running. Call get_agent_status to check on it, or continue with other work if you will receive a finish notification.\n\nRecent activity:\n${recentActivity}`;
+      const isRunning = snapshot?.lifecycle === "running";
+      const followUpInstruction =
+        options?.willNotifyOnFinish && isRunning
+          ? "A finish notification has been armed; do not sleep or poll get_agent_status. Continue with other work if you have any, or briefly update the user and end your turn — Paseo will automatically wake you in a new turn when the agent finishes, errors, or needs permission."
+          : "Call get_agent_status to check on it, or continue with other work if you will receive a finish notification.";
+      const message = `Awaiting the agent timed out after ${waitedSeconds}s. This does not mean the agent failed - it is still running. ${followUpInstruction}\n\nRecent activity:\n${recentActivity}`;
       return {
         status: snapshot?.lifecycle ?? "idle",
         permission: null,
         lastMessage: message,
+        timedOut: true,
       };
     }
     throw error;

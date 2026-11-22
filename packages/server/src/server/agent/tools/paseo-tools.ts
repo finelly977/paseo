@@ -2,8 +2,8 @@ import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
 import type { Logger } from "pino";
 
-import type { AgentMode, AgentProvider } from "../agent-sdk-types.js";
-import type { AgentManager } from "../agent-manager.js";
+import type { AgentMode, AgentPermissionRequest, AgentProvider } from "../agent-sdk-types.js";
+import type { AgentManager, ManagedAgent } from "../agent-manager.js";
 import { AgentProfileSchema, type AgentProfile } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
@@ -51,6 +51,7 @@ import {
   AgentModelSchema,
   AgentProviderEnum,
   AgentStatusEnum,
+  buildFinishNotificationGuidance,
   ProviderModeSchema,
   ProviderSummarySchema,
   parseDurationString,
@@ -1024,7 +1025,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       .optional()
       .default(true)
       .describe(
-        "Get notified when the created agent finishes, errors, or needs permission. Set false only for truly fire-and-forget agents.",
+        "Get notified automatically in a new turn when the created agent finishes, errors, or needs permission. Leave true unless the agent is truly fire-and-forget; do not sleep or poll for completion.",
       ),
   };
   const canonicalTopLevelInputSchema = {
@@ -1116,14 +1117,14 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       .optional()
       .default(true)
       .describe(
-        "Run agent in background. Agent-scoped default is true so you can continue until the finish notification arrives. Set false only when you need a blocking response.",
+        "Run agent in background. Agent-scoped default is true: return immediately, and if you have nothing else to do, end your turn so Paseo can wake you automatically when the finish notification arrives. Leave true for normal delegation; set false only for quick turns expected to finish within 30s (if it times out while still running and notifyOnFinish is true, Paseo automatically arms a finish notification).",
       ),
     notifyOnFinish: z
       .boolean()
       .optional()
       .default(true)
       .describe(
-        "Get notified when the prompted agent finishes, errors, or needs permission. Set false only for truly fire-and-forget prompts.",
+        "Get notified automatically in a new turn when the prompted agent finishes, errors, or needs permission. Leave true unless the prompt is truly fire-and-forget; also arms a finish notification if a blocking call times out while still running.",
       ),
   };
   const topLevelSendAgentPromptInputSchema = {
@@ -1509,7 +1510,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       const currentSnapshot = agentManager.getAgent(snapshot.id) ?? snapshot;
       const guidance =
         callerAgentId && notifyOnFinish && initialPromptStarted
-          ? "You will get notified when the created agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives."
+          ? buildFinishNotificationGuidance("created agent")
           : undefined;
       const response = {
         content: [],
@@ -1863,6 +1864,65 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     }
   }
 
+  async function resolveBlockingPromptOutcome(params: {
+    agentId: string;
+    notifyOnFinish: boolean;
+  }): Promise<{
+    status: ManagedAgent["lifecycle"];
+    lastMessage: string | null;
+    permission: AgentPermissionRequest | null;
+    guidance?: string;
+  }> {
+    const canArmFinishNotificationOnTimeout = Boolean(callerAgentId && params.notifyOnFinish);
+    const result = await waitForAgentWithTimeout(agentManager, params.agentId, {
+      waitForActive: true,
+      willNotifyOnFinish: canArmFinishNotificationOnTimeout,
+    });
+
+    if (!result.timedOut || !canArmFinishNotificationOnTimeout || !callerAgentId) {
+      return {
+        status: result.status,
+        lastMessage: result.lastMessage,
+        permission: result.permission,
+      };
+    }
+
+    const latestSnapshot = agentManager.getAgent(params.agentId);
+    if (latestSnapshot?.lifecycle === "running") {
+      // 同步等待超时但目标仍在运行：立即补挂完成通知，避免调用方被迫 sleep 轮询。
+      setupFinishNotification({
+        agentManager,
+        agentStorage,
+        childAgentId: params.agentId,
+        callerAgentId,
+        logger: childLogger,
+      });
+      const pendingPermission =
+        result.permission ?? latestSnapshot.pendingPermissions.values().next().value ?? null;
+      return {
+        status: "running",
+        lastMessage: result.lastMessage,
+        permission: pendingPermission,
+        guidance: buildFinishNotificationGuidance("prompted agent"),
+      };
+    }
+
+    if (latestSnapshot?.lifecycle === "idle" || latestSnapshot?.lifecycle === "error") {
+      // 超时瞬间目标已完成或出错：直接返回真实状态与最终消息。
+      return {
+        status: latestSnapshot.lifecycle,
+        lastMessage: await agentManager.getLastAssistantMessage(params.agentId),
+        permission: result.permission,
+      };
+    }
+
+    return {
+      status: result.status,
+      lastMessage: result.lastMessage,
+      permission: result.permission,
+    };
+  }
+
   registerTool(
     "send_agent_prompt",
     {
@@ -1908,15 +1968,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
 
       // If not running in background, wait for completion
       if (!background) {
-        const result = await waitForAgentWithTimeout(agentManager, agentId, {
-          waitForActive: true,
+        const outcome = await resolveBlockingPromptOutcome({
+          agentId,
+          notifyOnFinish,
         });
 
         const responseData = {
           success: true,
-          status: result.status,
-          lastMessage: result.lastMessage,
-          permission: sanitizePermissionRequest(result.permission),
+          status: outcome.status,
+          lastMessage: outcome.lastMessage,
+          permission: sanitizePermissionRequest(outcome.permission),
+          ...(outcome.guidance ? { guidance: outcome.guidance } : {}),
         };
         const validJson = ensureValidJson(responseData);
 
@@ -1938,8 +2000,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         permission: null,
         ...(shouldNotifyOnFinish
           ? {
-              guidance:
-                "You will get notified when the prompted agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives.",
+              guidance: buildFinishNotificationGuidance("prompted agent"),
             }
           : {}),
       };

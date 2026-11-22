@@ -33,6 +33,7 @@ import { createMarkdownParser } from "@/utils/markdown-parser";
 import {
   createCompactMarkdownStyles,
   createConversationMarkdownStyles,
+  createLeadingConversationMarkdownStyles,
   createMarkdownStyles,
 } from "@/styles/markdown-styles";
 import type { Theme } from "@/styles/theme";
@@ -55,7 +56,8 @@ interface MarkdownWithStableRendererProps {
   style:
     | ReturnType<typeof createMarkdownStyles>
     | ReturnType<typeof createCompactMarkdownStyles>
-    | ReturnType<typeof createConversationMarkdownStyles>;
+    | ReturnType<typeof createConversationMarkdownStyles>
+    | ReturnType<typeof createLeadingConversationMarkdownStyles>;
   rules?: RenderRules;
   markdownit?: ReturnType<typeof MarkdownIt>;
   onLinkPress?: (url: string) => boolean;
@@ -78,6 +80,12 @@ function conversationMarkdownStyleMapping(theme: Theme): Partial<MarkdownWithSta
   return { style: createConversationMarkdownStyles(theme) };
 }
 
+function leadingConversationMarkdownStyleMapping(
+  theme: Theme,
+): Partial<MarkdownWithStableRendererProps> {
+  return { style: createLeadingConversationMarkdownStyles(theme) };
+}
+
 // 用于 PR 评论和 Markdown 文件预览；智能体消息会传入自己的解析器。
 // 文件预览必须忠实显示磁盘内容，因此禁止排版字符替换。
 const defaultMarkdownParser = createMarkdownParser({ linkify: true });
@@ -87,6 +95,7 @@ export interface MarkdownRendererProps {
   text: string;
   compact?: boolean;
   conversation?: boolean;
+  trimTopMargin?: boolean;
   rules?: RenderRules;
   markdownit?: ReturnType<typeof MarkdownIt>;
   onLinkPress?: (url: string) => boolean;
@@ -99,6 +108,7 @@ export function MarkdownRenderer({
   text,
   compact = false,
   conversation = false,
+  trimTopMargin = false,
   rules,
   markdownit = defaultMarkdownParser,
   onLinkPress,
@@ -115,6 +125,7 @@ export function MarkdownRenderer({
     () => ({
       compact,
       conversation,
+      trimTopMargin,
       rules: markdownRules,
       markdownit,
       onLinkPress,
@@ -125,6 +136,7 @@ export function MarkdownRenderer({
       allowedImageHandlers,
       compact,
       conversation,
+      trimTopMargin,
       markdownRules,
       markdownit,
       onLinkPress,
@@ -215,6 +227,7 @@ function MarkdownFragment({
   text,
   compact,
   conversation,
+  trimTopMargin,
   rules,
   markdownit,
   onLinkPress,
@@ -224,6 +237,8 @@ function MarkdownFragment({
   let uniProps = markdownStyleMapping;
   if (compact) {
     uniProps = compactMarkdownStyleMapping;
+  } else if (conversation && trimTopMargin) {
+    uniProps = leadingConversationMarkdownStyleMapping;
   } else if (conversation) {
     uniProps = conversationMarkdownStyleMapping;
   }
@@ -683,7 +698,9 @@ export function createSharedMarkdownRules(): RenderRules {
       <MarkdownListView
         key={node.key}
         baseStyle={styles.bullet_list}
-        spacing={getMarkdownListSpacing(node, parent)}
+        spacing={getMarkdownListSpacing(node, parent, {
+          trimTopMargin: styles.bullet_list?.marginTop === 0,
+        })}
       >
         {children}
       </MarkdownListView>
@@ -697,7 +714,9 @@ export function createSharedMarkdownRules(): RenderRules {
       <MarkdownListView
         key={node.key}
         baseStyle={styles.ordered_list}
-        spacing={getMarkdownListSpacing(node, parent)}
+        spacing={getMarkdownListSpacing(node, parent, {
+          trimTopMargin: styles.ordered_list?.marginTop === 0,
+        })}
       >
         {children}
       </MarkdownListView>

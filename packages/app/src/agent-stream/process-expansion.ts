@@ -61,8 +61,10 @@ export function useProcessExpansion(owner: string) {
           stateRef.current = settled;
           setState(settled);
         },
+        // 收起同样留足 MOTION_DURATION.instant 余量，避免定时器抢在 120ms Web Animation
+        // 真正归零前提前卸载过程行，造成尾部顿挫。
         (expanded.has(turnId) ? MOTION_DURATION.base : MOTION_DURATION.fast) +
-          (expanded.has(turnId) ? MOTION_DURATION.instant : 16),
+          MOTION_DURATION.instant,
       ),
     );
   }, []);

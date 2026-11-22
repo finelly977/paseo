@@ -45,7 +45,7 @@ Detach is an explicit user action in the subagents track, not an agent tool. A c
 
 Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false` only for truly fire-and-forget agents.
 
-**`send_agent_prompt`** — `{ agentId, prompt }`. Use for follow-ups to an existing agent. Agent-scoped prompt calls default to `background: true` and `notifyOnFinish: true`; top-level calls default to blocking with no callback. For a synchronous follow-up, pass `background: false` and use the returned result.
+**`send_agent_prompt`** — `{ agentId, prompt }`. Use for follow-ups to an existing agent. Agent-scoped prompt calls default to `background: true` and `notifyOnFinish: true`; top-level calls default to blocking with no callback. Keep the default `background: true` for normal agent-to-agent follow-ups — if you have nothing else to do, end your turn and let Paseo wake you via the finish notification. Only pass `background: false` when you expect a quick turn under 30s and genuinely need the reply in the same turn (if it times out while still running and `notifyOnFinish` is true, Paseo automatically arms a finish notification).
 
 **`update_agent`** — `{ agentId, name?, labels?, settings? }`. Use `settings` for runtime changes on an existing agent: `modeId`, `model`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }`.
 
@@ -122,9 +122,11 @@ If the file is missing, use sensible defaults and tell the user once.
 
 Agents take time — 10–30+ minutes is routine. Favor asynchronous workflows.
 
-For agent-scoped `create_agent` and background `send_agent_prompt`, leave `notifyOnFinish` omitted or set it to `true` unless the work is truly fire-and-forget. You will get notified when the target agent finishes, errors, or needs permission. Move on to other work. The notification arrives on its own.
+For agent-scoped `create_agent` and `send_agent_prompt`, leave `notifyOnFinish` omitted or set it to `true` unless the work is truly fire-and-forget. You will get notified automatically in a new turn when the target agent finishes, errors, or needs permission.
 
-Don't poll `list_agents` or `get_agent_status` to "check on" a running agent. The notification will tell you.
+- If you have other independent work to do, continue doing it.
+- If you have nothing else to do while waiting, briefly tell the user you are waiting for the delegated agent(s) and **end your turn** (go idle). Paseo will wake you automatically when the notification arrives.
+- **Never** run `sleep` / `Start-Sleep` or poll `list_agents` / `get_agent_status` / `get_agent_activity` in a loop to wait for a running agent.
 
 ## CLI semantics
 

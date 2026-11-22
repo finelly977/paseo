@@ -94,6 +94,7 @@ function hasListItemAncestor(parent: unknown): boolean {
 export function getMarkdownListSpacing(
   node: MarkdownNode,
   parent: unknown,
+  options?: { trimTopMargin?: boolean },
 ): { marginTop: number; marginBottom: number } {
   if (hasListItemAncestor(parent)) {
     return {
@@ -102,16 +103,17 @@ export function getMarkdownListSpacing(
     };
   }
 
+  const marginTop = options?.trimTopMargin ? 0 : MARKDOWN_LIST_MARGIN_TOP;
   const nextType = getMarkdownNextSiblingType(node, parent);
   if (!nextType) {
     return {
-      marginTop: MARKDOWN_LIST_MARGIN_TOP,
+      marginTop,
       marginBottom: MARKDOWN_TERMINAL_LIST_MARGIN_BOTTOM,
     };
   }
 
   return {
-    marginTop: MARKDOWN_LIST_MARGIN_TOP,
+    marginTop,
     marginBottom: isListType(nextType)
       ? MARKDOWN_LIST_MARGIN_BOTTOM_TO_LIST
       : MARKDOWN_LIST_MARGIN_BOTTOM_TO_PROSE,

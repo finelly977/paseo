@@ -214,6 +214,7 @@ function buildAgentManagerSpies() {
     getAgent: vi.fn(),
     listAgents: vi.fn().mockReturnValue([]),
     getTimeline: vi.fn().mockReturnValue([]),
+    getLastAssistantMessage: vi.fn().mockResolvedValue(null),
     resumeAgentFromPersistence: vi.fn(),
     hydrateTimelineFromProvider: vi.fn().mockResolvedValue(undefined),
     ensureCanonicalHistory: vi.fn().mockResolvedValue(undefined),
@@ -3120,7 +3121,7 @@ describe("create_agent MCP tool", () => {
     });
 
     expect(response.structuredContent.guidance).toBe(
-      "You will get notified when the created agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives.",
+      "You will get notified when the created agent finishes, errors, or needs permission. Do not sleep or poll for status. Continue with other work if you have any; if you have nothing else to do right now, briefly update the user and end your turn — Paseo will automatically wake you in a new turn when the notification arrives.",
     );
   });
 
@@ -3580,7 +3581,7 @@ describe("send_agent_prompt MCP tool", () => {
     expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1);
     expect(spies.agentManager.waitForAgentEvent).not.toHaveBeenCalled();
     expect(response.structuredContent.guidance).toBe(
-      "You will get notified when the prompted agent finishes, errors, or needs permission. Do not poll for status; continue with other work until the notification arrives.",
+      "You will get notified when the prompted agent finishes, errors, or needs permission. Do not sleep or poll for status. Continue with other work if you have any; if you have nothing else to do right now, briefly update the user and end your turn — Paseo will automatically wake you in a new turn when the notification arrives.",
     );
   });
 
@@ -3668,6 +3669,151 @@ describe("send_agent_prompt MCP tool", () => {
       "child-agent",
       expect.objectContaining({ waitForActive: true }),
     );
+  });
+
+  it("arms a finish notification when a blocking agent-scoped prompt times out while still running", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const parentAgent = {
+      id: "parent-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      provider: "codex",
+      currentModeId: "full-access",
+    } as ManagedAgent;
+    const childAgent = {
+      id: "child-agent",
+      cwd: existingCwd,
+      lifecycle: "running",
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: new Map(),
+      config: { title: "Child" },
+    } as ManagedAgent;
+    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+      if (agentId === "parent-agent") return parentAgent;
+      if (agentId === "child-agent") return childAgent;
+      return null;
+    });
+    spies.agentManager.waitForAgentEvent.mockRejectedValueOnce(new Error("wait timeout"));
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "parent-agent",
+      logger,
+    });
+
+    const tool = registeredTool(server, "send_agent_prompt");
+    const response = await invokeToolWithParsedInput(tool, {
+      agentId: "child-agent",
+      prompt: "Follow up",
+      background: false,
+    });
+
+    expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1);
+    expect(response.structuredContent.status).toBe("running");
+    expect(response.structuredContent.lastMessage).toContain(
+      "A finish notification has been armed; do not sleep or poll get_agent_status.",
+    );
+    expect(response.structuredContent.guidance).toBe(
+      "You will get notified when the prompted agent finishes, errors, or needs permission. Do not sleep or poll for status. Continue with other work if you have any; if you have nothing else to do right now, briefly update the user and end your turn — Paseo will automatically wake you in a new turn when the notification arrives.",
+    );
+  });
+
+  it("does not arm a finish notification on blocking timeout when notifyOnFinish is false", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const parentAgent = {
+      id: "parent-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      provider: "codex",
+      currentModeId: "full-access",
+    } as ManagedAgent;
+    const childAgent = {
+      id: "child-agent",
+      cwd: existingCwd,
+      lifecycle: "running",
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: new Map(),
+      config: { title: "Child" },
+    } as ManagedAgent;
+    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+      if (agentId === "parent-agent") return parentAgent;
+      if (agentId === "child-agent") return childAgent;
+      return null;
+    });
+    spies.agentManager.waitForAgentEvent.mockRejectedValueOnce(new Error("wait timeout"));
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "parent-agent",
+      logger,
+    });
+
+    const tool = registeredTool(server, "send_agent_prompt");
+    const response = await invokeToolWithParsedInput(tool, {
+      agentId: "child-agent",
+      prompt: "Follow up",
+      background: false,
+      notifyOnFinish: false,
+    });
+
+    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+    expect(response.structuredContent.guidance).toBeUndefined();
+    expect(response.structuredContent.lastMessage).toContain(
+      "Call get_agent_status to check on it",
+    );
+  });
+
+  it("returns the final message directly when target becomes idle right as blocking wait times out", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const parentAgent = {
+      id: "parent-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      provider: "codex",
+      currentModeId: "full-access",
+    } as ManagedAgent;
+    const childAgent = {
+      id: "child-agent",
+      cwd: existingCwd,
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: new Map(),
+      config: { title: "Child" },
+    } as ManagedAgent;
+    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+      if (agentId === "parent-agent") return parentAgent;
+      if (agentId === "child-agent") return childAgent;
+      return null;
+    });
+    spies.agentManager.waitForAgentEvent.mockRejectedValueOnce(new Error("wait timeout"));
+    spies.agentManager.getLastAssistantMessage.mockResolvedValueOnce("Final summary");
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "parent-agent",
+      logger,
+    });
+
+    const tool = registeredTool(server, "send_agent_prompt");
+    const response = await invokeToolWithParsedInput(tool, {
+      agentId: "child-agent",
+      prompt: "Follow up",
+      background: false,
+    });
+
+    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+    expect(response.structuredContent.status).toBe("idle");
+    expect(response.structuredContent.lastMessage).toBe("Final summary");
+    expect(response.structuredContent.guidance).toBeUndefined();
   });
 });
 

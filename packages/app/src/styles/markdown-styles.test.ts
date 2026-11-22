@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCompactMarkdownStyles,
   createConversationMarkdownStyles,
+  createLeadingConversationMarkdownStyles,
   createMarkdownStyles,
 } from "./markdown-styles";
 import { darkTheme } from "./theme";
@@ -159,5 +160,23 @@ describe("createMarkdownStyles", () => {
       fontSize: darkTheme.fontSize.code,
       lineHeight: Math.round(darkTheme.fontSize.code * 1.45),
     });
+  });
+
+  it("列表图标显式归零左外边距，避免多层嵌套缩进过深", () => {
+    const styles = createMarkdownStyles(darkTheme);
+    expect(styles.bullet_list_icon).toMatchObject({ marginLeft: 0, marginRight: 6 });
+    expect(styles.ordered_list_icon).toMatchObject({ marginLeft: 0, marginRight: 6 });
+  });
+
+  it("对话首块样式清零标题与块级元素顶部外边距，避免与上方用时分割线叠加", () => {
+    const leading = createLeadingConversationMarkdownStyles(darkTheme);
+    expect(leading.heading1.marginTop).toBe(0);
+    expect(leading.heading3.marginTop).toBe(0);
+    expect(leading.heading6.marginTop).toBe(0);
+    expect(leading.bullet_list.marginTop).toBe(0);
+    expect(leading.ordered_list.marginTop).toBe(0);
+    expect(leading.blockquote).toMatchObject({ marginTop: 0, marginBottom: darkTheme.spacing[2] });
+    expect(leading.fence).toMatchObject({ marginTop: 0, marginBottom: darkTheme.spacing[3] });
+    expect(leading.table).toMatchObject({ marginTop: 0, marginBottom: darkTheme.spacing[3] });
   });
 });

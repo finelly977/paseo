@@ -56,7 +56,7 @@ Pass through any remaining arguments after the skill name as the skill's own inp
 
 ## Launch and synthesize
 
-Create the advisor agent via Paseo with a `[Advisor] <topic>` title and the briefing as the initial prompt. Wait for it to finish. Read its response. Synthesize for the user — the advisor's verdict + your recommendation.
+Create the advisor agent via Paseo with a `[Advisor] <topic>` title and the briefing as the initial prompt. If you have no other work right now, briefly inform the user and end your turn — do not sleep or poll; Paseo will wake you automatically when the advisor finishes. Once notified, read its response and synthesize for the user — the advisor's verdict + your recommendation.
 
 ## Persistent advisor
 
