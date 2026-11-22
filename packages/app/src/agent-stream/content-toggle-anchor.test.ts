@@ -141,4 +141,36 @@ describe("展开过程的阅读位置", () => {
     expect(test.getOffset()).toBe(700);
     expect(test.active).toHaveBeenLastCalledWith(false);
   });
+  it("触达滚动边界无法继续补偿时，位置连续稳定后正常结束锚定而不空等超时", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => setTimeout(callback, 16));
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
+    let offset = 100;
+    let top = 120;
+    const maxOffset = 100;
+    const active = vi.fn();
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const anchor = createContentToggleAnchor({
+      inverted: false,
+      getOffset: () => offset,
+      detach: vi.fn(),
+      setActive: active,
+      setOffset: (next) => {
+        const clamped = Math.min(maxOffset, Math.max(0, next));
+        top += offset - clamped;
+        offset = clamped;
+      },
+    });
+    anchor.preserve({
+      itemId: "process",
+      measure: (callback) => callback(top),
+      applyChange: () => {
+        top += 140;
+      },
+    });
+    vi.advanceTimersByTime(160);
+    expect(active).toHaveBeenLastCalledWith(false);
+    expect(warning).not.toHaveBeenCalled();
+    warning.mockRestore();
+  });
 });

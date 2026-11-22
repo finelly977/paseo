@@ -24,6 +24,8 @@ const subscribeReducedMotion = (notify: () => void) => {
   return () => query.removeEventListener("change", notify);
 };
 const contentStyle: CSSProperties = { minHeight: 0, display: "flow-root" };
+// 收起采用先加速后匀速落位的对称曲线，避免强 ease-out 尾段明显减速拖曳。
+const COLLAPSE_EASING_CSS = "cubic-bezier(0.4, 0, 0.6, 1)";
 
 function createDisclosureEffect(params: {
   viewport: HTMLDivElement;
@@ -41,7 +43,7 @@ function createDisclosureEffect(params: {
   ];
   return new KeyframeEffect(viewport, animateLayout ? heightFrames : opacityFrames, {
     duration: expanded ? MOTION_DURATION.base : MOTION_DURATION.fast,
-    easing: expanded ? MOTION_EASING_CSS.standard : MOTION_EASING_CSS.snap,
+    easing: expanded ? MOTION_EASING_CSS.standard : COLLAPSE_EASING_CSS,
     // 收起保留终帧，避免 onfinish 触发卸载前最后一帧闪回自然高度。
     fill: expanded ? "none" : "forwards",
   });
@@ -80,6 +82,7 @@ export function DisclosureContent({
   children,
   testID,
   animateLayout = true,
+  animateOnMount = false,
 }: DisclosureContentProps) {
   const reducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -92,7 +95,7 @@ export function DisclosureContent({
   const content = useMemo(() => (hasContent ? children() : null), [hasContent, children]);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const previousExpanded = useRef(expanded);
+  const previousExpanded = useRef(expanded && !animateOnMount);
   const animationRef = useRef<Animation | null>(null);
   const resizeRef = useRef<ResizeObserver | null>(null);
   useLayoutEffect(() => {
@@ -194,7 +197,7 @@ export function DisclosureChevron({
     readServerReducedMotion,
   );
   const duration = expanded ? MOTION_DURATION.base : MOTION_DURATION.fast;
-  const easing = expanded ? MOTION_EASING_CSS.standard : MOTION_EASING_CSS.snap;
+  const easing = expanded ? MOTION_EASING_CSS.standard : COLLAPSE_EASING_CSS;
   const chevronStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",

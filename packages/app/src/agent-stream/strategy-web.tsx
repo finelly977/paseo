@@ -44,6 +44,28 @@ const ITEM_JUMP_CENTER_TOLERANCE_PX = 2;
 const ITEM_JUMP_STABLE_FRAMES = 2;
 const USER_DOWNWARD_INPUT_WINDOW_MS = 500;
 const PROGRAMMATIC_SCROLL_ECHO_TOLERANCE_PX = 2;
+const MAX_TRANSITION_RANGE_SPAN = 48;
+
+function expandRangeForTransitioningProcess(
+  range: { startIndex: number; endIndex: number },
+  items: readonly StreamItem[],
+  transitioningIds: ReadonlySet<string> | undefined,
+): { startIndex: number; endIndex: number } {
+  if (!transitioningIds || transitioningIds.size === 0) return range;
+  let first = -1;
+  let last = -1;
+  for (let index = 0; index < items.length; index++) {
+    if (transitioningIds.has(items[index].id)) {
+      if (first === -1) first = index;
+      last = index;
+    }
+  }
+  if (first < 0 || last - first > MAX_TRANSITION_RANGE_SPAN) return range;
+  return {
+    startIndex: Math.min(range.startIndex, first),
+    endIndex: Math.max(range.endIndex, last),
+  };
+}
 
 const historyStartSlotStyle: CSSProperties = {
   position: "sticky",
@@ -309,6 +331,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   } = props;
   const collapsedHeights = historyRowRevision?.estimatedHeightById;
   const processAnchorIdByItemId = historyRowRevision?.processAnchorIdByItemId;
+  const transitioningProcessItemIds = historyRowRevision?.transitioningProcessItemIds;
   const resolveHistoryAnchorItemId = useCallback(
     (anchor: HistoryAnchor) => {
       // 补页会把收起入口移到本轮更早的过程，旧承载行此时已被零高度过滤。
@@ -540,12 +563,30 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     rangeExtractor: useCallback(
       (range: Parameters<typeof defaultRangeExtractor>[0]) => {
         const toggleItemId = toggleAnchorItemIdRef.current;
+        let startIndex = range.startIndex;
+        let endIndex = range.endIndex;
         if (toggleItemId !== null) {
           const index = segments.historyVirtualized.findIndex((item) => item.id === toggleItemId);
-          if (index >= 0 && (index < range.startIndex || index > range.endIndex)) {
-            const endIndex = Math.min(range.count - 1, index + range.endIndex - range.startIndex);
-            return defaultRangeExtractor({ ...range, startIndex: index, endIndex });
+          if (index >= 0 && (index < startIndex || index > endIndex)) {
+            startIndex = index;
+            endIndex = Math.min(range.count - 1, index + range.endIndex - range.startIndex);
           }
+        }
+        // 过渡期让本轮可见过程行完整留在虚拟窗口内，避免底部占位在展开首帧先撑开又塌回。
+        const expandedRange = expandRangeForTransitioningProcess(
+          { startIndex, endIndex },
+          segments.historyVirtualized,
+          transitioningProcessItemIds,
+        );
+        if (
+          expandedRange.startIndex !== range.startIndex ||
+          expandedRange.endIndex !== range.endIndex
+        ) {
+          return defaultRangeExtractor({
+            ...range,
+            startIndex: expandedRange.startIndex,
+            endIndex: expandedRange.endIndex,
+          });
         }
         const pending = hasPendingHistoryAnchor ? pendingHistoryAnchorRef.current : null;
         if (!pending || pending.firstItemId === sourceFirstItemId)
@@ -554,17 +595,18 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         const index = segments.historyVirtualized.findIndex((item) => item.id === anchorItemId);
         if (index < 0) return defaultRangeExtractor(range);
         // 新页提交前先保留正在阅读的窗口，不能先挂载新页再靠滚动补救。
-        const endIndex = Math.min(
+        const pendingEndIndex = Math.min(
           range.count - 1,
           index + Math.max(1, range.endIndex - range.startIndex),
         );
-        return defaultRangeExtractor({ ...range, startIndex: index, endIndex });
+        return defaultRangeExtractor({ ...range, startIndex: index, endIndex: pendingEndIndex });
       },
       [
         hasPendingHistoryAnchor,
         segments.historyVirtualized,
         sourceFirstItemId,
         resolveHistoryAnchorItemId,
+        transitioningProcessItemIds,
       ],
     ),
     measureElement: (element, entry, instance) => {

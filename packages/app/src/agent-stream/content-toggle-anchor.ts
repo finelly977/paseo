@@ -43,6 +43,7 @@ export function createContentToggleAnchor(port: ContentToggleAnchorPort) {
       request.applyChange();
       let measurement = 0;
       let lastAppliedMeasurement = 0;
+      let previousTop: number | null = null;
       const correctPosition = (countStableFrame: boolean) => {
         const currentMeasurement = ++measurement;
         request.measure((nextTop) => {
@@ -53,11 +54,24 @@ export function createContentToggleAnchor(port: ContentToggleAnchorPort) {
           }
           const delta = nextTop - top;
           if (Math.abs(delta) > 0.5) {
-            port.setOffset(Math.max(0, port.getOffset() + (port.inverted ? -delta : delta)));
-            stableFrames = 0;
+            const beforeOffset = port.getOffset();
+            port.setOffset(Math.max(0, beforeOffset + (port.inverted ? -delta : delta)));
+            const clamped = Math.abs(port.getOffset() - beforeOffset) <= 0.5;
+            if (
+              clamped &&
+              countStableFrame &&
+              previousTop !== null &&
+              Math.abs(nextTop - previousTop) <= 0.5
+            ) {
+              // 滚动条已顶到边界无法继续补偿，位置连续稳定后正常结束锚定，避免空等超时。
+              stableFrames += 1;
+            } else {
+              stableFrames = 0;
+            }
           } else if (countStableFrame) {
             stableFrames += 1;
           }
+          previousTop = nextTop;
           if (stableFrames >= 4) cancel();
         });
       };

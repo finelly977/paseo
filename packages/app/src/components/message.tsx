@@ -163,7 +163,6 @@ interface UserMessageProps {
 const EMPTY_PROVIDER_USER_IMAGES: AgentUserMessageImage[] = [];
 
 const MessageOuterSpacingContext = createContext(false);
-const CompactToolCallListContext = createContext(false);
 
 export function MessageOuterSpacingProvider({
   disableOuterSpacing,
@@ -176,20 +175,6 @@ export function MessageOuterSpacingProvider({
     <MessageOuterSpacingContext.Provider value={disableOuterSpacing}>
       {children}
     </MessageOuterSpacingContext.Provider>
-  );
-}
-
-export function CompactToolCallListProvider({
-  compact,
-  children,
-}: {
-  compact: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <CompactToolCallListContext.Provider value={compact}>
-      {children}
-    </CompactToolCallListContext.Provider>
   );
 }
 
@@ -1477,11 +1462,8 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderWidth: theme.borderWidth[1],
     borderColor: "transparent",
     paddingHorizontal: theme.spacing[2],
-    paddingVertical: 2,
+    paddingVertical: theme.spacing[1],
     overflow: "hidden",
-  },
-  pressableCompact: {
-    paddingVertical: 1,
   },
   pressablePressed: {
     opacity: 0.9,
@@ -1498,10 +1480,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     overflow: "hidden",
   },
   iconBadge: {
-    width: 20,
-    height: 20,
+    width: 22,
+    height: 22,
     flexShrink: 0,
-    borderRadius: 10,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
     marginRight: theme.spacing[1],
@@ -1510,7 +1492,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   label: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
-    lineHeight: Math.round(theme.fontSize.base * 1.35),
+    lineHeight: theme.fontSize.base * 1.5,
     fontWeight: theme.fontWeight.normal,
     flexShrink: 0,
   },
@@ -1526,7 +1508,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
-    lineHeight: Math.round(theme.fontSize.base * 1.35),
+    lineHeight: theme.fontSize.base * 1.5,
     fontWeight: theme.fontWeight.normal,
     marginLeft: theme.spacing[2],
   },
@@ -1581,9 +1563,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
   },
-  inlineDetails: { paddingLeft: 20 },
+  inlineDetails: { paddingLeft: 22 },
+  thinkingDetails: { paddingLeft: theme.spacing[2] },
   commandDetails: {
-    paddingLeft: 20,
+    paddingLeft: 22,
     paddingRight: theme.spacing[3],
     paddingVertical: theme.spacing[1],
   },
@@ -3091,7 +3074,6 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
-  const isCompactToolCallList = useContext(CompactToolCallListContext);
   const [isHovered, setIsHovered] = useState(false);
   const [isOpenFileHovered, setIsOpenFileHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -3256,12 +3238,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const pressableStyle = useMemo(
     () => [
       expandableBadgeStylesheet.pressable,
-      isCompactToolCallList && expandableBadgeStylesheet.pressableCompact,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpandedAttached,
     ],
-    [borderlessWhenExpanded, isCompactToolCallList, isExpanded, isInteractive, isPressed],
+    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
   );
 
   const detailWrapperStyle = useMemo(
@@ -3597,8 +3578,12 @@ export const ToolCall = memo(function ToolCall({
         </View>
       );
     }
+    const inlineDetailsStyle =
+      toolName === "thinking"
+        ? expandableBadgeStylesheet.thinkingDetails
+        : expandableBadgeStylesheet.inlineDetails;
     return (
-      <View style={expandableBadgeStylesheet.inlineDetails}>
+      <View style={inlineDetailsStyle}>
         <ToolCallDetailsContent
           appearance="plain"
           toolName={toolName}

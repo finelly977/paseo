@@ -118,7 +118,11 @@ import { AgentFailure } from "@/components/agent-failure";
 import { NativeHistoryProcess } from "./native-history-process";
 import { ConversationDivider } from "@/components/conversation-divider";
 import { ProcessDisclosure } from "./process-disclosure";
-import { useLiveProcessExit, useProcessExpansion } from "./process-expansion";
+import {
+  selectProcessTransitionVisibleItemIds,
+  useLiveProcessExit,
+  useProcessExpansion,
+} from "./process-expansion";
 import { estimateStreamItemHeight } from "./web-virtualization";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
@@ -676,6 +680,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       expandedTurnIds: expandedCompletedTurnIds,
       retainedTurnIds: retainedCompletedTurnIds,
       transitioningTurnIds: transitioningCompletedTurnIds,
+      transitionVisibleItemIds: transitionVisibleCompletedItemIds,
       toggle: toggleCompletedProcess,
     } = useProcessExpansion(agentId);
     const [pendingHistoryNavigation, setPendingHistoryNavigation] =
@@ -1077,22 +1082,61 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [],
     );
+    const processTransitionStateRef = useRef({
+      history: baseRenderModel.history,
+      liveHead: baseRenderModel.segments.liveHead,
+      turnIdByProcessItemId: completedTurnProcess.turnIdByProcessItemId,
+      expandedCompletedTurnIds,
+      expandedNativeTurnIds: nativeProcesses.expandedTurnIds,
+      messageParagraphSpacing,
+    });
+    processTransitionStateRef.current = {
+      history: baseRenderModel.history,
+      liveHead: baseRenderModel.segments.liveHead,
+      turnIdByProcessItemId: completedTurnProcess.turnIdByProcessItemId,
+      expandedCompletedTurnIds,
+      expandedNativeTurnIds: nativeProcesses.expandedTurnIds,
+      messageParagraphSpacing,
+    };
     const toggleCompletedTurnProcess = useCallback(
       (input: { turnId: string; itemId: string }) => {
+        const current = processTransitionStateRef.current;
+        const orderedItems = [...current.history, ...current.liveHead].filter(
+          (item) => current.turnIdByProcessItemId.get(item.id) === input.turnId,
+        );
+        const visibleItemIds = selectProcessTransitionVisibleItemIds({
+          action: current.expandedCompletedTurnIds.has(input.turnId) ? "collapse" : "expand",
+          orderedItems,
+          anchorItemId: input.itemId,
+          anchorNode: completedProcessAnchors.current.get(input.turnId),
+          estimateHeight: (item) => estimateStreamItemHeight(item, current.messageParagraphSpacing),
+        });
         preserveProcessAnchor({
           ...input,
-          applyChange: () => toggleCompletedProcess(input.turnId),
+          applyChange: () => toggleCompletedProcess(input.turnId, { visibleItemIds }),
         });
       },
       [preserveProcessAnchor, toggleCompletedProcess],
     );
     const toggleNativeProcess = nativeProcesses.toggle;
     const toggleNativeHistoryProcess = useCallback(
-      (input: { turnId: string; itemId: string }) =>
+      (input: { turnId: string; itemId: string }) => {
+        const current = processTransitionStateRef.current;
+        const orderedItems = [...current.history, ...current.liveHead].filter(
+          (item) => item.nativeProcessDetail && item.nativeTurnId === input.turnId,
+        );
+        const visibleItemIds = selectProcessTransitionVisibleItemIds({
+          action: current.expandedNativeTurnIds.has(input.turnId) ? "collapse" : "expand",
+          orderedItems,
+          anchorItemId: input.itemId,
+          anchorNode: completedProcessAnchors.current.get(input.turnId),
+          estimateHeight: (item) => estimateStreamItemHeight(item, current.messageParagraphSpacing),
+        });
         preserveProcessAnchor({
           ...input,
-          applyChange: () => toggleNativeProcess(input.turnId),
-        }),
+          applyChange: () => toggleNativeProcess(input.turnId, { visibleItemIds }),
+        });
+      },
       [toggleNativeProcess, preserveProcessAnchor],
     );
     const loadedHistoryIndexEntries = useMemo(() => {
@@ -1801,6 +1845,20 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
         if (!retainedCompletedTurnIds.has(turnId)) {
           heights.set(itemId, 0);
+          continue;
+        }
+        const visibleIds = transitionVisibleCompletedItemIds.get(turnId);
+        if (visibleIds && !visibleIds.has(itemId)) {
+          heights.set(itemId, 0);
+        }
+      }
+      if (nativeProcesses.transitionVisibleItemIds.size > 0) {
+        for (const item of baseRenderModel.history) {
+          if (!item.nativeProcessDetail || !item.nativeTurnId) continue;
+          const visibleIds = nativeProcesses.transitionVisibleItemIds.get(item.nativeTurnId);
+          if (visibleIds && !visibleIds.has(item.id)) {
+            heights.set(item.id, 0);
+          }
         }
       }
       for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
@@ -1814,7 +1872,46 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
       }
       return heights;
-    }, [completedTurnProcess, retainedCompletedTurnIds, conversationDividerSpacing]);
+    }, [
+      baseRenderModel.history,
+      completedTurnProcess,
+      conversationDividerSpacing,
+      nativeProcesses.transitionVisibleItemIds,
+      retainedCompletedTurnIds,
+      transitionVisibleCompletedItemIds,
+    ]);
+    const transitioningProcessItemIds = useMemo(() => {
+      const ids = new Set<string>();
+      if (transitioningCompletedTurnIds.size > 0) {
+        for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
+          if (
+            transitioningCompletedTurnIds.has(turnId) &&
+            estimatedCollapsedProcessHeightById.get(itemId) !== 0
+          ) {
+            ids.add(itemId);
+          }
+        }
+      }
+      if (nativeProcesses.transitioningTurnIds.size > 0) {
+        for (const item of baseRenderModel.history) {
+          if (
+            item.nativeProcessDetail &&
+            item.nativeTurnId &&
+            nativeProcesses.transitioningTurnIds.has(item.nativeTurnId) &&
+            estimatedCollapsedProcessHeightById.get(item.id) !== 0
+          ) {
+            ids.add(item.id);
+          }
+        }
+      }
+      return ids;
+    }, [
+      baseRenderModel.history,
+      completedTurnProcess.turnIdByProcessItemId,
+      estimatedCollapsedProcessHeightById,
+      nativeProcesses.transitioningTurnIds,
+      transitioningCompletedTurnIds,
+    ]);
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
@@ -1826,6 +1923,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             `completed-process-${toggle.turnId}`,
           ]),
         ),
+        transitioningProcessItemIds,
         globalDisplayState: isMobile,
       }),
       [
@@ -1834,6 +1932,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         historyDisplayStateIds,
         isMobile,
         projectedToolCalls.historyGroupUpdatesByHostId,
+        transitioningProcessItemIds,
       ],
     );
 

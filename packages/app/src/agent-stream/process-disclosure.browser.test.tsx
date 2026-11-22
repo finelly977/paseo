@@ -2,9 +2,10 @@ import React, { useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, test } from "vitest";
 import { ProcessDisclosure } from "./process-disclosure";
-import { useProcessExpansion } from "./process-expansion";
+import { selectProcessTransitionVisibleItemIds, useProcessExpansion } from "./process-expansion";
 import { ConversationDivider } from "@/components/conversation-divider";
 import { DisclosureContent } from "@/components/ui/disclosure";
+import type { StreamItem } from "@/types/stream";
 
 const CONTENT_STYLE = { height: 120 };
 const DIVIDER_LABEL_STYLE = { lineHeight: "24px" };
@@ -372,5 +373,55 @@ test("不逐帧过渡布局时仍淡入淡出，快速重开不卸载正文", as
   } finally {
     root.unmount();
     host.remove();
+  }
+});
+
+test("超长过程展开仅先保留首屏批次，收起立即裁掉视口外尾段", () => {
+  const scroll = document.createElement("div");
+  scroll.dataset.testid = "agent-chat-scroll";
+  scroll.style.cssText = "height:300px;width:600px;overflow-y:auto;position:relative";
+  document.body.appendChild(scroll);
+  try {
+    const items: StreamItem[] = Array.from({ length: 60 }, (_, index) => ({
+      kind: "thought",
+      id: `p-${index}`,
+      text: `步骤 ${index}`,
+      status: "ready",
+      timestamp: new Date(index),
+    }));
+    const anchor = document.createElement("div");
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.dataset.streamRowId = item.id;
+      row.style.height = "40px";
+      if (item.id === "p-0") row.appendChild(anchor);
+      scroll.appendChild(row);
+    }
+    const expandBatch = selectProcessTransitionVisibleItemIds({
+      action: "expand",
+      orderedItems: items,
+      anchorItemId: "p-0",
+      anchorNode: anchor,
+      estimateHeight: () => 40,
+    });
+    expect(expandBatch).toBeDefined();
+    expect(expandBatch?.has("p-0")).toBe(true);
+    expect(expandBatch?.size).toBeGreaterThanOrEqual(20);
+    expect(expandBatch?.size).toBeLessThan(items.length);
+
+    const collapseVisible = selectProcessTransitionVisibleItemIds({
+      action: "collapse",
+      orderedItems: items,
+      anchorItemId: "p-0",
+      anchorNode: anchor,
+      estimateHeight: () => 40,
+    });
+    expect(collapseVisible).toBeDefined();
+    expect(collapseVisible?.has("p-0")).toBe(true);
+    expect(collapseVisible?.has("p-7")).toBe(true);
+    expect(collapseVisible?.has("p-30")).toBe(false);
+    expect(collapseVisible?.size).toBeLessThanOrEqual(10);
+  } finally {
+    scroll.remove();
   }
 });

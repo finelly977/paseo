@@ -15,19 +15,16 @@ export function ProcessDisclosure({
   estimatedHeight: number;
   children(): ReactNode;
 }) {
-  const [ready, setReady] = useState(!expanded || !transitioning);
+  // 网页直接通过 animateOnMount 单次提交起播，原生延后一帧让出首帧测量。
+  const [ready, setReady] = useState(isWeb || !expanded || !transitioning);
   const [mountedExpanded] = useState(expanded);
+  const [animateOnMount] = useState(isWeb && expanded && transitioning);
   const placeholderStyle = useMemo(
     () => ({ height: estimatedHeight, width: "100%" as const }),
     [estimatedHeight],
   );
   useLayoutEffect(() => {
     if (ready) return;
-    // 网页在同一次布局提交中准备展开，不把正文挂载推迟到下一帧。
-    if (isWeb) {
-      setReady(true);
-      return;
-    }
     const frame = requestAnimationFrame(() => setReady(true));
     return () => cancelAnimationFrame(frame);
   }, [ready]);
@@ -39,6 +36,7 @@ export function ProcessDisclosure({
     <DisclosureContent
       expanded={expanded && ready}
       animateLayout={isWeb}
+      animateOnMount={animateOnMount}
       testID="process-disclosure"
     >
       {() => <View style={CONTENT_ROW_STYLE}>{children()}</View>}

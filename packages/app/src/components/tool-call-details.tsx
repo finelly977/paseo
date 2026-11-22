@@ -496,21 +496,28 @@ function ScrollablePlainTextSection({
   text,
   ds,
   markdown = false,
+  plainProse = false,
 }: {
   text: string;
   ds: DetailStyles;
   markdown?: boolean;
+  plainProse?: boolean;
 }) {
   return (
     <View style={styles.section}>
       <ScrollView
         style={ds.scrollAreaStyle}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={plainProse ? styles.reasoningPlainContent : styles.scrollContent}
         nestedScrollEnabled
         showsVerticalScrollIndicator
       >
         {markdown ? (
-          <MarkdownRenderer text={text} conversation enableHtmlish={false} />
+          <MarkdownRenderer
+            text={text}
+            conversation
+            trimTopMargin={plainProse}
+            enableHtmlish={false}
+          />
         ) : (
           <Text selectable style={styles.plainText}>
             {text}
@@ -808,7 +815,15 @@ function ToolCallDetailsContentInner({
   const reasoning = resolveReasoningMarkdown(toolName, detail);
   const sections: ReactNode[] =
     reasoning !== null
-      ? [<ScrollablePlainTextSection key="reasoning" text={reasoning} ds={ds} markdown />]
+      ? [
+          <ScrollablePlainTextSection
+            key="reasoning"
+            text={reasoning}
+            ds={ds}
+            markdown
+            plainProse={appearance === "plain"}
+          />,
+        ]
       : buildDetailSections(toolName, detail, diffLines, ds, t);
 
   if (errorText) {
@@ -966,6 +981,11 @@ const styles = StyleSheet.create((theme) => {
     },
     scrollContent: {
       padding: insets.padding,
+    },
+    reasoningPlainContent: {
+      paddingHorizontal: 13,
+      paddingTop: theme.spacing[1],
+      paddingBottom: theme.spacing[2],
     },
     scrollText: {
       fontFamily: theme.fontFamily.mono,
