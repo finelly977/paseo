@@ -339,6 +339,7 @@ async function resolveMcpCreateAgent(
     dependencies,
     input,
     provider,
+    requestedModel: resolvedProviderModel.model,
     resolvedCwd,
     parentAgent,
   });
@@ -387,6 +388,7 @@ async function resolveMcpProviderCreateConfig(params: {
   dependencies: CreateAgentCommandDependencies;
   input: CreateAgentFromMcpInput;
   provider: string;
+  requestedModel?: string;
   resolvedCwd: string;
   parentAgent: ManagedAgent | null;
 }): Promise<{ modeId?: string; featureValues?: Record<string, unknown> }> {
@@ -395,6 +397,8 @@ async function resolveMcpProviderCreateConfig(params: {
     cwd: params.resolvedCwd,
     provider: params.provider,
     requestedMode: params.input.mode ?? passthroughConfig?.modeId,
+    requestedModel: params.requestedModel ?? passthroughConfig?.model,
+    requestedThinkingOptionId: params.input.thinking ?? passthroughConfig?.thinkingOptionId,
     featureValues: params.input.features ?? passthroughConfig?.featureValues,
     parent: params.parentAgent,
     unattended: params.input.unattended ?? false,

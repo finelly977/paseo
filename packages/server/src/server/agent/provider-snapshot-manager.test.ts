@@ -1277,6 +1277,85 @@ describe("ProviderSnapshotManager public surface", () => {
     }
   });
 
+  test("resolveCreateConfig rejects unsupported requestedModel and requestedThinkingOptionId upfront", async () => {
+    const modes: AgentMode[] = [{ id: "auto", label: "Auto" }];
+    const models: AgentModelDefinition[] = [
+      {
+        id: "gemini-4-hydrogen",
+        label: "Gemini 4 Hydrogen",
+        provider: "agy",
+        thinkingOptions: [
+          { id: "high", label: "High" },
+          { id: "xhigh", label: "Extra High" },
+        ],
+      },
+    ];
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: {
+        claude: { enabled: false },
+        codex: { enabled: false },
+        copilot: { enabled: false },
+        opencode: { enabled: false },
+        pi: { enabled: false },
+      },
+      extraClients: {
+        agy: createExtraClient("agy", {
+          async isAvailable() {
+            return true;
+          },
+          async fetchCatalog() {
+            return { models, modes };
+          },
+        }),
+      },
+    });
+
+    try {
+      await expect(
+        manager.resolveCreateConfig({
+          cwd: "/tmp/project",
+          provider: "agy",
+          requestedMode: "auto",
+          requestedModel: "gemini-4-hydrogen",
+          requestedThinkingOptionId: "xhigh",
+          featureValues: undefined,
+          parent: null,
+          unattended: false,
+        }),
+      ).resolves.toEqual({ modeId: "auto", featureValues: undefined });
+
+      await expect(
+        manager.resolveCreateConfig({
+          cwd: "/tmp/project",
+          provider: "agy",
+          requestedMode: "auto",
+          requestedModel: "nonexistent-model",
+          featureValues: undefined,
+          parent: null,
+          unattended: false,
+        }),
+      ).rejects.toThrow(/Invalid model 'nonexistent-model' for provider 'agy'/);
+
+      await expect(
+        manager.resolveCreateConfig({
+          cwd: "/tmp/project",
+          provider: "agy",
+          requestedMode: "auto",
+          requestedModel: "gemini-4-hydrogen",
+          requestedThinkingOptionId: "ultra-max",
+          featureValues: undefined,
+          parent: null,
+          unattended: false,
+        }),
+      ).rejects.toThrow(
+        /Invalid thinkingOptionId 'ultra-max' for model 'gemini-4-hydrogen' on provider 'agy'/,
+      );
+    } finally {
+      manager.destroy();
+    }
+  });
+
   test("treats an OpenCode parent with auto accept as unattended when resolving an explicit child mode", async () => {
     const openCode = new OpenCodeAgentClient(createTestLogger());
     const modes: AgentMode[] = [

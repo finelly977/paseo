@@ -5307,6 +5307,7 @@ describe("agent snapshot MCP serialization", () => {
         {
           id: "agent-compact",
           shortId: "agent-c",
+          sessionId: "session-123",
           title: null,
           provider: "codex",
           model: "gpt-5.4",
@@ -5672,6 +5673,7 @@ describe("agent snapshot MCP serialization", () => {
     expect(item).toEqual({
       id: "stored-archived-compact",
       shortId: "stored-",
+      sessionId: "session-123",
       title: "Stored agent",
       provider: "claude",
       model: "claude-sonnet-4-20250514",
@@ -5954,5 +5956,274 @@ describe("agent snapshot MCP serialization", () => {
     expect(content).not.toContain("[User] u2");
     expect(content).not.toContain("second answer");
     expect(content).not.toContain("first answer");
+  });
+});
+
+describe("streamlined MCP dispatch optimizations", () => {
+  const logger = createTestLogger();
+
+  it("resolves provider native sessionId and unique shortId in send_agent_prompt and get_agent_status", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const parentAgent = createManagedAgent({
+      id: "parent-agent",
+      cwd: REPO_CWD,
+      workspaceId: "wks_parent",
+      provider: "codex",
+    });
+    const targetRecord = createStoredRecord({
+      id: "20f727d2-3a62-41e4-9158-3e1a4aa15d0d",
+      provider: "codex",
+      cwd: "/tmp/other-workspace",
+      workspaceId: "wks_other",
+      title: "Codex worker",
+      archivedAt: null,
+      persistence: {
+        provider: "codex",
+        sessionId: "01a1e963-d91f-7e22-b6bf-d2b5928b652c",
+        nativeHandle: "01a1e963-d91f-7e22-b6bf-d2b5928b652c",
+      },
+    });
+    const resumedTarget = createManagedAgent({
+      id: targetRecord.id,
+      provider: "codex",
+      cwd: targetRecord.cwd,
+      workspaceId: "wks_other",
+      persistence: targetRecord.persistence ?? undefined,
+    });
+    let loaded = false;
+    spies.agentManager.listAgents.mockImplementation(() =>
+      loaded ? [parentAgent, resumedTarget] : [parentAgent],
+    );
+    spies.agentManager.getAgent.mockImplementation((id: string) => {
+      if (id === parentAgent.id) return parentAgent;
+      if (id === targetRecord.id && loaded) return resumedTarget;
+      return null;
+    });
+    spies.agentStorage.list.mockResolvedValue([targetRecord]);
+    spies.agentStorage.get.mockImplementation(async (id: string) =>
+      id === targetRecord.id ? targetRecord : null,
+    );
+    spies.agentManager.getRegisteredProviderIds.mockReturnValue(["claude", "codex"]);
+    spies.agentManager.resumeAgentFromPersistence.mockImplementation(async () => {
+      loaded = true;
+      return resumedTarget;
+    });
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: parentAgent.id,
+      logger,
+    });
+
+    // 1. Direct lookup via native Codex session UUID before resume
+    const statusTool = registeredTool(server, "get_agent_status");
+    const statusRes = await statusTool.handler({
+      agentId: "01a1e963-d91f-7e22-b6bf-d2b5928b652c",
+    });
+    expect(statusRes.structuredContent.snapshot).toMatchObject({
+      id: targetRecord.id,
+      workspaceId: "wks_other",
+    });
+
+    // 2. Direct dispatch via native Codex session UUID uses nativeHistory cold resume
+    const sendTool = registeredTool(server, "send_agent_prompt");
+    const sendRes = await invokeToolWithParsedInput(sendTool, {
+      agentId: "01a1e963-d91f-7e22-b6bf-d2b5928b652c",
+      prompt: "Investigate animation flicker",
+    });
+    expect(sendRes.structuredContent).toMatchObject({
+      success: true,
+      agentId: targetRecord.id,
+    });
+    expect(spies.agentManager.resumeAgentFromPersistence).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "01a1e963-d91f-7e22-b6bf-d2b5928b652c" }),
+      expect.any(Object),
+      targetRecord.id,
+      expect.any(Object),
+      expect.objectContaining({
+        purpose: "interactive",
+        nativeHistory: true,
+        progressiveHistory: true,
+      }),
+    );
+    expect(spies.agentManager.hydrateTimelineFromProvider).not.toHaveBeenCalled();
+
+    // 3. Direct lookup via unique shortId prefix
+    const shortStatusRes = await statusTool.handler({ agentId: "20f727d" });
+    expect(shortStatusRes.structuredContent.snapshot).toMatchObject({ id: targetRecord.id });
+  });
+
+  it("throws an explicit error on ambiguous agentId prefix", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentStorage.list.mockResolvedValue([
+      createStoredRecord({ id: "abcd1111-first", title: "First" }),
+      createStoredRecord({ id: "abcd2222-second", title: "Second" }),
+    ]);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    const statusTool = registeredTool(server, "get_agent_status");
+    await expect(statusTool.handler({ agentId: "abcd" })).rejects.toThrow(/ambiguous/i);
+  });
+
+  it("supports sessionId, query, and allWorkspaces filters in list_agents and returns workspaceId/sessionId", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const caller = createManagedAgent({
+      id: "caller-agent",
+      cwd: REPO_CWD,
+      workspaceId: "wks_repo",
+      provider: "codex",
+      runtimeInfo: { provider: "codex", sessionId: "sess-caller", model: "gpt-5.4" },
+    });
+    const other = createStoredRecord({
+      id: "other-agent-id",
+      cwd: "/tmp/another-repo",
+      workspaceId: "wks_other",
+      provider: "codex",
+      title: "Proxy Setup",
+      archivedAt: null,
+      persistence: {
+        provider: "codex",
+        sessionId: "01a04388-3eb9-7711-b9fe-2cf90fd58460",
+      },
+    });
+    spies.agentManager.listAgents.mockReturnValue([caller]);
+    spies.agentManager.getAgent.mockImplementation((id: string) =>
+      id === caller.id ? caller : null,
+    );
+    spies.agentStorage.list.mockResolvedValue([other]);
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: caller.id,
+      logger,
+    });
+    const tool = registeredTool(server, "list_agents");
+
+    // sessionId automatically searches across workspaces
+    const bySession = await invokeToolWithParsedInput(tool, {
+      sessionId: "01a04388-3eb9-7711-b9fe-2cf90fd58460",
+    });
+    expect(bySession.structuredContent.agents).toEqual([
+      expect.objectContaining({
+        id: "other-agent-id",
+        workspaceId: "wks_other",
+        sessionId: "01a04388-3eb9-7711-b9fe-2cf90fd58460",
+      }),
+    ]);
+
+    // allWorkspaces + query finds cross-workspace agent by title
+    const byQuery = await invokeToolWithParsedInput(tool, {
+      allWorkspaces: true,
+      query: "proxy",
+    });
+    expect(byQuery.structuredContent.agents).toHaveLength(1);
+    expect(byQuery.structuredContent.agents[0]).toMatchObject({ id: "other-agent-id" });
+  });
+
+  it("resolves create_agent profile defaults, applies overrides, and returns effective runtime settings", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const parentAgent = createManagedAgent({
+      id: "parent-agent",
+      cwd: REPO_CWD,
+      workspaceId: "wks_parent",
+      provider: "codex",
+      currentModeId: "full-access",
+    });
+    spies.agentManager.getAgent.mockImplementation((id: string) =>
+      id === parentAgent.id ? parentAgent : null,
+    );
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-from-profile",
+        provider: "codex",
+        cwd: REPO_CWD,
+        workspaceId: "wks_parent",
+        currentModeId: "auto",
+        config: {
+          title: "Profile worker",
+          model: "gpt-5.4",
+          thinkingOptionId: "xhigh",
+        },
+        runtimeInfo: {
+          provider: "codex",
+          sessionId: "thread-child-1",
+          model: "gpt-5.4",
+          thinkingOptionId: "xhigh",
+        },
+        features: [
+          {
+            id: "fast_mode",
+            label: "Fast mode",
+            kind: "boolean",
+            value: true,
+          },
+        ],
+      }),
+    );
+
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      daemonConfigStore: daemonConfigStoreStub([
+        {
+          id: "prof-codex",
+          name: "Codex Fast",
+          provider: "codex",
+          model: "gpt-5.4",
+          modeId: "full-access",
+          thinkingOptionId: "high",
+          featureValues: { fast_mode: true },
+        },
+      ]),
+      callerAgentId: parentAgent.id,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+
+    const response = await invokeToolWithParsedInput(tool, {
+      title: "Profile worker",
+      profile: "codex fast",
+      settings: { modeId: "auto", thinkingOptionId: "xhigh" },
+      initialPrompt: "Run focused fix",
+    });
+
+    expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "codex",
+        model: "gpt-5.4",
+        modeId: "auto",
+        thinkingOptionId: "xhigh",
+        featureValues: { fast_mode: true },
+      }),
+      undefined,
+      expect.objectContaining({ workspaceId: "wks_parent" }),
+    );
+    expect(response.structuredContent).toMatchObject({
+      agentId: "child-from-profile",
+      workspaceId: "wks_parent",
+      sessionId: "thread-child-1",
+      model: "gpt-5.4",
+      thinkingOptionId: "xhigh",
+      effectiveThinkingOptionId: "xhigh",
+      currentModeId: "auto",
+      features: [expect.objectContaining({ id: "fast_mode", value: true })],
+    });
+
+    await expect(
+      invokeToolWithParsedInput(tool, {
+        title: "Unknown profile",
+        profile: "does-not-exist",
+        initialPrompt: "Test",
+      }),
+    ).rejects.toThrow(/Agent profile 'does-not-exist' not found/);
   });
 });

@@ -754,3 +754,23 @@
 - `packages/server/src/server/agent/tools/paseo-tools.ts`
 - `skills/paseo/SKILL.md`
 - `skills/paseo-advisor/SKILL.md`
+
+### 32. 智能体编排精简派发（跨标识定位、前置校验回传与冷恢复优化）
+
+- Paseo MCP 智能体操作入口（`send_agent_prompt`、`get_agent_status`、`get_agent_activity`、`update_agent`、`cancel_agent`、`archive_agent`、`kill_agent`、`set_agent_mode`、`respond_to_permission`）统一支持传入 Paseo `agentId`、跨工作区唯一 `shortId`/前缀（至少 4 位）或提供方原生 `sessionId`/`nativeHandle`（如 Codex 会话 UUID）；命中多条原生会话标识时优先匹配唯一未归档会话，仍有歧义则显式报错并列出候选。`list_agents` 返回体补充 `workspaceId` 与 `sessionId`，并新增 `allWorkspaces`、`sessionId`、`query` 筛选参数。
+- `create_agent` 支持可选 `profile` 参数（按 ID 或名称解析已保存档案，显式 `provider` 与 `settings` 覆盖档案默认值）；服务端在创建前对照提供方目录强校验显式传入的 `model` 与 `thinkingOptionId`（支持 Claude 运行时模型归一化与常用家族别名），不支持时直接报错拒绝；返回值直接携带生效的 `workspaceId`、`sessionId`、`model`、`thinkingOptionId`、`effectiveThinkingOptionId` 与 `features`，减少派发前连查目录和派发后补查状态。守护进程启动智能体会话时同步注入 `PASEO_WORKSPACE_ID` 环境变量，ACP 目录缓存复用将其视为内建变量。
+- `sendPromptToAgent` 冷恢复已释放运行时的 Codex 会话时默认启用原生分页历史（`nativeHistory` / `progressiveHistory`），`ensureAgentLoaded` 在原生历史可用时跳过全量旧时间线同步水合，避免向超长历史会话后台派发消息时长时间阻塞。
+- 同步精简 `skills/paseo/SKILL.md`：在 Paseo 托管会话内优先通过 Paseo MCP 派发或联系其他会话，已知具体目标与参数时直调 `create_agent`、按需探测并直接核对返回值。
+
+主要涉及：
+
+- `packages/protocol/src/messages.ts`
+- `packages/server/src/server/agent/agent-projections.ts`
+- `packages/server/src/server/agent/agent-manager.ts`
+- `packages/server/src/server/agent/agent-loading.ts`
+- `packages/server/src/server/agent/agent-prompt.ts`
+- `packages/server/src/server/agent/create-agent/create.ts`
+- `packages/server/src/server/agent/provider-snapshot-manager.ts`
+- `packages/server/src/server/agent/providers/acp-agent.ts`
+- `packages/server/src/server/agent/tools/paseo-tools.ts`
+- `skills/paseo/SKILL.md`

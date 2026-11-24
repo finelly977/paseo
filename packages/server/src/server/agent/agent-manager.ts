@@ -1550,6 +1550,7 @@ export class AgentManager {
       client,
       storedConfig.cwd,
       launchEnv,
+      options.workspaceId,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const createOptions = this.buildCreateSessionOptions(options);
@@ -1634,6 +1635,7 @@ export class AgentManager {
       client,
       storedConfig.cwd,
       launchEnv,
+      options?.workspaceId,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const session = await client.resumeSession(
@@ -1703,6 +1705,7 @@ export class AgentManager {
       client,
       storedConfig.cwd,
       launchEnv,
+      input.workspaceId,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const imported = await client.importSession(
@@ -1786,6 +1789,7 @@ export class AgentManager {
       client,
       storedConfig.cwd,
       launchEnv,
+      input.workspaceId,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const forkInput: ForkProviderSessionInput = {
@@ -1976,6 +1980,7 @@ export class AgentManager {
       client,
       storedConfig.cwd,
       launchEnv,
+      existing.workspaceId,
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
 
@@ -5910,6 +5915,7 @@ export class AgentManager {
     client: AgentClient,
     cwd: string,
     env?: Record<string, string>,
+    workspaceId?: string,
   ): Promise<AgentLaunchContext> {
     const context: AgentLaunchContext = {
       agentId,
@@ -5917,6 +5923,7 @@ export class AgentManager {
         ...env,
         PASEO_AGENT_ID: agentId,
         PASEO_AGENT_CWD: cwd,
+        ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
       },
     };
     if (

@@ -200,6 +200,10 @@ export interface SendPromptToAgentParams {
   unarchive?: boolean;
   /** 参见 {@link StartAgentRunOptions.clearPendingPermissions}。 */
   clearPendingPermissions?: boolean;
+  /** 冷恢复 Codex 会话时默认启用原生历史延迟加载，避免发消息前同步水合整段旧历史。 */
+  nativeHistory?: boolean;
+  /** 兼容不支持原生分页历史的旧版 Codex，冷恢复时优先渐进加载。 */
+  progressiveHistory?: boolean;
   logger: Logger;
 }
 
@@ -267,9 +271,15 @@ export async function sendPromptToAgent(
     await unarchiveAgentState(params.agentStorage, params.agentManager, params.agentId);
   }
 
+  const isCodexRecord = record?.provider === "codex";
+  const nativeHistory = params.nativeHistory ?? isCodexRecord;
+  const progressiveHistory = params.progressiveHistory ?? isCodexRecord;
+
   await ensureAgentLoaded(params.agentId, {
     agentManager: params.agentManager,
     agentStorage: params.agentStorage,
+    ...(nativeHistory ? { nativeHistory: true } : {}),
+    ...(progressiveHistory ? { progressiveHistory: true } : {}),
     logger: params.logger,
   });
 

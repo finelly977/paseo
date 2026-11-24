@@ -37,12 +37,81 @@ import {
   formatProviderDiagnostic,
   formatProviderDiagnosticError,
 } from "./providers/diagnostic-utils.js";
+import { normalizeClaudeRuntimeModelId } from "./providers/claude/model-manifest.js";
 import type { MutableDaemonConfig } from "../daemon-config-store.js";
 
 const DEFAULT_REFRESH_TIMEOUT_MS = 120_000;
 const DEFAULT_DIAGNOSTIC_TIMEOUT_MS = 120_000;
 const DEFAULT_PROVIDER_REFRESH_CONCURRENCY = 2;
 const REFRESH_TIMEOUT_ENV_VAR = "PASEO_PROVIDER_REFRESH_TIMEOUT_MS";
+const CLAUDE_MODEL_FAMILY_ALIASES = new Set([
+  "default",
+  "opus",
+  "sonnet",
+  "haiku",
+  "opus[1m]",
+  "sonnet[1m]",
+]);
+
+function formatAvailableModelIds(models: AgentModelDefinition[], limit = 12): string {
+  const ids = models.map((model) => model.id);
+  if (ids.length <= limit) {
+    return ids.join(", ");
+  }
+  return `${ids.slice(0, limit).join(", ")}, … (${ids.length} total)`;
+}
+
+function validateRequestedModelAndThinking(input: {
+  provider: AgentProvider;
+  requestedModel?: string;
+  requestedThinkingOptionId?: string;
+  availableModels: AgentModelDefinition[] | undefined;
+}): void {
+  const selectableModels = filterSelectableAgentModels(input.availableModels);
+  if (selectableModels.length === 0) {
+    return;
+  }
+
+  const requestedModel = input.requestedModel?.trim();
+  let matchedModel: AgentModelDefinition | undefined;
+  if (requestedModel) {
+    matchedModel = selectableModels.find((model) => model.id === requestedModel);
+    if (!matchedModel && input.provider === "claude") {
+      const normalizedClaudeId = normalizeClaudeRuntimeModelId(requestedModel);
+      if (normalizedClaudeId) {
+        matchedModel = selectableModels.find((model) => model.id === normalizedClaudeId);
+      }
+      if (!matchedModel && !CLAUDE_MODEL_FAMILY_ALIASES.has(requestedModel.toLowerCase())) {
+        throw new Error(
+          `Invalid model '${requestedModel}' for provider '${input.provider}'. Available models: ${formatAvailableModelIds(selectableModels)}`,
+        );
+      }
+    } else if (!matchedModel) {
+      throw new Error(
+        `Invalid model '${requestedModel}' for provider '${input.provider}'. Available models: ${formatAvailableModelIds(selectableModels)}`,
+      );
+    }
+  }
+
+  const requestedThinking = input.requestedThinkingOptionId?.trim();
+  if (!requestedThinking) {
+    return;
+  }
+
+  const targetModel =
+    matchedModel ?? selectableModels.find((model) => model.isDefault) ?? undefined;
+  if (!targetModel) {
+    return;
+  }
+  const thinkingOptions = targetModel.thinkingOptions;
+  if (thinkingOptions && thinkingOptions.length > 0) {
+    if (!thinkingOptions.some((option) => option.id === requestedThinking)) {
+      throw new Error(
+        `Invalid thinkingOptionId '${requestedThinking}' for model '${targetModel.id}' on provider '${input.provider}'. Supported thinking options: ${thinkingOptions.map((option) => option.id).join(", ")}`,
+      );
+    }
+  }
+}
 export const GLOBAL_PROVIDER_SNAPSHOT_KEY = "paseo:global";
 
 // Provider refresh probes can be slow on cold starts (e.g. Copilot's first
@@ -136,6 +205,8 @@ export interface ResolveProviderCreateConfigOptions {
   cwd?: string | null;
   provider: AgentProvider;
   requestedMode: string | undefined;
+  requestedModel?: string;
+  requestedThinkingOptionId?: string;
   featureValues: Record<string, unknown> | undefined;
   parent: ManagedAgent | null;
   unattended: boolean;
@@ -380,6 +451,12 @@ export class ProviderSnapshotManager {
       cwd: input.cwd,
       provider: input.provider,
       wait: true,
+    });
+    validateRequestedModelAndThinking({
+      provider: input.provider,
+      requestedModel: input.requestedModel,
+      requestedThinkingOptionId: input.requestedThinkingOptionId,
+      availableModels: entry.models,
     });
     const definition = this.requireProvider(input.provider);
     const parent = input.parent ? this.resolveParent(input.parent) : null;

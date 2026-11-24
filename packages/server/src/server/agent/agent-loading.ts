@@ -41,7 +41,11 @@ export type AgentLoaderManager = Pick<
   Partial<
     Pick<
       AgentManager,
-      "touchAgentActivity" | "waitForAgentClose" | "waitForAgentReload" | "waitForBackgroundHistory"
+      | "getNativeHistory"
+      | "touchAgentActivity"
+      | "waitForAgentClose"
+      | "waitForAgentReload"
+      | "waitForBackgroundHistory"
     >
   >;
 
@@ -203,7 +207,14 @@ export async function ensureAgentLoaded(
     }
 
     pendingOptions.phase = "hydrating";
-    if (!deps.nativeHistory)
+    const skipLegacyHydration =
+      deps.nativeHistory === true &&
+      (deps.agentManager.getNativeHistory
+        ? Boolean(
+            deps.agentManager.getAgent(agentId) && deps.agentManager.getNativeHistory(agentId),
+          )
+        : true);
+    if (!skipLegacyHydration)
       await deps.agentManager.hydrateTimelineFromProvider(agentId, {
         force: pendingOptions.replaceTimeline,
         broadcast: () => pendingOptions.broadcastTimeline || pendingOptions.replaceTimeline,

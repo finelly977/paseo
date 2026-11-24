@@ -35,9 +35,11 @@ paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 
 ## Agents
 
-**`create_agent`** — required: `title`, `provider` (`claude/opus`, `codex/gpt-5.4`, …), `initialPrompt`. Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. Returns `{ agentId, workspaceId, … }`.
+Inside a Paseo-managed agent session (`PASEO_AGENT_ID` / Paseo MCP tools present), prefer Paseo MCP tools to create or contact other agents/Codex sessions instead of shelling out to external delegation wrappers (such as `codexhost` or `codex exec resume`), unless the user explicitly asks for those tools.
 
-Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. Agent profiles are the preferred source for these values. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
+**`create_agent`** — required: `title`, `initialPrompt`, plus either `provider` (`claude/opus`, `codex/gpt-5.4`, …) or `profile` (saved profile id/name from `list_profiles`). Optional: `workspaceId`, `notifyOnFinish`, `settings`, `labels`. The server validates provider availability, `model`, `modeId`, and `thinkingOptionId` upfront and returns `{ agentId, workspaceId, sessionId, model, thinkingOptionId, effectiveThinkingOptionId, currentModeId, features, … }`. Read the effective settings straight from the `create_agent` response rather than following up with `get_agent_status`.
+
+Initial runtime settings live under `settings`: `modeId`, `thinkingOptionId`, and provider-specific `features`. Explicit `provider` or `settings` fields override values from `profile`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }` when creating the agent.
 
 Agent-scoped creation always creates your subagent. Omit `workspaceId` to use your current workspace; pass a workspace returned by `create_workspace` for isolated delegation. Placement never changes parentage.
 
@@ -45,28 +47,25 @@ Detach is an explicit user action in the subagents track, not an agent tool. A c
 
 Agent-scoped `create_agent` defaults `notifyOnFinish` to true. Set it to `false` only for truly fire-and-forget agents.
 
-**`send_agent_prompt`** — `{ agentId, prompt }`. Use for follow-ups to an existing agent. Agent-scoped prompt calls default to `background: true` and `notifyOnFinish: true`; top-level calls default to blocking with no callback. Keep the default `background: true` for normal agent-to-agent follow-ups — if you have nothing else to do, end your turn and let Paseo wake you via the finish notification. Only pass `background: false` when you expect a quick turn under 30s and genuinely need the reply in the same turn (if it times out while still running and `notifyOnFinish` is true, Paseo automatically arms a finish notification).
+**`send_agent_prompt`** — `{ agentId, prompt }`. Use for follow-ups to an existing agent. `agentId` accepts a Paseo `agentId`, a unique `shortId`/prefix (>= 4 chars), or a provider native `sessionId`/`threadId` (such as a Codex session UUID) across workspaces — call `send_agent_prompt` directly when you already have any of these IDs instead of probing `list_agents` or local session files first. Agent-scoped prompt calls default to `background: true` and `notifyOnFinish: true`; top-level calls default to blocking with no callback. Keep the default `background: true` for normal agent-to-agent follow-ups — if you have nothing else to do, end your turn and let Paseo wake you via the finish notification. Only pass `background: false` when you expect a quick turn under 30s and genuinely need the reply in the same turn (if it times out while still running and `notifyOnFinish` is true, Paseo automatically arms a finish notification).
+
+**`get_agent_status` / `get_agent_activity` / `cancel_agent` / `kill_agent` / `set_agent_mode` / `respond_to_permission`** — also accept Paseo `agentId`, unique `shortId`/prefix, or provider native `sessionId`.
 
 **`update_agent`** — `{ agentId, name?, labels?, settings? }`. Use `settings` for runtime changes on an existing agent: `modeId`, `model`, `thinkingOptionId`, and provider-specific `features`. For Codex fast mode, pass `settings: { features: { "fast_mode": true } }`.
 
-**`list_agents`** — filter by `cwd`, `statuses`, `sinceHours`, `includeArchived`.
+**`list_agents`** — returns compact metadata including `workspaceId` and `sessionId`. Filter by `cwd`, `allWorkspaces`, `sessionId`, `query`, `statuses`, `sinceHours`, `includeArchived`.
 
 **`archive_agent`** — `{ agentId }`. Interrupts if running, removes from active list.
 
 ## Agent profiles and provider discovery
 
-**`list_profiles`** — named launch bundles configured by the human. Before choosing how to launch a delegated agent, call this tool and read every profile's `notes`. Pick a named profile the user requested, or the profile whose notes best match the work.
+**`list_profiles`** — named launch bundles configured by the human. Call this when choosing an open-ended delegate (advisor, committee, handoff, or unspecified role) and read every profile's `notes` to pick the best fit. Skip `list_profiles` when the user or a dedicated skill already specifies the exact `provider/model` and settings.
 
-There is no `profile` parameter on `create_agent`. Materialize the selected profile into the call:
-
-- combine `provider` and `model` as the `provider/model` value for `create_agent.provider`
-- copy `modeId` to `settings.modeId`
-- copy `thinkingOptionId` to `settings.thinkingOptionId`
-- copy `featureValues` to `settings.features`
-
-Omit absent values. Do not remember a selected profile or infer drift later; a profile is only launch configuration.
+Pass the selected profile's id or name directly as `create_agent`'s `profile` parameter (or override individual `provider` / `settings` fields on `create_agent`). Do not remember a selected profile or infer drift later; a profile is only launch configuration.
 
 If no profile fits, or no profiles are configured, use the provider discovery tools below rather than guessing. Tell the user when you fall back because no configured profile fits.
+
+When you already have a concrete `provider/model` and settings (from the user or `orchestration-preferences.json`), call `create_agent` directly — do not run `list_providers`, `list_models`, and `inspect_provider` ritualistically before every dispatch. Call discovery tools only when choosing an unknown target, looking up feature IDs, or diagnosing a `create_agent` validation error.
 
 **`list_providers`** — compact provider availability and modes.
 

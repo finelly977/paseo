@@ -17,6 +17,7 @@ import {
 import type { AgentListItemPayload } from "../../messages.js";
 import {
   buildStoredAgentPayload,
+  resolveEffectiveThinkingOptionId,
   toAgentListItemPayload,
   toAgentPayload,
 } from "../agent-projections.js";
@@ -987,9 +988,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       .min(1, "Title is required")
       .max(60, "Title must be 60 characters or fewer")
       .describe("Short descriptive title (<= 60 chars) summarizing the agent's focus."),
-    provider: ProviderModelInputSchema.describe(
-      "Required provider/model pair, for example codex/gpt-5.4.",
+    provider: ProviderModelInputSchema.optional().describe(
+      "Provider/model pair, for example codex/gpt-5.4. Required unless `profile` supplies one.",
     ),
+    profile: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Optional saved agent profile id or name from list_profiles. Supplies default provider/model and settings; explicit provider or settings fields override the profile.",
+      ),
     labels: z.record(z.string(), z.string()).optional().describe("Labels to set on the agent"),
     settings: CreateAgentSettingsInputSchema.optional().describe(
       "Initial runtime settings for the new agent.",
@@ -1096,17 +1105,45 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       .optional()
       .describe("Legacy GitHub PR number. Prefer workspace.source.target.githubPrNumber."),
   };
+  const requireProviderOrProfile = (
+    data: { provider?: string; profile?: string },
+    ctx: z.RefinementCtx,
+  ) => {
+    if (!data.provider && !data.profile) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["provider"],
+        message: "provider (provider/model) or profile is required",
+      });
+    }
+  };
   const createAgentInputSchema = z
     .object(callerAgentId ? agentToAgentInputSchema : canonicalTopLevelInputSchema)
-    .passthrough();
-  const agentToAgentCreateAgentArgsSchema = z.object(agentToAgentInputSchema).strict();
-  const legacyAgentToAgentCreateAgentArgsSchema = z.object(legacyAgentToAgentInputSchema).strict();
-  const canonicalTopLevelCreateAgentArgsSchema = z.object(canonicalTopLevelInputSchema).strict();
+    .passthrough()
+    .superRefine(requireProviderOrProfile);
+  const agentToAgentCreateAgentArgsSchema = z
+    .object(agentToAgentInputSchema)
+    .strict()
+    .superRefine(requireProviderOrProfile);
+  const legacyAgentToAgentCreateAgentArgsSchema = z
+    .object(legacyAgentToAgentInputSchema)
+    .strict()
+    .superRefine(requireProviderOrProfile);
+  const canonicalTopLevelCreateAgentArgsSchema = z
+    .object(canonicalTopLevelInputSchema)
+    .strict()
+    .superRefine(requireProviderOrProfile);
   const legacyTopLevelCreateAgentArgsSchema = z
     .object(legacyTopLevelCreateAgentInputSchema)
-    .strict();
+    .strict()
+    .superRefine(requireProviderOrProfile);
+  const AgentIdentifierInputSchema = z
+    .string()
+    .describe(
+      "Agent identifier: accepts a Paseo agentId, unique shortId/prefix, or provider native sessionId/threadId (for example a Codex session UUID).",
+    );
   const commonSendAgentPromptInputSchema = {
-    agentId: z.string(),
+    agentId: AgentIdentifierInputSchema,
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
   };
@@ -1410,7 +1447,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent (omit workspaceId to stay in your current workspace). Top-level creation without workspaceId creates a new local workspace. Pass provider/model (for example codex/gpt-5.4) or a saved profile name/id, plus an initial prompt. The server validates provider availability, model, modeId, and thinkingOptionId upfront and returns effective runtime settings (model, thinkingOptionId, effectiveThinkingOptionId, currentModeId, features). Only call list_providers/list_models/inspect_provider if you don't know which target to use or need to diagnose an error.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1418,8 +1455,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         status: AgentStatusEnum,
         cwd: z.string(),
         workspaceId: z.string().optional(),
+        sessionId: z.string().optional(),
+        model: z.string().nullable(),
+        thinkingOptionId: z.string().nullable(),
+        effectiveThinkingOptionId: z.string().nullable(),
         currentModeId: z.string().nullable(),
         availableModes: z.array(ProviderModeSchema),
+        features: z.array(AgentFeatureSchema).optional(),
         lastMessage: z.string().nullable().optional(),
         permission: AgentPermissionRequestPayloadSchema.nullable().optional(),
         guidance: z.string().optional(),
@@ -1428,6 +1470,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     async (args: unknown) => {
       const resolvedArgs = await resolveCreateAgentToolArgs(args);
       const { parsedArgs, worktree } = resolvedArgs;
+      const resolvedLaunchConfig = resolveCreateAgentLaunchConfig(parsedArgs);
       let requestedBackground: boolean;
       let notifyOnFinish: boolean;
       if (resolvedArgs.kind === "agent-scoped") {
@@ -1457,15 +1500,15 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         },
         {
           kind: "mcp",
-          provider: parsedArgs.provider,
+          provider: resolvedLaunchConfig.provider,
           title: parsedArgs.title,
           initialPrompt: parsedArgs.initialPrompt,
           cwd: resolvedArgs.cwd,
           workspaceId: resolvedArgs.workspaceId,
-          thinking: parsedArgs.settings?.thinkingOptionId,
-          features: parsedArgs.settings?.features,
+          thinking: resolvedLaunchConfig.thinkingOptionId,
+          features: resolvedLaunchConfig.features,
           labels: parsedArgs.labels,
-          mode: parsedArgs.settings?.modeId,
+          mode: resolvedLaunchConfig.modeId,
           background: requestedBackground,
           notifyOnFinish,
           detached: resolvedArgs.detached,
@@ -1474,6 +1517,24 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           worktree,
         },
       );
+
+      const buildEffectiveSnapshotFields = (target: ManagedAgent) => {
+        const configuredThinking = target.config?.thinkingOptionId ?? null;
+        const sessionId =
+          target.persistence?.sessionId?.trim() ||
+          target.runtimeInfo?.sessionId?.trim() ||
+          undefined;
+        return {
+          ...(sessionId ? { sessionId } : {}),
+          model: target.runtimeInfo?.model ?? target.config?.model ?? null,
+          thinkingOptionId: configuredThinking,
+          effectiveThinkingOptionId: resolveEffectiveThinkingOptionId({
+            runtimeInfo: target.runtimeInfo,
+            configuredThinkingOptionId: configuredThinking,
+          }),
+          ...(Array.isArray(target.features) ? { features: target.features } : {}),
+        };
+      };
 
       try {
         if (!createdInBackground && initialPromptStarted) {
@@ -1488,6 +1549,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
             status: result.status,
             cwd: liveSnapshot.cwd,
             ...(liveSnapshot.workspaceId ? { workspaceId: liveSnapshot.workspaceId } : {}),
+            ...buildEffectiveSnapshotFields(liveSnapshot),
             currentModeId: liveSnapshot.currentModeId,
             availableModes: liveSnapshot.availableModes,
             lastMessage: result.lastMessage,
@@ -1520,6 +1582,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           status: currentSnapshot.lifecycle,
           cwd: currentSnapshot.cwd,
           ...(currentSnapshot.workspaceId ? { workspaceId: currentSnapshot.workspaceId } : {}),
+          ...buildEffectiveSnapshotFields(currentSnapshot),
           currentModeId: currentSnapshot.currentModeId,
           availableModes: currentSnapshot.availableModes,
           lastMessage: null,
@@ -1923,15 +1986,236 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     };
   }
 
+  function findConfiguredAgentProfile(profileRef: string) {
+    const profiles = (daemonConfigStore?.get().agentProfiles ?? []).map(resolveListedAgentProfile);
+    const exactIdMatch = profiles.find((entry) => entry.id === profileRef);
+    if (exactIdMatch) {
+      return exactIdMatch;
+    }
+    const normalizedRef = profileRef.toLowerCase();
+    const nameMatches = profiles.filter(
+      (entry) => entry.name.trim().toLowerCase() === normalizedRef,
+    );
+    if (nameMatches.length === 1) {
+      return nameMatches[0];
+    }
+    if (nameMatches.length > 1) {
+      throw new Error(
+        `Agent profile '${profileRef}' is ambiguous (ids: ${nameMatches.map((entry) => entry.id).join(", ")}). Pass the profile id instead.`,
+      );
+    }
+    const available = profiles.map((entry) => entry.name).filter(Boolean);
+    throw new Error(
+      available.length > 0
+        ? `Agent profile '${profileRef}' not found. Available profiles: ${available.join(", ")}`
+        : `Agent profile '${profileRef}' not found. No agent profiles are configured.`,
+    );
+  }
+
+  function resolveProfileProviderModel(
+    explicitProvider: string | undefined,
+    profile: ReturnType<typeof resolveListedAgentProfile>,
+  ): string {
+    const trimmedExplicit = explicitProvider?.trim();
+    if (trimmedExplicit) {
+      return trimmedExplicit;
+    }
+    const profileModel = profile.model?.trim();
+    if (!profileModel) {
+      throw new Error(
+        `Agent profile '${profile.name}' does not specify a model; pass provider as 'provider/model' explicitly.`,
+      );
+    }
+    return profile.provider.includes("/")
+      ? profile.provider
+      : `${profile.provider}/${profileModel}`;
+  }
+
+  function resolveCreateAgentLaunchConfig(parsedArgs: {
+    provider?: string;
+    profile?: string;
+    settings?: {
+      modeId?: string;
+      thinkingOptionId?: string;
+      features?: Record<string, unknown>;
+    };
+  }): {
+    provider: string;
+    modeId?: string;
+    thinkingOptionId?: string;
+    features?: Record<string, unknown>;
+  } {
+    if (!parsedArgs.profile) {
+      if (!parsedArgs.provider) {
+        throw new Error("provider (provider/model) or profile is required");
+      }
+      return {
+        provider: parsedArgs.provider,
+        modeId: parsedArgs.settings?.modeId,
+        thinkingOptionId: parsedArgs.settings?.thinkingOptionId,
+        features: parsedArgs.settings?.features,
+      };
+    }
+
+    const matched = findConfiguredAgentProfile(parsedArgs.profile.trim());
+    const provider = resolveProfileProviderModel(parsedArgs.provider, matched);
+
+    const mergedFeatures =
+      matched.featureValues || parsedArgs.settings?.features
+        ? {
+            ...matched.featureValues,
+            ...parsedArgs.settings?.features,
+          }
+        : undefined;
+
+    return {
+      provider,
+      modeId: parsedArgs.settings?.modeId ?? matched.modeId ?? undefined,
+      thinkingOptionId:
+        parsedArgs.settings?.thinkingOptionId ?? matched.thinkingOptionId ?? undefined,
+      features: mergedFeatures,
+    };
+  }
+
+  function collectNativeSessionIds(entry: {
+    persistence?: { sessionId?: string | null; nativeHandle?: unknown } | null;
+    runtimeInfo?: { sessionId?: string | null } | null;
+  }): Set<string> {
+    const ids = new Set<string>();
+    const persistenceSessionId = entry.persistence?.sessionId?.trim();
+    if (persistenceSessionId) {
+      ids.add(persistenceSessionId);
+    }
+    const nativeHandle =
+      typeof entry.persistence?.nativeHandle === "string"
+        ? entry.persistence.nativeHandle.trim()
+        : "";
+    if (nativeHandle) {
+      ids.add(nativeHandle);
+    }
+    const runtimeSessionId = entry.runtimeInfo?.sessionId?.trim();
+    if (runtimeSessionId) {
+      ids.add(runtimeSessionId);
+    }
+    return ids;
+  }
+
+  interface McpAgentIdCandidate {
+    id: string;
+    archivedAt: string | null;
+    title: string | null;
+    cwd: string;
+    sessionIds: Set<string>;
+  }
+
+  function buildMcpAgentIdCandidates(
+    liveAgents: ManagedAgent[],
+    storedRecords: Awaited<ReturnType<AgentStorage["list"]>>,
+  ): McpAgentIdCandidate[] {
+    const storedById = new Map(storedRecords.map((record) => [record.id, record]));
+    const candidates = new Map<string, McpAgentIdCandidate>();
+
+    for (const record of storedRecords) {
+      candidates.set(record.id, {
+        id: record.id,
+        archivedAt: record.archivedAt ?? null,
+        title: record.title ?? null,
+        cwd: record.cwd,
+        sessionIds: collectNativeSessionIds(record),
+      });
+    }
+    for (const live of liveAgents) {
+      const stored = storedById.get(live.id);
+      const existing = candidates.get(live.id);
+      const liveSessionIds = collectNativeSessionIds(live);
+      if (existing) {
+        for (const sid of liveSessionIds) {
+          existing.sessionIds.add(sid);
+        }
+      } else {
+        candidates.set(live.id, {
+          id: live.id,
+          archivedAt: stored?.archivedAt ?? null,
+          title: stored?.title ?? live.config?.title ?? null,
+          cwd: live.cwd,
+          sessionIds: liveSessionIds,
+        });
+      }
+    }
+
+    return Array.from(candidates.values());
+  }
+
+  function formatMcpAgentCandidates(
+    entries: Array<{ id: string; title: string | null; cwd: string }>,
+  ): string {
+    return entries
+      .slice(0, 5)
+      .map(
+        (entry) =>
+          `${entry.id.slice(0, 8)}${entry.title ? ` (${entry.title})` : ""} [${entry.cwd}]`,
+      )
+      .join(", ");
+  }
+
+  async function resolveMcpAgentId(agentIdOrRef: string): Promise<string> {
+    const query = agentIdOrRef.trim();
+    if (!query) {
+      throw new Error("agentId is required");
+    }
+
+    const liveAgents = agentManager.listAgents();
+    if (liveAgents.some((agent) => agent.id === query)) {
+      return query;
+    }
+
+    const storedRecords = (await agentStorage.list()).filter((record) => !record.internal);
+    if (storedRecords.some((record) => record.id === query)) {
+      return query;
+    }
+
+    const candidates = buildMcpAgentIdCandidates(liveAgents, storedRecords);
+    const sessionMatches = candidates.filter((entry) => entry.sessionIds.has(query));
+    if (sessionMatches.length === 1) {
+      return sessionMatches[0].id;
+    }
+    if (sessionMatches.length > 1) {
+      const activeSessionMatches = sessionMatches.filter((entry) => !entry.archivedAt);
+      if (activeSessionMatches.length === 1) {
+        return activeSessionMatches[0].id;
+      }
+      throw new Error(
+        `Agent identifier "${query}" matches multiple agents: ${formatMcpAgentCandidates(sessionMatches)}`,
+      );
+    }
+
+    if (query.length >= 4) {
+      const prefixMatches = candidates.filter((entry) => entry.id.startsWith(query));
+      if (prefixMatches.length === 1) {
+        return prefixMatches[0].id;
+      }
+      if (prefixMatches.length > 1) {
+        throw new Error(
+          `Agent identifier "${query}" is ambiguous: ${formatMcpAgentCandidates(prefixMatches)}`,
+        );
+      }
+    }
+
+    // No alias matched: return the trimmed identifier so downstream handlers
+    // execute their standard exact lookup and error reporting.
+    return query;
+  }
+
   registerTool(
     "send_agent_prompt",
     {
       title: "Send agent prompt",
       description:
-        "Send a task to a running agent. Agent-scoped callers run in background by default; top-level callers wait by default.",
+        "Send a task to an existing agent (accepts Paseo agentId, unique shortId/prefix, or provider native sessionId such as a Codex thread/session UUID). Agent-scoped callers run in background by default; top-level callers wait by default.",
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
+        agentId: z.string(),
         status: AgentStatusEnum,
         lastMessage: z.string().nullable().optional(),
         permission: AgentPermissionRequestPayloadSchema.nullable().optional(),
@@ -1945,12 +2229,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       background = Boolean(callerAgentId),
       notifyOnFinish = Boolean(callerAgentId),
     }) => {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
       const shouldNotifyOnFinish = Boolean(callerAgentId && notifyOnFinish && background);
 
       await sendPromptToAgent({
         agentManager,
         agentStorage,
-        agentId,
+        agentId: resolvedAgentId,
         prompt,
         sessionMode,
         logger: childLogger,
@@ -1960,7 +2245,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         setupFinishNotification({
           agentManager,
           agentStorage,
-          childAgentId: agentId,
+          childAgentId: resolvedAgentId,
           callerAgentId,
           logger: childLogger,
         });
@@ -1969,12 +2254,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       // If not running in background, wait for completion
       if (!background) {
         const outcome = await resolveBlockingPromptOutcome({
-          agentId,
+          agentId: resolvedAgentId,
           notifyOnFinish,
         });
 
         const responseData = {
           success: true,
+          agentId: resolvedAgentId,
           status: outcome.status,
           lastMessage: outcome.lastMessage,
           permission: sanitizePermissionRequest(outcome.permission),
@@ -1991,10 +2277,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
 
       // Return immediately if background=true
       // Re-fetch snapshot since the state may have changed
-      const currentSnapshot = agentManager.getAgent(agentId);
+      const currentSnapshot = agentManager.getAgent(resolvedAgentId);
 
       const responseData = {
         success: true,
+        agentId: resolvedAgentId,
         status: currentSnapshot?.lifecycle ?? "idle",
         lastMessage: null,
         permission: null,
@@ -2019,9 +2306,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     {
       title: "Get agent status",
       description:
-        "Return the latest snapshot for an agent, including lifecycle state, capabilities, and pending permissions.",
+        "Return the latest snapshot for an agent (accepts Paseo agentId, unique shortId/prefix, or provider native sessionId/threadId), including lifecycle state, capabilities, and pending permissions.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
       },
       outputSchema: {
         status: AgentStatusEnum,
@@ -2029,7 +2316,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId }) => {
-      const snapshot = agentManager.getAgent(agentId);
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
+      const snapshot = agentManager.getAgent(resolvedAgentId);
       if (snapshot) {
         const structuredSnapshot = await serializeSnapshotWithMetadata(
           agentStorage,
@@ -2045,9 +2333,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         };
       }
 
-      const record = await agentStorage.get(agentId);
+      const record = await agentStorage.get(resolvedAgentId);
       if (!record || record.internal) {
-        throw new Error(`Agent ${agentId} not found`);
+        throw new Error(`Agent ${resolvedAgentId} not found`);
       }
 
       const structuredSnapshot = buildStoredAgentPayload(
@@ -2068,10 +2356,32 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     "list_agents",
     {
       title: "List agents",
-      description: "List recent agents as compact metadata.",
+      description:
+        "List recent agents as compact metadata, including workspaceId and provider native sessionId. Supports filtering by sessionId, free-text query, or allWorkspaces.",
       inputSchema: {
         includeArchived: z.boolean().optional().default(false),
         cwd: z.string().optional(),
+        allWorkspaces: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe(
+            "When true, ignore the default caller cwd filter and search across all workspaces.",
+          ),
+        sessionId: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe(
+            "Filter by exact provider native sessionId/threadId (searches across all workspaces unless cwd is also specified).",
+          ),
+        query: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Case-insensitive substring filter on id, shortId, sessionId, title, or cwd."),
         sinceHours: z
           .number()
           .int()
@@ -2086,9 +2396,25 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         agents: z.array(AgentListItemPayloadSchema),
       },
     },
-    async ({ includeArchived = false, cwd, sinceHours = 48, statuses, limit = 50 }) => {
+    async ({
+      includeArchived = false,
+      cwd,
+      allWorkspaces = false,
+      sessionId,
+      query,
+      sinceHours = 48,
+      statuses,
+      limit = 50,
+    }) => {
       const callerCwd = callerAgentId ? resolveCallerAgent()?.cwd : undefined;
-      const requestedCwd = cwd?.trim() ? expandUserPath(cwd) : callerCwd;
+      const normalizedSessionId = sessionId?.trim();
+      const normalizedQuery = query?.trim().toLowerCase();
+      let requestedCwd: string | undefined;
+      if (cwd?.trim()) {
+        requestedCwd = expandUserPath(cwd);
+      } else if (!allWorkspaces && !normalizedSessionId) {
+        requestedCwd = callerCwd;
+      }
       const statusFilter = statuses && statuses.length > 0 ? new Set(statuses) : null;
       const sinceMs = Date.now() - sinceHours * 60 * 60 * 1000;
       const liveSnapshots = agentManager.listAgents();
@@ -2109,9 +2435,23 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         )
         .map((record) => buildStoredAgentPayload(record, registeredProviderIds));
       const agents = [...liveAgents, ...storedAgents]
+        .filter(
+          (agent) =>
+            !normalizedSessionId || collectNativeSessionIds(agent).has(normalizedSessionId),
+        )
         .map(toAgentListItemPayload)
         .filter((agent) => !requestedCwd || isSameOrDescendantPath(requestedCwd, agent.cwd))
         .filter((agent) => !statusFilter || statusFilter.has(agent.status))
+        .filter((agent) => {
+          if (!normalizedQuery) return true;
+          return (
+            agent.id.toLowerCase().includes(normalizedQuery) ||
+            agent.shortId.toLowerCase().includes(normalizedQuery) ||
+            (agent.sessionId ?? "").toLowerCase().includes(normalizedQuery) ||
+            (agent.title ?? "").toLowerCase().includes(normalizedQuery) ||
+            agent.cwd.toLowerCase().includes(normalizedQuery)
+          );
+        })
         .filter((agent) => !agent.archivedAt || resolveAgentListActivityTime(agent) >= sinceMs)
         .sort(compareAgentListItems)
         .slice(0, limit);
@@ -2129,16 +2469,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       title: "Cancel agent run",
       description: "Abort the agent's current run but keep the agent alive for future tasks.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
       },
       outputSchema: {
         success: z.boolean(),
       },
     },
     async ({ agentId }) => {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
       const { cancelled } = await cancelAgentRunCommand(
         { agentManager, logger: childLogger },
-        agentId,
+        resolvedAgentId,
       );
       return {
         content: [],
@@ -2154,20 +2495,21 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       description:
         "Archive an agent (soft-delete). The agent is interrupted if running and removed from the active list.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
       },
       outputSchema: {
         success: z.boolean(),
       },
     },
     async ({ agentId }) => {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
       await archiveAgentCommand(
         {
           agentManager,
           agentStorage,
           logger: childLogger,
         },
-        agentId,
+        resolvedAgentId,
       );
       return {
         content: [],
@@ -2182,14 +2524,15 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       title: "Kill agent",
       description: "Terminate an agent session permanently.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
       },
       outputSchema: {
         success: z.boolean(),
       },
     },
     async ({ agentId }) => {
-      await closeAgentCommand({ agentManager }, agentId);
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
+      await closeAgentCommand({ agentManager }, resolvedAgentId);
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true }),
@@ -2203,7 +2546,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       title: "Update agent",
       description: "Update an agent name, labels, and/or runtime settings.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
         name: z.string().optional(),
         labels: z.record(z.string(), z.string()).optional().describe("Labels to set on the agent"),
         settings: UpdateAgentSettingsInputSchema.optional().describe(
@@ -2215,22 +2558,23 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, name, labels, settings }) => {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
       if (settings?.modeId !== undefined) {
-        await agentManager.setAgentMode(agentId, settings.modeId);
+        await agentManager.setAgentMode(resolvedAgentId, settings.modeId);
       }
       if (settings?.model !== undefined) {
-        await agentManager.setAgentModel(agentId, settings.model);
+        await agentManager.setAgentModel(resolvedAgentId, settings.model);
       }
       if (settings?.thinkingOptionId !== undefined) {
-        await agentManager.setAgentThinkingOption(agentId, settings.thinkingOptionId);
+        await agentManager.setAgentThinkingOption(resolvedAgentId, settings.thinkingOptionId);
       }
       if (settings?.features) {
         for (const [featureId, value] of Object.entries(settings.features)) {
-          await agentManager.setAgentFeature(agentId, featureId, value);
+          await agentManager.setAgentFeature(resolvedAgentId, featureId, value);
         }
       }
 
-      await updateAgentCommand({ agentManager }, { agentId, name, labels });
+      await updateAgentCommand({ agentManager }, { agentId: resolvedAgentId, name, labels });
 
       return {
         content: [],
@@ -2995,8 +3339,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       description:
         "List agent profiles: saved provider/model/mode bundles a human configured for specific " +
         "kinds of work. Read each profile's `notes` to pick the one that fits the task you're " +
-        "delegating, then copy its `provider`, `model`, `modeId`, `thinkingOptionId`, and " +
-        "`featureValues` into create_agent (there is no `profile` parameter). Returns an empty " +
+        "delegating, then pass its name or id as create_agent's `profile` parameter (or override " +
+        "individual provider/settings fields on create_agent). Returns an empty " +
         "list if none are configured.",
       inputSchema: {},
       outputSchema: {
@@ -3082,7 +3426,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       title: "Get agent activity",
       description: "Return recent agent timeline entries as a curated summary.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
         limit: z
           .number()
           .optional()
@@ -3096,14 +3440,15 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, limit }) => {
-      await ensureAgentLoaded(agentId, {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
+      await ensureAgentLoaded(resolvedAgentId, {
         agentManager,
         agentStorage,
         logger: childLogger,
       });
-      await agentManager.ensureCanonicalHistory(agentId);
-      const timeline = agentManager.getTimeline(agentId);
-      const snapshot = agentManager.getAgent(agentId);
+      await agentManager.ensureCanonicalHistory(resolvedAgentId);
+      const timeline = agentManager.getTimeline(resolvedAgentId);
+      const snapshot = agentManager.getAgent(resolvedAgentId);
 
       const selection = selectItemsByProjectedLimit({
         items: timeline,
@@ -3124,7 +3469,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       return {
         content: [],
         structuredContent: ensureValidJson({
-          agentId,
+          agentId: resolvedAgentId,
           updateCount: timeline.length,
           currentModeId: snapshot?.currentModeId ?? null,
           content: contentWithCount,
@@ -3140,7 +3485,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       description:
         "Switch the agent's session mode (plan, bypassPermissions, read-only, auto, etc.).",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
         modeId: z.string(),
       },
       outputSchema: {
@@ -3149,7 +3494,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, modeId }) => {
-      const result = await setAgentModeCommand({ agentManager }, { agentId, modeId });
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
+      const result = await setAgentModeCommand(
+        { agentManager },
+        { agentId: resolvedAgentId, modeId },
+      );
       return {
         content: [],
         structuredContent: ensureValidJson({ success: true, newMode: result.modeId }),
@@ -3198,7 +3547,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       description:
         "Approve or deny a pending permission request with an AgentManager-compatible response payload.",
       inputSchema: {
-        agentId: z.string(),
+        agentId: AgentIdentifierInputSchema,
         requestId: z.string(),
         response: AgentPermissionResponseSchema,
       },
@@ -3207,9 +3556,10 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, requestId, response }) => {
+      const resolvedAgentId = await resolveMcpAgentId(agentId);
       await respondToAgentPermission({
         agentManager,
-        agentId,
+        agentId: resolvedAgentId,
         requestId,
         response,
         logger: childLogger,

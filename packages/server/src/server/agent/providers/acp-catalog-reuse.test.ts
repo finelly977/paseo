@@ -44,7 +44,13 @@ describe("ACP 恢复模型目录复用", () => {
     const resumed = client.resumeSession(
       { provider: "acp", sessionId: "old", metadata: { cwd: "/workspace" } },
       undefined,
-      { env: { PASEO_AGENT_ID: "agent-1", PASEO_AGENT_CWD: "/workspace" } },
+      {
+        env: {
+          PASEO_AGENT_ID: "agent-1",
+          PASEO_AGENT_CWD: "/workspace",
+          PASEO_WORKSPACE_ID: "wks_1",
+        },
+      },
     );
     const models = client.fetchCatalog({ scope: "workspace", cwd: "/workspace", force: false });
     initialized.resolve();

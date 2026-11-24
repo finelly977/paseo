@@ -247,9 +247,13 @@ export function buildStoredAgentPayload(
 }
 
 export function toAgentListItemPayload(agent: AgentSnapshotPayload): AgentListItemPayload {
+  const sessionId =
+    agent.persistence?.sessionId?.trim() || agent.runtimeInfo?.sessionId?.trim() || undefined;
   return {
     id: agent.id,
     shortId: agent.id.slice(0, 7),
+    ...(agent.workspaceId ? { workspaceId: agent.workspaceId } : {}),
+    ...(sessionId ? { sessionId } : {}),
     title: agent.title,
     provider: agent.provider,
     model: agent.runtimeInfo?.model ?? agent.model,

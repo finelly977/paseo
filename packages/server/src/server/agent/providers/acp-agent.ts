@@ -990,7 +990,8 @@ export class ACPAgentClient implements AgentClient {
   ): Promise<AgentSession> {
     const ready = initialize();
     const hasCustomEnv = Object.keys(launchContext?.env ?? {}).some(
-      (name) => name !== "PASEO_AGENT_ID" && name !== "PASEO_AGENT_CWD",
+      (name) =>
+        name !== "PASEO_AGENT_ID" && name !== "PASEO_AGENT_CWD" && name !== "PASEO_WORKSPACE_ID",
     );
     if (this.catalogModelResolver || hasCustomEnv) {
       await ready;

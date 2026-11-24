@@ -995,6 +995,8 @@ export type AgentSnapshotPayload = z.infer<typeof AgentSnapshotPayloadSchema>;
 export const AgentListItemPayloadSchema = z.object({
   id: z.string(),
   shortId: z.string(),
+  workspaceId: z.string().optional(),
+  sessionId: z.string().optional(),
   title: z.string().nullable(),
   provider: AgentProviderSchema,
   model: z.string().nullable(),

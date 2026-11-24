@@ -1228,6 +1228,12 @@ class FakeAgentClient implements AgentClient {
         models: [
           { provider: this.provider, id: "haiku", label: "Haiku", isDefault: true },
           { provider: this.provider, id: "sonnet", label: "Sonnet", isDefault: false },
+          {
+            provider: this.provider,
+            id: "claude-test-model",
+            label: "Claude Test Model",
+            isDefault: false,
+          },
         ],
         modes: TEST_MODES,
       };
