@@ -3,7 +3,8 @@ import { Text, View, type PressableStateCallbackType } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { Settings2, Server } from "lucide-react-native";
-import type { Theme } from "@/styles/theme";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
+import { ICON_SIZE, type Theme } from "@/styles/theme";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,7 +25,16 @@ import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 
 const ThemedSettings2 = withUnistyles(Settings2);
 const ThemedServer = withUnistyles(Server);
-const filterColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
+const accentColorMapping = (theme: Theme) => ({ color: theme.colors.accent });
+
+function resolveFilterIconMapping(active: boolean, highlighted: boolean) {
+  if (active) {
+    return accentColorMapping;
+  }
+  return highlighted ? foregroundColorMapping : mutedColorMapping;
+}
 
 const GROUP_MODE_ITEMS: Array<{ value: SidebarGroupMode; labelKey: "project" | "status" }> = [
   { value: "project", labelKey: "project" },
@@ -87,15 +97,17 @@ export function SidebarDisplayPreferencesMenu() {
   );
 
   const triggerStyle = useCallback(
-    ({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+    ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.trigger,
-      hovered && styles.triggerHovered,
+      (hovered || pressed) && styles.triggerHovered,
+      pressed && styles.triggerPressed,
     ],
     [],
   );
 
   const showProjectFilter = allProjects.length > 1 || projectFilters.length > 0;
   const allProjectsSelected = resolvedProjectFilters.length === 0;
+  const hasProjectFilter = resolvedProjectFilters.length > 0;
 
   return (
     <DropdownMenu>
@@ -105,7 +117,15 @@ export function SidebarDisplayPreferencesMenu() {
         accessibilityLabel={t("sidebar.displayPreferences.ariaLabel")}
         testID="sidebar-display-preferences-menu"
       >
-        <ThemedSettings2 size={14} uniProps={filterColorMapping} />
+        {({ hovered, pressed }) => (
+          <>
+            <ThemedSettings2
+              size={ICON_SIZE.sm}
+              uniProps={resolveFilterIconMapping(hasProjectFilter, Boolean(hovered || pressed))}
+            />
+            {hasProjectFilter ? <View style={styles.filterDot} /> : null}
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" width={220} testID="sidebar-display-preferences-content">
         <View style={styles.menuHeader}>
@@ -196,11 +216,12 @@ export function SidebarHostFilterMenu() {
   const clearHostFilters = useSidebarViewStore((state) => state.clearHostFilters);
   const filtered = hostFilters.length > 0;
   const triggerStyle = useCallback(
-    ({ hovered = false }: PressableStateCallbackType & { hovered?: boolean }) => [
+    ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.trigger,
-      (hovered || filtered) && styles.triggerHovered,
+      (hovered || pressed) && styles.triggerHovered,
+      pressed && styles.triggerPressed,
     ],
-    [filtered],
+    [],
   );
   return (
     <DropdownMenu compact={platformIsWeb}>
@@ -211,8 +232,15 @@ export function SidebarHostFilterMenu() {
         }
         testID="sidebar-host-filter-menu"
       >
-        <ThemedServer size={14} uniProps={filterColorMapping} />
-        {filtered ? <View style={styles.filterDot} /> : null}
+        {({ hovered, pressed }) => (
+          <>
+            <ThemedServer
+              size={ICON_SIZE.sm}
+              uniProps={resolveFilterIconMapping(filtered, Boolean(hovered || pressed))}
+            />
+            {filtered ? <View style={styles.filterDot} /> : null}
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
@@ -336,20 +364,25 @@ const styles = StyleSheet.create((theme) => ({
     position: "absolute",
     right: 3,
     top: 3,
-    width: 5,
-    height: 5,
+    width: 6,
+    height: 6,
     borderRadius: theme.borderRadius.full,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.5,
+    borderColor: theme.colors.surfaceSidebar,
   },
   trigger: {
-    width: 28,
-    height: 28,
+    width: { xs: 32, md: 26 },
+    height: { xs: 32, md: 26 },
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.md,
   },
   triggerHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  triggerPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
   },
   menuHeader: {
     paddingHorizontal: theme.spacing[3],

@@ -10,9 +10,11 @@ import {
   getHistoryIndexWaveScale,
   HISTORY_INDEX_MAX_HEIGHT,
   HISTORY_INDEX_MARKER_PITCH,
+  HISTORY_INDEX_WHEEL_SCALE,
   mergeConversationHistoryIndexEntries,
   buildHistoryIndexItemOwners,
   resolveHistoryIndexRailLayout,
+  resolveHistoryIndexWheelDeltaPx,
 } from "./history-index-model";
 
 function loadedEntry(id: string, seq?: number): ConversationHistoryIndexEntry {
@@ -287,5 +289,27 @@ describe("conversation history index model", () => {
       loaded: [loadedEntry("a", 1), loadedEntry("proj-b")],
     });
     expect(merged.map((entry) => entry.id)).toEqual(["a", "proj-b"]);
+  });
+
+  it("按 8px 刻度密度缩放滚轮增量并限制单次最大位移", () => {
+    expect(resolveHistoryIndexWheelDeltaPx({ deltaY: 0, deltaMode: 0, railHeight: 480 })).toBe(0);
+    expect(
+      resolveHistoryIndexWheelDeltaPx({ deltaY: Number.NaN, deltaMode: 0, railHeight: 480 }),
+    ).toBe(0);
+    // 典型 Windows 鼠标滚轮一格 100px 缩放后约 28px（约 3.5 轮）
+    expect(
+      resolveHistoryIndexWheelDeltaPx({ deltaY: -100, deltaMode: 0, railHeight: 480 }),
+    ).toBeCloseTo(-100 * HISTORY_INDEX_WHEEL_SCALE);
+    // 行模式（deltaMode=1）按 16px/行换算后再缩放
+    expect(
+      resolveHistoryIndexWheelDeltaPx({ deltaY: -3, deltaMode: 1, railHeight: 480 }),
+    ).toBeCloseTo(-3 * 16 * HISTORY_INDEX_WHEEL_SCALE);
+    // 单次超大滚轮或页模式（deltaMode=2）限制在轨道高度的 25%（120px）以内
+    expect(resolveHistoryIndexWheelDeltaPx({ deltaY: -2000, deltaMode: 0, railHeight: 480 })).toBe(
+      -120,
+    );
+    expect(resolveHistoryIndexWheelDeltaPx({ deltaY: -1, deltaMode: 2, railHeight: 480 })).toBe(
+      -120,
+    );
   });
 });

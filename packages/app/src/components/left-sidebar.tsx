@@ -69,6 +69,8 @@ import {
   buildSettingsRoute,
 } from "@/utils/host-routes";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import { SidebarAgentListSkeleton } from "./sidebar-agent-list-skeleton";
 import { SidebarCalloutSlot } from "./sidebar-callout-slot";
@@ -500,7 +502,7 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
 }: {
   label: string;
   testID: string;
-  variant: "header" | "compact";
+  variant: "header" | "compact" | "primary";
   shortcutKeys: ShortcutKey[][] | null;
   onBeforeNavigate?: () => void;
 }) {
@@ -545,6 +547,119 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
     />
   );
 });
+
+const SELECTED_ACCESSIBILITY_STATE = { selected: true } as const;
+const UNSELECTED_ACCESSIBILITY_STATE = { selected: false } as const;
+
+interface SidebarQuickNavItemProps {
+  icon: typeof FolderPlus;
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+  testID: string;
+}
+
+function SidebarQuickNavItem({ icon, label, isActive, onPress, testID }: SidebarQuickNavItemProps) {
+  const buttonStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.quickNavItem,
+      isActive && styles.quickNavItemActive,
+      !isActive && Boolean(hovered) && styles.quickNavItemHovered,
+      pressed && styles.quickNavItemPressed,
+    ],
+    [isActive],
+  );
+  return (
+    <Tooltip delayDuration={450}>
+      <TooltipTrigger asChild>
+        <Pressable
+          onPress={onPress}
+          testID={testID}
+          nativeID={testID}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={
+            isActive ? SELECTED_ACCESSIBILITY_STATE : UNSELECTED_ACCESSIBILITY_STATE
+          }
+          hitSlop={2}
+          style={buttonStyle}
+        >
+          {({ hovered }) => {
+            const isHighlighted = isActive || Boolean(hovered);
+            return (
+              <>
+                <ThemedSidebarIcon
+                  icon={icon}
+                  size={ICON_SIZE.sm}
+                  tone={isHighlighted ? "foreground" : "muted"}
+                  uniProps={sidebarIconColorMapping}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.quickNavLabel,
+                    isHighlighted && styles.quickNavLabelHighlighted,
+                    isActive && styles.quickNavLabelActive,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </>
+            );
+          }}
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="center" offset={6}>
+        <IconTooltipContent label={label} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SidebarQuickNavRow({
+  labels,
+  isSessionsActive,
+  isSchedulesActive,
+  isPluginsActive,
+  onViewMore,
+  onViewSchedules,
+  onViewPlugins,
+}: {
+  labels: Pick<SidebarLabels, "sessions" | "schedules" | "plugins">;
+  isSessionsActive: boolean;
+  isSchedulesActive: boolean;
+  isPluginsActive: boolean;
+  onViewMore: () => void;
+  onViewSchedules: () => void;
+  onViewPlugins: () => void;
+}) {
+  return (
+    <View style={styles.quickNavRow} dataSet={COMPACT_LABEL_DATASET}>
+      <SidebarQuickNavItem
+        icon={History}
+        label={labels.sessions}
+        isActive={isSessionsActive}
+        onPress={onViewMore}
+        testID="sidebar-sessions"
+      />
+      <SidebarQuickNavItem
+        icon={CalendarClock}
+        label={labels.schedules}
+        isActive={isSchedulesActive}
+        onPress={onViewSchedules}
+        testID="sidebar-schedules"
+      />
+      <SidebarQuickNavItem
+        icon={Blocks}
+        label={labels.plugins}
+        isActive={isPluginsActive}
+        onPress={onViewPlugins}
+        testID="sidebar-codex-plugins"
+      />
+    </View>
+  );
+}
 
 function SidebarFooter({
   handleOpenProject,
@@ -671,7 +786,7 @@ function MobileSidebar({
               <SidebarNewWorkspaceHeaderRow
                 label={labels.newWorkspace}
                 testID="sidebar-global-new-workspace"
-                variant="compact"
+                variant="primary"
                 shortcutKeys={newWorkspaceKeys}
                 onBeforeNavigate={closeSidebar}
               />
@@ -681,6 +796,7 @@ function MobileSidebar({
               onPress={closeSidebar}
               testID="sidebar-close"
               nativeID="sidebar-close"
+              hitSlop={6}
               accessible
               accessibilityRole="button"
               accessibilityLabel={labels.closeSidebar}
@@ -695,29 +811,14 @@ function MobileSidebar({
               )}
             </Pressable>
           </WindowChromeSafeArea>
-          <SidebarHeaderRow
-            icon={History}
-            label={labels.sessions}
-            onPress={handleViewMore}
-            isActive={isSessionsActive}
-            testID="sidebar-sessions"
-            variant="compact"
-          />
-          <SidebarHeaderRow
-            icon={CalendarClock}
-            label={labels.schedules}
-            onPress={handleViewSchedules}
-            isActive={isSchedulesActive}
-            testID="sidebar-schedules"
-            variant="compact"
-          />
-          <SidebarHeaderRow
-            icon={Blocks}
-            label={labels.plugins}
-            onPress={handleViewPlugins}
-            isActive={pathname.includes("/codex-plugins")}
-            testID="sidebar-codex-plugins"
-            variant="compact"
+          <SidebarQuickNavRow
+            labels={labels}
+            isSessionsActive={isSessionsActive}
+            isSchedulesActive={isSchedulesActive}
+            isPluginsActive={pathname.includes("/codex-plugins")}
+            onViewMore={handleViewMore}
+            onViewSchedules={handleViewSchedules}
+            onViewPlugins={handleViewPlugins}
           />
           <PluginSidebarItems onBeforeNavigate={closeSidebar} />
         </View>
@@ -866,32 +967,17 @@ function DesktopSidebar({
             <SidebarNewWorkspaceHeaderRow
               label={labels.newWorkspace}
               testID="sidebar-global-new-workspace"
-              variant="compact"
+              variant="primary"
               shortcutKeys={newWorkspaceKeys}
             />
-            <SidebarHeaderRow
-              icon={History}
-              label={labels.sessions}
-              onPress={handleViewMore}
-              isActive={isSessionsActive}
-              testID="sidebar-sessions"
-              variant="compact"
-            />
-            <SidebarHeaderRow
-              icon={CalendarClock}
-              label={labels.schedules}
-              onPress={handleViewSchedules}
-              isActive={isSchedulesActive}
-              testID="sidebar-schedules"
-              variant="compact"
-            />
-            <SidebarHeaderRow
-              icon={Blocks}
-              label={labels.plugins}
-              onPress={handleViewPlugins}
-              isActive={pathname.includes("/codex-plugins")}
-              testID="sidebar-codex-plugins"
-              variant="compact"
+            <SidebarQuickNavRow
+              labels={labels}
+              isSessionsActive={isSessionsActive}
+              isSchedulesActive={isSchedulesActive}
+              isPluginsActive={pathname.includes("/codex-plugins")}
+              onViewMore={handleViewMore}
+              onViewSchedules={handleViewSchedules}
+              onViewPlugins={handleViewPlugins}
             />
             <PluginSidebarItems />
           </View>
@@ -940,6 +1026,9 @@ function DesktopSidebar({
 
 function WorkspacesSectionHeader() {
   const { t } = useTranslation();
+  const hosts = useHosts();
+  const hostFilters = useSidebarViewStore((state) => state.hostFilters);
+  const { resolvedProjectFilters } = useSidebarModel();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
   const handleSearchPress = useCallback(() => setCommandCenterOpen(true), [setCommandCenterOpen]);
@@ -947,19 +1036,39 @@ function WorkspacesSectionHeader() {
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.workspacesHeaderIconButton,
       (hovered || pressed) && styles.workspacesHeaderIconButtonHovered,
+      pressed && styles.workspacesHeaderIconButtonPressed,
     ],
     [],
   );
+  const searchLabel = t("common.actions.search");
+  const displayPreferencesTooltip =
+    resolvedProjectFilters.length > 0
+      ? `${t("sidebar.displayPreferences.ariaLabel")} · ${resolvedProjectFilters.length}`
+      : t("sidebar.displayPreferences.ariaLabel");
+  const hostFilterTooltip = useMemo(() => {
+    if (hostFilters.length === 0) {
+      return "筛选主机";
+    }
+    if (hostFilters.length === 1) {
+      const targetId = hostFilters[0];
+      const host = hosts.find((candidate) => candidate.serverId === targetId);
+      const label = host?.label?.trim() || targetId;
+      return `筛选主机：${label}`;
+    }
+    return `已筛选 ${hostFilters.length} 台主机`;
+  }, [hostFilters, hosts]);
 
   return (
     <View style={styles.workspacesSectionHeader}>
-      <Text style={styles.workspacesSectionTitle}>Workspaces</Text>
+      <Text style={styles.workspacesSectionTitle} dataSet={COMPACT_LABEL_DATASET} numberOfLines={1}>
+        {t("shell.commandCenter.workspaces")}
+      </Text>
       <View style={styles.workspacesSectionActions}>
         <Tooltip delayDuration={300}>
           <TooltipTrigger asChild>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Open command center"
+              accessibilityLabel={searchLabel}
               testID="sidebar-command-center-search"
               style={searchButtonStyle}
               onPress={handleSearchPress}
@@ -975,7 +1084,7 @@ function WorkspacesSectionHeader() {
             </Pressable>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>
-            <IconTooltipContent label="Search" shortcutKeys={commandCenterKeys} />
+            <IconTooltipContent label={searchLabel} shortcutKeys={commandCenterKeys} />
           </TooltipContent>
         </Tooltip>
         <Tooltip delayDuration={300}>
@@ -985,10 +1094,19 @@ function WorkspacesSectionHeader() {
             </View>
           </TooltipTrigger>
           <TooltipContent side="bottom" align="center" offset={8}>
-            <IconTooltipContent label={t("sidebar.displayPreferences.ariaLabel")} />
+            <IconTooltipContent label={displayPreferencesTooltip} />
           </TooltipContent>
         </Tooltip>
-        <SidebarHostFilterMenu />
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <View>
+              <SidebarHostFilterMenu />
+            </View>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={8}>
+            <IconTooltipContent label={hostFilterTooltip} />
+          </TooltipContent>
+        </Tooltip>
       </View>
     </View>
   );
@@ -1013,46 +1131,94 @@ const staticStyles = RNStyleSheet.create({
 const styles = StyleSheet.create((theme) => ({
   sidebarHeaderGroup: {
     paddingTop: theme.spacing[2],
-    gap: 2,
-    paddingBottom: theme.spacing[1.5],
+    gap: theme.spacing[1.5],
+    paddingBottom: theme.spacing[2],
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   sidebarHeaderGroupBelowChrome: {
     paddingTop: 0,
   },
+  quickNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[2],
+    userSelect: "none",
+  },
+  quickNavItem: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: { xs: 36, md: 28 },
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing[1],
+    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
+  },
+  quickNavItemHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  quickNavItemActive: {
+    backgroundColor: theme.colors.surfaceSidebarSelected,
+  },
+  quickNavItemPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.button }],
+  },
+  quickNavLabel: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontSize: Math.round(theme.fontSize.base * 0.8125),
+    fontWeight: theme.fontWeight.normal,
+    color: theme.colors.foregroundMuted,
+  },
+  quickNavLabelHighlighted: {
+    color: theme.colors.foregroundSidebar,
+  },
+  quickNavLabelActive: {
+    color: theme.colors.foreground,
+  },
   workspacesSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.spacing[2],
-    // Rendered inside the scroll's listContent (paddingHorizontal spacing[2]), so the
-    // title lands at spacing[2] left to align with project icons, and the trailing
-    // pill sits flush with the list edge on the right.
+    minHeight: { xs: 38, md: 32 },
+    // Rendered inside the sticky header wrapper with matching sidebar horizontalPadding,
+    // so the title lands at spacing[2] left to align with custom group headers and project icons.
     paddingLeft: theme.spacing[2],
     paddingRight: 0,
     paddingTop: theme.spacing[1],
     paddingBottom: theme.spacing[1],
+    userSelect: "none",
   },
   workspacesSectionTitle: {
-    color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sidebar,
-    fontWeight: theme.fontWeight.normal,
+    flexShrink: 1,
+    minWidth: 0,
+    color: theme.colors.foregroundMuted,
+    fontSize: Math.round(theme.fontSize.sidebar * 0.85),
+    fontWeight: theme.fontWeight.medium,
+    letterSpacing: 0.3,
   },
   workspacesSectionActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: 2,
+    flexShrink: 0,
   },
   workspacesHeaderIconButton: {
-    width: 28,
-    height: 28,
+    width: { xs: 32, md: 26 },
+    height: { xs: 32, md: 26 },
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.md,
   },
   workspacesHeaderIconButtonHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  workspacesHeaderIconButtonPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
   },
   sidebarContent: {
     flex: 1,
@@ -1062,6 +1228,7 @@ const styles = StyleSheet.create((theme) => ({
   mobileHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: theme.spacing[1],
   },
   mobileHeaderTitle: {
     flex: 1,
@@ -1069,8 +1236,8 @@ const styles = StyleSheet.create((theme) => ({
   },
   mobileCloseButton: {
     marginRight: theme.spacing[2],
-    width: 48,
-    height: 48,
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.borderRadius.lg,

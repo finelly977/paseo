@@ -390,7 +390,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
-    lineHeight: theme.fontSize.base * 1.25,
+    lineHeight: Math.ceil(theme.fontSize.base * 1.45),
   },
   muted: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base * 0.75 },
   disabled: { opacity: 0.5 },

@@ -264,7 +264,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: 0,
   },
   trigger: {
-    height: 28,
+    minHeight: 28,
     minWidth: 0,
     flexShrink: 1,
     flexDirection: "row",
@@ -298,6 +298,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     fontWeight: theme.fontWeight.normal,
   },
   customTriggerWrapper: {

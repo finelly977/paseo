@@ -197,7 +197,7 @@ export function CompactModelSheet({
 
 const styles = StyleSheet.create((theme) => ({
   trigger: {
-    height: 20,
+    minHeight: 20,
     minWidth: 0,
     flexShrink: 1,
     flexDirection: "row",
@@ -216,14 +216,14 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    lineHeight: theme.fontSize.sm * 1.25,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     includeFontPadding: false,
   },
   triggerEffort: {
     flexShrink: 0,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-    lineHeight: theme.fontSize.sm * 1.25,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     includeFontPadding: false,
   },
   providerIcon: {

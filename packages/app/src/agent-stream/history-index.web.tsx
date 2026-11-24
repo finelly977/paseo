@@ -19,8 +19,10 @@ import {
   getHistoryIndexEntryKey,
   getStreamItemDomId,
   resolveHistoryIndexRailLayout,
+  resolveHistoryIndexWheelDeltaPx,
   resolveHistoryIndexWindow,
 } from "./history-index-model";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { StreamViewportHandle } from "./strategy";
 
 export interface ConversationHistoryIndexProps {
@@ -202,12 +204,18 @@ export function ConversationHistoryIndex({
   onNavigate,
 }: ConversationHistoryIndexProps) {
   const { t } = useTranslation();
+  const isPanelActive = useRetainedPanelActive();
+  const isPanelActiveRef = useRef(isPanelActive);
+  isPanelActiveRef.current = isPanelActive;
   const rootRef = useRef<HTMLDivElement | null>(null);
   const railRef = useRef<HTMLDivElement | null>(null);
   const userScrolledAwayRef = useRef(false);
+  const savedScrollTopRef = useRef(0);
+  const wasHiddenRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [pointerFraction, setPointerFraction] = useState<number | null>(null);
   const [bandHeight, setBandHeight] = useState(0);
+  const [visibilityEpoch, setVisibilityEpoch] = useState(0);
   const [railScrollTop, setRailScrollTop] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const pointerFrameRef = useRef<number | null>(null);
@@ -250,6 +258,8 @@ export function ConversationHistoryIndex({
       pointerEvents: "auto",
       overflowY: railLayout.contentHeight > railLayout.railHeight ? "auto" : "hidden",
       overflowX: "hidden",
+      overscrollBehaviorY: "contain",
+      overflowAnchor: "none",
       scrollbarWidth: "none",
       msOverflowStyle: "none",
     }),
@@ -294,11 +304,32 @@ export function ConversationHistoryIndex({
     }
     const observer = new ResizeObserver((observed) => {
       const height = observed[0]?.contentRect.height;
-      if (height !== undefined && height > 0) setBandHeight(height);
+      if (height === undefined) {
+        return;
+      }
+      if (height <= 0) {
+        // 面板经由 display:none 隐藏后 Chromium 会归零 DOM scrollTop，记录以便恢复可见时还原。
+        wasHiddenRef.current = true;
+        return;
+      }
+      setBandHeight(height);
+      if (wasHiddenRef.current) {
+        setVisibilityEpoch((current) => current + 1);
+      }
     });
     observer.observe(band);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!isPanelActive) {
+      wasHiddenRef.current = true;
+      return;
+    }
+    if (wasHiddenRef.current) {
+      setVisibilityEpoch((current) => current + 1);
+    }
+  }, [isPanelActive]);
 
   /** 跳转后收起浮层：指针仍停在轨道上，仅靠 mouseleave 无法结束悬停态。 */
   const dismissHover = useCallback(() => {
@@ -314,16 +345,48 @@ export function ConversationHistoryIndex({
     }
   }, []);
 
+  const syncPointerFractionForScroll = useCallback(
+    (scrollTop: number) => {
+      const pointerOffset = pointerOffsetRef.current;
+      if (pointerOffset === null) {
+        return;
+      }
+      if (pointerFrameRef.current !== null) {
+        cancelAnimationFrame(pointerFrameRef.current);
+        pointerFrameRef.current = null;
+      }
+      const contentHeight = Math.max(1, railLayout.contentHeight - MARKER_HIT_HEIGHT);
+      setPointerFraction(Math.max(0, Math.min(1, (pointerOffset + scrollTop) / contentHeight)));
+    },
+    [railLayout.contentHeight],
+  );
+
+  const restoreRailScrollIfHidden = useCallback((rail: HTMLDivElement): number => {
+    const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
+    if (!wasHiddenRef.current || maxScroll <= 0) {
+      return rail.scrollTop;
+    }
+    const targetScrollTop = userScrolledAwayRef.current
+      ? Math.max(0, Math.min(savedScrollTopRef.current, maxScroll))
+      : maxScroll;
+    wasHiddenRef.current = false;
+    rail.scrollTop = targetScrollTop;
+    savedScrollTopRef.current = targetScrollTop;
+    setRailScrollTop(targetScrollTop);
+    return targetScrollTop;
+  }, []);
+
   const handleMouseMove = useCallback(
     (event: ReactMouseEvent<HTMLDivElement>) => {
-      const bounds = event.currentTarget.getBoundingClientRect();
       const scrollableRail = event.currentTarget;
+      const currentScrollTop = restoreRailScrollIfHidden(scrollableRail);
+      const bounds = scrollableRail.getBoundingClientRect();
       const contentHeight = Math.max(1, railLayout.contentHeight - MARKER_HIT_HEIGHT);
       const pointerOffset = event.clientY - bounds.top;
       pointerOffsetRef.current = pointerOffset;
       const nextFraction = Math.max(
         0,
-        Math.min(1, (pointerOffset + scrollableRail.scrollTop) / contentHeight),
+        Math.min(1, (pointerOffset + currentScrollTop) / contentHeight),
       );
       if (pointerFrameRef.current !== null) {
         cancelAnimationFrame(pointerFrameRef.current);
@@ -333,7 +396,7 @@ export function ConversationHistoryIndex({
         setPointerFraction(nextFraction);
       });
     },
-    [railLayout.contentHeight],
+    [railLayout.contentHeight, restoreRailScrollIfHidden],
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -346,36 +409,96 @@ export function ConversationHistoryIndex({
   }, []);
   const handleRailScroll = useCallback(
     (event: ReactUIEvent<HTMLDivElement>) => {
+      if (!isPanelActiveRef.current || event.currentTarget.clientHeight <= 0) {
+        return;
+      }
       const nextScrollTop = event.currentTarget.scrollTop;
-      setRailScrollTop(nextScrollTop);
       const maxScroll = Math.max(
         0,
         event.currentTarget.scrollHeight - event.currentTarget.clientHeight,
       );
+      savedScrollTopRef.current = nextScrollTop;
+      setRailScrollTop(nextScrollTop);
       userScrolledAwayRef.current = nextScrollTop < maxScroll - RAIL_BOTTOM_EPSILON;
-      const pointerOffset = pointerOffsetRef.current;
-      if (pointerOffset === null) {
-        return;
-      }
-      const contentHeight = Math.max(1, railLayout.contentHeight - MARKER_HIT_HEIGHT);
-      setPointerFraction(Math.max(0, Math.min(1, (pointerOffset + nextScrollTop) / contentHeight)));
+      syncPointerFractionForScroll(nextScrollTop);
     },
-    [railLayout.contentHeight],
+    [syncPointerFractionForScroll],
   );
 
-  // 内容超出轨道高度时默认展示最新刻度；用户没有主动上滚时，新刻度到来仍保持在底部。
+  // 接管轨道滚轮，把浏览器默认 ~100px/格的滚轮步长按 8px 刻度密度缩放，避免轻滚即直达顶部。
   useEffect(() => {
     const rail = railRef.current;
     if (!rail) {
       return;
     }
+    const handleWheel = (event: WheelEvent) => {
+      const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
+      if (maxScroll <= 0 || event.ctrlKey || event.metaKey) {
+        return;
+      }
+      const deltaPx = resolveHistoryIndexWheelDeltaPx({
+        deltaY: event.deltaY,
+        deltaMode: event.deltaMode,
+        railHeight: rail.clientHeight,
+      });
+      if (deltaPx === 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const baseScrollTop = restoreRailScrollIfHidden(rail);
+      const nextScrollTop = Math.max(0, Math.min(maxScroll, baseScrollTop + deltaPx));
+      if (nextScrollTop === baseScrollTop) {
+        return;
+      }
+      rail.scrollTop = nextScrollTop;
+      savedScrollTopRef.current = nextScrollTop;
+      userScrolledAwayRef.current = nextScrollTop < maxScroll - RAIL_BOTTOM_EPSILON;
+      setRailScrollTop(nextScrollTop);
+      syncPointerFractionForScroll(nextScrollTop);
+    };
+    rail.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      rail.removeEventListener("wheel", handleWheel);
+    };
+  }, [restoreRailScrollIfHidden, syncPointerFractionForScroll, visibleEntries.length]);
+
+  // 内容超出轨道高度时默认展示最新刻度；用户没有主动上滚时，新刻度到来仍保持在底部。
+  // 从隐藏保活状态切回时，优先还原隐藏前停留的位置或重新贴底，抵消 Chromium 归零 scrollTop。
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail || !isPanelActive || rail.clientHeight <= 0) {
+      return;
+    }
     const maxScroll = Math.max(0, rail.scrollHeight - rail.clientHeight);
-    if (maxScroll <= 0 || userScrolledAwayRef.current) {
+    if (maxScroll <= 0) {
+      wasHiddenRef.current = false;
+      savedScrollTopRef.current = 0;
+      setRailScrollTop(0);
+      return;
+    }
+    if (wasHiddenRef.current) {
+      const restored = userScrolledAwayRef.current
+        ? Math.max(0, Math.min(savedScrollTopRef.current, maxScroll))
+        : maxScroll;
+      wasHiddenRef.current = false;
+      rail.scrollTop = restored;
+      savedScrollTopRef.current = restored;
+      setRailScrollTop(restored);
+      return;
+    }
+    if (userScrolledAwayRef.current) {
+      if (rail.scrollTop > maxScroll) {
+        rail.scrollTop = maxScroll;
+        savedScrollTopRef.current = maxScroll;
+        setRailScrollTop(maxScroll);
+      }
       return;
     }
     rail.scrollTop = maxScroll;
+    savedScrollTopRef.current = maxScroll;
     setRailScrollTop(maxScroll);
-  }, [entries.length, railLayout]);
+  }, [entries.length, isPanelActive, railLayout, visibilityEpoch]);
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -406,6 +529,7 @@ export function ConversationHistoryIndex({
       const top = next * railLayout.markerPitch;
       const scrollTop = Math.max(0, Math.min(top, rail.scrollHeight - rail.clientHeight));
       rail.scrollTop = scrollTop;
+      savedScrollTopRef.current = scrollTop;
       userScrolledAwayRef.current =
         scrollTop < rail.scrollHeight - rail.clientHeight - RAIL_BOTTOM_EPSILON;
       setRailScrollTop(scrollTop);

@@ -187,7 +187,7 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   }),
   toolbarControl: {
-    height: 20,
+    minHeight: 20,
     minWidth: 0,
     flexShrink: 0,
     flexDirection: "row",
@@ -208,7 +208,7 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-    lineHeight: theme.fontSize.sm * 1.25,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     includeFontPadding: false,
     fontWeight: theme.fontWeight.normal,
   },

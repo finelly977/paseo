@@ -245,6 +245,36 @@ export function mergeConversationHistoryIndexEntries(params: {
 /** 相邻刻度的固定像素间距：与历史条数无关，短会话也保持紧凑。 */
 export const HISTORY_INDEX_MARKER_PITCH = 8;
 export const HISTORY_INDEX_MAX_HEIGHT = 480;
+/**
+ * 轨道刻度间距仅 8px，浏览器默认每格滚轮（约 100px）会一次跨过 12 轮以上。
+ * 按比例缩放滚轮增量并限制单次最大位移，使每次上滑都能精细停留在临近轮次。
+ */
+export const HISTORY_INDEX_WHEEL_SCALE = 0.28;
+const HISTORY_INDEX_WHEEL_LINE_PX = 16;
+const HISTORY_INDEX_WHEEL_MIN_CAP_TURNS = 6;
+const HISTORY_INDEX_WHEEL_MAX_RAIL_RATIO = 0.25;
+
+export function resolveHistoryIndexWheelDeltaPx(input: {
+  deltaY: number;
+  deltaMode: number;
+  railHeight: number;
+}): number {
+  if (!Number.isFinite(input.deltaY) || input.deltaY === 0) {
+    return 0;
+  }
+  let rawPx = input.deltaY;
+  if (input.deltaMode === 1) {
+    rawPx = input.deltaY * HISTORY_INDEX_WHEEL_LINE_PX;
+  } else if (input.deltaMode === 2) {
+    rawPx = input.deltaY * Math.max(input.railHeight, HISTORY_INDEX_MARKER_PITCH);
+  }
+  const scaled = rawPx * HISTORY_INDEX_WHEEL_SCALE;
+  const maxStep = Math.max(
+    HISTORY_INDEX_MARKER_PITCH * HISTORY_INDEX_WHEEL_MIN_CAP_TURNS,
+    input.railHeight * HISTORY_INDEX_WHEEL_MAX_RAIL_RATIO,
+  );
+  return Math.max(-maxStep, Math.min(maxStep, scaled));
+}
 
 interface HistoryIndexWindow {
   start: number;

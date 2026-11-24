@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
+import { RetainedPanel } from "@/components/retained-panel";
 import { ConversationHistoryIndex } from "./history-index.web";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
 import { getStreamItemDomId } from "./history-index-model";
@@ -8,6 +9,7 @@ import { getStreamItemDomId } from "./history-index-model";
 const VIEWPORT_REF = { current: null };
 const BODY_STYLE = { height: 2000 };
 const SCROLL_STYLE = { height: 500, overflowY: "auto" as const };
+const RETAINED_STAGE_STYLE = { position: "relative" as const, width: "100%", height: "700px" };
 
 test("用户气泡离开虚拟窗口后，正文仍维持所属轮次的高亮", async () => {
   const host = document.createElement("div");
@@ -92,6 +94,74 @@ test("长会话只挂载可见刻度，滚动和键盘仍能访问全部历史",
       .poll(() => document.activeElement?.getAttribute("data-history-index"))
       .toBe("2999");
     expect(host.querySelectorAll('[role="button"]').length).toBeLessThan(100);
+  } finally {
+    root.unmount();
+    host.remove();
+  }
+});
+
+test("真实 Chromium 下从最新轻滚一格与隐藏保活恢复都不会跳回顶部对话", async () => {
+  const host = document.createElement("div");
+  Object.assign(host.style, {
+    position: "relative",
+    width: "900px",
+    height: "700px",
+    display: "flex",
+  });
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const entries: ConversationHistoryIndexEntry[] = Array.from({ length: 80 }, (_, index) => ({
+    id: `turn-${index}`,
+    title: `问题 ${index}`,
+    preview: `回答 ${index}`,
+    sourceIndex: index,
+    seqStart: index + 1,
+  }));
+  const expectedMaxScroll = 79 * 8 + 12 - 480;
+  try {
+    root.render(
+      <RetainedPanel active>
+        <div style={RETAINED_STAGE_STYLE}>
+          <ConversationHistoryIndex entries={entries} viewportRef={VIEWPORT_REF} />
+        </div>
+      </RetainedPanel>,
+    );
+    await expect.poll(() => host.querySelector('[data-history-index="79"]')).not.toBeNull();
+    const rail = host.querySelector('[role="navigation"]');
+    if (!(rail instanceof HTMLElement)) throw new Error("缺少历史导航");
+    await expect.poll(() => Math.round(rail.scrollTop)).toBe(expectedMaxScroll);
+
+    // 模拟真实隐藏（display:none 会让 Chromium 重置 rail.scrollTop 为 0）再恢复可见
+    root.render(
+      <RetainedPanel active={false}>
+        <div style={RETAINED_STAGE_STYLE}>
+          <ConversationHistoryIndex entries={entries} viewportRef={VIEWPORT_REF} />
+        </div>
+      </RetainedPanel>,
+    );
+    await expect.poll(() => rail.clientHeight).toBe(0);
+
+    root.render(
+      <RetainedPanel active>
+        <div style={RETAINED_STAGE_STYLE}>
+          <ConversationHistoryIndex entries={entries} viewportRef={VIEWPORT_REF} />
+        </div>
+      </RetainedPanel>,
+    );
+    await expect.poll(() => Math.round(rail.scrollTop)).toBe(expectedMaxScroll);
+
+    // 恢复后从最新位置向上轻滚一格标准滚轮（-100px），只应微调约 28px，不跳到顶部第 0 轮
+    const wheel = new WheelEvent("wheel", {
+      deltaY: -100,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true,
+    });
+    rail.dispatchEvent(wheel);
+    expect(wheel.defaultPrevented).toBe(true);
+    await expect.poll(() => Math.round(rail.scrollTop)).toBe(expectedMaxScroll - 28);
+    expect(host.querySelector('[data-history-index="0"]')).toBeNull();
+    expect(host.querySelector('[data-history-index="79"]')).not.toBeNull();
   } finally {
     root.unmount();
     host.remove();

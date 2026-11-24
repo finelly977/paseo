@@ -1065,14 +1065,28 @@ const styles = StyleSheet.create((theme) => ({
   title: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
-    lineHeight: 20,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     flexShrink: 1,
   },
-  fileLine: { flex: 1, minWidth: 0, fontSize: theme.fontSize.sm, lineHeight: 20 },
+  fileLine: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: theme.fontSize.sm,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
+  },
   fileName: { color: theme.colors.foreground },
   filePath: { color: theme.colors.foregroundMuted },
-  subtitle: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs, lineHeight: 18 },
-  iconSlot: { width: 16, height: 20, alignItems: "center", justifyContent: "center" },
+  subtitle: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
+    lineHeight: Math.ceil(theme.fontSize.xs * 1.45),
+  },
+  iconSlot: {
+    width: 16,
+    height: Math.ceil(theme.fontSize.sm * 1.45),
+    alignItems: "center",
+    justifyContent: "center",
+  },
   rowShortcut: { flexShrink: 0 },
   breadcrumb: {
     flex: 1,
@@ -1090,7 +1104,7 @@ const styles = StyleSheet.create((theme) => ({
   breadcrumbGroup: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
-    lineHeight: 20,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     flexShrink: 0,
   },
   emptyText: {

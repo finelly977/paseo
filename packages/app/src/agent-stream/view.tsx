@@ -1866,6 +1866,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         <View style={stylesheet.container}>
           {isWeb && !isMobile ? (
             <ConversationHistoryIndex
+              key={agentId}
               entries={historyIndexEntries}
               itemOwners={historyIndexItemOwners}
               viewportRef={viewportRef}

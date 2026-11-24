@@ -5,6 +5,8 @@ import {
   ActivityIndicator,
   ScrollView,
   type GestureResponderEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type PressableStateCallbackType,
   type PressableProps,
   type ViewStyle,
@@ -2591,7 +2593,21 @@ function ProjectModeList({
     () => [styles.listContent, { paddingHorizontal: horizontalPadding }],
     [horizontalPadding],
   );
+  const [isListScrolled, setIsListScrolled] = useState(false);
+  const stickyHeaderStyle = useMemo(
+    () => [
+      styles.stickyHeader,
+      { paddingHorizontal: horizontalPadding },
+      isListScrolled && styles.stickyHeaderScrolled,
+    ],
+    [horizontalPadding, isListScrolled],
+  );
+  const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextScrolled = event.nativeEvent.contentOffset.y > 2;
+    setIsListScrolled((current) => (current === nextScrolled ? current : nextScrolled));
+  }, []);
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
+  const hasActiveProjectFilter = useSidebarViewStore((state) => state.projectFilters.length > 0);
   const { t } = useTranslation();
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
   const creatingWorkspaceTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
@@ -2936,6 +2952,9 @@ function ProjectModeList({
     );
   }
 
+  const showStickyHeader =
+    Boolean(listHeaderComponent) &&
+    (projects.length > 0 || hasActiveHostFilter || hasActiveProjectFilter);
   const content = (
     <>
       {pinnedChats.length > 0 ? (
@@ -2957,7 +2976,6 @@ function ProjectModeList({
           </DisclosureContent>
         </View>
       ) : null}
-      {projects.length > 0 || hasActiveHostFilter ? listHeaderComponent : null}
       {projectListContent}
       {listFooterComponent}
     </>
@@ -2965,12 +2983,15 @@ function ProjectModeList({
 
   return (
     <View style={styles.container} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
+      {showStickyHeader ? <View style={stickyHeaderStyle}>{listHeaderComponent}</View> : null}
       {platformIsNative ? (
         <NestableScrollContainer
           {...nativeScrollGestureProps}
           style={styles.list}
           contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
           testID="sidebar-project-workspace-list-scroll"
         >
           {content}
@@ -2980,6 +3001,8 @@ function ProjectModeList({
           style={styles.list}
           contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
           testID="sidebar-project-workspace-list-scroll"
         >
           {content}
@@ -2993,13 +3016,20 @@ const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
   },
+  stickyHeader: {
+    flexShrink: 0,
+    backgroundColor: theme.colors.surfaceSidebar,
+    borderBottomWidth: 1,
+    borderBottomColor: "transparent",
+  },
+  stickyHeaderScrolled: {
+    borderBottomColor: theme.colors.border,
+  },
   list: {
     flex: 1,
   },
   listContent: {
     paddingHorizontal: theme.spacing[2],
-    // Optical inset: aligns the visible Pinned/Workspaces glyph edge with the
-    // Schedules icon across the divider; their layout boxes have different insets.
     paddingTop: 2,
     paddingBottom: theme.spacing[4],
   },

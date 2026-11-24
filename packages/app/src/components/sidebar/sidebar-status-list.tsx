@@ -1,6 +1,14 @@
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { View, Text, Pressable, ScrollView, type PressableStateCallbackType } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type PressableStateCallbackType,
+} from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import {
   navigateToWorkspace,
@@ -108,6 +116,19 @@ export function SidebarStatusWorkspaceList({
     () => [styles.listContent, { paddingHorizontal: horizontalPadding }],
     [horizontalPadding],
   );
+  const [isListScrolled, setIsListScrolled] = useState(false);
+  const stickyHeaderStyle = useMemo(
+    () => [
+      styles.stickyHeader,
+      { paddingHorizontal: horizontalPadding },
+      isListScrolled && styles.stickyHeaderScrolled,
+    ],
+    [horizontalPadding, isListScrolled],
+  );
+  const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextScrolled = event.nativeEvent.contentOffset.y > 2;
+    setIsListScrolled((current) => (current === nextScrolled ? current : nextScrolled));
+  }, []);
   const collapsedStatusGroupKeys = useSidebarCollapsedSectionsStore(
     (state) => state.collapsedStatusGroupKeys,
   );
@@ -162,7 +183,6 @@ export function SidebarStatusWorkspaceList({
           </DisclosureContent>
         </View>
       ) : null}
-      {listHeaderComponent}
       <StatusGroupList
         groups={groups}
         collapsedStatusGroupKeys={collapsedStatusGroupKeys}
@@ -181,11 +201,14 @@ export function SidebarStatusWorkspaceList({
 
   return (
     <View style={styles.container} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
+      {listHeaderComponent ? <View style={stickyHeaderStyle}>{listHeaderComponent}</View> : null}
       {platformIsNative ? (
         <NestableScrollContainer
           style={styles.list}
           contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
           testID="sidebar-status-list-scroll"
         >
           {content}
@@ -195,6 +218,8 @@ export function SidebarStatusWorkspaceList({
           style={styles.list}
           contentContainerStyle={listContentStyle}
           showsVerticalScrollIndicator={false}
+          onScroll={handleListScroll}
+          scrollEventThrottle={16}
           testID="sidebar-status-list-scroll"
         >
           {content}
@@ -953,6 +978,15 @@ function getStatusWorkspaceRowStyle({
 const styles = StyleSheet.create((theme) => ({
   container: {
     flex: 1,
+  },
+  stickyHeader: {
+    flexShrink: 0,
+    backgroundColor: theme.colors.surfaceSidebar,
+    borderBottomWidth: 1,
+    borderBottomColor: "transparent",
+  },
+  stickyHeaderScrolled: {
+    borderBottomColor: theme.colors.border,
   },
   list: {
     flex: 1,

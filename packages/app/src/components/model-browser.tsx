@@ -941,16 +941,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   browserRowLabel: {
     fontSize: theme.fontSize.sm,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     color: theme.colors.foreground,
     flexShrink: 0,
   },
   browserRowLabelMuted: {
     fontSize: theme.fontSize.sm,
+    lineHeight: Math.ceil(theme.fontSize.sm * 1.45),
     color: theme.colors.foregroundMuted,
     flexShrink: 0,
   },
   browserRowDescription: {
     fontSize: theme.fontSize.xs,
+    lineHeight: Math.ceil(theme.fontSize.xs * 1.45),
     color: theme.colors.foregroundMuted,
     flexShrink: 1,
   },

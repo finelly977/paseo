@@ -9,9 +9,10 @@ import { Shortcut } from "@/components/ui/shortcut";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
+const foregroundSidebarColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundSidebar });
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 
-type SidebarHeaderRowVariant = "header" | "compact";
+type SidebarHeaderRowVariant = "header" | "compact" | "primary";
 
 interface SidebarHeaderRowProps {
   icon: LucideIcon;
@@ -26,9 +27,18 @@ interface SidebarHeaderRowProps {
    * the lone header at the top of a sidebar (settings "Back to workspace").
    * "compact": a workspace-row-height row with no separator, for entries that
    * sit in a header group whose wrapper owns the single divider.
+   * "primary": an elevated quiet primary action button at the top of the sidebar
+   * (e.g. "New workspace"), anchoring the hierarchy without using accent fill.
    */
   variant?: SidebarHeaderRowVariant;
   shortcutKeys?: ShortcutKey[][] | null;
+}
+
+function resolveHeaderRowIconMapping(isHighlighted: boolean, isPrimary: boolean) {
+  if (isHighlighted) {
+    return foregroundColorMapping;
+  }
+  return isPrimary ? foregroundSidebarColorMapping : foregroundMutedColorMapping;
 }
 
 export function SidebarHeaderRow({
@@ -44,16 +54,20 @@ export function SidebarHeaderRow({
 }: SidebarHeaderRowProps) {
   const ThemedIcon = useMemo(() => withUnistyles(Icon), [Icon]);
 
-  const containerStyle = useMemo(
-    () => (variant === "compact" ? styles.containerCompact : styles.container),
-    [variant],
-  );
+  const containerStyle = useMemo(() => {
+    if (variant === "primary") return styles.containerPrimary;
+    if (variant === "compact") return styles.containerCompact;
+    return styles.container;
+  }, [variant]);
 
   const buttonStyle = useCallback(
-    ({ hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.button,
       variant === "compact" && styles.buttonCompact,
-      (Boolean(hovered) || isActive) && styles.buttonHovered,
+      variant === "primary" && styles.buttonPrimary,
+      (Boolean(hovered) || isActive) &&
+        (variant === "primary" ? styles.buttonPrimaryHovered : styles.buttonHovered),
+      variant === "primary" && pressed && styles.buttonPrimaryPressed,
     ],
     [isActive, variant],
   );
@@ -61,20 +75,31 @@ export function SidebarHeaderRow({
   const renderChildren = useCallback(
     (state: PressableStateCallbackType & { hovered?: boolean }) => {
       const isHighlighted = Boolean(state.hovered) || isActive;
+      const isPrimary = variant === "primary";
+      const iconMapping = resolveHeaderRowIconMapping(isHighlighted, isPrimary);
+      const showShortcut = Boolean(shortcutKeys && (isPrimary || state.hovered));
       return (
         <>
-          <ThemedIcon
-            size={ICON_SIZE.sm}
-            uniProps={isHighlighted ? foregroundColorMapping : foregroundMutedColorMapping}
+          <ThemedIcon size={ICON_SIZE.sm} uniProps={iconMapping} />
+          <SidebarHeaderRowLabel
+            label={label}
+            isHighlighted={isHighlighted}
+            isPrimary={isPrimary}
           />
-          <SidebarHeaderRowLabel label={label} isHighlighted={isHighlighted} />
-          {shortcutKeys && Boolean(state.hovered) ? (
-            <Shortcut chord={shortcutKeys} style={styles.shortcut} />
+          {showShortcut ? (
+            <Shortcut
+              chord={shortcutKeys!}
+              style={[
+                styles.shortcut,
+                isPrimary && styles.shortcutPrimary,
+                isPrimary && !isHighlighted && styles.shortcutPrimaryIdle,
+              ]}
+            />
           ) : null}
         </>
       );
     },
-    [ThemedIcon, isActive, label, shortcutKeys],
+    [ThemedIcon, isActive, label, shortcutKeys, variant],
   );
 
   return (
@@ -97,15 +122,25 @@ export function SidebarHeaderRow({
 function SidebarHeaderRowLabel({
   label,
   isHighlighted,
+  isPrimary,
 }: {
   label: string;
   isHighlighted: boolean;
+  isPrimary: boolean;
 }) {
   const labelStyle = useMemo(
-    () => [styles.label, isHighlighted && styles.labelHighlighted],
-    [isHighlighted],
+    () => [
+      styles.label,
+      isPrimary && styles.labelPrimary,
+      isHighlighted && (isPrimary ? styles.labelPrimaryHighlighted : styles.labelHighlighted),
+    ],
+    [isHighlighted, isPrimary],
   );
-  return <Text style={labelStyle}>{label}</Text>;
+  return (
+    <Text numberOfLines={1} style={labelStyle}>
+      {label}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -121,6 +156,11 @@ const styles = StyleSheet.create((theme) => ({
     userSelect: "none",
   },
   containerCompact: {
+    paddingHorizontal: theme.spacing[2],
+    justifyContent: "center",
+    userSelect: "none",
+  },
+  containerPrimary: {
     paddingHorizontal: theme.spacing[2],
     justifyContent: "center",
     userSelect: "none",
@@ -145,18 +185,50 @@ const styles = StyleSheet.create((theme) => ({
     // edge with the workspace list below (base button uses a wider spacing[3]).
     paddingHorizontal: theme.spacing[2],
   },
+  buttonPrimary: {
+    minHeight: { xs: 38, md: 32 },
+    paddingVertical: { xs: theme.spacing[2], md: theme.spacing[1.5] },
+    paddingHorizontal: theme.spacing[2],
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  buttonPrimaryHovered: {
+    backgroundColor: theme.colors.surface3,
+    borderColor: theme.colors.borderAccent,
+  },
+  buttonPrimaryPressed: {
+    transform: [{ scale: 0.985 }],
+  },
   buttonHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
   label: {
+    flexShrink: 1,
+    minWidth: 0,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundSidebar,
+  },
+  labelPrimary: {
+    color: theme.colors.foregroundSidebar,
+  },
+  labelPrimaryHighlighted: {
+    color: theme.colors.foreground,
   },
   labelHighlighted: {
     color: theme.colors.foregroundSidebar,
   },
   shortcut: {
     marginLeft: "auto",
+  },
+  shortcutPrimary: {
+    backgroundColor: "transparent",
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  shortcutPrimaryIdle: {
+    opacity: 0.65,
   },
 }));

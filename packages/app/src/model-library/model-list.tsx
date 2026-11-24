@@ -279,7 +279,8 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
-    lineHeight: theme.fontSize.base * 1.25,
+    // 单行省略触发 overflow:hidden；中文与拉丁下伸笔画（g/p/q/y）需要充足行高避免被裁切。
+    lineHeight: Math.ceil(theme.fontSize.base * 1.45),
   },
   tooltipSurface: {
     paddingVertical: 2,
@@ -289,7 +290,7 @@ const styles = StyleSheet.create((theme) => ({
   tooltip: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base * 0.8125,
-    lineHeight: theme.fontSize.base,
+    lineHeight: Math.ceil(theme.fontSize.base * 0.8125 * 1.45),
   },
   action: (touch: boolean) => ({
     width: touch ? 44 : 22,

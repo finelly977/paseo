@@ -5,6 +5,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationHistoryIndexEntry } from "./history-index-model";
+import { RetainedPanelActivity } from "@/components/retained-panel";
 import { ConversationHistoryIndex, resolveActiveHistoryIndexEntry } from "./history-index.web";
 
 const { matchMediaMock, theme } = vi.hoisted(() => {
@@ -256,6 +257,104 @@ describe("ConversationHistoryIndex web rail", () => {
     // 波浪半径 = 480 * 0.14 ≈ 67px，约 8 个刻度：可见区域内远离指针处完全不动
     expect(scales.get(999)).toBe(1);
     expect(scales.has(0)).toBe(false);
+  });
+
+  it("轨道向上滚轮按刻度密度阻尼推进，不会一格就跳到顶部对话", () => {
+    // 75 轮对话：contentHeight = 74*8+12 = 604，maxScroll = 124
+    const rail = renderIndex(75, 800);
+    expect(rail.scrollTop).toBe(124);
+
+    const wheel = new WheelEvent("wheel", {
+      deltaY: -100,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      rail.dispatchEvent(wheel);
+    });
+
+    expect(wheel.defaultPrevented).toBe(true);
+    // 仅向上滚动 28px（约 3.5 轮），远未触顶归零
+    expect(rail.scrollTop).toBeCloseTo(96, 1);
+    expect(rail.querySelector('[data-history-index="0"]')).toBeNull();
+    expect(rail.querySelector('[data-history-index="74"]')).not.toBeNull();
+  });
+
+  it("面板经由隐藏保活恢复可见时，自动恢复底部或上次滚动位置，不被浏览器归零跳顶", () => {
+    const entries = Array.from({ length: 200 }, (_, index) => entry(index));
+    const maxScroll = 199 * 8 + 12 - 480;
+
+    act(() => {
+      root?.render(
+        <RetainedPanelActivity active>
+          <ConversationHistoryIndex entries={entries} viewportRef={EMPTY_VIEWPORT_REF} />
+        </RetainedPanelActivity>,
+      );
+    });
+    triggerBandResize(800);
+    const rail = container?.querySelector('[role="navigation"]');
+    if (!(rail instanceof HTMLElement)) {
+      throw new Error("rail 未渲染");
+    }
+    mockRailMetrics(rail, 480, 199 * 8 + 12);
+    triggerBandResize(801);
+    triggerBandResize(800);
+    expect(rail.scrollTop).toBe(maxScroll);
+
+    // 模拟切走标签（RetainedPanel 设为 display:none）：Chromium 归零 scrollTop 且高度变 0
+    act(() => {
+      root?.render(
+        <RetainedPanelActivity active={false}>
+          <ConversationHistoryIndex entries={entries} viewportRef={EMPTY_VIEWPORT_REF} />
+        </RetainedPanelActivity>,
+      );
+    });
+    mockRailMetrics(rail, 0, 0);
+    rail.scrollTop = 0;
+    act(() => {
+      rail.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    triggerBandResize(0);
+
+    // 切回同一标签：高度与之前一致（800），组件应主动恢复最新位置而非停留在 0
+    mockRailMetrics(rail, 480, 199 * 8 + 12);
+    act(() => {
+      root?.render(
+        <RetainedPanelActivity active>
+          <ConversationHistoryIndex entries={entries} viewportRef={EMPTY_VIEWPORT_REF} />
+        </RetainedPanelActivity>,
+      );
+    });
+    triggerBandResize(800);
+    expect(rail.scrollTop).toBe(maxScroll);
+
+    // 用户主动上滚到中间位置（600）后再次隐藏再切回，应保留在 600 而非归零
+    rail.scrollTop = 600;
+    act(() => {
+      rail.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    act(() => {
+      root?.render(
+        <RetainedPanelActivity active={false}>
+          <ConversationHistoryIndex entries={entries} viewportRef={EMPTY_VIEWPORT_REF} />
+        </RetainedPanelActivity>,
+      );
+    });
+    mockRailMetrics(rail, 0, 0);
+    rail.scrollTop = 0;
+    triggerBandResize(0);
+
+    mockRailMetrics(rail, 480, 199 * 8 + 12);
+    act(() => {
+      root?.render(
+        <RetainedPanelActivity active>
+          <ConversationHistoryIndex entries={entries} viewportRef={EMPTY_VIEWPORT_REF} />
+        </RetainedPanelActivity>,
+      );
+    });
+    triggerBandResize(800);
+    expect(rail.scrollTop).toBe(600);
   });
 });
 
