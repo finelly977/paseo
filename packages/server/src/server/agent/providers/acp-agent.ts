@@ -3037,14 +3037,44 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
-  private handlePromptResponse(response: PromptResponse, turnId: string): void {
-    const promptUsage = mapACPUsage(response.usage);
+  protected get activeTurnId(): string | null {
+    return this.activeForegroundTurnId;
+  }
+
+  protected get isHistoryReplaying(): boolean {
+    return this.replayingHistory;
+  }
+
+  protected get currentTurnUsageSnapshot(): AgentUsage | undefined {
+    return this.currentTurnUsage;
+  }
+
+  protected hasRunningToolCalls(): boolean {
+    for (const snapshot of this.toolCalls.values()) {
+      const mapped = mapToolSnapshotToTimeline(snapshot, this.terminalEntries);
+      if (mapped.status === "running") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  protected hasPendingPermissions(): boolean {
+    return this.pendingPermissions.size > 0;
+  }
+
+  protected mergePromptResponseUsage(usage: PromptResponse["usage"]): void {
+    const promptUsage = mapACPUsage(usage);
     if (promptUsage) {
       this.currentTurnUsage = {
         ...this.currentTurnUsage,
         ...promptUsage,
       };
     }
+  }
+
+  protected handlePromptResponse(response: PromptResponse, turnId: string): void {
+    this.mergePromptResponseUsage(response.usage);
 
     switch (response.stopReason) {
       case "cancelled":
@@ -3080,7 +3110,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
-  private pushEvent(event: AgentStreamEvent): void {
+  protected pushEvent(event: AgentStreamEvent): void {
     this.logger.trace(
       {
         agentId: this.agentId,
@@ -3134,7 +3164,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     };
   }
 
-  private finishTurn(
+  protected finishTurn(
     event: Extract<AgentStreamEvent, { type: "turn_completed" | "turn_failed" | "turn_canceled" }>,
   ): void {
     this.deliverTranslatedEvents(this.flushPendingUserMessage());
@@ -3158,7 +3188,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     });
   }
 
-  private synthesizeCanceledToolCalls(): void {
+  protected synthesizeCanceledToolCalls(): void {
     for (const snapshot of this.toolCalls.values()) {
       const mapped = mapToolSnapshotToTimeline(snapshot, this.terminalEntries);
       if (mapped.status === "running") {
@@ -3404,7 +3434,7 @@ function extractPromptText(prompt: AgentPromptInput): string {
     .join("");
 }
 
-function contentBlockToText(content: ContentBlock): string {
+export function contentBlockToText(content: ContentBlock): string {
   switch (content.type) {
     case "text":
       return content.text;

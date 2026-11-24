@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { PromptResponse, SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { Logger } from "pino";
 import { AGY_MODES } from "@getpaseo/protocol/provider-manifest";
 
@@ -11,8 +12,12 @@ import {
 import { createRealpathAwarePathMatcher } from "../../../utils/path.js";
 import type {
   AgentCapabilityFlags,
+  AgentPermissionResponse,
   AgentPersistenceHandle,
+  AgentPromptInput,
+  AgentRunOptions,
   AgentSessionConfig,
+  AgentStreamEvent,
   ImportableProviderSession,
   ListImportableSessionsOptions,
 } from "../agent-sdk-types.js";
@@ -30,6 +35,7 @@ import {
   type ACPProviderModeWriteResult,
   type ACPToolSnapshot,
   type SessionStateResponse,
+  contentBlockToText,
   findSelectConfigOption,
   resolvePerModelThinkingCatalog,
   selectPermissionOption,
@@ -46,6 +52,62 @@ const AGY_COMMAND: [string, ...string[]] = ["agy", "acp"];
 const AGY_INITIAL_COMMANDS_WAIT_TIMEOUT_MS = 10_000;
 const AGY_DEFAULT_MODE_ID = "default";
 export const AGY_ALLOW_ALL_MODE_ID = "allow-all";
+const AGY_RETRY_GRACE_TIMEOUT_MS = 15_000;
+const AGY_CONTINUATION_IDLE_TIMEOUT_MS = 3_000;
+
+export type AgyWarningKind = "retrying" | "terminal_error";
+
+export interface AgyWarningClassification {
+  kind: AgyWarningKind;
+  message: string;
+}
+
+const AGY_RETRYING_WARNING_PATTERNS = [
+  /^API error\s*\(attempt\s+\d+\)/i,
+  /^The stream was interrupted\./i,
+  /\bretrying\s+in\b/i,
+];
+
+const AGY_TERMINAL_WARNING_PATTERNS = [
+  /^There was a network issue connecting to the server/i,
+  /^Our servers are experiencing high traffic right now/i,
+  /^Agent execution terminated due to error/i,
+  /^Your AI credits balance is too low to continue/i,
+  /^API error\b/i,
+  /^Error\b/i,
+];
+
+/**
+ * 识别 Antigravity CLI 通过 ACP `agent_message_chunk` 发出的网络波动重试或终止告警。
+ * 仅当整段非空行均以 `⚠` 开头且命中已知 CLI 系统提示时才归类，不误判正常助手回复。
+ */
+export function classifyAgyWarningText(text: string): AgyWarningClassification | null {
+  const lines = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0 || !lines.every((line) => line.startsWith("⚠"))) {
+    return null;
+  }
+
+  let classification: AgyWarningClassification | null = null;
+  for (const line of lines) {
+    const body = line.replace(/^⚠\s*/u, "").trim();
+    if (!body) {
+      continue;
+    }
+    if (AGY_RETRYING_WARNING_PATTERNS.some((pattern) => pattern.test(body))) {
+      classification = { kind: "retrying", message: body };
+      continue;
+    }
+    if (AGY_TERMINAL_WARNING_PATTERNS.some((pattern) => pattern.test(body))) {
+      classification = { kind: "terminal_error", message: body };
+      continue;
+    }
+    return null;
+  }
+  return classification;
+}
 
 const AGY_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: true,
@@ -82,6 +144,13 @@ type AgyModeWriteContext = Omit<ACPProviderModeWriterContext, "connection" | "lo
 interface AgyACPAgentClientOptions {
   logger: Logger;
   runtimeSettings?: ProviderRuntimeSettings;
+  retryGraceTimeoutMs?: number;
+  continuationIdleTimeoutMs?: number;
+}
+
+export interface AgyACPAgentSessionOptions extends ACPAgentSessionOptions {
+  retryGraceTimeoutMs?: number;
+  continuationIdleTimeoutMs?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -375,8 +444,18 @@ export async function findDefaultAgyBinary(): Promise<string | null> {
 
 export class AgyACPAgentSession extends ACPAgentSession {
   private readonly modeState: AgyModeState;
+  private readonly retryGraceTimeoutMs: number;
+  private readonly continuationIdleTimeoutMs: number;
+  private turnWarning: AgyWarningClassification | null = null;
+  private deferredPromptTurn: {
+    turnId: string;
+    initialWarning: AgyWarningClassification | null;
+    sawContinuation: boolean;
+  } | null = null;
+  private autonomousTurnId: string | null = null;
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
+  constructor(config: AgentSessionConfig, options: AgyACPAgentSessionOptions) {
     const modeState: AgyModeState = { allowAllActive: false };
     super(config, {
       ...options,
@@ -387,6 +466,141 @@ export class AgyACPAgentSession extends ACPAgentSession {
       providerModeWriter: (context) => writeAgyMode(context, modeState),
     });
     this.modeState = modeState;
+    this.retryGraceTimeoutMs = options.retryGraceTimeoutMs ?? AGY_RETRY_GRACE_TIMEOUT_MS;
+    this.continuationIdleTimeoutMs =
+      options.continuationIdleTimeoutMs ?? AGY_CONTINUATION_IDLE_TIMEOUT_MS;
+  }
+
+  override async startTurn(
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<{ turnId: string }> {
+    if (this.deferredPromptTurn) {
+      this.settleDeferredPromptTurn();
+    }
+    this.settleAutonomousTurnBeforeNewPrompt();
+    this.clearTurnTracking();
+    return super.startTurn(prompt, options);
+  }
+
+  override async sessionUpdate(
+    params: Parameters<ACPAgentSession["sessionUpdate"]>[0],
+  ): Promise<void> {
+    if (this.isHistoryReplaying || params.sessionId !== this.id) {
+      await super.sessionUpdate(params);
+      return;
+    }
+
+    const update = params.update;
+    let warning: AgyWarningClassification | null = null;
+    let isSubstantiveActivity = false;
+
+    switch (update.sessionUpdate) {
+      case "agent_message_chunk": {
+        const text = contentBlockToText(update.content);
+        if (text.trim().length > 0) {
+          warning = classifyAgyWarningText(text);
+          isSubstantiveActivity = warning === null;
+        }
+        break;
+      }
+      case "agent_thought_chunk":
+      case "tool_call":
+      case "tool_call_update":
+      case "plan":
+        isSubstantiveActivity = true;
+        break;
+      default:
+        break;
+    }
+
+    // 若 agy acp 之前因网络波动静默重试提前结束了 session/prompt，收到后台续流活动时先拉起自治回合，
+    // 让 AgentManager 立刻恢复 running，避免界面停留在“已完成”的同时继续吐内容。
+    if (!this.activeTurnId && !this.autonomousTurnId && isSubstantiveActivity) {
+      const turnId = randomUUID();
+      this.autonomousTurnId = turnId;
+      this.turnWarning = null;
+      this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+    }
+
+    await super.sessionUpdate(params);
+
+    if (warning) {
+      this.turnWarning = warning;
+      if (this.deferredPromptTurn) {
+        if (warning.kind === "terminal_error") {
+          this.settleDeferredPromptTurn({
+            forceFailure: warning.message,
+            code: "AGY_NETWORK_ERROR",
+          });
+        } else {
+          this.scheduleSettleTimer(this.retryGraceTimeoutMs);
+        }
+        return;
+      }
+      if (this.autonomousTurnId) {
+        if (warning.kind === "terminal_error") {
+          this.settleAutonomousTurn({ forceFailure: warning.message, code: "AGY_NETWORK_ERROR" });
+        } else {
+          this.scheduleSettleTimer(this.retryGraceTimeoutMs);
+        }
+      }
+      return;
+    }
+
+    if (isSubstantiveActivity) {
+      this.turnWarning = null;
+      if (this.deferredPromptTurn) {
+        this.deferredPromptTurn.sawContinuation = true;
+        this.scheduleDeferredOrAutonomousIdleSettle();
+      } else if (this.autonomousTurnId) {
+        this.scheduleDeferredOrAutonomousIdleSettle();
+      }
+    }
+  }
+
+  protected override handlePromptResponse(response: PromptResponse, turnId: string): void {
+    if (response.stopReason === "cancelled") {
+      this.clearTurnTracking();
+      super.handlePromptResponse(response, turnId);
+      return;
+    }
+
+    this.mergePromptResponseUsage(response.usage);
+
+    // Antigravity 在网络波动重试耗尽后仍以 stopReason="end_turn" 结束 session/prompt，
+    // 仅发过 ⚠ 网络/执行失败提示且无后续正常内容时，不能当作任务成功完成。
+    if (this.turnWarning?.kind === "terminal_error") {
+      const error = this.turnWarning.message;
+      this.clearTurnTracking();
+      this.finishTurn({
+        type: "turn_failed",
+        provider: this.provider,
+        error,
+        code: "AGY_NETWORK_ERROR",
+        turnId,
+      });
+      return;
+    }
+
+    // 若刚收到重试/流中断告警，或仍有运行中的工具/待审批权限就提前收到 end_turn，
+    // 暂缓结束当前回合以等待 CLI 重试续流，避免重试期间误报完成。
+    if (
+      this.turnWarning?.kind === "retrying" ||
+      this.hasRunningToolCalls() ||
+      this.hasPendingPermissions()
+    ) {
+      this.deferredPromptTurn = {
+        turnId,
+        initialWarning: this.turnWarning,
+        sawContinuation: false,
+      };
+      this.scheduleDeferredOrAutonomousIdleSettle(this.retryGraceTimeoutMs);
+      return;
+    }
+
+    this.clearTurnTracking();
+    super.handlePromptResponse(response, turnId);
   }
 
   override async requestPermission(
@@ -403,11 +617,178 @@ export class AgyACPAgentSession extends ACPAgentSession {
         };
       }
     }
+    // 存在待审批权限时暂停暂缓/续跑超时，避免审批期间误结算。
+    this.clearSettleTimer();
     return super.requestPermission(params);
+  }
+
+  override async respondToPermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<void> {
+    await super.respondToPermission(requestId, response);
+    if (this.deferredPromptTurn || this.autonomousTurnId) {
+      this.scheduleDeferredOrAutonomousIdleSettle();
+    }
+  }
+
+  override async interrupt(): Promise<void> {
+    const deferred = this.deferredPromptTurn;
+    const autonomousId = this.autonomousTurnId;
+    await super.interrupt();
+    if (deferred) {
+      this.clearTurnTracking();
+      this.synthesizeCanceledToolCalls();
+      this.finishTurn({
+        type: "turn_canceled",
+        provider: this.provider,
+        reason: "Interrupted",
+        turnId: deferred.turnId,
+      });
+      return;
+    }
+    if (autonomousId) {
+      this.clearTurnTracking();
+      this.synthesizeCanceledToolCalls();
+      this.pushEvent({
+        type: "turn_canceled",
+        provider: this.provider,
+        reason: "Interrupted",
+        turnId: autonomousId,
+      });
+    }
+  }
+
+  override async close(): Promise<void> {
+    this.clearTurnTracking();
+    await super.close();
+  }
+
+  protected override finishTurn(
+    event: Extract<AgentStreamEvent, { type: "turn_completed" | "turn_failed" | "turn_canceled" }>,
+  ): void {
+    this.clearTurnTracking();
+    super.finishTurn(event);
+  }
+
+  private clearSettleTimer(): void {
+    if (this.settleTimer !== null) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = null;
+    }
+  }
+
+  private clearTurnTracking(): void {
+    this.clearSettleTimer();
+    this.turnWarning = null;
+    this.deferredPromptTurn = null;
+    this.autonomousTurnId = null;
+  }
+
+  private scheduleSettleTimer(delayMs: number): void {
+    this.clearSettleTimer();
+    this.settleTimer = setTimeout(() => {
+      this.settleTimer = null;
+      if (this.deferredPromptTurn) {
+        this.settleDeferredPromptTurn();
+      } else if (this.autonomousTurnId) {
+        this.settleAutonomousTurn();
+      }
+    }, delayMs);
+  }
+
+  private scheduleDeferredOrAutonomousIdleSettle(overrideDelayMs?: number): void {
+    if (this.hasRunningToolCalls() || this.hasPendingPermissions()) {
+      this.clearSettleTimer();
+      return;
+    }
+    const delayMs =
+      overrideDelayMs ??
+      (this.deferredPromptTurn && !this.deferredPromptTurn.sawContinuation
+        ? this.retryGraceTimeoutMs
+        : this.continuationIdleTimeoutMs);
+    this.scheduleSettleTimer(delayMs);
+  }
+
+  private settleDeferredPromptTurn(options?: { forceFailure?: string; code?: string }): void {
+    const deferred = this.deferredPromptTurn;
+    if (!deferred) {
+      return;
+    }
+    const warning = this.turnWarning ?? (deferred.sawContinuation ? null : deferred.initialWarning);
+    const failureMessage = options?.forceFailure ?? warning?.message ?? null;
+    const failureCode =
+      options?.code ??
+      (warning?.kind === "terminal_error" ? "AGY_NETWORK_ERROR" : "AGY_STREAM_INTERRUPTED");
+    const usage = this.currentTurnUsageSnapshot;
+    this.clearTurnTracking();
+
+    if (failureMessage) {
+      this.synthesizeCanceledToolCalls();
+      this.finishTurn({
+        type: "turn_failed",
+        provider: this.provider,
+        error: failureMessage,
+        code: failureCode,
+        turnId: deferred.turnId,
+      });
+      return;
+    }
+
+    this.finishTurn({
+      type: "turn_completed",
+      provider: this.provider,
+      usage,
+      turnId: deferred.turnId,
+    });
+  }
+
+  private settleAutonomousTurn(options?: { forceFailure?: string; code?: string }): void {
+    const turnId = this.autonomousTurnId;
+    if (!turnId) {
+      return;
+    }
+    const failureMessage = options?.forceFailure ?? this.turnWarning?.message ?? null;
+    const failureCode =
+      options?.code ??
+      (this.turnWarning?.kind === "terminal_error"
+        ? "AGY_NETWORK_ERROR"
+        : "AGY_STREAM_INTERRUPTED");
+    const usage = this.currentTurnUsageSnapshot;
+    this.clearTurnTracking();
+
+    if (failureMessage) {
+      this.synthesizeCanceledToolCalls();
+      this.pushEvent({
+        type: "turn_failed",
+        provider: this.provider,
+        error: failureMessage,
+        code: failureCode,
+        turnId,
+      });
+      return;
+    }
+
+    this.pushEvent({
+      type: "turn_completed",
+      provider: this.provider,
+      usage,
+      turnId,
+    });
+  }
+
+  private settleAutonomousTurnBeforeNewPrompt(): void {
+    if (!this.autonomousTurnId) {
+      return;
+    }
+    this.settleAutonomousTurn();
   }
 }
 
 export class AgyACPAgentClient extends ACPAgentClient {
+  private readonly retryGraceTimeoutMs?: number;
+  private readonly continuationIdleTimeoutMs?: number;
+
   constructor(options: AgyACPAgentClientOptions) {
     super({
       provider: "agy",
@@ -438,13 +819,19 @@ export class AgyACPAgentClient extends ACPAgentClient {
       initialCommandsWaitTimeoutMs: AGY_INITIAL_COMMANDS_WAIT_TIMEOUT_MS,
       capabilities: AGY_CAPABILITIES,
     });
+    this.retryGraceTimeoutMs = options.retryGraceTimeoutMs;
+    this.continuationIdleTimeoutMs = options.continuationIdleTimeoutMs;
   }
 
   protected override createSessionInstance(
     config: AgentSessionConfig,
     options: ACPAgentSessionOptions,
   ): ACPAgentSession {
-    return new AgyACPAgentSession(config, options);
+    return new AgyACPAgentSession(config, {
+      ...options,
+      retryGraceTimeoutMs: this.retryGraceTimeoutMs,
+      continuationIdleTimeoutMs: this.continuationIdleTimeoutMs,
+    });
   }
 
   override async listImportableSessions(

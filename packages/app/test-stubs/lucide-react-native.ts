@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 export type LucideIcon = ComponentType<{
   size?: number;
+  strokeWidth?: number;
   color?: string;
   uniProps?: unknown;
 }>;
@@ -21,6 +22,7 @@ export const AudioLines = StubIcon;
 export const Blocks = StubIcon;
 export const Bot = StubIcon;
 export const Brain = StubIcon;
+export const Calendar = StubIcon;
 export const Check = StubIcon;
 export const CheckCircle2 = StubIcon;
 export const ChevronUp = StubIcon;
@@ -84,6 +86,7 @@ export const PinOff = StubIcon;
 export const Play = StubIcon;
 export const Plug = StubIcon;
 export const Plus = StubIcon;
+export const Puzzle = StubIcon;
 export const QrCode = StubIcon;
 export const RefreshCcw = StubIcon;
 export const RefreshCw = StubIcon;

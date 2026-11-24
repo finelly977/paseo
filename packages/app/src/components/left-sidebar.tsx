@@ -1,14 +1,14 @@
 import { router, usePathname } from "expo-router";
 import {
-  Blocks,
-  CalendarClock,
+  Calendar,
   FolderPlus,
   History,
   Home,
-  Plus,
+  Puzzle,
   Search,
   Server,
   Settings,
+  SquarePen,
   X,
 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -82,13 +82,27 @@ type SidebarIconTone = "foreground" | "muted";
 interface SidebarIconProps {
   icon: typeof FolderPlus;
   size: number;
+  strokeWidth?: number;
   tone: SidebarIconTone;
   foregroundColor: string;
   mutedColor: string;
 }
 
-function SidebarIcon({ icon: Icon, size, tone, foregroundColor, mutedColor }: SidebarIconProps) {
-  return <Icon size={size} color={tone === "foreground" ? foregroundColor : mutedColor} />;
+function SidebarIcon({
+  icon: Icon,
+  size,
+  strokeWidth,
+  tone,
+  foregroundColor,
+  mutedColor,
+}: SidebarIconProps) {
+  return (
+    <Icon
+      size={size}
+      strokeWidth={strokeWidth}
+      color={tone === "foreground" ? foregroundColor : mutedColor}
+    />
+  );
 }
 
 const ThemedSidebarIcon = withUnistyles(SidebarIcon);
@@ -538,7 +552,7 @@ const SidebarNewWorkspaceHeaderRow = memo(function SidebarNewWorkspaceHeaderRow(
 
   return (
     <SidebarHeaderRow
-      icon={Plus}
+      icon={SquarePen}
       label={label}
       onPress={handlePress}
       testID={testID}
@@ -592,6 +606,7 @@ function SidebarQuickNavItem({ icon, label, isActive, onPress, testID }: Sidebar
                 <ThemedSidebarIcon
                   icon={icon}
                   size={ICON_SIZE.sm}
+                  strokeWidth={1.75}
                   tone={isHighlighted ? "foreground" : "muted"}
                   uniProps={sidebarIconColorMapping}
                 />
@@ -644,14 +659,14 @@ function SidebarQuickNavRow({
         testID="sidebar-sessions"
       />
       <SidebarQuickNavItem
-        icon={CalendarClock}
+        icon={Calendar}
         label={labels.schedules}
         isActive={isSchedulesActive}
         onPress={onViewSchedules}
         testID="sidebar-schedules"
       />
       <SidebarQuickNavItem
-        icon={Blocks}
+        icon={Puzzle}
         label={labels.plugins}
         isActive={isPluginsActive}
         onPress={onViewPlugins}
@@ -1026,8 +1041,6 @@ function DesktopSidebar({
 
 function WorkspacesSectionHeader() {
   const { t } = useTranslation();
-  const hosts = useHosts();
-  const hostFilters = useSidebarViewStore((state) => state.hostFilters);
   const { resolvedProjectFilters } = useSidebarModel();
   const setCommandCenterOpen = useKeyboardShortcutsStore((state) => state.setCommandCenterOpen);
   const commandCenterKeys = useShortcutKeys("toggle-command-center");
@@ -1045,18 +1058,6 @@ function WorkspacesSectionHeader() {
     resolvedProjectFilters.length > 0
       ? `${t("sidebar.displayPreferences.ariaLabel")} · ${resolvedProjectFilters.length}`
       : t("sidebar.displayPreferences.ariaLabel");
-  const hostFilterTooltip = useMemo(() => {
-    if (hostFilters.length === 0) {
-      return "筛选主机";
-    }
-    if (hostFilters.length === 1) {
-      const targetId = hostFilters[0];
-      const host = hosts.find((candidate) => candidate.serverId === targetId);
-      const label = host?.label?.trim() || targetId;
-      return `筛选主机：${label}`;
-    }
-    return `已筛选 ${hostFilters.length} 台主机`;
-  }, [hostFilters, hosts]);
 
   return (
     <View style={styles.workspacesSectionHeader}>
@@ -1077,6 +1078,7 @@ function WorkspacesSectionHeader() {
                 <ThemedSidebarIcon
                   icon={Search}
                   size={ICON_SIZE.sm}
+                  strokeWidth={1.75}
                   tone={hovered || pressed ? "foreground" : "muted"}
                   uniProps={sidebarIconColorMapping}
                 />
@@ -1097,16 +1099,7 @@ function WorkspacesSectionHeader() {
             <IconTooltipContent label={displayPreferencesTooltip} />
           </TooltipContent>
         </Tooltip>
-        <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild>
-            <View>
-              <SidebarHostFilterMenu />
-            </View>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="center" offset={8}>
-            <IconTooltipContent label={hostFilterTooltip} />
-          </TooltipContent>
-        </Tooltip>
+        <SidebarHostFilterMenu />
       </View>
     </View>
   );

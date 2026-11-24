@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native-unistyles";
@@ -6,7 +6,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import type { AttachmentMetadata } from "@/attachments/types";
-import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
+import {
+  getCachedAttachmentImageSize,
+  useAttachmentPreviewState,
+} from "@/attachments/use-attachment-preview-url";
 import { isNative, isWeb } from "@/constants/platform";
 import { SPACING } from "@/styles/theme";
 import { WindowChromeRootRegion } from "@/utils/desktop-window";
@@ -29,9 +32,10 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const metadata = source?.type === "attachment" ? source.metadata : null;
-  const attachmentUrl = useAttachmentPreviewUrl(metadata);
-  const url = source?.type === "uri" ? source.uri : attachmentUrl;
-  const contentSize = source?.type === "uri" ? source.contentSize : undefined;
+  const attachmentPreview = useAttachmentPreviewState(metadata);
+  const url = source?.type === "uri" ? source.uri : attachmentPreview.url;
+  const contentSize =
+    source?.type === "uri" ? source.contentSize : getCachedAttachmentImageSize(metadata?.id);
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
@@ -81,10 +85,40 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
     return null;
   }
 
-  const hasError = errored || !url;
+  const isLoadingAttachment =
+    source.type === "attachment" && attachmentPreview.status === "loading";
+  const hasError =
+    errored || (source.type === "attachment" ? attachmentPreview.status === "error" || !url : !url);
+
+  let lightboxBody: ReactNode = null;
+  if (isLoadingAttachment) {
+    lightboxBody = null;
+  } else if (hasError) {
+    lightboxBody = <Text style={styles.errorText}>{t("message.attachments.imageLoadFailed")}</Text>;
+  } else if (url) {
+    lightboxBody = (
+      <ZoomableImage
+        accessibilityLabel={t("composer.attachments.openImage")}
+        actions={actions}
+        contentSize={contentSize}
+        fit={LIGHTBOX_FIT}
+        onError={handleImageError}
+        onPressOutsideContent={onClose}
+        style={styles.imageViewport}
+        testID="attachment-lightbox"
+        uri={url}
+      />
+    );
+  }
 
   return (
-    <Modal transparent animationType="fade" statusBarTranslucent visible onRequestClose={onClose}>
+    <Modal
+      transparent
+      animationType={isWeb ? "none" : "fade"}
+      statusBarTranslucent
+      visible
+      onRequestClose={onClose}
+    >
       <ModalRoot style={styles.root}>
         <WindowChromeRootRegion corners="both">
           <View style={styles.root}>
@@ -97,21 +131,7 @@ export function AttachmentLightbox({ source, onClose }: AttachmentLightboxProps)
             />
             <View pointerEvents="box-none" style={contentLayerStyle}>
               <View pointerEvents="box-none" style={styles.imageArea}>
-                {hasError ? (
-                  <Text style={styles.errorText}>{t("message.attachments.imageLoadFailed")}</Text>
-                ) : (
-                  <ZoomableImage
-                    accessibilityLabel={t("composer.attachments.openImage")}
-                    actions={actions}
-                    contentSize={contentSize}
-                    fit={LIGHTBOX_FIT}
-                    onError={handleImageError}
-                    onPressOutsideContent={onClose}
-                    style={styles.imageViewport}
-                    testID="attachment-lightbox"
-                    uri={url}
-                  />
-                )}
+                {lightboxBody}
               </View>
             </View>
           </View>

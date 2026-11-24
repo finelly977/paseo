@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { Text, View, type PressableStateCallbackType } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { Settings2, Server } from "lucide-react-native";
+import { Monitor, Settings2 } from "lucide-react-native";
 import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
 import {
@@ -24,7 +24,7 @@ import {
 import { useSidebarModel } from "@/components/sidebar/sidebar-model";
 
 const ThemedSettings2 = withUnistyles(Settings2);
-const ThemedServer = withUnistyles(Server);
+const ThemedMonitor = withUnistyles(Monitor);
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const accentColorMapping = (theme: Theme) => ({ color: theme.colors.accent });
@@ -121,6 +121,7 @@ export function SidebarDisplayPreferencesMenu() {
           <>
             <ThemedSettings2
               size={ICON_SIZE.sm}
+              strokeWidth={1.75}
               uniProps={resolveFilterIconMapping(hasProjectFilter, Boolean(hovered || pressed))}
             />
             {hasProjectFilter ? <View style={styles.filterDot} /> : null}
@@ -234,8 +235,9 @@ export function SidebarHostFilterMenu() {
       >
         {({ hovered, pressed }) => (
           <>
-            <ThemedServer
+            <ThemedMonitor
               size={ICON_SIZE.sm}
+              strokeWidth={1.75}
               uniProps={resolveFilterIconMapping(filtered, Boolean(hovered || pressed))}
             />
             {filtered ? <View style={styles.filterDot} /> : null}
@@ -362,8 +364,8 @@ function HostFilterItem({
 const styles = StyleSheet.create((theme) => ({
   filterDot: {
     position: "absolute",
-    right: 3,
-    top: 3,
+    right: 2,
+    top: 2,
     width: 6,
     height: 6,
     borderRadius: theme.borderRadius.full,

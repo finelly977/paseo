@@ -6,42 +6,52 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttachmentMetadata } from "@/attachments/types";
 import { AttachmentLightbox, type ImageLightboxSource } from "./attachment-lightbox";
 
-const { theme, imageMetadata, useAttachmentPreviewUrlMock } = vi.hoisted(() => {
-  const hoistedTheme = {
-    spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
-    iconSize: { sm: 14, md: 18, lg: 22 },
-    borderWidth: { 1: 1 },
-    borderRadius: { full: 999, md: 6, lg: 8 },
-    fontSize: { xs: 11, sm: 13, base: 15 },
-    fontWeight: { normal: "400" },
-    colors: {
-      surface1: "#111",
-      surface2: "#222",
-      foreground: "#fff",
-      foregroundMuted: "#aaa",
-      border: "#555",
-      borderAccent: "#444",
-    },
-  };
+const { theme, imageMetadata, useAttachmentPreviewStateMock, cachedImageSizeMock } = vi.hoisted(
+  () => {
+    const hoistedTheme = {
+      spacing: { 1: 4, 2: 8, 3: 12, 4: 16 },
+      iconSize: { sm: 14, md: 18, lg: 22 },
+      borderWidth: { 1: 1 },
+      borderRadius: { full: 999, md: 6, lg: 8 },
+      fontSize: { xs: 11, sm: 13, base: 15 },
+      fontWeight: { normal: "400" },
+      colors: {
+        surface1: "#111",
+        surface2: "#222",
+        foreground: "#fff",
+        foregroundMuted: "#aaa",
+        border: "#555",
+        borderAccent: "#444",
+      },
+    };
 
-  const hoistedImageMetadata: AttachmentMetadata = {
-    id: "img-1",
-    mimeType: "image/png",
-    storageType: "web-indexeddb",
-    storageKey: "img-1",
-    fileName: "img-1.png",
-    byteSize: 42,
-    createdAt: 1,
-  };
+    const hoistedImageMetadata: AttachmentMetadata = {
+      id: "img-1",
+      mimeType: "image/png",
+      storageType: "web-indexeddb",
+      storageKey: "img-1",
+      fileName: "img-1.png",
+      byteSize: 42,
+      createdAt: 1,
+    };
 
-  return {
-    theme: hoistedTheme,
-    imageMetadata: hoistedImageMetadata,
-    useAttachmentPreviewUrlMock: vi.fn<(metadata: AttachmentMetadata | null) => string | null>(
-      () => "blob:preview",
-    ),
-  };
-});
+    return {
+      theme: hoistedTheme,
+      imageMetadata: hoistedImageMetadata,
+      useAttachmentPreviewStateMock: vi.fn<
+        (metadata: AttachmentMetadata | null) => {
+          url: string | null;
+          status: "idle" | "loading" | "ready" | "error";
+        }
+      >((metadata) =>
+        metadata ? { url: "blob:preview", status: "ready" } : { url: null, status: "idle" },
+      ),
+      cachedImageSizeMock: vi.fn<
+        (id: string | null | undefined) => { width: number; height: number } | undefined
+      >(() => undefined),
+    };
+  },
+);
 const attachmentSource: ImageLightboxSource = { type: "attachment", metadata: imageMetadata };
 const assistantImageSource: ImageLightboxSource = {
   type: "uri",
@@ -95,11 +105,13 @@ vi.mock("@/components/zoomable-viewport/image", () => ({
       onPress: () => void;
       testID?: string;
     }>;
+    const contentSize = props.contentSize as { width: number; height: number } | undefined;
     return React.createElement(
       "div",
       {
         "data-testid": `${String(props.testID)}-image`,
         "data-source": props.uri,
+        "data-content-size": contentSize ? `${contentSize.width}x${contentSize.height}` : "",
         role: "img",
       },
       actions.map((action) =>
@@ -127,8 +139,9 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("@/attachments/use-attachment-preview-url", () => ({
-  useAttachmentPreviewUrl: (metadata: AttachmentMetadata | null) =>
-    useAttachmentPreviewUrlMock(metadata),
+  useAttachmentPreviewState: (metadata: AttachmentMetadata | null) =>
+    useAttachmentPreviewStateMock(metadata),
+  getCachedAttachmentImageSize: (id: string | null | undefined) => cachedImageSizeMock(id),
 }));
 
 let root: Root | null = null;
@@ -147,7 +160,10 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  useAttachmentPreviewUrlMock.mockReturnValue("blob:preview");
+  useAttachmentPreviewStateMock.mockImplementation((metadata) =>
+    metadata ? { url: "blob:preview", status: "ready" } : { url: null, status: "idle" },
+  );
+  cachedImageSizeMock.mockReturnValue(undefined);
 });
 
 afterEach(() => {
@@ -198,7 +214,7 @@ describe("AttachmentLightbox", () => {
 
     const image = queryByTestId("attachment-lightbox-image");
     expect(image?.getAttribute("data-source")).toBe("blob:assistant-image");
-    expect(useAttachmentPreviewUrlMock).toHaveBeenLastCalledWith(null);
+    expect(useAttachmentPreviewStateMock).toHaveBeenLastCalledWith(null);
   });
 
   it("calls onClose when the backdrop is pressed", () => {
@@ -225,12 +241,28 @@ describe("AttachmentLightbox", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("shows error text when the preview URL resolves to null", () => {
-    useAttachmentPreviewUrlMock.mockReturnValue(null);
+  it("does not flash error text while an attachment preview URL is still loading", () => {
+    useAttachmentPreviewStateMock.mockReturnValue({ url: null, status: "loading" });
+    render(<AttachmentLightbox source={attachmentSource} onClose={vi.fn()} />);
+
+    expect(queryByTestId("attachment-lightbox-image")).toBeNull();
+    expect(document.body.textContent ?? "").not.toContain("Couldn't load image");
+  });
+
+  it("shows error text when the preview URL fails to resolve", () => {
+    useAttachmentPreviewStateMock.mockReturnValue({ url: null, status: "error" });
     render(<AttachmentLightbox source={attachmentSource} onClose={vi.fn()} />);
 
     expect(queryByTestId("attachment-lightbox-image")).toBeNull();
     expect(document.body.textContent ?? "").toContain("Couldn't load image");
+  });
+
+  it("passes cached thumbnail dimensions to ZoomableImage on the first frame", () => {
+    cachedImageSizeMock.mockReturnValue({ width: 1280, height: 720 });
+    render(<AttachmentLightbox source={attachmentSource} onClose={vi.fn()} />);
+
+    const image = queryByTestId("attachment-lightbox-image");
+    expect(image?.getAttribute("data-content-size")).toBe("1280x720");
   });
 
   it("closes on Escape key on web", () => {

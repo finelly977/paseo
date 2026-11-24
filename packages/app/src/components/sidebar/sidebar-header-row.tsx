@@ -3,9 +3,11 @@ import { Pressable, Text, View, type PressableStateCallbackType } from "react-na
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { LucideIcon } from "lucide-react-native";
 import { HEADER_INNER_HEIGHT, HEADER_INNER_HEIGHT_MOBILE } from "@/constants/layout";
+import { COMPACT_LABEL_DATASET } from "@/styles/compact-label";
 import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { Shortcut } from "@/components/ui/shortcut";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
@@ -77,24 +79,19 @@ export function SidebarHeaderRow({
       const isHighlighted = Boolean(state.hovered) || isActive;
       const isPrimary = variant === "primary";
       const iconMapping = resolveHeaderRowIconMapping(isHighlighted, isPrimary);
-      const showShortcut = Boolean(shortcutKeys && (isPrimary || state.hovered));
+      const showInlineShortcut = Boolean(shortcutKeys && !isPrimary && state.hovered);
       return (
         <>
-          <ThemedIcon size={ICON_SIZE.sm} uniProps={iconMapping} />
+          <ThemedIcon size={ICON_SIZE.sm} strokeWidth={1.75} uniProps={iconMapping} />
           <SidebarHeaderRowLabel
             label={label}
             isHighlighted={isHighlighted}
             isPrimary={isPrimary}
           />
-          {showShortcut ? (
-            <Shortcut
-              chord={shortcutKeys!}
-              style={[
-                styles.shortcut,
-                isPrimary && styles.shortcutPrimary,
-                isPrimary && !isHighlighted && styles.shortcutPrimaryIdle,
-              ]}
-            />
+          {showInlineShortcut ? (
+            <View style={styles.shortcut} dataSet={COMPACT_LABEL_DATASET}>
+              <Shortcut chord={shortcutKeys!} textStyle={styles.shortcutText} />
+            </View>
           ) : null}
         </>
       );
@@ -102,19 +99,35 @@ export function SidebarHeaderRow({
     [ThemedIcon, isActive, label, shortcutKeys, variant],
   );
 
+  const button = (
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      nativeID={nativeID}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      style={buttonStyle}
+    >
+      {renderChildren}
+    </Pressable>
+  );
+
   return (
     <View style={containerStyle}>
-      <Pressable
-        onPress={onPress}
-        testID={testID}
-        nativeID={nativeID}
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? label}
-        style={buttonStyle}
-      >
-        {renderChildren}
-      </Pressable>
+      {variant === "primary" && shortcutKeys ? (
+        <Tooltip delayDuration={450} enabledOnMobile={false}>
+          <TooltipTrigger asChild>{button}</TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={6}>
+            <View style={styles.tooltipRow} dataSet={COMPACT_LABEL_DATASET}>
+              <Text style={styles.tooltipText}>{label}</Text>
+              <Shortcut chord={shortcutKeys} textStyle={styles.shortcutText} />
+            </View>
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        button
+      )}
     </View>
   );
 }
@@ -186,6 +199,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[2],
   },
   buttonPrimary: {
+    justifyContent: "center",
     minHeight: { xs: 38, md: 32 },
     paddingVertical: { xs: theme.spacing[2], md: theme.spacing[1.5] },
     paddingHorizontal: theme.spacing[2],
@@ -222,13 +236,19 @@ const styles = StyleSheet.create((theme) => ({
   },
   shortcut: {
     marginLeft: "auto",
+    flexShrink: 0,
   },
-  shortcutPrimary: {
-    backgroundColor: "transparent",
-    paddingHorizontal: 0,
-    paddingVertical: 0,
+  shortcutText: {
+    fontSize: Math.round(theme.fontSize.base * 0.75),
+    lineHeight: Math.ceil(theme.fontSize.base * 0.75 * 1.4),
   },
-  shortcutPrimaryIdle: {
-    opacity: 0.65,
+  tooltipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  tooltipText: {
+    fontSize: Math.round(theme.fontSize.base * 0.8125),
+    color: theme.colors.popoverForeground,
   },
 }));

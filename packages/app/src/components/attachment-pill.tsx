@@ -1,11 +1,21 @@
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import {
+  Image,
+  Pressable,
+  Text,
+  View,
+  type ImageLoadEventData,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { X } from "lucide-react-native";
 import { isNative } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import type { AttachmentMetadata } from "@/attachments/types";
-import { useAttachmentPreviewUrl } from "@/attachments/use-attachment-preview-url";
+import {
+  rememberAttachmentImageSize,
+  useAttachmentPreviewUrl,
+} from "@/attachments/use-attachment-preview-url";
 import type { Theme } from "@/styles/theme";
 
 // Every attachment pill body — image thumbnail or labelled — renders at this
@@ -135,10 +145,19 @@ export function AttachmentLabel({ icon, title, subtitle }: AttachmentLabelProps)
 export function AttachmentThumbnail({ metadata }: { metadata: AttachmentMetadata }) {
   const uri = useAttachmentPreviewUrl(metadata);
   const source = useMemo(() => ({ uri: uri ?? "" }), [uri]);
+  const handleLoad = useCallback(
+    (event: NativeSyntheticEvent<ImageLoadEventData>) => {
+      const dims = event.nativeEvent?.source;
+      if (dims && dims.width > 0 && dims.height > 0) {
+        rememberAttachmentImageSize(metadata.id, { width: dims.width, height: dims.height });
+      }
+    },
+    [metadata.id],
+  );
   if (!uri) {
     return <View style={styles.thumbnailPlaceholder} />;
   }
-  return <Image source={source} style={styles.thumbnail} />;
+  return <Image source={source} style={styles.thumbnail} onLoad={handleLoad} />;
 }
 
 const ThemedX = withUnistyles(X);

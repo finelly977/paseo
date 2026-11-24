@@ -17,6 +17,7 @@ import {
   AGY_ALLOW_ALL_MODE_ID,
   AgyACPAgentClient,
   buildAgyNewSessionMeta,
+  classifyAgyWarningText,
   findDefaultAgyBinary,
   normalizeAgyPath,
   transformAgySessionResponse,
@@ -563,11 +564,471 @@ describe("AgyACPAgentClient catalog, session lifecycle, and permissions", () => 
     const emptyDir = makeTempDir("agy-missing-");
     process.env.PATH = emptyDir;
     if (process.platform === "win32") {
-      process.env.LOCALAPPDATA = emptyDir;
       process.env.PATHEXT = ".EXE";
+    }
+    if (process.platform === "win32") {
+      process.env.LOCALAPPDATA = emptyDir;
     }
 
     const client = new AgyACPAgentClient({ logger: createTestLogger() });
     await expect(client.isAvailable()).resolves.toBe(false);
+  });
+
+  test("classifies Antigravity CLI retry/network warnings without matching normal replies", () => {
+    expect(
+      classifyAgyWarningText(
+        '\n⚠ API error (attempt 1): request failed: Post "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse": EOF\n',
+      ),
+    ).toEqual({
+      kind: "retrying",
+      message:
+        'API error (attempt 1): request failed: Post "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse": EOF',
+    });
+    expect(
+      classifyAgyWarningText(
+        "\n⚠ The stream was interrupted. Please continue the task you were working on.\n",
+      ),
+    ).toEqual({
+      kind: "retrying",
+      message: "The stream was interrupted. Please continue the task you were working on.",
+    });
+    expect(
+      classifyAgyWarningText(
+        "\n⚠ There was a network issue connecting to the server, please try again.\n",
+      ),
+    ).toEqual({
+      kind: "terminal_error",
+      message: "There was a network issue connecting to the server, please try again.",
+    });
+    expect(classifyAgyWarningText("已完成重构，所有测试通过。")).toBeNull();
+    expect(classifyAgyWarningText("⚠ 注意：这是正文里的普通说明，不是网络错误。")).toBeNull();
+  });
+
+  test("turns terminal network failure warnings with end_turn into turn_failed instead of turn_completed", async () => {
+    const { agentConnection, clientStream } = createInMemoryAgyPair(
+      (conn): Agent => ({
+        async initialize() {
+          return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
+        },
+        async authenticate() {
+          return {};
+        },
+        async newSession() {
+          return {
+            sessionId: "agy-net-fail",
+            modes: {
+              availableModes: [{ id: "default", name: "Default" }],
+              currentModeId: "default",
+            },
+            configOptions: agyConfigOptions("gemini-4-neon", "high", "default"),
+          };
+        },
+        async cancel() {},
+        async prompt(params) {
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: '\n⚠ API error (attempt 1): request failed: Post "https://daily-cloudcode-pa.googleapis.com": EOF\n',
+              },
+            },
+          });
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: "\n⚠ There was a network issue connecting to the server, please try again.\n",
+              },
+            },
+          });
+          return { stopReason: "end_turn" };
+        },
+      }),
+    );
+
+    class InMemoryAgyClient extends AgyACPAgentClient {
+      protected override createSessionInstance(
+        config: Parameters<AgyACPAgentClient["createSessionInstance"]>[0],
+        options: Parameters<AgyACPAgentClient["createSessionInstance"]>[1],
+      ) {
+        const session = super.createSessionInstance(config, {
+          ...options,
+          terminateProcess: async () => undefined,
+        });
+        const clientConnection = new ClientSideConnection(() => session, clientStream);
+        Reflect.set(session, "spawnProcess", async () => ({
+          child: {
+            kill: vi.fn(),
+            exitCode: 0,
+            signalCode: null,
+            once: vi.fn(),
+            stdin: { destroy: vi.fn() },
+            stdout: { destroy: vi.fn() },
+            stderr: { destroy: vi.fn() },
+          },
+          connection: clientConnection,
+          initialize: await clientConnection.initialize({
+            protocolVersion: PROTOCOL_VERSION,
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: true,
+            },
+          }),
+        }));
+        return session;
+      }
+    }
+
+    const client = new InMemoryAgyClient({
+      logger: createTestLogger(),
+      retryGraceTimeoutMs: 60,
+      continuationIdleTimeoutMs: 30,
+    });
+    const session = await client.createSession({ provider: "agy", cwd: "/tmp/agy-net-fail" });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await expect(session.run("do task")).rejects.toThrow(
+      "There was a network issue connecting to the server, please try again.",
+    );
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+    expect(events.find((event) => event.type === "turn_failed")).toMatchObject({
+      type: "turn_failed",
+      code: "AGY_NETWORK_ERROR",
+    });
+
+    await session.close();
+    void agentConnection;
+  });
+
+  test("keeps turn running across premature end_turn during retry and completes after CLI continuation succeeds", async () => {
+    let serverConn: AgentSideConnection | null = null;
+    const emitContinuation = async (conn: AgentSideConnection, sessionId: string) => {
+      await conn.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          content: { type: "text", text: "Resuming after network hiccup..." },
+        },
+      });
+      await conn.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "重试恢复后已真正完成任务。" },
+        },
+      });
+    };
+    const { agentConnection, clientStream } = createInMemoryAgyPair((conn): Agent => {
+      serverConn = conn;
+      return {
+        async initialize() {
+          return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
+        },
+        async authenticate() {
+          return {};
+        },
+        async newSession() {
+          return {
+            sessionId: "agy-retry-recover",
+            modes: {
+              availableModes: [{ id: "default", name: "Default" }],
+              currentModeId: "default",
+            },
+            configOptions: agyConfigOptions("gemini-4-neon", "high", "default"),
+          };
+        },
+        async cancel() {},
+        async prompt(params) {
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: "\n⚠ The stream was interrupted. Please continue the task you were working on.\n",
+              },
+            },
+          });
+          // 模拟网络波动重试时 CLI 提前返回 end_turn，但稍后在后台继续推流完成任务。
+          setTimeout(emitContinuation, 25, conn, params.sessionId);
+          return { stopReason: "end_turn" };
+        },
+      };
+    });
+
+    class InMemoryAgyClient extends AgyACPAgentClient {
+      protected override createSessionInstance(
+        config: Parameters<AgyACPAgentClient["createSessionInstance"]>[0],
+        options: Parameters<AgyACPAgentClient["createSessionInstance"]>[1],
+      ) {
+        const session = super.createSessionInstance(config, {
+          ...options,
+          terminateProcess: async () => undefined,
+        });
+        const clientConnection = new ClientSideConnection(() => session, clientStream);
+        Reflect.set(session, "spawnProcess", async () => ({
+          child: {
+            kill: vi.fn(),
+            exitCode: 0,
+            signalCode: null,
+            once: vi.fn(),
+            stdin: { destroy: vi.fn() },
+            stdout: { destroy: vi.fn() },
+            stderr: { destroy: vi.fn() },
+          },
+          connection: clientConnection,
+          initialize: await clientConnection.initialize({
+            protocolVersion: PROTOCOL_VERSION,
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: true,
+            },
+          }),
+        }));
+        return session;
+      }
+    }
+
+    const client = new InMemoryAgyClient({
+      logger: createTestLogger(),
+      retryGraceTimeoutMs: 120,
+      continuationIdleTimeoutMs: 40,
+    });
+    const session = await client.createSession({ provider: "agy", cwd: "/tmp/agy-retry-recover" });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const result = await session.run("finish task");
+    expect(result.finalText).toContain("重试恢复后已真正完成任务。");
+    expect(events.filter((event) => event.type === "turn_completed")).toHaveLength(1);
+    expect(events.some((event) => event.type === "turn_failed")).toBe(false);
+
+    // 模拟静默重试提前返回 end_turn 后，后台突发新一轮思考与工具活动：自动拉起自治运行态，工具跑完再结束。
+    const postEvents: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => postEvents.push(event));
+    await serverConn!.sessionUpdate({
+      sessionId: "agy-retry-recover",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "retry-tool-1",
+        title: "Running test",
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // 工具仍在 running，不能提前发 turn_completed。
+    expect(postEvents.some((event) => event.type === "turn_started")).toBe(true);
+    expect(postEvents.some((event) => event.type === "turn_completed")).toBe(false);
+
+    await serverConn!.sessionUpdate({
+      sessionId: "agy-retry-recover",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "retry-tool-1",
+        status: "completed",
+      },
+    });
+    await serverConn!.sessionUpdate({
+      sessionId: "agy-retry-recover",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "后台续跑完成" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(postEvents.filter((event) => event.type === "turn_completed")).toHaveLength(1);
+    unsubscribe();
+
+    await session.close();
+    void agentConnection;
+  });
+
+  test("fails the turn if retrying warning triggers premature end_turn and no continuation arrives", async () => {
+    const { agentConnection, clientStream } = createInMemoryAgyPair(
+      (conn): Agent => ({
+        async initialize() {
+          return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
+        },
+        async authenticate() {
+          return {};
+        },
+        async newSession() {
+          return {
+            sessionId: "agy-retry-stalled",
+            modes: {
+              availableModes: [{ id: "default", name: "Default" }],
+              currentModeId: "default",
+            },
+            configOptions: agyConfigOptions("gemini-4-neon", "high", "default"),
+          };
+        },
+        async cancel() {},
+        async prompt(params) {
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: '\n⚠ API error (attempt 2): request failed: Post "https://daily-cloudcode-pa.googleapis.com": EOF\n',
+              },
+            },
+          });
+          return { stopReason: "end_turn" };
+        },
+      }),
+    );
+
+    class InMemoryAgyClient extends AgyACPAgentClient {
+      protected override createSessionInstance(
+        config: Parameters<AgyACPAgentClient["createSessionInstance"]>[0],
+        options: Parameters<AgyACPAgentClient["createSessionInstance"]>[1],
+      ) {
+        const session = super.createSessionInstance(config, {
+          ...options,
+          terminateProcess: async () => undefined,
+        });
+        const clientConnection = new ClientSideConnection(() => session, clientStream);
+        Reflect.set(session, "spawnProcess", async () => ({
+          child: {
+            kill: vi.fn(),
+            exitCode: 0,
+            signalCode: null,
+            once: vi.fn(),
+            stdin: { destroy: vi.fn() },
+            stdout: { destroy: vi.fn() },
+            stderr: { destroy: vi.fn() },
+          },
+          connection: clientConnection,
+          initialize: await clientConnection.initialize({
+            protocolVersion: PROTOCOL_VERSION,
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: true,
+            },
+          }),
+        }));
+        return session;
+      }
+    }
+
+    const client = new InMemoryAgyClient({
+      logger: createTestLogger(),
+      retryGraceTimeoutMs: 40,
+      continuationIdleTimeoutMs: 20,
+    });
+    const session = await client.createSession({ provider: "agy", cwd: "/tmp/agy-retry-stalled" });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    await expect(session.run("do task")).rejects.toThrow("API error (attempt 2)");
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+    expect(events.find((event) => event.type === "turn_failed")).toMatchObject({
+      type: "turn_failed",
+      code: "AGY_STREAM_INTERRUPTED",
+    });
+
+    await session.close();
+    void agentConnection;
+  });
+
+  test("completes normally when a mid-turn retry warning is followed by a recovered reply", async () => {
+    const { agentConnection, clientStream } = createInMemoryAgyPair(
+      (conn): Agent => ({
+        async initialize() {
+          return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} };
+        },
+        async authenticate() {
+          return {};
+        },
+        async newSession() {
+          return {
+            sessionId: "agy-retry-inline-ok",
+            modes: {
+              availableModes: [{ id: "default", name: "Default" }],
+              currentModeId: "default",
+            },
+            configOptions: agyConfigOptions("gemini-4-neon", "high", "default"),
+          };
+        },
+        async cancel() {},
+        async prompt(params) {
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: {
+                type: "text",
+                text: "\n⚠ API error (attempt 1): UNAVAILABLE (code 503)\n",
+              },
+            },
+          });
+          await conn.sessionUpdate({
+            sessionId: params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "已自动重试并完成全部修改。" },
+            },
+          });
+          return { stopReason: "end_turn" };
+        },
+      }),
+    );
+
+    class InMemoryAgyClient extends AgyACPAgentClient {
+      protected override createSessionInstance(
+        config: Parameters<AgyACPAgentClient["createSessionInstance"]>[0],
+        options: Parameters<AgyACPAgentClient["createSessionInstance"]>[1],
+      ) {
+        const session = super.createSessionInstance(config, {
+          ...options,
+          terminateProcess: async () => undefined,
+        });
+        const clientConnection = new ClientSideConnection(() => session, clientStream);
+        Reflect.set(session, "spawnProcess", async () => ({
+          child: {
+            kill: vi.fn(),
+            exitCode: 0,
+            signalCode: null,
+            once: vi.fn(),
+            stdin: { destroy: vi.fn() },
+            stdout: { destroy: vi.fn() },
+            stderr: { destroy: vi.fn() },
+          },
+          connection: clientConnection,
+          initialize: await clientConnection.initialize({
+            protocolVersion: PROTOCOL_VERSION,
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: true,
+            },
+          }),
+        }));
+        return session;
+      }
+    }
+
+    const client = new InMemoryAgyClient({
+      logger: createTestLogger(),
+      retryGraceTimeoutMs: 60,
+      continuationIdleTimeoutMs: 20,
+    });
+    const session = await client.createSession({ provider: "agy", cwd: "/tmp/agy-retry-inline" });
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const result = await session.run("fix bug");
+    expect(result.finalText).toContain("已自动重试并完成全部修改。");
+    expect(events.filter((event) => event.type === "turn_completed")).toHaveLength(1);
+    expect(events.some((event) => event.type === "turn_failed")).toBe(false);
+
+    await session.close();
+    void agentConnection;
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import {
@@ -74,17 +74,32 @@ export function ZoomableViewport({
   const limits = useMemo(() => ({ minScale, maxScale }), [maxScale, minScale]);
 
   const commitTransform = useCallback((next: ViewportTransform) => {
+    const current = transformRef.current;
+    if (current.scale === next.scale && current.x === next.x && current.y === next.y) {
+      return;
+    }
     transformRef.current = next;
     setTransform(next);
   }, []);
   const reset = useCallback(() => commitTransform(FIT_TRANSFORM), [commitTransform]);
 
-  useEffect(() => {
+  // 首次绘制前同步读取容器尺寸，避免首帧以 0x0 渲染后再经 ResizeObserver 异步跳出造成闪烁。
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const syncViewportSize = (width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      setViewport((current) =>
+        current && current.width === width && current.height === height
+          ? current
+          : { width, height },
+      );
+    };
+    const rect = canvas.getBoundingClientRect();
+    syncViewportSize(rect.width || canvas.clientWidth, rect.height || canvas.clientHeight);
     const observer = new ResizeObserver(([entry]) => {
-      if (!entry || entry.contentRect.width <= 0 || entry.contentRect.height <= 0) return;
-      setViewport({ width: entry.contentRect.width, height: entry.contentRect.height });
+      if (!entry) return;
+      syncViewportSize(entry.contentRect.width, entry.contentRect.height);
     });
     observer.observe(canvas);
     return () => observer.disconnect();
@@ -269,6 +284,7 @@ export function ZoomableViewport({
       ...contentDomStyle,
       width: fittedContent?.width ?? 0,
       height: fittedContent?.height ?? 0,
+      opacity: fittedContent ? 1 : 0,
       transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scale})`,
     }),
     [fittedContent, transform],
