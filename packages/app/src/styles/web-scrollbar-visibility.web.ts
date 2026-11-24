@@ -74,7 +74,12 @@ export function trackWebScrollbarVisibility(): () => void {
   }
 
   function discover(element: Element) {
-    if (!(element instanceof HTMLElement) || tracked.has(element)) return;
+    if (
+      !(element instanceof HTMLElement) ||
+      tracked.has(element) ||
+      element.closest("[data-scrollbar-static]")
+    )
+      return;
     const style = getComputedStyle(element);
     if (
       element !== document.scrollingElement &&
@@ -87,6 +92,8 @@ export function trackWebScrollbarVisibility(): () => void {
   }
 
   function discoverTree(element: Element) {
+    // 临时绘制副本沿用源节点的滚动条样式，不登记额外的尺寸观察器。
+    if (element.closest("[data-scrollbar-static]")) return;
     for (const root of trees) {
       if (root.contains(element)) return;
       if (element.contains(root)) trees.delete(root);
@@ -106,6 +113,9 @@ export function trackWebScrollbarVisibility(): () => void {
   discoverTree(document.documentElement);
   const mutations = new MutationObserver((records) => {
     for (const record of records) {
+      if (record.target instanceof Element && record.target.closest("[data-scrollbar-static]")) {
+        continue;
+      }
       invalidateAncestors(record.target);
       if (record.type === "attributes" && record.target instanceof Element) {
         candidates.add(record.target);

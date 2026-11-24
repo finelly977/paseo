@@ -14,6 +14,8 @@ import { ActivityIndicator } from "react-native";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   estimateStreamItemHeight,
+  findMountedWindowStart,
+  getWebMountedRecentStreamItems,
   shouldAutoLoadOlderHistory,
   visibleWebHistoryItems,
 } from "./web-virtualization";
@@ -24,6 +26,7 @@ import { createStreamStrategy } from "./strategy";
 import { useContentToggleAnchor } from "./use-content-toggle-anchor";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { MOTION_DURATION, MOTION_EASING_CSS } from "@/styles/motion";
+import { createProcessMotion, PROCESS_SCROLL_ANCHOR_VAR } from "./process-motion.web";
 
 interface CreateWebStreamStrategyInput {
   isMobileBreakpoint: boolean;
@@ -44,28 +47,22 @@ const ITEM_JUMP_CENTER_TOLERANCE_PX = 2;
 const ITEM_JUMP_STABLE_FRAMES = 2;
 const USER_DOWNWARD_INPUT_WINDOW_MS = 500;
 const PROGRAMMATIC_SCROLL_ECHO_TOLERANCE_PX = 2;
-const MAX_TRANSITION_RANGE_SPAN = 48;
 
-function expandRangeForTransitioningProcess(
-  range: { startIndex: number; endIndex: number },
-  items: readonly StreamItem[],
-  transitioningIds: ReadonlySet<string> | undefined,
-): { startIndex: number; endIndex: number } {
-  if (!transitioningIds || transitioningIds.size === 0) return range;
-  let first = -1;
-  let last = -1;
-  for (let index = 0; index < items.length; index++) {
-    if (transitioningIds.has(items[index].id)) {
-      if (first === -1) first = index;
-      last = index;
-    }
-  }
-  if (first < 0 || last - first > MAX_TRANSITION_RANGE_SPAN) return range;
-  return {
-    startIndex: Math.min(range.startIndex, first),
-    endIndex: Math.max(range.endIndex, last),
-  };
-}
+const motionViewportStyle: CSSProperties = {
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+  position: "relative",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const motionOverlayStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  overflow: "hidden",
+  pointerEvents: "none",
+};
 
 const historyStartSlotStyle: CSSProperties = {
   position: "sticky",
@@ -146,6 +143,7 @@ interface HistoryAnchor {
   itemId: string;
   offset: number;
   processId?: string;
+  processBodyTurnId?: string;
 }
 
 interface PendingHistoryAnchor {
@@ -188,13 +186,46 @@ function readHistoryAnchor(scroll: HTMLElement): HistoryAnchor | null {
   return null;
 }
 
+function readProcessBodyAnchor(scroll: HTMLElement, turnId: string): HistoryAnchor | null {
+  const viewport = scroll.getBoundingClientRect();
+  for (const body of scroll.querySelectorAll<HTMLElement>(
+    `[data-process-turn-id="${CSS.escape(turnId)}"]`,
+  )) {
+    const rect = body.getBoundingClientRect();
+    const row = body.closest<HTMLElement>("[data-stream-row-id]");
+    const itemId = row?.dataset.streamRowId;
+    if (itemId && rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom) {
+      return { itemId, offset: rect.top - viewport.top, processBodyTurnId: turnId };
+    }
+  }
+  return null;
+}
+
+function readPrependAnchor(scroll: HTMLElement, readingProcess: string | undefined) {
+  const anchor = readHistoryAnchor(scroll);
+  if (readingProcess && anchor?.processId === `completed-process-${readingProcess}`) {
+    // 同一回合补到早期过程时，入口会移到新首行，保留已经在读的正文。
+    return readProcessBodyAnchor(scroll, readingProcess) ?? anchor;
+  }
+  return anchor;
+}
+
+function getHistoryAnchorSelector(anchor: HistoryAnchor): string {
+  if (anchor.processId) return `[data-testid="${CSS.escape(anchor.processId)}"]`;
+  const row = `[data-stream-row-id="${CSS.escape(anchor.itemId)}"]`;
+  return anchor.processBodyTurnId
+    ? `${row} [data-process-turn-id="${CSS.escape(anchor.processBodyTurnId)}"]`
+    : row;
+}
+
 function refreshPendingHistoryAnchor(input: {
   scroll: HTMLElement;
   pending: PendingHistoryAnchor | null;
   loading: boolean;
+  readingProcess: string | undefined;
 }): void {
   if (!input.loading || !input.pending) return;
-  const anchor = readHistoryAnchor(input.scroll);
+  const anchor = readPrependAnchor(input.scroll, input.readingProcess);
   if (anchor) input.pending.anchor = anchor;
 }
 
@@ -250,6 +281,7 @@ interface HistoryContentProps {
   virtualStartIndex: number;
   isToggleAnchoring: boolean;
   isHistoryAnchoring: boolean;
+  readingProcessTurnRef: RefObject<string | undefined>;
   style: CSSProperties;
   children: ReactNode;
 }
@@ -283,7 +315,9 @@ class HistoryContent extends React.Component<
     ) {
       return null;
     }
-    const anchor = readHistoryAnchor(scroll);
+    const anchor = prepended
+      ? readPrependAnchor(scroll, this.props.readingProcessTurnRef.current)
+      : readHistoryAnchor(scroll);
     return anchor ? { anchor, prepended } : null;
   }
 
@@ -331,7 +365,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   } = props;
   const collapsedHeights = historyRowRevision?.estimatedHeightById;
   const processAnchorIdByItemId = historyRowRevision?.processAnchorIdByItemId;
-  const transitioningProcessItemIds = historyRowRevision?.transitioningProcessItemIds;
+  const virtualizeExpandedProcess = historyRowRevision?.virtualizeExpandedProcess;
   const resolveHistoryAnchorItemId = useCallback(
     (anchor: HistoryAnchor) => {
       // 补页会把收起入口移到本轮更早的过程，旧承载行此时已被零高度过滤。
@@ -344,17 +378,26 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     },
     [processAnchorIdByItemId],
   );
-  const segments = useMemo(
-    () => ({
+  const segments = useMemo(() => {
+    const historyVirtualized = visibleWebHistoryItems(
+      sourceSegments.historyVirtualized,
+      collapsedHeights,
+    );
+    const historyMounted = visibleWebHistoryItems(sourceSegments.historyMounted, collapsedHeights);
+    if (!virtualizeExpandedProcess || historyVirtualized.length > 0) {
+      return { ...sourceSegments, historyVirtualized, historyMounted };
+    }
+    // 紧凑网页平时仍保留常驻历史；超长过程才进入同一个外层虚拟窗口。
+    const start = findMountedWindowStart({
+      items: historyMounted,
+      minMountedCount: getWebMountedRecentStreamItems(),
+    });
+    return {
       ...sourceSegments,
-      historyVirtualized: visibleWebHistoryItems(
-        sourceSegments.historyVirtualized,
-        collapsedHeights,
-      ),
-      historyMounted: visibleWebHistoryItems(sourceSegments.historyMounted, collapsedHeights),
-    }),
-    [sourceSegments, collapsedHeights],
-  );
+      historyVirtualized: historyMounted.slice(0, start),
+      historyMounted: historyMounted.slice(start),
+    };
+  }, [sourceSegments, collapsedHeights, virtualizeExpandedProcess]);
   const isPaneActive = useRetainedPanelActive();
   const isPaneActiveRef = useRef(isPaneActive);
   isPaneActiveRef.current = isPaneActive;
@@ -398,7 +441,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const pendingHistoryAnchorRef = useRef<PendingHistoryAnchor | null>(null);
   const [hasPendingHistoryAnchor, setHasPendingHistoryAnchor] = useState(false);
   const committedHistoryAnchorRef = useRef<{ anchor: HistoryAnchor; epoch: number } | null>(null);
-  const toggleAnchorItemIdRef = useRef<string | null>(null);
+  const toggleAnchorRef = useRef<HistoryAnchor | null>(null);
+  const readingProcessTurnRef = useRef<string | undefined>(undefined);
+  const holdAutomaticHistoryStartRef = useRef(false);
+  const motionOverlayRef = useRef<HTMLDivElement | null>(null);
+  const [processMotion] = useState(createProcessMotion);
   const applyProgrammaticScroll = useCallback((scroll: HTMLElement, writeScroll: () => void) => {
     const beforeTop = scroll.scrollTop;
     writeScroll();
@@ -428,10 +475,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   }, []);
   const alignHistoryAnchorRow = useCallback(
     (scroll: HTMLElement, anchor: HistoryAnchor): { mounted: boolean; adjusted: boolean } => {
-      const selector = anchor.processId
-        ? `[data-testid="${CSS.escape(anchor.processId)}"]`
-        : `[data-stream-row-id="${CSS.escape(anchor.itemId)}"]`;
-      const row = scroll.querySelector<HTMLElement>(selector);
+      const row = scroll.querySelector<HTMLElement>(getHistoryAnchorSelector(anchor));
       if (!row) {
         return { mounted: false, adjusted: false };
       }
@@ -476,7 +520,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     null;
   const prepareForHistoryPrepend = useCallback(() => {
     const scroll = scrollContainerRef.current;
-    const anchor = scroll && !followOutputRef.current ? readHistoryAnchor(scroll) : null;
+    const anchor =
+      scroll && !followOutputRef.current
+        ? readPrependAnchor(scroll, readingProcessTurnRef.current)
+        : null;
     if (anchor) {
       pendingHistoryAnchorRef.current = {
         anchor,
@@ -562,31 +609,20 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     estimateSize,
     rangeExtractor: useCallback(
       (range: Parameters<typeof defaultRangeExtractor>[0]) => {
-        const toggleItemId = toggleAnchorItemIdRef.current;
-        let startIndex = range.startIndex;
-        let endIndex = range.endIndex;
-        if (toggleItemId !== null) {
-          const index = segments.historyVirtualized.findIndex((item) => item.id === toggleItemId);
-          if (index >= 0 && (index < startIndex || index > endIndex)) {
-            startIndex = index;
-            endIndex = Math.min(range.count - 1, index + range.endIndex - range.startIndex);
+        const toggleAnchor = toggleAnchorRef.current;
+        if (toggleAnchor) {
+          const itemId = resolveHistoryAnchorItemId(toggleAnchor);
+          const index = segments.historyVirtualized.findIndex((item) => item.id === itemId);
+          if (index >= 0 && (index < range.startIndex || index > range.endIndex)) {
+            // 入口可能换承载行或进入虚拟区。只保留入口附近的有界窗口，
+            // 不把旧窗口与新窗口之间的所有行同时挂载。
+            const span = range.endIndex - range.startIndex;
+            return defaultRangeExtractor({
+              ...range,
+              startIndex: Math.max(0, index - span),
+              endIndex: Math.min(range.count - 1, index + span),
+            });
           }
-        }
-        // 过渡期让本轮可见过程行完整留在虚拟窗口内，避免底部占位在展开首帧先撑开又塌回。
-        const expandedRange = expandRangeForTransitioningProcess(
-          { startIndex, endIndex },
-          segments.historyVirtualized,
-          transitioningProcessItemIds,
-        );
-        if (
-          expandedRange.startIndex !== range.startIndex ||
-          expandedRange.endIndex !== range.endIndex
-        ) {
-          return defaultRangeExtractor({
-            ...range,
-            startIndex: expandedRange.startIndex,
-            endIndex: expandedRange.endIndex,
-          });
         }
         const pending = hasPendingHistoryAnchor ? pendingHistoryAnchorRef.current : null;
         if (!pending || pending.firstItemId === sourceFirstItemId)
@@ -606,7 +642,6 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         segments.historyVirtualized,
         sourceFirstItemId,
         resolveHistoryAnchorItemId,
-        transitioningProcessItemIds,
       ],
     ),
     measureElement: (element, entry, instance) => {
@@ -693,8 +728,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     setOffset: (offset) => {
       const scroll = scrollContainerRef.current;
       if (!scroll) return;
-      scroll.scrollTop = offset;
-      lastKnownScrollTopRef.current = scroll.scrollTop;
+      applyProgrammaticScroll(scroll, () => {
+        scroll.scrollTop = offset;
+      });
     },
     detach: () => {
       setFollowOutput(false);
@@ -704,9 +740,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     },
   });
   const cancelToggleAnchor = useCallback(() => {
-    toggleAnchorItemIdRef.current = null;
+    toggleAnchorRef.current = null;
+    processMotion.cancel();
     cancelContentToggleAnchor();
-  }, [cancelContentToggleAnchor]);
+  }, [cancelContentToggleAnchor, processMotion]);
+  useLayoutEffect(() => processMotion.cancel, [processMotion, isPaneActive]);
   const takeScrollControl = useCallback(
     (direction: "up" | "down" | "pointer") => {
       inputEpochRef.current += 1;
@@ -715,6 +753,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       cancelToggleAnchor();
       cancelPendingHistoryAnchor();
       if (direction === "up") {
+        holdAutomaticHistoryStartRef.current = false;
         lastUserDownwardInputAtRef.current = -Infinity;
         setFollowOutput(false);
         cancelPendingStickToBottom();
@@ -731,10 +770,15 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     ],
   );
   useLayoutEffect(() => {
-    if (!isToggleAnchoring) toggleAnchorItemIdRef.current = null;
+    if (!isToggleAnchoring) toggleAnchorRef.current = null;
   }, [isToggleAnchoring]);
   useLayoutEffect(() => {
-    restoreToggleAnchor();
+    if (committedHistoryAnchorRef.current?.anchor.processBodyTurnId) cancelToggleAnchor();
+    else restoreToggleAnchor();
+    const scroll = scrollContainerRef.current;
+    const content = contentRef.current;
+    const overlay = motionOverlayRef.current;
+    if (scroll && content && overlay) processMotion.afterChange(scroll, content, overlay);
   });
   const preserveProcessAnchor = useCallback<StreamViewportHandle["preserveScrollAnchor"]>(
     (request) =>
@@ -742,11 +786,24 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         ...request,
         applyChange: () => {
           // 展开可能把入口从常驻区移入虚拟区，首个提交就保留该行，不能等它离屏后再测量。
-          toggleAnchorItemIdRef.current = request.itemId;
+          const scroll = scrollContainerRef.current;
+          const content = contentRef.current;
+          if (scroll && content) {
+            processMotion.beforeChange(scroll, content, request.process, isPaneActiveRef.current);
+          }
+          toggleAnchorRef.current = {
+            itemId: request.itemId,
+            processId: processAnchorIdByItemId?.get(request.itemId),
+            offset: 0,
+          };
+          readingProcessTurnRef.current = request.process?.expanded
+            ? request.process.turnId
+            : undefined;
+          holdAutomaticHistoryStartRef.current = readingProcessTurnRef.current !== undefined;
           request.applyChange();
         },
       }),
-    [preserveToggleAnchor],
+    [preserveToggleAnchor, processAnchorIdByItemId, processMotion],
   );
 
   const scrollMessagesToBottom = useCallback(
@@ -859,6 +916,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     const scrollContainer = scrollContainerRef.current;
     if (
       !scrollContainer ||
+      holdAutomaticHistoryStartRef.current ||
       !historyStartReadyRef.current ||
       !isAuthoritativeHistoryReady ||
       !hasOlderHistory ||
@@ -878,10 +936,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
 
     const currentScrollTop = scrollContainer.scrollTop;
+    processMotion.onScroll(scrollContainer);
     refreshPendingHistoryAnchor({
       scroll: scrollContainer,
       pending: pendingHistoryAnchorRef.current,
       loading: isLoadingOlderHistory,
+      readingProcess: readingProcessTurnRef.current,
     });
     const programmatic = pendingProgrammaticScrollRef.current;
     pendingProgrammaticScrollRef.current = null;
@@ -898,13 +958,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       isPointerScrollActiveRef.current ||
       performance.now() - lastUserDownwardInputAtRef.current <= USER_DOWNWARD_INPUT_WINDOW_MS;
     if (!readingAnchorActive && !isProgrammaticEcho && !layoutChanged) {
-      if (
-        followOutputRef.current &&
-        isPointerScrollActiveRef.current &&
-        delta < -USER_SCROLL_DELTA_EPSILON
-      ) {
-        cancelPendingStickToBottom();
-        setFollowOutput(false);
+      if (isPointerScrollActiveRef.current && delta < -USER_SCROLL_DELTA_EPSILON) {
+        holdAutomaticHistoryStartRef.current = false;
+        if (followOutputRef.current) {
+          cancelPendingStickToBottom();
+          setFollowOutput(false);
+        }
       } else if (
         !followOutputRef.current &&
         hasDownwardInput &&
@@ -927,10 +986,18 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     setFollowOutput,
     updateScrollMetrics,
     isToggleAnchoring,
+    processMotion,
   ]);
 
   const autoLoadOlderHistoryIfViewportIsTooShort = useCallback(() => {
-    if (isToggleAnchoring || historyAnchoringRef.current || hasPendingHistoryAnchor) return;
+    // 点开过程不等于向上翻页；在顶边等待主动滚动，避免已读首行被一批批更早过程换掉。
+    if (
+      holdAutomaticHistoryStartRef.current ||
+      isToggleAnchoring ||
+      historyAnchoringRef.current ||
+      hasPendingHistoryAnchor
+    )
+      return;
     const scrollContainer = scrollContainerRef.current;
     if (
       !scrollContainer ||
@@ -950,16 +1017,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
 
     const signature = [
-      historyStartCursor ?? "",
-      segments.historyVirtualized[0]?.id ?? "",
-      segments.historyVirtualized.at(-1)?.id ?? "",
-      segments.historyVirtualized.length,
-      segments.historyMounted[0]?.id ?? "",
-      segments.historyMounted.at(-1)?.id ?? "",
-      segments.historyMounted.length,
-      segments.liveHead[0]?.id ?? "",
-      segments.liveHead.at(-1)?.id ?? "",
-      segments.liveHead.length,
+      historyStartCursor,
+      ...[segments.historyVirtualized, segments.historyMounted, segments.liveHead].flatMap(
+        (items) => [items[0]?.id, items.at(-1)?.id, items.length],
+      ),
       scrollContainer.clientHeight,
       scrollContainer.scrollHeight,
     ].join(":");
@@ -1112,7 +1173,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         requestOlderHistoryAtStart();
       }
     };
-    const handlePointerDown = () => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (processMotion.isOnTrigger(scrollContainer, event.target)) return;
       takeScrollControl("pointer");
       isPointerScrollActiveRef.current = true;
     };
@@ -1120,7 +1182,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       isPointerScrollActiveRef.current = false;
     };
     const handleTouchStart = (event: TouchEvent) => {
-      takeScrollControl("pointer");
+      if (!processMotion.isOnTrigger(scrollContainer, event.target)) takeScrollControl("pointer");
       const touch = event.touches[0];
       if (!touch) {
         return;
@@ -1179,7 +1241,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       scrollContainer.removeEventListener("touchcancel", handleTouchEnd);
       scrollContainer.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleDomScroll, requestOlderHistoryAtStart, takeScrollControl]);
+  }, [handleDomScroll, processMotion, requestOlderHistoryAtStart, takeScrollControl]);
 
   const contentContainerStyle = useMemo((): CSSProperties => {
     return {
@@ -1200,7 +1262,10 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       overflowX: "hidden",
       overflowY: scrollEnabled ? "auto" : "hidden",
       scrollbarGutter: "stable",
-      overflowAnchor: isToggleAnchoring || isHistoryAnchoring ? "none" : "auto",
+      overflowAnchor:
+        isToggleAnchoring || isHistoryAnchoring
+          ? "none"
+          : (`var(${PROCESS_SCROLL_ANCHOR_VAR}, auto)` as CSSProperties["overflowAnchor"]),
       overscrollBehaviorY: "contain",
     };
   }, [scrollEnabled, isToggleAnchoring, isHistoryAnchoring]);
@@ -1374,6 +1439,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const scrollToItem = useCallback(
     (itemId: string) => {
       cancelToggleAnchor();
+      readingProcessTurnRef.current = undefined;
+      holdAutomaticHistoryStartRef.current = false;
       cancelPendingHistoryAnchor();
       setFollowOutput(false);
       cancelPendingStickToBottom();
@@ -1499,33 +1566,43 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     !liveAuxiliary;
 
   return (
-    <div
-      ref={handleScrollContainerRef}
-      data-testid="agent-chat-scroll"
-      id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
-      style={scrollContainerStyle}
-    >
-      <HistoryContent
-        contentRef={handleContentRef}
-        style={contentContainerStyle}
-        firstItemId={firstHistoryItemId}
-        itemIds={historyItemIds}
-        scrollContainerRef={scrollContainerRef}
-        followOutputRef={followOutputRef}
-        onPrepend={recordHistoryAnchor}
-        onWindowLayoutChange={preserveVirtualWindowAnchor}
-        virtualPaddingTop={virtualWindow.paddingTop}
-        virtualStartIndex={virtualWindow.index}
-        isToggleAnchoring={isToggleAnchoring}
-        isHistoryAnchoring={isHistoryAnchoring}
+    <div style={motionViewportStyle}>
+      <div
+        ref={handleScrollContainerRef}
+        data-testid="agent-chat-scroll"
+        id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
+        style={scrollContainerStyle}
       >
-        {historyStartSlot}
-        <div style={virtualTopStyle} data-history-rows>
-          {historyRows}
-        </div>
-        {liveAuxiliary}
-        {shouldRenderEmpty ? listEmptyComponent : null}
-      </HistoryContent>
+        <HistoryContent
+          contentRef={handleContentRef}
+          style={contentContainerStyle}
+          firstItemId={firstHistoryItemId}
+          itemIds={historyItemIds}
+          scrollContainerRef={scrollContainerRef}
+          followOutputRef={followOutputRef}
+          onPrepend={recordHistoryAnchor}
+          onWindowLayoutChange={preserveVirtualWindowAnchor}
+          virtualPaddingTop={virtualWindow.paddingTop}
+          virtualStartIndex={virtualWindow.index}
+          isToggleAnchoring={isToggleAnchoring}
+          isHistoryAnchoring={isHistoryAnchoring}
+          readingProcessTurnRef={readingProcessTurnRef}
+        >
+          {historyStartSlot}
+          <div style={virtualTopStyle} data-history-rows>
+            {historyRows}
+          </div>
+          {liveAuxiliary}
+          {shouldRenderEmpty ? listEmptyComponent : null}
+        </HistoryContent>
+      </div>
+      <div
+        ref={motionOverlayRef}
+        inert
+        aria-hidden="true"
+        data-scrollbar-static
+        style={motionOverlayStyle}
+      />
     </div>
   );
 }

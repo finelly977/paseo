@@ -82,7 +82,6 @@ export function DisclosureContent({
   children,
   testID,
   animateLayout = true,
-  animateOnMount = false,
 }: DisclosureContentProps) {
   const reducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -95,7 +94,7 @@ export function DisclosureContent({
   const content = useMemo(() => (hasContent ? children() : null), [hasContent, children]);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const previousExpanded = useRef(expanded && !animateOnMount);
+  const previousExpanded = useRef(expanded);
   const animationRef = useRef<Animation | null>(null);
   const resizeRef = useRef<ResizeObserver | null>(null);
   useLayoutEffect(() => {

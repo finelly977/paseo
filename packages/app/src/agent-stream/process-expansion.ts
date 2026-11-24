@@ -5,120 +5,16 @@ import { useReducedMotionPreference } from "@/hooks/use-reduced-motion";
 import type { StreamItem } from "@/types/stream";
 import { findLiveProcessExit, type CompletedTurnProcessModel } from "./completed-turn-process";
 
-const MAX_EXPAND_TRANSITION_ITEMS = 32;
-const CONSERVATIVE_PROCESS_ROW_HEIGHT_PX = 36;
-const EXPAND_VIEWPORT_BUFFER_PX = 160;
-const COLLAPSE_VIEWPORT_OVERSCAN_PX = 40;
-
-function resolveScrollContainerFromAnchor(anchorNode: unknown): HTMLElement | null {
-  if (typeof HTMLElement === "undefined" || !(anchorNode instanceof HTMLElement)) {
-    return null;
-  }
-  return anchorNode.closest<HTMLElement>('[data-testid="agent-chat-scroll"]');
-}
-
-function resolveViewportHeight(scroll: HTMLElement | null): number {
-  if (scroll && scroll.clientHeight > 0) return scroll.clientHeight;
-  if (typeof window !== "undefined" && window.innerHeight > 0) return window.innerHeight;
-  return 900;
-}
-
-function selectLeadingExpandProcessItemIds(input: {
-  orderedItems: readonly StreamItem[];
-  anchorItemId: string;
-  scroll: HTMLElement | null;
-  estimateHeight: (item: StreamItem) => number;
-}): ReadonlySet<string> | undefined {
-  const budget = Math.max(resolveViewportHeight(input.scroll), 600) + EXPAND_VIEWPORT_BUFFER_PX;
-  const selected = new Set<string>([input.anchorItemId]);
-  let coveredHeight = 0;
-  let selectedCount = 0;
-  for (const item of input.orderedItems) {
-    selected.add(item.id);
-    selectedCount += 1;
-    coveredHeight += Math.min(input.estimateHeight(item), CONSERVATIVE_PROCESS_ROW_HEIGHT_PX);
-    if (coveredHeight >= budget || selectedCount >= MAX_EXPAND_TRANSITION_ITEMS) {
-      break;
-    }
-  }
-  return selectedCount >= input.orderedItems.length ? undefined : selected;
-}
-
-function selectVisibleCollapseProcessItemIds(input: {
-  orderedItems: readonly StreamItem[];
-  anchorItemId: string;
-  scroll: HTMLElement | null;
-}): ReadonlySet<string> | undefined {
-  if (!input.scroll) return undefined;
-  const viewportBottom = input.scroll.getBoundingClientRect().bottom;
-  const selected = new Set<string>([input.anchorItemId]);
-  let selectedCount = 0;
-  let sawAnyMountedRow = false;
-  let sawVisible = false;
-  for (const item of input.orderedItems) {
-    const row = input.scroll.querySelector<HTMLElement>(
-      `[data-stream-row-id="${CSS.escape(item.id)}"]`,
-    );
-    if (!row) {
-      if (sawVisible) break;
-      continue;
-    }
-    sawAnyMountedRow = true;
-    const rect = row.getBoundingClientRect();
-    if (rect.top < viewportBottom + COLLAPSE_VIEWPORT_OVERSCAN_PX) {
-      selected.add(item.id);
-      selectedCount += 1;
-      sawVisible = true;
-      if (rect.bottom >= viewportBottom) break;
-    } else if (sawVisible) {
-      break;
-    }
-  }
-  if (!sawAnyMountedRow) return undefined;
-  return selectedCount >= input.orderedItems.length ? undefined : selected;
-}
-
-/** 网页超长过程展开时先挂载覆盖首屏的批次，收起时立即裁掉屏外尾段，避免占位跳闪与空白墙。 */
-export function selectProcessTransitionVisibleItemIds(input: {
-  action: "expand" | "collapse";
-  orderedItems: readonly StreamItem[];
-  anchorItemId: string;
-  anchorNode: unknown;
-  estimateHeight: (item: StreamItem) => number;
-}): ReadonlySet<string> | undefined {
-  if (!isWeb || input.orderedItems.length === 0) return undefined;
-  const scroll = resolveScrollContainerFromAnchor(input.anchorNode);
-  if (input.action === "expand") {
-    return selectLeadingExpandProcessItemIds({
-      orderedItems: input.orderedItems,
-      anchorItemId: input.anchorItemId,
-      scroll,
-      estimateHeight: input.estimateHeight,
-    });
-  }
-  return selectVisibleCollapseProcessItemIds({
-    orderedItems: input.orderedItems,
-    anchorItemId: input.anchorItemId,
-    scroll,
-  });
-}
-
 function initialExpansion(owner: string) {
   return {
     owner,
     expanded: new Set<string>(),
     retained: new Set<string>(),
     transitioning: new Set<string>(),
-    transitionVisibleItemIds: new Map<string, ReadonlySet<string>>(),
   };
 }
 
-export interface ToggleProcessExpansionOptions {
-  /** 过渡期间仅保留首屏可见的过程行，避免超长过程展开闪烁或收起露出空白占位。 */
-  visibleItemIds?: ReadonlySet<string>;
-}
-
-/** 收起动画结束后才释放过程行；不把整轮历史挂到同一个限高容器。 */
+/** 网页一次切换过程行；原生在收起动效结束后才释放。 */
 export function useProcessExpansion(owner: string) {
   const [state, setState] = useState(() => initialExpansion(owner));
   const current = useMemo(
@@ -135,23 +31,23 @@ export function useProcessExpansion(owner: string) {
       pending.clear();
     };
   }, [owner]);
-  const toggle = useCallback((turnId: string, options?: ToggleProcessExpansionOptions) => {
+  const toggle = useCallback((turnId: string) => {
     const previous = stateRef.current;
     const expanded = new Set(previous.expanded);
     if (expanded.has(turnId)) expanded.delete(turnId);
     else expanded.add(turnId);
-    const transitionVisibleItemIds = new Map(previous.transitionVisibleItemIds);
-    if (options?.visibleItemIds) {
-      transitionVisibleItemIds.set(turnId, options.visibleItemIds);
-    } else {
-      transitionVisibleItemIds.delete(turnId);
+    // 网页的外层滚动列表负责渲染窗口；开合在同一提交切换全部条目，不安排定时补挂。
+    if (isWeb) {
+      const next = { ...previous, expanded, retained: expanded };
+      stateRef.current = next;
+      setState(next);
+      return;
     }
     const next = {
       ...previous,
       expanded,
       retained: new Set(previous.retained).add(turnId),
       transitioning: new Set(previous.transitioning).add(turnId),
-      transitionVisibleItemIds,
     };
     const oldTimer = timers.current.get(turnId);
     if (oldTimer !== undefined) clearTimeout(oldTimer);
@@ -168,19 +64,11 @@ export function useProcessExpansion(owner: string) {
           if (!latest.expanded.has(turnId)) retained.delete(turnId);
           const transitioning = new Set(latest.transitioning);
           transitioning.delete(turnId);
-          const settledVisibleItemIds = new Map(latest.transitionVisibleItemIds);
-          settledVisibleItemIds.delete(turnId);
-          const settled = {
-            ...latest,
-            retained,
-            transitioning,
-            transitionVisibleItemIds: settledVisibleItemIds,
-          };
+          const settled = { ...latest, retained, transitioning };
           stateRef.current = settled;
           setState(settled);
         },
-        // 收起同样留足 MOTION_DURATION.instant 余量，避免定时器抢在 120ms Web Animation
-        // 真正归零前提前卸载过程行，造成尾部顿挫。
+        // 为原生退场最后一帧留出余量，避免先卸载再完成淡出。
         (expanded.has(turnId) ? MOTION_DURATION.base : MOTION_DURATION.fast) +
           MOTION_DURATION.instant,
       ),
@@ -190,7 +78,6 @@ export function useProcessExpansion(owner: string) {
     expandedTurnIds: current.expanded,
     retainedTurnIds: current.retained,
     transitioningTurnIds: current.transitioning,
-    transitionVisibleItemIds: current.transitionVisibleItemIds,
     toggle,
   };
 }

@@ -1,5 +1,11 @@
+export interface ProcessMotionToggle {
+  turnId: string;
+  expanded: boolean;
+}
+
 export interface ContentToggleRequest {
   itemId: string;
+  process?: ProcessMotionToggle;
   measure: (callback: (top: number | null) => void) => void;
   applyChange: () => void;
 }

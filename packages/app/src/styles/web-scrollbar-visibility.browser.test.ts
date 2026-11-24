@@ -77,3 +77,18 @@ test("同一批挂载的嵌套区域与动画后的正文尺寸合并更新，�
   await new Promise(requestAnimationFrame);
   expect(nested.isConnected).toBe(false);
 });
+
+test("临时绘制层保留复制的滚动条状态，不测量或修改它", async () => {
+  setup();
+  const layer = document.createElement("div");
+  layer.setAttribute("data-scrollbar-static", "");
+  host.append(layer);
+  const copy = document.createElement("div");
+  copy.style.cssText = "width:120px;height:80px;overflow:auto";
+  copy.setAttribute("data-scrollbar-y", "");
+  layer.append(copy);
+  const real = copy.cloneNode() as HTMLElement;
+  host.append(real);
+  await expect.poll(() => real.hasAttribute("data-scrollbar-y")).toBe(false);
+  expect(copy.hasAttribute("data-scrollbar-y")).toBe(true);
+});

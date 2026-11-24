@@ -13,6 +13,7 @@ import { formatCompletedTurnDuration } from "./completed-turn-process";
 import { useTranslation } from "react-i18next";
 import type { StreamViewportHandle } from "./strategy";
 import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
+import { isWeb } from "@/constants/platform";
 import { ConversationDivider } from "@/components/conversation-divider";
 import {
   loadNativeHistoryDetails,
@@ -110,6 +111,10 @@ export function NativeHistoryProcess({
       ? t("agentStream.completedTurn.processed")
       : t("agentStream.completedTurn.processedFor", { duration });
   const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
+  const motionContent = useMemo(
+    () => (isWeb ? { processMotionContent: item.turnId } : undefined),
+    [item.turnId],
+  );
   const rootStyle = useMemo(
     () => [styles.root, { paddingTop: gapAbove, marginBottom: gapBelow }],
     [gapAbove, gapBelow],
@@ -137,15 +142,13 @@ export function NativeHistoryProcess({
             </DisclosureChevron>
           </Pressable>
         </ConversationDivider>
-        {expanded && (
-          <View>
+        {expanded && (!complete || error !== null) && (
+          <View dataSet={motionContent}>
             {error && <Alert variant="error" title="加载处理过程失败" description={error} />}
-            {(!complete || error !== null) && (
-              <Button variant="ghost" loading={loading} disabled={loading} onPress={loadMore}>
-                {" "}
-                {error ? "重试加载过程" : "正在加载处理过程"}{" "}
-              </Button>
-            )}
+            <Button variant="ghost" loading={loading} disabled={loading} onPress={loadMore}>
+              {" "}
+              {error ? "重试加载过程" : "正在加载处理过程"}{" "}
+            </Button>
           </View>
         )}
       </View>

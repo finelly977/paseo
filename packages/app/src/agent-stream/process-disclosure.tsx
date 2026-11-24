@@ -4,21 +4,39 @@ import { DisclosureContent } from "@/components/ui/disclosure";
 import { isWeb } from "@/constants/platform";
 const CONTENT_ROW_STYLE = { width: "100%" as const, alignItems: "center" as const };
 
-export function ProcessDisclosure({
-  expanded,
-  transitioning,
-  estimatedHeight,
-  children,
-}: {
+interface ProcessDisclosureProps {
+  turnId?: string;
   expanded: boolean;
   transitioning: boolean;
   estimatedHeight: number;
   children(): ReactNode;
-}) {
-  // 网页直接通过 animateOnMount 单次提交起播，原生延后一帧让出首帧测量。
-  const [ready, setReady] = useState(isWeb || !expanded || !transitioning);
+}
+
+export function ProcessDisclosure(props: ProcessDisclosureProps) {
+  const dataSet = useMemo(
+    () => (props.turnId ? { processTurnId: props.turnId } : undefined),
+    [props.turnId],
+  );
+  if (isWeb) {
+    if (!props.expanded) return null;
+    // 外层虚拟器始终测量自然行高；不观察或缓存动画中间高度。
+    return (
+      <View style={CONTENT_ROW_STYLE} testID="process-disclosure" dataSet={dataSet}>
+        {props.children()}
+      </View>
+    );
+  }
+  return <NativeProcessDisclosure {...props} />;
+}
+
+function NativeProcessDisclosure({
+  expanded,
+  transitioning,
+  estimatedHeight,
+  children,
+}: ProcessDisclosureProps) {
+  const [ready, setReady] = useState(!expanded || !transitioning);
   const [mountedExpanded] = useState(expanded);
-  const [animateOnMount] = useState(isWeb && expanded && transitioning);
   const placeholderStyle = useMemo(
     () => ({ height: estimatedHeight, width: "100%" as const }),
     [estimatedHeight],
@@ -35,8 +53,7 @@ export function ProcessDisclosure({
   return (
     <DisclosureContent
       expanded={expanded && ready}
-      animateLayout={isWeb}
-      animateOnMount={animateOnMount}
+      animateLayout={false}
       testID="process-disclosure"
     >
       {() => <View style={CONTENT_ROW_STYLE}>{children()}</View>}

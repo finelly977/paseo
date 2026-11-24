@@ -118,12 +118,11 @@ import { AgentFailure } from "@/components/agent-failure";
 import { NativeHistoryProcess } from "./native-history-process";
 import { ConversationDivider } from "@/components/conversation-divider";
 import { ProcessDisclosure } from "./process-disclosure";
+import { useLiveProcessExit, useProcessExpansion } from "./process-expansion";
 import {
-  selectProcessTransitionVisibleItemIds,
-  useLiveProcessExit,
-  useProcessExpansion,
-} from "./process-expansion";
-import { estimateStreamItemHeight } from "./web-virtualization";
+  estimateStreamItemHeight,
+  DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD,
+} from "./web-virtualization";
 import { useWorkspaceDraftSubmissionStore } from "@/stores/workspace-draft-submission-store";
 import {
   buildCompletedTurnProcessModel,
@@ -379,6 +378,7 @@ function CompletedTurnProcessToggle({
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel}
           accessibilityState={accessibilityState}
+          aria-expanded={expanded}
           onPress={handlePress}
           style={stylesheet.completedTurnProcessToggle}
         >
@@ -680,7 +680,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       expandedTurnIds: expandedCompletedTurnIds,
       retainedTurnIds: retainedCompletedTurnIds,
       transitioningTurnIds: transitioningCompletedTurnIds,
-      transitionVisibleItemIds: transitionVisibleCompletedItemIds,
       toggle: toggleCompletedProcess,
     } = useProcessExpansion(agentId);
     const [pendingHistoryNavigation, setPendingHistoryNavigation] =
@@ -1056,14 +1055,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ({
         turnId,
         itemId,
+        expanded,
         applyChange,
       }: {
         turnId: string;
         itemId: string;
+        expanded: boolean;
         applyChange(): void;
       }) => {
         viewportRef.current?.preserveScrollAnchor({
           itemId,
+          process: { turnId, expanded },
           measure: (callback) => {
             const node = completedProcessAnchors.current.get(turnId);
             if (!node) {
@@ -1082,62 +1084,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       },
       [],
     );
-    const processTransitionStateRef = useRef({
-      history: baseRenderModel.history,
-      liveHead: baseRenderModel.segments.liveHead,
-      turnIdByProcessItemId: completedTurnProcess.turnIdByProcessItemId,
-      expandedCompletedTurnIds,
-      expandedNativeTurnIds: nativeProcesses.expandedTurnIds,
-      messageParagraphSpacing,
-    });
-    processTransitionStateRef.current = {
-      history: baseRenderModel.history,
-      liveHead: baseRenderModel.segments.liveHead,
-      turnIdByProcessItemId: completedTurnProcess.turnIdByProcessItemId,
-      expandedCompletedTurnIds,
-      expandedNativeTurnIds: nativeProcesses.expandedTurnIds,
-      messageParagraphSpacing,
-    };
-    const toggleCompletedTurnProcess = useCallback(
+    const toggleCompletedTurnProcess = useStableEvent(
       (input: { turnId: string; itemId: string }) => {
-        const current = processTransitionStateRef.current;
-        const orderedItems = [...current.history, ...current.liveHead].filter(
-          (item) => current.turnIdByProcessItemId.get(item.id) === input.turnId,
-        );
-        const visibleItemIds = selectProcessTransitionVisibleItemIds({
-          action: current.expandedCompletedTurnIds.has(input.turnId) ? "collapse" : "expand",
-          orderedItems,
-          anchorItemId: input.itemId,
-          anchorNode: completedProcessAnchors.current.get(input.turnId),
-          estimateHeight: (item) => estimateStreamItemHeight(item, current.messageParagraphSpacing),
-        });
         preserveProcessAnchor({
           ...input,
-          applyChange: () => toggleCompletedProcess(input.turnId, { visibleItemIds }),
+          expanded: !expandedCompletedTurnIds.has(input.turnId),
+          applyChange: () => toggleCompletedProcess(input.turnId),
         });
       },
-      [preserveProcessAnchor, toggleCompletedProcess],
     );
-    const toggleNativeProcess = nativeProcesses.toggle;
-    const toggleNativeHistoryProcess = useCallback(
+    const toggleNativeHistoryProcess = useStableEvent(
       (input: { turnId: string; itemId: string }) => {
-        const current = processTransitionStateRef.current;
-        const orderedItems = [...current.history, ...current.liveHead].filter(
-          (item) => item.nativeProcessDetail && item.nativeTurnId === input.turnId,
-        );
-        const visibleItemIds = selectProcessTransitionVisibleItemIds({
-          action: current.expandedNativeTurnIds.has(input.turnId) ? "collapse" : "expand",
-          orderedItems,
-          anchorItemId: input.itemId,
-          anchorNode: completedProcessAnchors.current.get(input.turnId),
-          estimateHeight: (item) => estimateStreamItemHeight(item, current.messageParagraphSpacing),
-        });
         preserveProcessAnchor({
           ...input,
-          applyChange: () => toggleNativeProcess(input.turnId, { visibleItemIds }),
+          expanded: !nativeProcesses.expandedTurnIds.has(input.turnId),
+          applyChange: () => nativeProcesses.toggle(input.turnId),
         });
       },
-      [toggleNativeProcess, preserveProcessAnchor],
     );
     const loadedHistoryIndexEntries = useMemo(() => {
       const items: StreamItem[] = [];
@@ -1606,6 +1569,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         const disclosureTurnId = processTurnId ?? nativeTurnId;
         const renderedItem = disclosureTurnId ? (
           <ProcessDisclosure
+            turnId={disclosureTurnId}
             estimatedHeight={estimateStreamItemHeight(layoutItem.item, messageParagraphSpacing)}
             expanded={
               processTurnId
@@ -1843,28 +1807,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
       for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
-        if (!retainedCompletedTurnIds.has(turnId)) {
-          heights.set(itemId, 0);
-          continue;
-        }
-        const visibleIds = transitionVisibleCompletedItemIds.get(turnId);
-        if (visibleIds && !visibleIds.has(itemId)) {
-          heights.set(itemId, 0);
-        }
+        if (!retainedCompletedTurnIds.has(turnId)) heights.set(itemId, 0);
       }
-      if (nativeProcesses.transitionVisibleItemIds.size > 0) {
-        for (const item of baseRenderModel.history) {
-          if (!item.nativeProcessDetail || !item.nativeTurnId) continue;
-          const visibleIds = nativeProcesses.transitionVisibleItemIds.get(item.nativeTurnId);
-          if (visibleIds && !visibleIds.has(item.id)) {
-            heights.set(item.id, 0);
-          }
-        }
-      }
-      for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
+      for (const [itemId] of completedTurnProcess.toggleByItemId) {
         // 入口也可能承载最终正文，不能把整条正文的高度误估为单独一个按钮。
-        if (!completedTurnProcess.turnIdByProcessItemId.has(itemId)) continue;
-        if (!retainedCompletedTurnIds.has(toggle.turnId)) {
+        if (heights.has(itemId)) {
           heights.set(
             itemId,
             COLLAPSED_PROCESS_TOGGLE_HEIGHT_ESTIMATE + conversationDividerSpacing * 3,
@@ -1872,45 +1819,23 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }
       }
       return heights;
-    }, [
-      baseRenderModel.history,
-      completedTurnProcess,
-      conversationDividerSpacing,
-      nativeProcesses.transitionVisibleItemIds,
-      retainedCompletedTurnIds,
-      transitionVisibleCompletedItemIds,
-    ]);
-    const transitioningProcessItemIds = useMemo(() => {
-      const ids = new Set<string>();
-      if (transitioningCompletedTurnIds.size > 0) {
-        for (const [itemId, turnId] of completedTurnProcess.turnIdByProcessItemId) {
-          if (
-            transitioningCompletedTurnIds.has(turnId) &&
-            estimatedCollapsedProcessHeightById.get(itemId) !== 0
-          ) {
-            ids.add(itemId);
-          }
+    }, [completedTurnProcess, conversationDividerSpacing, retainedCompletedTurnIds]);
+    const virtualizeExpandedProcess = useMemo(() => {
+      if (!isWeb || !isMobile) return false;
+      let count = 0;
+      for (const item of baseRenderModel.history) {
+        const turnId = completedTurnProcess.turnIdByProcessItemId.get(item.id);
+        if ((turnId && retainedCompletedTurnIds.has(turnId)) || item.nativeProcessDetail) {
+          count += 1;
+          if (count > DEFAULT_WEB_PARTIAL_VIRTUALIZATION_THRESHOLD) return true;
         }
       }
-      if (nativeProcesses.transitioningTurnIds.size > 0) {
-        for (const item of baseRenderModel.history) {
-          if (
-            item.nativeProcessDetail &&
-            item.nativeTurnId &&
-            nativeProcesses.transitioningTurnIds.has(item.nativeTurnId) &&
-            estimatedCollapsedProcessHeightById.get(item.id) !== 0
-          ) {
-            ids.add(item.id);
-          }
-        }
-      }
-      return ids;
+      return false;
     }, [
       baseRenderModel.history,
       completedTurnProcess.turnIdByProcessItemId,
-      estimatedCollapsedProcessHeightById,
-      nativeProcesses.transitioningTurnIds,
-      transitioningCompletedTurnIds,
+      isMobile,
+      retainedCompletedTurnIds,
     ]);
     const historyRowRevision = useMemo(
       () => ({
@@ -1923,7 +1848,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             `completed-process-${toggle.turnId}`,
           ]),
         ),
-        transitioningProcessItemIds,
+        virtualizeExpandedProcess,
         globalDisplayState: isMobile,
       }),
       [
@@ -1932,7 +1857,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         historyDisplayStateIds,
         isMobile,
         projectedToolCalls.historyGroupUpdatesByHostId,
-        transitioningProcessItemIds,
+        virtualizeExpandedProcess,
       ],
     );
 

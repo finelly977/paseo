@@ -62,7 +62,7 @@ export interface StreamHistoryRowRevision {
   displayStateById: { has(id: string): boolean };
   estimatedHeightById: ReadonlyMap<string, number>;
   processAnchorIdByItemId: ReadonlyMap<string, string>;
-  transitioningProcessItemIds?: ReadonlySet<string>;
+  virtualizeExpandedProcess?: boolean;
   globalDisplayState: boolean;
 }
 
