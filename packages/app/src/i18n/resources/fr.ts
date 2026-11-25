@@ -1996,6 +1996,11 @@ export const fr: TranslationResources = {
           external: "Navigateur externe",
         },
       },
+      windowsContextMenu: {
+        label: "Menu contextuel de l'Explorateur Windows",
+        description: "Ajouter « Ouvrir avec Paseo » au menu contextuel des dossiers Windows",
+        updateFailed: "Impossible de mettre à jour le menu contextuel Windows",
+      },
       contextWindowProviderUsage: {
         label: "Utilisation du compte dans la jauge de contexte",
         description:

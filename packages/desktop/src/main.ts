@@ -91,6 +91,10 @@ import {
 import { runDesktopStartup } from "./desktop-startup.js";
 import { autoUpdateInstalledSkills } from "./integrations/skills/index.js";
 import { registerBrowserAutomationIpc } from "./features/browser-automation/ipc.js";
+import {
+  registerWindowsContextMenuHandlers,
+  syncWindowsContextMenuOnStartup,
+} from "./features/windows-context-menu.js";
 import { BrowserKeyboard } from "./features/browser-keyboard/index.js";
 import { installAppUpdateOnQuit } from "./features/auto-updater.js";
 import {
@@ -897,6 +901,31 @@ app.on("open-url", (event, url) => {
   receiveAgentDeepLink(url);
 });
 
+function deliverOpenProjectToExistingOrNewWindow(projectPath: string): Promise<void> {
+  const windows = BrowserWindow.getAllWindows();
+  const mainWindow =
+    BrowserWindow.getFocusedWindow() ?? windows.find((window) => window.isVisible()) ?? windows[0];
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return createWindow({
+      pendingOpenProjectPath: projectPath,
+      restoreWindowState: true,
+    }).then(() => undefined);
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+
+  if (mainWindow.webContents.isLoading()) {
+    pendingOpenProjectStore.set(mainWindow.webContents.id, projectPath);
+  } else {
+    mainWindow.webContents.send("paseo:event:open-project", { path: projectPath });
+  }
+  return Promise.resolve();
+}
+
 function setupSingleInstanceLock(): boolean {
   if (DISABLE_SINGLE_INSTANCE_LOCK) {
     log.info("[single-instance] disabled by PASEO_DISABLE_SINGLE_INSTANCE_LOCK");
@@ -922,11 +951,20 @@ function setupSingleInstanceLock(): boolean {
       isDefaultApp: false,
     });
     log.info("[open-project] second-instance openProjectPath:", openProjectPath);
-    // Relaunching the app (CLI `paseo [path]`, double-click, etc.) opens a new
-    // window rather than focusing the existing one. Wait for bootstrap (not just
-    // app.whenReady) so the protocol + IPC handlers exist before the window loads.
+    if (openProjectPath) {
+      // 从 Windows 右键菜单或命令行传入项目目录时，直接复用并激活当前 Paseo 窗口，
+      // 与把项目拖入 Paseo 侧栏作为工作区的体验保持一致。
+      void bootstrapComplete
+        .then(() => deliverOpenProjectToExistingOrNewWindow(openProjectPath))
+        .catch((error) => {
+          log.error("[open-project] failed to deliver project to window", error);
+        });
+      return;
+    }
+
+    // 无项目参数再次启动应用时打开新窗口。
     void bootstrapComplete
-      .then(() => createWindow({ pendingOpenProjectPath: openProjectPath }))
+      .then(() => createWindow({ pendingOpenProjectPath: null }))
       .catch((error) => {
         log.error("[window] failed to create window from second-instance", error);
       });
@@ -1006,6 +1044,10 @@ async function bootstrap(): Promise<void> {
   registerOpenerHandlers();
   registerWorkspacePreviewHandlers();
   registerEditorTargetHandlers();
+  registerWindowsContextMenuHandlers();
+  void syncWindowsContextMenuOnStartup().catch((error) => {
+    log.warn("[windows-context-menu] 启动同步失败", error);
+  });
   registerBrowserAutomationIpc();
 
   // In-app "Open in new window": opens a window that lands on the given project

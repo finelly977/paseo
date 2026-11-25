@@ -237,7 +237,7 @@ interface WebHistoryRowProps {
   measure?: (node: HTMLDivElement | null) => void;
   revision?: unknown;
   contentRevision?: unknown;
-  displayRevision?: boolean;
+  displayRevision?: unknown;
   globalRevision?: unknown;
 }
 
@@ -248,6 +248,17 @@ function resolveHistoryRowContentRevision(
   if (!contentById) return undefined;
   if (typeof contentById.get === "function") return contentById.get(itemId);
   return contentById.has(itemId);
+}
+
+function resolveHistoryRowDisplayRevision(
+  displayStateById:
+    | NonNullable<StreamRenderInput["historyRowRevision"]>["displayStateById"]
+    | undefined,
+  itemId: string,
+): unknown {
+  if (!displayStateById) return false;
+  if (typeof displayStateById.get === "function") return displayStateById.get(itemId) ?? 0;
+  return displayStateById.has(itemId);
 }
 
 function readHistoryRowRevision(revision: StreamRenderInput["historyRowRevision"]) {
@@ -261,13 +272,33 @@ function readHistoryRowRevision(revision: StreamRenderInput["historyRowRevision"
   };
 }
 
+function invokeWebHistoryRowRenderer(
+  renderRow: StreamRenderInput["renderers"]["renderHistoryVirtualizedRow"],
+  item: StreamItem,
+  index: number,
+  items: StreamItem[],
+  _revisions: {
+    revision: unknown;
+    contentRevision: unknown;
+    displayRevision: unknown;
+    globalRevision: unknown;
+  },
+): ReactNode {
+  return renderRow(item, index, items);
+}
+
 const WebHistoryRow = memo(function WebHistoryRow({
   item,
   index,
   items,
   renderRow,
   measure,
+  revision,
+  contentRevision,
+  displayRevision,
+  globalRevision,
 }: WebHistoryRowProps) {
+  "use no memo";
   const rowRef = useRef<HTMLDivElement | null>(null);
   const setRowRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -287,7 +318,12 @@ const WebHistoryRow = memo(function WebHistoryRow({
       ref={setRowRef}
       style={mountedRowStyle}
     >
-      {renderRow(item, index, items)}
+      {invokeWebHistoryRowRenderer(renderRow, item, index, items, {
+        revision,
+        contentRevision,
+        displayRevision,
+        globalRevision,
+      })}
     </div>
   );
 });
@@ -1328,7 +1364,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         items={segments.historyMounted}
         renderRow={renderHistoryMountedRow}
         contentRevision={resolveHistoryRowContentRevision(historyContentById, item.id)}
-        displayRevision={historyDisplayStateById?.has(item.id) ?? false}
+        displayRevision={resolveHistoryRowDisplayRevision(historyDisplayStateById, item.id)}
         globalRevision={historyGlobalRevision}
       />
     ));
@@ -1341,7 +1377,6 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     processAnchorIdByItemId,
   ]);
   const liveHeadRows = useMemo(() => {
-    void liveHeadRowRevision;
     return segments.liveHead.map((item, index) => (
       <WebHistoryRow
         key={processAnchorIdByItemId?.get(item.id) ?? item.id}
@@ -1381,7 +1416,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
           measure={measureVirtualizedRowElement}
           renderRow={renderHistoryVirtualizedRow}
           contentRevision={resolveHistoryRowContentRevision(historyContentById, item.id)}
-          displayRevision={historyDisplayStateById?.has(item.id) ?? false}
+          displayRevision={resolveHistoryRowDisplayRevision(historyDisplayStateById, item.id)}
           globalRevision={historyGlobalRevision}
         />,
       );

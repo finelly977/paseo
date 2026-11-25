@@ -1945,6 +1945,11 @@ export const ar: TranslationResources = {
           external: "متصفح خارجي",
         },
       },
+      windowsContextMenu: {
+        label: "قائمة النقر بزر الماوس الأيمن في Windows",
+        description: "إضافة خيار «فتح باستخدام Paseo» إلى قائمة المجلدات في مستكشف Windows",
+        updateFailed: "تعذّر تحديث قائمة النقر بزر الماوس الأيمن في Windows",
+      },
       contextWindowProviderUsage: {
         label: "استخدام الحساب في مؤشر السياق",
         description: "يجلب استخدام حساب المزوّد النشط ويعرضه عند فتح مؤشر السياق",

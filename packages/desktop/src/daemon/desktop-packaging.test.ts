@@ -96,6 +96,21 @@ describe("desktop packaging", () => {
     expect(config).toContain("- paseo");
   });
 
+  it("includes the NSIS Windows Explorer context menu hook and cleanup script", () => {
+    const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
+    const installer = readFileSync(join(packageRoot, "build", "installer.nsh"), "utf8");
+
+    expect(config).toContain("include: build/installer.nsh");
+    expect(installer).toContain("Software\\Classes\\Directory\\shell\\Paseo\\command");
+    expect(installer).toContain("Software\\Classes\\Directory\\Background\\shell\\Paseo\\command");
+    expect(installer).toContain('--open-project "%1"');
+    expect(installer).toContain('--open-project "%V"');
+    expect(installer).toContain('DeleteRegKey HKCU "Software\\Classes\\Directory\\shell\\Paseo"');
+    expect(installer).toContain(
+      'DeleteRegKey HKCU "Software\\Classes\\Directory\\Background\\shell\\Paseo"',
+    );
+  });
+
   // electron-builder packs production dependencies declared in package.json into
   // app.asar. Runtime code in runtime-paths.ts and bin/paseo dynamically resolves
   // these workspace packages by string, so static analysis (TypeScript, Knip) cannot

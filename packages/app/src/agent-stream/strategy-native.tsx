@@ -74,6 +74,17 @@ function measureAnchorBounds(input: {
   });
 }
 
+function renderNativeLiveHeadRows(
+  items: StreamItem[],
+  renderLiveHeadRow: StreamRenderInput["renderers"]["renderLiveHeadRow"],
+  _revision: unknown,
+): ReactElement[] {
+  "use no memo";
+  return items.map((item, index) => (
+    <Fragment key={item.id}>{renderLiveHeadRow(item, index, items)}</Fragment>
+  ));
+}
+
 function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrategy }) {
   const isActive = useRetainedPanelActive();
   const {
@@ -696,12 +707,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   );
 
   const liveHeaderContent = useMemo(() => {
-    // Stable render events read the latest expansion state; this revision makes
-    // the memo invoke them again when that state changes.
-    void liveHeadRowRevision;
-    const liveHeadRows = segments.liveHead.map((item, index) => (
-      <Fragment key={item.id}>{renderLiveHeadRow(item, index, segments.liveHead)}</Fragment>
-    ));
+    const liveHeadRows = renderNativeLiveHeadRows(
+      segments.liveHead,
+      renderLiveHeadRow,
+      liveHeadRowRevision,
+    );
     const liveAuxiliary = renderLiveAuxiliary();
     if (
       liveHeadRows.length === 0 &&

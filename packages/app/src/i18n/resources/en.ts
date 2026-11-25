@@ -1955,6 +1955,11 @@ export const en = {
           external: "External browser",
         },
       },
+      windowsContextMenu: {
+        label: "Windows Explorer context menu",
+        description: 'Add "Open with Paseo" to folder context menus in Windows Explorer',
+        updateFailed: "Unable to update the Windows Explorer context menu",
+      },
       contextWindowProviderUsage: {
         label: "Account usage in context meter",
         description:

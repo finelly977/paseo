@@ -92,7 +92,8 @@ import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissi
 import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifications-section";
 import { BrowserDataSection } from "@/desktop/components/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
-import { isElectronRuntime } from "@/desktop/host";
+import { getDesktopHost, isElectronRuntime } from "@/desktop/host";
+import { useToast } from "@/contexts/toast-context";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
@@ -390,6 +391,83 @@ function LanguageMenuItem({ value, activeLocale, selected, onChange }: LanguageM
   );
 }
 
+function WindowsContextMenuRow() {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const [supported, setSupported] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const bridge = getDesktopHost()?.windowsContextMenu;
+    if (!bridge?.getStatus) {
+      return;
+    }
+    let cancelled = false;
+    void bridge
+      .getStatus()
+      .then((status) => {
+        if (cancelled) return null;
+        setSupported(status.supported);
+        setEnabled(status.enabled);
+        return null;
+      })
+      .catch(() => {
+        if (!cancelled) setSupported(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggle = useCallback(
+    (nextEnabled: boolean) => {
+      const bridge = getDesktopHost()?.windowsContextMenu;
+      if (!bridge?.setEnabled || saving) {
+        return;
+      }
+      setSaving(true);
+      void bridge
+        .setEnabled(nextEnabled)
+        .then((status) => {
+          setEnabled(status.enabled);
+          return null;
+        })
+        .catch((error: unknown) => {
+          console.error("[设置] 更新 Windows 右键菜单失败", error);
+          toast.error(t("settings.general.windowsContextMenu.updateFailed"));
+        })
+        .finally(() => {
+          setSaving(false);
+        });
+    },
+    [saving, t, toast],
+  );
+
+  if (!supported) {
+    return null;
+  }
+
+  return (
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>
+          {t("settings.general.windowsContextMenu.label")}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {t("settings.general.windowsContextMenu.description")}
+        </Text>
+      </View>
+      <Switch
+        value={enabled}
+        disabled={saving}
+        onValueChange={handleToggle}
+        accessibilityLabel={t("settings.general.windowsContextMenu.label")}
+      />
+    </View>
+  );
+}
+
 function GeneralSection({
   settings,
   isDesktopApp,
@@ -510,6 +588,7 @@ function GeneralSection({
             </DropdownMenu>
           </View>
         ) : null}
+        {isDesktopApp ? <WindowsContextMenuRow /> : null}
         <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>

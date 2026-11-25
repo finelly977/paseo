@@ -88,8 +88,12 @@ import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { KeyboardShiftProvider } from "@/hooks/use-keyboard-shift-style";
 import { useCompactWebViewportZoomLock } from "@/hooks/use-compact-web-viewport-zoom-lock";
 import { useOpenProject } from "@/hooks/use-open-project";
+import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { useTranslation } from "react-i18next";
+import { useToast } from "@/contexts/toast-context";
+import { useSessionStore } from "@/stores/session-store";
 import { useOpenAgentListGesture } from "@/mobile-panels/gestures";
 import { MobilePanelsProvider } from "@/mobile-panels/provider";
 import { I18nProvider } from "@/i18n/provider";
@@ -102,6 +106,7 @@ import {
   useHostRegistryLoaded,
   useHostMutations,
   useHostRuntimeClient,
+  useHostRuntimeIsConnected,
   useHosts,
 } from "@/runtime/host-runtime";
 import { getDaemonStartService } from "@/runtime/daemon-start-service";
@@ -738,69 +743,109 @@ interface PendingOpenProjectRequest {
 let nextOpenProjectRequestId = 1;
 
 function OpenProjectListener() {
+  const { t } = useTranslation();
+  const toast = useToast();
   const chooseHost = useHostChooser();
   const hostRegistryLoaded = useHostRegistryLoaded();
+  const localDaemonServerId = useLocalDaemonServerId();
+  const isLocalDaemonConnected = useHostRuntimeIsConnected(localDaemonServerId ?? "");
+  const canLocalDaemonAddProject = useSessionStore((state) =>
+    localDaemonServerId
+      ? state.sessions[localDaemonServerId]?.serverInfo?.features?.projectAdd === true &&
+        state.sessions[localDaemonServerId]?.serverInfo?.features?.stableProjectIdentity === true
+      : false,
+  );
   const [request, setRequest] = useState<PendingOpenProjectRequest | null>(null);
-  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [pendingPaths, setPendingPaths] = useState<string[]>([]);
   const openProject = useOpenProject(request?.serverId ?? null);
 
-  const openPathOnChosenHost = useCallback(
-    (path: string) => {
-      const nextPath = path.trim();
-      if (!nextPath) {
-        return;
-      }
-
-      if (!hostRegistryLoaded) {
-        setPendingPath(nextPath);
-        return;
-      }
-
-      chooseHost({
-        title: "Choose host",
-        onChooseHost: (serverId) => {
-          setRequest({
-            id: nextOpenProjectRequestId++,
-            serverId,
-            path: nextPath,
-          });
-        },
-      });
-    },
-    [chooseHost, hostRegistryLoaded],
-  );
-
-  useEffect(() => {
-    if (!hostRegistryLoaded || !pendingPath) {
+  const enqueuePath = useCallback((path: string) => {
+    const nextPath = path.trim();
+    if (!nextPath) {
       return;
     }
-    const nextPath = pendingPath;
-    setPendingPath(null);
-    openPathOnChosenHost(nextPath);
-  }, [hostRegistryLoaded, openPathOnChosenHost, pendingPath]);
+    setPendingPaths((current) =>
+      current[current.length - 1] === nextPath ? current : [...current, nextPath],
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!hostRegistryLoaded || request !== null || pendingPaths.length === 0) {
+      return;
+    }
+    const [nextPath, ...rest] = pendingPaths;
+    if (!nextPath) {
+      return;
+    }
+
+    // 存在本机守护进程时直接添加到本机工作区（与拖入侧栏效果完全一致），
+    // 冷启动阶段等待本机连接和能力位就绪后再派发，避免弹窗选主机或过早静默失败。
+    if (localDaemonServerId) {
+      if (!isLocalDaemonConnected || !canLocalDaemonAddProject) {
+        return;
+      }
+      setPendingPaths(rest);
+      setRequest({
+        id: nextOpenProjectRequestId++,
+        serverId: localDaemonServerId,
+        path: nextPath,
+      });
+      return;
+    }
+
+    setPendingPaths(rest);
+    chooseHost({
+      title: "Choose host",
+      onChooseHost: (serverId) => {
+        setRequest({
+          id: nextOpenProjectRequestId++,
+          serverId,
+          path: nextPath,
+        });
+      },
+    });
+  }, [
+    canLocalDaemonAddProject,
+    chooseHost,
+    hostRegistryLoaded,
+    isLocalDaemonConnected,
+    localDaemonServerId,
+    pendingPaths,
+    request,
+  ]);
 
   useEffect(() => {
     if (!request) {
       return;
     }
     let cancelled = false;
-    void openProject(request.path).then((result) => {
-      if (cancelled) {
-        return null;
-      }
-
-      if (!result.ok) {
+    void openProject(request.path)
+      .then((result) => {
+        if (cancelled) {
+          return null;
+        }
+        if (result.ok) {
+          toast.show(t("sidebar.project.drop.added", { count: 1 }), {
+            variant: "success",
+          });
+        } else {
+          toast.error(result.error ?? t("sidebar.project.drop.failed"));
+        }
         setRequest((current) => (current?.id === request.id ? null : current));
         return null;
-      }
-
-      setRequest((current) => (current?.id === request.id ? null : current));
-      return null;
-    });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return null;
+        }
+        toast.error(error instanceof Error ? error.message : t("sidebar.project.drop.failed"));
+        setRequest((current) => (current?.id === request.id ? null : current));
+        return null;
+      });
     return () => {
       cancelled = true;
     };
-  }, [openProject, request]);
+  }, [openProject, request, t, toast]);
 
   useEffect(() => {
     let disposed = false;
@@ -809,7 +854,7 @@ function OpenProjectListener() {
       ?.getPendingOpenProject?.()
       ?.then((pending) => {
         if (!disposed && pending) {
-          openPathOnChosenHost(pending);
+          enqueuePath(pending);
         }
         return;
       })
@@ -821,7 +866,7 @@ function OpenProjectListener() {
         return;
       }
       const nextPath = typeof payload?.path === "string" ? payload.path.trim() : "";
-      openPathOnChosenHost(nextPath);
+      enqueuePath(nextPath);
     })
       .then((dispose) => {
         if (disposed) {
@@ -837,7 +882,7 @@ function OpenProjectListener() {
       disposed = true;
       unlisten?.();
     };
-  }, [openPathOnChosenHost]);
+  }, [enqueuePath]);
 
   return null;
 }

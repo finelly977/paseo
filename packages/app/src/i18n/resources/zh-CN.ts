@@ -1921,6 +1921,11 @@ export const zhCN: TranslationResources = {
           external: "外部浏览器",
         },
       },
+      windowsContextMenu: {
+        label: "Windows 资源管理器右键菜单",
+        description: "在文件夹右键菜单中添加“用 Paseo 打开”，直接作为工作区加入当前窗口",
+        updateFailed: "无法更新 Windows 资源管理器右键菜单",
+      },
       contextWindowProviderUsage: {
         label: "上下文圆圈账户额度",
         description: "打开上下文圆圈时获取并显示当前服务商的账户额度",

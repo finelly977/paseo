@@ -59,7 +59,7 @@ export interface StreamSegmentRenderers {
 
 export interface StreamHistoryRowRevision {
   contentById: { has(id: string): boolean; get?(id: string): unknown };
-  displayStateById: { has(id: string): boolean };
+  displayStateById: { has(id: string): boolean; get?(id: string): unknown };
   estimatedHeightById: ReadonlyMap<string, number>;
   processAnchorIdByItemId: ReadonlyMap<string, string>;
   virtualizeExpandedProcess?: boolean;

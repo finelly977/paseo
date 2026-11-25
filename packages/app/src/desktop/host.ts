@@ -68,6 +68,18 @@ export interface DesktopOpenerBridge {
   openUrl?: (url: string) => Promise<void>;
 }
 
+export interface DesktopWindowsContextMenuStatus {
+  supported: boolean;
+  enabled: boolean;
+  registered: boolean;
+  executablePath: string | null;
+}
+
+export interface DesktopWindowsContextMenuBridge {
+  getStatus?: () => Promise<DesktopWindowsContextMenuStatus>;
+  setEnabled?: (enabled: boolean) => Promise<DesktopWindowsContextMenuStatus>;
+}
+
 export interface DesktopEditorTargetDescriptor {
   id: string;
   label: string;
@@ -190,6 +202,7 @@ export interface DesktopHostBridge {
   dialog?: DesktopDialogBridge;
   notification?: DesktopNotificationBridge;
   opener?: DesktopOpenerBridge;
+  windowsContextMenu?: DesktopWindowsContextMenuBridge;
   editor?: DesktopEditorBridge;
   webUtils?: DesktopWebUtilsBridge;
   menu?: DesktopMenuBridge;

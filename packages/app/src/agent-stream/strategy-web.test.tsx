@@ -1,6 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -455,7 +459,7 @@ describe("createWebStreamStrategy", () => {
           ...baseInput,
           historyRowRevision: {
             contentById: new Map(),
-            displayStateById: new Set(),
+            displayStateById: new Map(),
             estimatedHeightById: emptyHeights,
             processAnchorIdByItemId: emptyAnchors,
             globalDisplayState: false,
@@ -474,7 +478,7 @@ describe("createWebStreamStrategy", () => {
           ...baseInput,
           historyRowRevision: {
             contentById: new Map(),
-            displayStateById: new Set(["message-2"]),
+            displayStateById: new Map([["message-2", 8]]),
             estimatedHeightById: emptyHeights,
             processAnchorIdByItemId: emptyAnchors,
             globalDisplayState: false,
@@ -486,14 +490,15 @@ describe("createWebStreamStrategy", () => {
     expect(renderedIds).toEqual(["message-2"]);
 
     // 仅更新 message-3 的活跃分组对象，message-1 和 message-2 不应重新渲染。
+    const message3Group = { rev: 2 };
     renderedIds.length = 0;
     act(() => {
       root?.render(
         strategy.render({
           ...baseInput,
           historyRowRevision: {
-            contentById: new Map([["message-3", { rev: 2 }]]),
-            displayStateById: new Set(["message-2"]),
+            contentById: new Map([["message-3", message3Group]]),
+            displayStateById: new Map([["message-2", 8]]),
             estimatedHeightById: emptyHeights,
             processAnchorIdByItemId: emptyAnchors,
             globalDisplayState: false,
@@ -503,6 +508,26 @@ describe("createWebStreamStrategy", () => {
       );
     });
     expect(renderedIds).toEqual(["message-3"]);
+
+    // 当“用时”回合已展开（位 8 已置位），再点击展开该行内的过程折叠块（叠加位 4 -> 12）时，
+    // 必须立即重绘该行而不能因 has(id) 仍为 true 被吞掉。
+    renderedIds.length = 0;
+    act(() => {
+      root?.render(
+        strategy.render({
+          ...baseInput,
+          historyRowRevision: {
+            contentById: new Map([["message-3", message3Group]]),
+            displayStateById: new Map([["message-2", 12]]),
+            estimatedHeightById: emptyHeights,
+            processAnchorIdByItemId: emptyAnchors,
+            globalDisplayState: false,
+            globalContentRevision: sharedGlobalRevision,
+          },
+        }),
+      );
+    });
+    expect(renderedIds).toEqual(["message-2"]);
   });
 
   it("keeps a row mounted when it moves from the live head into mounted history", () => {
@@ -1128,5 +1153,63 @@ describe("createWebStreamStrategy", () => {
     });
 
     expect(scrollTo).toHaveBeenCalled();
+  });
+
+  it("preserves WebHistoryRow and NativeStreamViewport revision reactivity under React Compiler", () => {
+    const streamDir = existsSync(path.resolve(process.cwd(), "src/agent-stream/strategy-web.tsx"))
+      ? path.resolve(process.cwd(), "src/agent-stream")
+      : path.resolve(process.cwd(), "packages/app/src/agent-stream");
+    const require = createRequire(pathToFileURL(path.join(streamDir, "strategy-web.tsx")).href);
+    const babel = require("@babel/core") as {
+      transformSync: (
+        code: string,
+        options: Record<string, unknown>,
+      ) => { code?: string | null } | null;
+    };
+    const webSourcePath = path.join(streamDir, "strategy-web.tsx");
+    const nativeSourcePath = path.join(streamDir, "strategy-native.tsx");
+    const compilerCaller = {
+      name: "metro",
+      bundler: "metro",
+      platform: "web",
+      reactCompiler: true,
+    };
+
+    const compiledWeb =
+      babel.transformSync(readFileSync(webSourcePath, "utf8"), {
+        filename: "strategy-web.tsx",
+        babelrc: false,
+        configFile: false,
+        presets: [["babel-preset-expo", { unstable_transformImportMeta: true }]],
+        caller: compilerCaller,
+      })?.code ?? "";
+    const webRowStart = compiledWeb.indexOf("function WebHistoryRow(");
+    const webRowEnd = compiledWeb.indexOf("class HistoryContent", webRowStart);
+    expect(webRowStart).toBeGreaterThanOrEqual(0);
+    expect(webRowEnd).toBeGreaterThan(webRowStart);
+    const webRowBody = compiledWeb.slice(webRowStart, webRowEnd);
+    expect(webRowBody).not.toContain("react.memo_cache_sentinel");
+    expect(webRowBody).toContain("invokeWebHistoryRowRenderer");
+    expect(webRowBody).toContain("displayRevision");
+    expect(webRowBody).toContain("contentRevision");
+
+    const compiledNative =
+      babel.transformSync(readFileSync(nativeSourcePath, "utf8"), {
+        filename: "strategy-native.tsx",
+        babelrc: false,
+        configFile: false,
+        presets: [["babel-preset-expo", { unstable_transformImportMeta: true }]],
+        caller: { ...compilerCaller, platform: "ios" },
+      })?.code ?? "";
+    const nativeHelperStart = compiledNative.indexOf("function renderNativeLiveHeadRows(");
+    const nativeViewportStart = compiledNative.indexOf(
+      "function NativeStreamViewport(",
+      nativeHelperStart,
+    );
+    expect(nativeHelperStart).toBeGreaterThanOrEqual(0);
+    expect(nativeViewportStart).toBeGreaterThan(nativeHelperStart);
+    const nativeHelperBody = compiledNative.slice(nativeHelperStart, nativeViewportStart);
+    expect(nativeHelperBody).not.toContain("react.memo_cache_sentinel");
+    expect(compiledNative.slice(nativeViewportStart)).toContain("renderNativeLiveHeadRows(");
   });
 });

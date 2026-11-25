@@ -1994,6 +1994,11 @@ export const es: TranslationResources = {
           external: "Navegador externo",
         },
       },
+      windowsContextMenu: {
+        label: "Menú contextual del Explorador de Windows",
+        description: 'Agregar "Abrir con Paseo" al menú contextual de carpetas en Windows',
+        updateFailed: "No se pudo actualizar el menú contextual de Windows",
+      },
       contextWindowProviderUsage: {
         label: "Uso de la cuenta en el medidor de contexto",
         description:

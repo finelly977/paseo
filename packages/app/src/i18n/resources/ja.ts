@@ -1959,6 +1959,11 @@ export const ja: TranslationResources = {
           external: "外部ブラウザ",
         },
       },
+      windowsContextMenu: {
+        label: "Windows エクスプローラーの右クリックメニュー",
+        description: "フォルダの右クリックメニューに「Paseo で開く」を追加します",
+        updateFailed: "Windows の右クリックメニューを更新できませんでした",
+      },
       contextWindowProviderUsage: {
         label: "コンテキストメーターのアカウント使用量",
         description:

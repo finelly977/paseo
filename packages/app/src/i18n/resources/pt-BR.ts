@@ -1977,6 +1977,11 @@ export const ptBR: TranslationResources = {
           external: "Navegador externo",
         },
       },
+      windowsContextMenu: {
+        label: "Menu de contexto do Explorador do Windows",
+        description: 'Adicionar "Abrir com Paseo" ao menu de contexto de pastas no Windows',
+        updateFailed: "Não foi possível atualizar o menu de contexto do Windows",
+      },
       contextWindowProviderUsage: {
         label: "Uso da conta no medidor de contexto",
         description: "Busca e mostra o uso da conta do provedor ativo ao abrir o medidor",

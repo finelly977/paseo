@@ -1979,6 +1979,11 @@ export const ru: TranslationResources = {
           external: "Внешний браузер",
         },
       },
+      windowsContextMenu: {
+        label: "Контекстное меню Проводника Windows",
+        description: "Добавить пункт «Открыть в Paseo» в контекстное меню папок Windows",
+        updateFailed: "Не удалось обновить контекстное меню Windows",
+      },
       contextWindowProviderUsage: {
         label: "Использование аккаунта в индикаторе контекста",
         description:

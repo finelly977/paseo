@@ -91,4 +91,6 @@ packages/protocol/src/generated/validation/*.aot.ts
 /output/
 packages/desktop/.cache/
 packages/desktop/src-tauri/resources/managed-runtime/
+!packages/desktop/build/
+!packages/desktop/build/**
 app.json

@@ -96,6 +96,22 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   opener: {
     openUrl: (url: string) => ipcRenderer.invoke("paseo:opener:openUrl", url),
   },
+  windowsContextMenu: {
+    getStatus: () =>
+      ipcRenderer.invoke("paseo:windows-context-menu:getStatus") as Promise<{
+        supported: boolean;
+        enabled: boolean;
+        registered: boolean;
+        executablePath: string | null;
+      }>,
+    setEnabled: (enabled: boolean) =>
+      ipcRenderer.invoke("paseo:windows-context-menu:setEnabled", enabled) as Promise<{
+        supported: boolean;
+        enabled: boolean;
+        registered: boolean;
+        executablePath: string | null;
+      }>,
+  },
   workspacePreview: {
     open: (input: WorkspacePreviewOpen): Promise<string> =>
       ipcRenderer.invoke("paseo:workspace-preview:open", input),

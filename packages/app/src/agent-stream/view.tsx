@@ -1911,8 +1911,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       expandedInlineToolCallIds.size === 0;
     const processMembershipRef = useRef(completedTurnProcess.turnIdByProcessItemId);
     processMembershipRef.current = completedTurnProcess.turnIdByProcessItemId;
-    const historyDisplayStateIds = useMemo(() => {
-      const ids = new Set([...expandedCompletedTurnIds, ...nativeProcesses.expandedItemIds]);
+    const historyDisplayStateById = useMemo(() => {
+      // 按位编码同一行上的多维展开态（过程折叠、已完成回合正文、回合保留态、用时入口、原生过程），
+      // 避免“用时”已展开后布尔命中恒为 true，导致点击组内过程折叠块被行级 memo 吞掉。
+      const masks = new Map<string, number>();
+      const addBit = (id: string, bit: number) => {
+        masks.set(id, (masks.get(id) ?? 0) | bit);
+      };
+      for (const turnId of expandedCompletedTurnIds) {
+        addBit(turnId, 1);
+      }
+      for (const itemId of nativeProcesses.expandedItemIds) {
+        addBit(itemId, 2);
+      }
       for (const [groupId, group] of projectedToolCalls.groupsByHostId) {
         if (
           resolveOverviewGroupExpanded({
@@ -1922,23 +1933,25 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             overrides: toolCallGroupExpansionOverrides,
           })
         ) {
-          ids.add(groupId);
+          addBit(groupId, 4);
         }
       }
       // 原生单元按条目身份缓存；只有一个过程项时下标不会改变，也需要刷新入口和正文。
       for (const [itemId, turnId] of processMembershipRef.current) {
-        if (expandedCompletedTurnIds.has(turnId)) ids.add(itemId);
+        if (expandedCompletedTurnIds.has(turnId)) addBit(itemId, 8);
+        if (retainedCompletedTurnIds.has(turnId)) addBit(itemId, 16);
       }
       for (const [itemId, toggle] of completedTurnProcess.toggleByItemId) {
-        if (expandedCompletedTurnIds.has(toggle.turnId)) ids.add(itemId);
+        if (expandedCompletedTurnIds.has(toggle.turnId)) addBit(itemId, 32);
       }
-      return ids;
+      return masks;
     }, [
       completedTurnProcess.toggleByItemId,
       expandedCompletedTurnIds,
       isMobile,
       nativeProcesses.expandedItemIds,
       projectedToolCalls.groupsByHostId,
+      retainedCompletedTurnIds,
       toolCallGroupExpansionOverrides,
     ]);
     const estimatedCollapsedProcessHeightById = useMemo(() => {
@@ -2013,7 +2026,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
-        displayStateById: historyDisplayStateIds,
+        displayStateById: historyDisplayStateById,
         estimatedHeightById: estimatedCollapsedProcessHeightById,
         processAnchorIdByItemId: new Map(
           Array.from(completedTurnProcess.toggleByItemId, ([itemId, toggle]) => [
@@ -2028,11 +2041,36 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [
         completedTurnProcess.toggleByItemId,
         estimatedCollapsedProcessHeightById,
-        historyDisplayStateIds,
+        historyDisplayStateById,
         historyGlobalContentRevision,
         isMobile,
         projectedToolCalls.historyGroupUpdatesByHostId,
         virtualizeExpandedProcess,
+      ],
+    );
+
+    const liveHeadRowRevision = useMemo(
+      () => ({
+        displayStateById: historyDisplayStateById,
+        groupsByHostId: projectedToolCalls.groupsByHostId,
+        executingToolIds,
+        status: context.status,
+        toolCallDetailLevel,
+        autoExpandReasoning,
+        conversationDividerSpacing,
+        messageParagraphSpacing,
+        isMobile,
+      }),
+      [
+        autoExpandReasoning,
+        context.status,
+        conversationDividerSpacing,
+        executingToolIds,
+        historyDisplayStateById,
+        isMobile,
+        messageParagraphSpacing,
+        projectedToolCalls.groupsByHostId,
+        toolCallDetailLevel,
       ],
     );
 
@@ -2054,7 +2092,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               segments: renderModel.segments,
               processExit,
               historyRowRevision,
-              liveHeadRowRevision: historyDisplayStateIds,
+              liveHeadRowRevision,
               boundary,
               renderers,
               listEmptyComponent,

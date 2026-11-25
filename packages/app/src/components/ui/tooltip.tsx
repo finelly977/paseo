@@ -320,6 +320,8 @@ export function TooltipTrigger({
 }): ReactElement {
   const ctx = useTooltipContext("TooltipTrigger");
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoveredRef = useRef(false);
+  const existingChildRef = useRef<unknown>(null);
 
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
@@ -336,24 +338,28 @@ export function TooltipTrigger({
       return;
     }
     openTimerRef.current = setTimeout(() => {
-      ctx.setOpen(true);
       openTimerRef.current = null;
+      if (!isHoveredRef.current) return;
+      ctx.setOpen(true);
     }, ctx.delayDuration);
   }, [clearOpenTimer, ctx, disabled]);
 
   const close = useCallback(() => {
+    isHoveredRef.current = false;
     clearOpenTimer();
     ctx.close();
   }, [clearOpenTimer, ctx]);
 
   useEffect(() => {
     return () => {
+      isHoveredRef.current = false;
       clearOpenTimer();
     };
   }, [clearOpenTimer]);
 
   const handleHoverIn = useCallback(
     (e?: unknown) => {
+      isHoveredRef.current = true;
       if (isCallable(onHoverIn)) onHoverIn(e);
       scheduleOpen();
     },
@@ -362,6 +368,7 @@ export function TooltipTrigger({
 
   const handleHoverOut = useCallback(
     (e?: unknown) => {
+      isHoveredRef.current = false;
       if (isCallable(onHoverOut)) onHoverOut(e);
       close();
     },
@@ -403,6 +410,19 @@ export function TooltipTrigger({
     [clearOpenTimer, close, ctx, disabled, onPress],
   );
 
+  const assignChildTriggerRef = useCallback(
+    (node: View | null) => {
+      const existingRefProp = existingChildRef.current;
+      if (isCallable(existingRefProp)) {
+        existingRefProp(node);
+      } else if (existingRefProp && typeof existingRefProp === "object") {
+        Object.assign(existingRefProp, { current: node });
+      }
+      Object.assign(ctx.triggerRef, { current: node });
+    },
+    [ctx.triggerRef],
+  );
+
   const triggerProps = {
     ...props,
     disabled,
@@ -416,6 +436,7 @@ export function TooltipTrigger({
           // RN Web's hover handling can vary across environments; pointer events are the most reliable.
           onPointerEnter: handleHoverIn,
           onPointerLeave: handleHoverOut,
+          onPointerCancel: handleHoverOut,
           onMouseEnter: handleHoverIn,
           onMouseLeave: handleHoverOut,
         } as object)
@@ -432,6 +453,7 @@ export function TooltipTrigger({
     if (typeof rawProps !== "object" || rawProps === null) {
       throw new Error("TooltipTrigger asChild child must have props object");
     }
+    existingChildRef.current = Reflect.get(rawProps, triggerRefProp);
     const mergedProps: Record<string, unknown> = {
       ...Object.assign({}, rawProps),
       ...triggerProps,
@@ -443,18 +465,13 @@ export function TooltipTrigger({
       onPress: composeEventHandlers(Reflect.get(rawProps, "onPress"), handlePress),
       onPointerEnter: composeEventHandlers(Reflect.get(rawProps, "onPointerEnter"), handleHoverIn),
       onPointerLeave: composeEventHandlers(Reflect.get(rawProps, "onPointerLeave"), handleHoverOut),
+      onPointerCancel: composeEventHandlers(
+        Reflect.get(rawProps, "onPointerCancel"),
+        handleHoverOut,
+      ),
       onMouseEnter: composeEventHandlers(Reflect.get(rawProps, "onMouseEnter"), handleHoverIn),
       onMouseLeave: composeEventHandlers(Reflect.get(rawProps, "onMouseLeave"), handleHoverOut),
-    };
-
-    const existingRefProp = Reflect.get(rawProps, triggerRefProp);
-    mergedProps[triggerRefProp] = (node: View) => {
-      if (isCallable(existingRefProp)) {
-        existingRefProp(node);
-      } else if (existingRefProp && typeof existingRefProp === "object") {
-        Object.assign(existingRefProp, { current: node });
-      }
-      Object.assign(ctx.triggerRef, { current: node });
+      [triggerRefProp]: assignChildTriggerRef,
     };
 
     return cloneElement(child, mergedProps);
@@ -465,6 +482,95 @@ export function TooltipTrigger({
       {children}
     </Pressable>
   );
+}
+
+const POINTER_RECT_SLOP_PX = 2;
+
+function resolveDomElement(node: unknown): HTMLElement | null {
+  if (typeof HTMLElement === "undefined") return null;
+  return node instanceof HTMLElement ? node : null;
+}
+
+function isPointerOutsideTriggerElement(
+  triggerEl: HTMLElement | null,
+  clientX: number,
+  clientY: number,
+): boolean {
+  if (!triggerEl || !triggerEl.isConnected) return true;
+  if (typeof document !== "undefined" && triggerEl.contains(document.activeElement)) {
+    return false;
+  }
+  const rect = triggerEl.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return true;
+  return (
+    clientX < rect.left - POINTER_RECT_SLOP_PX ||
+    clientX > rect.right + POINTER_RECT_SLOP_PX ||
+    clientY < rect.top - POINTER_RECT_SLOP_PX ||
+    clientY > rect.bottom + POINTER_RECT_SLOP_PX
+  );
+}
+
+function useWebTooltipDismissListeners({
+  active,
+  interactive,
+  triggerRef,
+  contentRef,
+  onDismiss,
+}: {
+  active: boolean;
+  interactive: boolean;
+  triggerRef: React.RefObject<View | null>;
+  contentRef: React.RefObject<View | null>;
+  onDismiss: () => void;
+}): void {
+  useEffect(() => {
+    if (!isWeb || !active || typeof window === "undefined") return undefined;
+
+    const handleScroll = (event: Event) => {
+      if (interactive) {
+        const contentEl = resolveDomElement(contentRef.current);
+        if (contentEl && event.target instanceof Node && contentEl.contains(event.target)) {
+          return;
+        }
+      }
+      onDismiss();
+    };
+    const handleVisibilityChange = () => {
+      if (typeof document !== "undefined" && document.hidden) {
+        onDismiss();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onDismiss();
+      }
+    };
+    const handlePointerMove = (event: PointerEvent | MouseEvent) => {
+      if (interactive) return;
+      const triggerEl = resolveDomElement(triggerRef.current);
+      if (isPointerOutsideTriggerElement(triggerEl, event.clientX, event.clientY)) {
+        onDismiss();
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
+    window.addEventListener("blur", onDismiss);
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("blur", onDismiss);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("pointermove", handlePointerMove);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+    };
+  }, [active, contentRef, interactive, onDismiss, triggerRef]);
 }
 
 export function TooltipContent({
@@ -484,6 +590,7 @@ export function TooltipContent({
   maxWidth?: number;
 }>): ReactElement | null {
   const ctx = useTooltipContext("TooltipContent");
+  const contentSurfaceRef = useRef<View>(null);
   const [triggerRect, setTriggerRect] = useState<Rect | null>(null);
   const [contentSize, setContentSize] = useState<{ width: number; height: number } | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -539,13 +646,27 @@ export function TooltipContent({
         top: position?.y ?? -9999,
         left: position?.x ?? -9999,
         maxWidth,
+        ...(isWeb
+          ? ({
+              opacity: position ? 1 : 0,
+              transition: `opacity ${MOTION_DURATION.instant}ms linear`,
+            } as object)
+          : null),
       },
     ],
-    [maxWidth, position?.x, position?.y],
+    [maxWidth, position],
   );
   const contentStyle = useMemo(() => [styles.content, style], [style]);
 
   const handleDismiss = useCallback(() => ctx.setOpen(false), [ctx]);
+
+  useWebTooltipDismissListeners({
+    active: ctx.open && ctx.enabled,
+    interactive: ctx.interactive,
+    triggerRef: ctx.triggerRef,
+    contentRef: contentSurfaceRef,
+    onDismiss: handleDismiss,
+  });
 
   const handleContentHoverIn = useCallback(() => {
     if (ctx.interactive) {
@@ -561,17 +682,17 @@ export function TooltipContent({
   if (!ctx.open || !ctx.enabled) return null;
 
   // On web, avoid React Native's <Modal/> implementation (it uses <dialog> and can
-  // steal focus / disrupt hover). Rendering via Portal + position:fixed keeps the
-  // exact same positioning math as DropdownMenu, without hover feedback loops.
+  // steal focus / disrupt hover) and avoid Reanimated web's predefined FadeOut exit
+  // clone inside persistent #overlay-root (which leaves zombie DOM nodes when
+  // animationend does not fire).
   if (isWeb) {
     return createPortal(
       <View pointerEvents={ctx.interactive ? "box-none" : "none"} style={styles.portalOverlay}>
         <FloatingSurface
+          ref={contentSurfaceRef}
           pointerEvents={ctx.interactive ? "auto" : "none"}
           onMouseEnter={ctx.interactive ? handleContentHoverIn : undefined}
           onMouseLeave={ctx.interactive ? handleContentHoverOut : undefined}
-          entering={FadeIn.duration(MOTION_DURATION.instant)}
-          exiting={FadeOut.duration(MOTION_DURATION.instant)}
           collapsable={false}
           testID={testID}
           onLayout={handleLayout}

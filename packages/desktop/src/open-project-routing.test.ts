@@ -2,7 +2,10 @@ import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseOpenProjectPathFromArgv } from "./open-project-routing";
+import {
+  normalizeOpenProjectCandidatePath,
+  parseOpenProjectPathFromArgv,
+} from "./open-project-routing";
 
 describe("open-project-routing", () => {
   it("returns a bare absolute path argument", () => {
@@ -58,6 +61,27 @@ describe("open-project-routing", () => {
     expect(
       parseOpenProjectPathFromArgv({
         argv: ["/Applications/Paseo.app/Contents/MacOS/Paseo", "--open-project", projectPath],
+        isDefaultApp: false,
+      }),
+    ).toBe(projectPath);
+
+    expect(
+      parseOpenProjectPathFromArgv({
+        argv: ["/Applications/Paseo.app/Contents/MacOS/Paseo", `--open-project=${projectPath}`],
+        isDefaultApp: false,
+      }),
+    ).toBe(projectPath);
+  });
+
+  it("normalizes Windows Explorer trailing-quote drive root and quoted directory arguments", () => {
+    expect(normalizeOpenProjectCandidatePath('D:"')).toBe("D:\\");
+    expect(normalizeOpenProjectCandidatePath('"E:\\paseo"')).toBe("E:\\paseo");
+    expect(normalizeOpenProjectCandidatePath('E:\\paseo"')).toBe("E:\\paseo");
+
+    const projectPath = mkdtempSync(path.join(tmpdir(), "paseo-open-project-"));
+    expect(
+      parseOpenProjectPathFromArgv({
+        argv: ["Paseo.exe", "--open-project", `${projectPath}"`],
         isDefaultApp: false,
       }),
     ).toBe(projectPath);
