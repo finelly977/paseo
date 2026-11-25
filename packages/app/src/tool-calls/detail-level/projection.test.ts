@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import type { StreamItem, ToolCallItem } from "@/types/stream";
+import type { StreamItem, ThoughtItem, ToolCallItem } from "@/types/stream";
+import {
+  isSingleThoughtOverviewGroup,
+  isThoughtOnlyOverviewSummary,
+  resolveOverviewGroupExpanded,
+} from "./overview/model";
 import {
   prepareToolCallHistory,
   projectToolCallDetailLevel,
@@ -10,18 +15,35 @@ import {
 
 type AssistantMessageItem = Extract<StreamItem, { kind: "assistant_message" }>;
 
+function thought(
+  id: string,
+  text = `thought ${id}`,
+  options: { status?: "loading" | "ready"; turnId?: string } = {},
+): ThoughtItem {
+  return {
+    kind: "thought",
+    id,
+    text,
+    status: options.status ?? "ready",
+    timestamp: new Date(`2026-01-01T00:00:${id.padStart(2, "0")}.000Z`),
+    ...(options.turnId ? { turnId: options.turnId } : {}),
+  };
+}
+
 function toolCall(
   id: string,
   detail: ToolCallDetail,
   options: {
     name?: string;
     status?: "running" | "completed" | "failed" | "canceled";
+    turnId?: string;
   } = {},
 ): ToolCallItem {
   return {
     kind: "tool_call",
     id,
     timestamp: new Date(`2026-01-01T00:00:${id.padStart(2, "0")}.000Z`),
+    ...(options.turnId ? { turnId: options.turnId } : {}),
     payload: {
       source: "agent",
       data: {
@@ -233,6 +255,7 @@ describe("tool call detail-level projection", () => {
       run: expect.any(Object),
       isLoading: false,
       summary: {
+        thoughtCount: 0,
         editedFileCount: 1,
         commandCount: 1,
         readFileCount: 2,
@@ -460,5 +483,158 @@ describe("tool call detail-level projection", () => {
     expect(result.head).toEqual([singleCall, plan, speak]);
     expect(result.groupsByHostId.get(singleCall.id)?.run.calls).toEqual([singleCall]);
     expect(result.groupsByHostId.size).toBe(1);
+  });
+
+  it("merges interleaved thoughts and tool calls between two replies into one process group", () => {
+    const items: StreamItem[] = [
+      assistant("reply-1"),
+      thought("1", "分析配置存储"),
+      toolCall("2", { type: "read", filePath: "/repo/a.ts" }),
+      thought("3", "准备执行测试"),
+      toolCall("4", { type: "shell", command: "npm test" }),
+      thought("5", "整理最终改动", { status: "ready" }),
+      assistant("reply-2"),
+      thought("6", "开始第二阶段", { status: "loading" }),
+      toolCall("7", { type: "edit", filePath: "/repo/b.ts" }, { status: "running" }),
+    ];
+
+    const result = project({
+      level: "overview",
+      tail: items.slice(0, 7),
+      head: items.slice(7),
+      isTurnActive: true,
+    });
+
+    expect(result.tail).toHaveLength(3);
+    expect(result.tail[0]?.id).toBe("reply-1");
+    expect(result.tail[1]).toMatchObject({ id: "1", kind: "tool_call" });
+    expect(result.tail[2]?.id).toBe("reply-2");
+    expect(result.head).toHaveLength(1);
+    expect(result.head[0]).toMatchObject({ id: "6", kind: "tool_call" });
+
+    const firstGroup = result.groupsByHostId.get("1");
+    expect(firstGroup).toMatchObject({
+      isLoading: false,
+      run: {
+        id: "1",
+        isSealed: true,
+      },
+      summary: {
+        thoughtCount: 3,
+        readFileCount: 1,
+        commandCount: 1,
+        editedFileCount: 0,
+        otherToolCount: 0,
+      },
+    });
+    expect(firstGroup?.run.calls.map((entry) => entry.id)).toEqual(["1", "2", "3", "4", "5"]);
+
+    const secondGroup = result.groupsByHostId.get("6");
+    expect(secondGroup).toMatchObject({
+      isLoading: true,
+      run: {
+        id: "6",
+        isSealed: false,
+      },
+      summary: {
+        thoughtCount: 1,
+        editedFileCount: 1,
+      },
+    });
+    expect(secondGroup?.run.calls.map((entry) => entry.id)).toEqual(["6", "7"]);
+  });
+
+  it("keeps a live streaming thought active and splits runs across turn boundaries", () => {
+    const turnOne = [
+      thought("1", "第一轮思考", { turnId: "turn-1" }),
+      toolCall("2", { type: "read", filePath: "/repo/a.ts" }, { turnId: "turn-1" }),
+    ];
+    const turnTwo = [thought("3", "第二轮思考中", { status: "loading", turnId: "turn-2" })];
+
+    const result = project({
+      level: "overview",
+      tail: turnOne,
+      head: turnTwo,
+      isTurnActive: false,
+    });
+
+    expect(result.groupsByHostId.size).toBe(2);
+    expect(result.groupsByHostId.get("1")?.run.isSealed).toBe(true);
+    const activeThoughtGroup = result.groupsByHostId.get("3");
+    expect(activeThoughtGroup).toMatchObject({
+      isLoading: true,
+      run: { id: "3", isSealed: false },
+      summary: { thoughtCount: 1 },
+    });
+    expect(activeThoughtGroup ? isSingleThoughtOverviewGroup(activeThoughtGroup) : false).toBe(
+      true,
+    );
+    expect(
+      activeThoughtGroup ? isThoughtOnlyOverviewSummary(activeThoughtGroup.summary) : false,
+    ).toBe(true);
+  });
+
+  it("counts thinking tool calls under thoughtCount rather than otherToolCount", () => {
+    const calls = [
+      toolCall("1", { type: "unknown", input: "推演步骤", output: null }, { name: "thinking" }),
+      toolCall("2", { type: "shell", command: "npm test" }),
+    ];
+
+    const result = project({ level: "overview", head: calls });
+
+    expect(result.groupsByHostId.get("1")?.summary).toMatchObject({
+      thoughtCount: 1,
+      commandCount: 1,
+      otherToolCount: 0,
+    });
+  });
+
+  it("auto-expands active groups on desktop, collapses sealed groups, and honors explicit overrides", () => {
+    const empty = new Map<string, boolean>();
+    expect(
+      resolveOverviewGroupExpanded({
+        groupId: "g1",
+        isSealed: false,
+        isCompact: false,
+        overrides: empty,
+      }),
+    ).toBe(true);
+    expect(
+      resolveOverviewGroupExpanded({
+        groupId: "g1",
+        isSealed: true,
+        isCompact: false,
+        overrides: empty,
+      }),
+    ).toBe(false);
+    expect(
+      resolveOverviewGroupExpanded({
+        groupId: "g1",
+        isSealed: false,
+        isCompact: true,
+        overrides: empty,
+      }),
+    ).toBe(false);
+
+    const overrides = new Map<string, boolean>([
+      ["active-collapsed", false],
+      ["sealed-expanded", true],
+    ]);
+    expect(
+      resolveOverviewGroupExpanded({
+        groupId: "active-collapsed",
+        isSealed: false,
+        isCompact: false,
+        overrides,
+      }),
+    ).toBe(false);
+    expect(
+      resolveOverviewGroupExpanded({
+        groupId: "sealed-expanded",
+        isSealed: true,
+        isCompact: false,
+        overrides,
+      }),
+    ).toBe(true);
   });
 });

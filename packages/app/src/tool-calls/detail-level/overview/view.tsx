@@ -1,12 +1,42 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
-import { ScrollView, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import React, { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { ScrollView, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Wrench } from "lucide-react-native";
+import { Brain, Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { ExpandableBadge } from "@/components/message";
+import { ExpandableBadge, ProcessGroupListProvider } from "@/components/message";
 import { useIsCompactFormFactor } from "@/constants/layout";
-import { type OverviewSummary, type OverviewToolCallGroup } from "./model";
+import { isWeb } from "@/constants/platform";
+import type { ProcessRunItem } from "../grouping";
+import {
+  buildScrollEdgeMaskImage,
+  useFollowLatestScroll,
+  type ScrollEdgeFade,
+} from "./follow-latest";
+import {
+  isThoughtOnlyOverviewSummary,
+  type OverviewSummary,
+  type OverviewToolCallGroup,
+} from "./model";
 import { OverviewToolCallGroupSheet } from "./sheet";
+
+function getScrollableDomNode(scroll: ScrollView | null): HTMLElement | null {
+  if (!isWeb || !scroll) return null;
+  const candidate: unknown =
+    typeof (scroll as { getScrollableNode?: () => unknown }).getScrollableNode === "function"
+      ? (scroll as { getScrollableNode: () => unknown }).getScrollableNode()
+      : scroll;
+  return candidate instanceof HTMLElement ? candidate : null;
+}
+
+function applyEdgeFadeMask(node: View | null, edgeFade: ScrollEdgeFade): void {
+  if (!isWeb) return;
+  const domNode: unknown = node;
+  if (!(domNode instanceof HTMLElement)) return;
+  const mask = buildScrollEdgeMaskImage(edgeFade);
+  domNode.style.maskImage = mask;
+  domNode.style.setProperty("-webkit-mask-image", mask);
+  domNode.setAttribute("data-scroll-fade", edgeFade);
+}
 
 interface OverviewGroupProps {
   group: OverviewToolCallGroup;
@@ -14,10 +44,29 @@ interface OverviewGroupProps {
   expanded: boolean;
   isLastInSequence: boolean;
   onExpandedChange: (groupId: string, expanded: boolean) => void;
-  children: () => ReactNode;
+  renderItem?: (entry: ProcessRunItem, isLast: boolean) => ReactNode;
+  children?: () => ReactNode;
 }
 
-const TOOL_CALL_GROUP_MAX_HEIGHT = 400;
+const ProcessGroupItemsList = memo(function ProcessGroupItemsList({
+  calls,
+  renderItem,
+}: {
+  calls: readonly ProcessRunItem[];
+  renderItem: (entry: ProcessRunItem, isLast: boolean) => ReactNode;
+}) {
+  return (
+    <>
+      {calls.map((entry, index) => (
+        <React.Fragment key={entry.id}>
+          {renderItem(entry, index === calls.length - 1)}
+        </React.Fragment>
+      ))}
+    </>
+  );
+});
+
+export const TOOL_CALL_GROUP_MAX_HEIGHT = 360;
 
 function joinSummaryParts(parts: string[], conjunction: string): string {
   if (parts.length === 0) {
@@ -44,6 +93,7 @@ function useOverviewSummary(summary: OverviewSummary): string {
       [summary.searchCount, "toolCallGroup.searches"],
       [summary.otherToolCount, "toolCallGroup.otherTools"],
       [summary.paseoCallCount, "toolCallGroup.paseoCalls"],
+      [summary.thoughtCount, "toolCallGroup.thoughts"],
     ] as const;
     for (const [count, key] of entries) {
       if (count > 0) {
@@ -60,50 +110,71 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
   expanded,
   isLastInSequence,
   onExpandedChange,
+  renderItem,
   children,
 }: OverviewGroupProps) {
   const scrollRef = useRef<ScrollView>(null);
-  const followLatest = useRef(true);
+  const maskWrapperRef = useRef<View>(null);
   const isCompact = useIsCompactFormFactor();
   const aggregateSummary = useOverviewSummary(group.summary);
-  const scrollToLatest = useCallback(() => {
-    scrollRef.current?.scrollToEnd({ animated: false });
+  const thoughtOnly = isThoughtOnlyOverviewSummary(group.summary);
+  const headerIcon = thoughtOnly ? Brain : Wrench;
+  const handleEdgeFadeChange = useCallback((edgeFade: ScrollEdgeFade) => {
+    applyEdgeFadeMask(maskWrapperRef.current, edgeFade);
   }, []);
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentSize, layoutMeasurement, contentOffset } = event.nativeEvent;
-    followLatest.current = contentSize.height - layoutMeasurement.height - contentOffset.y <= 16;
+  const syncDomEdgeFadeRef = useRef<() => void>(() => {});
+  const scrollToEnd = useCallback((animated: boolean) => {
+    scrollRef.current?.scrollToEnd({ animated });
+    syncDomEdgeFadeRef.current();
   }, []);
-  useEffect(() => {
-    if (!expanded) {
-      followLatest.current = true;
-      return;
-    }
-    if (!followLatest.current) return;
-    // 只在追加调用时追尾，展开详情产生的尺寸变化不能把读者拉到末尾。
-    const frame = requestAnimationFrame(scrollToLatest);
-    return () => cancelAnimationFrame(frame);
-  }, [expanded, group.run.calls.length, scrollToLatest]);
+  const { handleScroll, syncEdgeFade } = useFollowLatestScroll({
+    open: !isCompact && expanded,
+    itemCount: group.run.calls.length,
+    latestItemId: group.run.latest.id,
+    scrollToEnd,
+    onEdgeFadeChange: handleEdgeFadeChange,
+  });
+  const syncDomEdgeFade = useCallback(() => {
+    const domNode = getScrollableDomNode(scrollRef.current);
+    if (!domNode) return;
+    syncEdgeFade(domNode.scrollTop, domNode.clientHeight, domNode.scrollHeight);
+  }, [syncEdgeFade]);
+  syncDomEdgeFadeRef.current = syncDomEdgeFade;
   const toggle = useCallback(() => {
     onExpandedChange(group.run.id, !expanded);
   }, [expanded, group.run.id, onExpandedChange]);
   const close = useCallback(() => {
     onExpandedChange(group.run.id, false);
   }, [group.run.id, onExpandedChange]);
+  const renderItems = useCallback(
+    () =>
+      renderItem ? (
+        <ProcessGroupItemsList calls={group.run.calls} renderItem={renderItem} />
+      ) : (
+        (children?.() ?? null)
+      ),
+    [children, group.run.calls, renderItem],
+  );
   const renderDetails = useCallback(
     () => (
-      <ScrollView
-        ref={scrollRef}
-        testID="tool-call-group-scroll"
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator
-        onScroll={handleScroll}
-      >
-        {children()}
-      </ScrollView>
+      <View ref={maskWrapperRef} testID="tool-call-group-mask" style={styles.scrollMask}>
+        <ScrollView
+          ref={scrollRef}
+          testID="tool-call-group-scroll"
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          nestedScrollEnabled
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator
+          onScroll={handleScroll}
+          onLayout={syncDomEdgeFade}
+          onContentSizeChange={syncDomEdgeFade}
+        >
+          <ProcessGroupListProvider>{renderItems()}</ProcessGroupListProvider>
+        </ScrollView>
+      </View>
     ),
-    [children, handleScroll],
+    [handleScroll, renderItems, syncDomEdgeFade],
   );
 
   if (isCompact) {
@@ -112,7 +183,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         <ExpandableBadge
           testID="tool-call-group"
           label={aggregateSummary}
-          icon={Wrench}
+          icon={headerIcon}
           trailingChevron
           isLoading={group.isLoading && executionActive}
           isExpanded={false}
@@ -122,10 +193,12 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         <OverviewToolCallGroupSheet
           visible={expanded}
           summary={aggregateSummary}
+          thoughtOnly={thoughtOnly}
           itemCount={group.run.calls.length}
+          latestItemId={group.run.latest.id}
           onClose={close}
         >
-          {expanded ? children() : null}
+          {expanded ? <ProcessGroupListProvider>{renderItems()}</ProcessGroupListProvider> : null}
         </OverviewToolCallGroupSheet>
       </>
     );
@@ -135,7 +208,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
     <ExpandableBadge
       testID="tool-call-group"
       label={aggregateSummary}
-      icon={Wrench}
+      icon={headerIcon}
       isLoading={group.isLoading && executionActive}
       isExpanded={expanded}
       isLastInSequence={isLastInSequence}
@@ -148,13 +221,17 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
 });
 
 const styles = StyleSheet.create((theme) => ({
+  scrollMask: {
+    maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
+  },
   scroll: {
     maxHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
   },
   content: {
-    marginLeft: theme.spacing[4],
-    paddingLeft: theme.spacing[2],
-    paddingRight: 13,
+    marginLeft: theme.spacing[3],
+    paddingLeft: theme.spacing[1],
+    paddingRight: theme.spacing[1],
+    paddingBottom: theme.spacing[1],
     borderLeftWidth: 1,
     borderLeftColor: theme.colors.border,
   },

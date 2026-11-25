@@ -600,7 +600,7 @@ describe("appearance settings", () => {
     expect(result.uiFontSize).toBe(DEFAULT_UI_FONT_SIZE);
     expect(result.codeFontSize).toBe(DEFAULT_CODE_FONT_SIZE);
     expect(result.syntaxTheme).toBe("one");
-    expect(result.toolCallDetailLevel).toBe("detailed");
+    expect(result.toolCallDetailLevel).toBe("overview");
     expect(result.messageParagraphSpacing).toBe(DEFAULT_MESSAGE_PARAGRAPH_SPACING);
     expect(result.conversationMessageSpacing).toBe(DEFAULT_CONVERSATION_MESSAGE_SPACING);
     expect(result.conversationDividerSpacing).toBe(DEFAULT_CONVERSATION_DIVIDER_SPACING);
@@ -632,7 +632,7 @@ describe("appearance settings", () => {
       }),
     });
 
-    expect((await loadAppSettingsFromStorage(deps)).toolCallDetailLevel).toBe("detailed");
+    expect((await loadAppSettingsFromStorage(deps)).toolCallDetailLevel).toBe("overview");
   });
 
   it("clamps the UI font size into range and rejects non-numeric values", async () => {

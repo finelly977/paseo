@@ -1846,6 +1846,10 @@ export const ru: TranslationResources = {
       one: "Paseo вызван {{count}} раз",
       other: "Paseo вызван {{count}} раз",
     },
+    thoughts: {
+      one: "размышлял {{count}} раз",
+      other: "размышлял {{count}} раз",
+    },
     and: "и",
   },
   renameModal: {

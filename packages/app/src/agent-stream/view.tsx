@@ -67,8 +67,18 @@ import { ToolCallSheetProvider } from "@/components/tool-call-sheet";
 import {
   prepareToolCallHistory,
   projectToolCallDetailLevel,
+  type ToolCallDetailGroup,
 } from "@/tool-calls/detail-level/projection";
-import { OverviewToolCallGroupView } from "@/tool-calls/detail-level/overview/view";
+import type { ProcessRunItem } from "@/tool-calls/detail-level/grouping";
+import {
+  isSingleThoughtOverviewGroup,
+  resolveOverviewGroupExpanded,
+} from "@/tool-calls/detail-level/overview/model";
+import {
+  OverviewToolCallGroupView,
+  TOOL_CALL_GROUP_MAX_HEIGHT,
+} from "@/tool-calls/detail-level/overview/view";
+import { formatThoughtSecondaryLabel, resolveThoughtDurationMs } from "@/tool-calls/reasoning";
 import {
   type AgentStreamRenderModel,
   buildAgentStreamRenderModel,
@@ -673,9 +683,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const [expandedInlineToolCallIds, setExpandedInlineToolCallIds] = useState<Set<string>>(
       new Set(),
     );
-    const [expandedToolCallGroupIds, setExpandedToolCallGroupIds] = useState<Set<string>>(
-      new Set(),
-    );
+    const [toolCallGroupExpansionOverrides, setToolCallGroupExpansionOverrides] = useState<
+      Map<string, boolean>
+    >(() => new Map());
     const {
       expandedTurnIds: expandedCompletedTurnIds,
       retainedTurnIds: retainedCompletedTurnIds,
@@ -760,7 +770,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     useEffect(() => {
       setIsNearBottom(true);
       setExpandedInlineToolCallIds(new Set());
-      setExpandedToolCallGroupIds(new Set());
+      setToolCallGroupExpansionOverrides(new Map());
       setPendingHistoryNavigation(null);
     }, [agentId]);
 
@@ -920,16 +930,30 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       () => visibleModelItems(effectiveStreamHead ?? EMPTY_STREAM_HEAD, selectedModel),
       [effectiveStreamHead, selectedModel],
     );
-    const executingToolIds = useMemo(
-      () =>
-        activeToolCallIds({
-          tail: effectiveStreamItems,
-          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
-          running: context.status === "running",
-          turnId: activeTurnId,
-        }),
-      [effectiveStreamItems, effectiveStreamHead, context.status, activeTurnId],
-    );
+    const previousExecutingToolIdsRef = useRef<Set<string>>(new Set());
+    const executingToolIds = useMemo(() => {
+      const next = activeToolCallIds({
+        tail: effectiveStreamItems,
+        head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
+        running: context.status === "running",
+        turnId: activeTurnId,
+      });
+      const previous = previousExecutingToolIdsRef.current;
+      if (previous.size === next.size) {
+        let same = true;
+        for (const id of next) {
+          if (!previous.has(id)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) {
+          return previous;
+        }
+      }
+      previousExecutingToolIdsRef.current = next;
+      return next;
+    }, [effectiveStreamItems, effectiveStreamHead, context.status, activeTurnId]);
     // Keep retained history outside the 48ms live-head flush path.
     const preparedToolCallHistory = useMemo(
       () => prepareToolCallHistory(toolCallDetailLevel, visibleTail),
@@ -1008,6 +1032,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         streamRenderStrategy,
       ],
     );
+    const previousFinishedProcessesRef = useRef<ReturnType<
+      typeof buildCompletedTurnProcessModel
+    > | null>(null);
     const finishedProcesses = useMemo(() => {
       const hosts = [
         ...streamLayout.history.flatMap((item) =>
@@ -1018,10 +1045,42 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         ),
         ...(streamLayout.auxiliaryTurnFooter ? [streamLayout.auxiliaryTurnFooter] : []),
       ];
-      return buildCompletedTurnProcessModel({
+      const next = buildCompletedTurnProcessModel({
         hosts,
         chronologicalItems: [...orderedToolCalls.tail, ...orderedToolCalls.head],
       });
+      const previous = previousFinishedProcessesRef.current;
+      if (
+        previous &&
+        previous.turnIdByProcessItemId.size === next.turnIdByProcessItemId.size &&
+        previous.toggleByItemId.size === next.toggleByItemId.size
+      ) {
+        let same = true;
+        for (const [id, turnId] of next.turnIdByProcessItemId) {
+          if (previous.turnIdByProcessItemId.get(id) !== turnId) {
+            same = false;
+            break;
+          }
+        }
+        if (same) {
+          for (const [id, toggle] of next.toggleByItemId) {
+            const prevToggle = previous.toggleByItemId.get(id);
+            if (
+              !prevToggle ||
+              prevToggle.turnId !== toggle.turnId ||
+              prevToggle.durationMs !== toggle.durationMs
+            ) {
+              same = false;
+              break;
+            }
+          }
+        }
+        if (same) {
+          return previous;
+        }
+      }
+      previousFinishedProcessesRef.current = next;
+      return next;
     }, [
       streamLayout.auxiliaryTurnFooter,
       streamLayout.history,
@@ -1246,13 +1305,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     );
 
     const setToolCallGroupExpanded = useCallback((groupId: string, expanded: boolean) => {
-      setExpandedToolCallGroupIds((previous) => {
-        const next = new Set(previous);
-        if (expanded) {
-          next.add(groupId);
-        } else {
-          next.delete(groupId);
+      setToolCallGroupExpansionOverrides((previous) => {
+        if (previous.get(groupId) === expanded) {
+          return previous;
         }
+        const next = new Map(previous);
+        next.set(groupId, expanded);
         return next;
       });
     }, []);
@@ -1336,8 +1394,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
-    const renderThoughtItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "thought" }>) => {
+    const renderSingleThoughtItem = useCallback(
+      (
+        item: Extract<StreamItem, { kind: "thought" }>,
+        isLastInSequence: boolean,
+        options: { defaultExpanded: boolean; maxDetailHeight?: number },
+      ) => {
         return (
           <ThoughtSlot
             itemId={item.id}
@@ -1345,12 +1407,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onInlineDetailsExpandedChangeByItemId={setInlineDetailsExpanded}
             text={item.text}
             status={item.status}
-            isLastInSequence={layoutItem.isLastInToolSequence}
-            defaultExpanded={autoExpandReasoning}
+            startedAt={item.startedAt}
+            timestamp={item.timestamp}
+            timestampUnknown={item.timestampUnknown}
+            executionActive={context.status === "running"}
+            isLastInSequence={isLastInSequence}
+            defaultExpanded={options.defaultExpanded}
+            maxDetailHeight={options.maxDetailHeight}
           />
         );
       },
-      [agentId, autoExpandReasoning, setInlineDetailsExpanded],
+      [agentId, context.status, setInlineDetailsExpanded],
     );
 
     const renderSingleToolCallItem = useCallback(
@@ -1412,42 +1479,102 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [context.cwd, executingToolIds, setInlineDetailsExpanded, handleToolCallOpenFile],
     );
 
-    const renderToolCallItem = useCallback(
-      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
-        const group = projectedToolCalls.groupsByHostId.get(item.id);
-        if (!group) {
-          return renderSingleToolCallItem(item, layoutItem.isLastInToolSequence);
+    const renderProcessGroupEntry = useCallback(
+      (entry: ProcessRunItem, isLast: boolean) => {
+        if (entry.kind === "thought") {
+          return renderSingleThoughtItem(entry, isLast, {
+            defaultExpanded: false,
+            maxDetailHeight: GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
+          });
         }
-        const expanded = expandedToolCallGroupIds.has(group.run.id);
+        return renderSingleToolCallItem(entry, isLast, GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT);
+      },
+      [renderSingleThoughtItem, renderSingleToolCallItem],
+    );
+
+    const renderProcessGroup = useCallback(
+      (layoutItem: StreamLayoutItem, group: ToolCallDetailGroup) => {
+        if (isSingleThoughtOverviewGroup(group)) {
+          const single = group.run.calls[0];
+          if (single?.kind === "thought") {
+            return renderSingleThoughtItem(single, layoutItem.isLastInToolSequence, {
+              defaultExpanded: autoExpandReasoning,
+              maxDetailHeight: TOOL_CALL_GROUP_MAX_HEIGHT,
+            });
+          }
+          if (single?.kind === "tool_call") {
+            return renderSingleToolCallItem(
+              single,
+              layoutItem.isLastInToolSequence,
+              TOOL_CALL_GROUP_MAX_HEIGHT,
+            );
+          }
+        }
+        const expanded = resolveOverviewGroupExpanded({
+          groupId: group.run.id,
+          isSealed: group.run.isSealed,
+          isCompact: isMobile,
+          overrides: toolCallGroupExpansionOverrides,
+        });
+        const executionActive =
+          (context.status === "running" &&
+            group.run.calls.some(
+              (entry) => entry.kind === "thought" && entry.status === "loading",
+            )) ||
+          group.run.calls.some(
+            (entry) => entry.kind === "tool_call" && executingToolIds.has(entry.id),
+          );
         return (
           <OverviewToolCallGroupView
             group={group}
-            executionActive={group.run.calls.some((call) => executingToolIds.has(call.id))}
+            executionActive={executionActive}
             expanded={expanded}
             isLastInSequence={layoutItem.isLastInToolSequence}
             onExpandedChange={setToolCallGroupExpanded}
-          >
-            {() =>
-              group.run.calls.map((call, index) => (
-                <React.Fragment key={call.id}>
-                  {renderSingleToolCallItem(
-                    call,
-                    index === group.run.calls.length - 1,
-                    GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT,
-                  )}
-                </React.Fragment>
-              ))
-            }
-          </OverviewToolCallGroupView>
+            renderItem={renderProcessGroupEntry}
+          />
         );
       },
       [
-        projectedToolCalls.groupsByHostId,
+        autoExpandReasoning,
+        context.status,
         executingToolIds,
-        expandedToolCallGroupIds,
+        isMobile,
+        renderProcessGroupEntry,
+        renderSingleThoughtItem,
         renderSingleToolCallItem,
         setToolCallGroupExpanded,
+        toolCallGroupExpansionOverrides,
       ],
+    );
+
+    const renderThoughtItem = useCallback(
+      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "thought" }>) => {
+        const group = projectedToolCalls.groupsByHostId.get(item.id);
+        if (group) {
+          return renderProcessGroup(layoutItem, group);
+        }
+        return renderSingleThoughtItem(item, layoutItem.isLastInToolSequence, {
+          defaultExpanded: autoExpandReasoning,
+        });
+      },
+      [
+        autoExpandReasoning,
+        projectedToolCalls.groupsByHostId,
+        renderProcessGroup,
+        renderSingleThoughtItem,
+      ],
+    );
+
+    const renderToolCallItem = useCallback(
+      (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "tool_call" }>) => {
+        const group = projectedToolCalls.groupsByHostId.get(item.id);
+        if (group) {
+          return renderProcessGroup(layoutItem, group);
+        }
+        return renderSingleToolCallItem(item, layoutItem.isLastInToolSequence);
+      },
+      [projectedToolCalls.groupsByHostId, renderProcessGroup, renderSingleToolCallItem],
     );
 
     const renderStreamItemContent = useCallback(
@@ -1728,14 +1855,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return itemById;
     }, [streamLayout.liveHead]);
 
-    const renderHistoryRow = useCallback(
-      (item: StreamItem) =>
-        renderHistoryStreamItem({
-          item,
-          layoutItemById: layoutHistoryItemById,
-          renderStreamItem,
-        }),
-      [layoutHistoryItemById, renderStreamItem],
+    // useStableEvent 保持历史行渲染器引用跨流式刷新稳定；各行仅在自身条目、内容更新、
+    // 折叠状态或全局共享展示输入变化时重新渲染，避免 48ms 流式刷新或点击单个过程组时整页重排。
+    const renderHistoryRow = useStableEvent((item: StreamItem) =>
+      renderHistoryStreamItem({
+        item,
+        layoutItemById: layoutHistoryItemById,
+        renderStreamItem,
+      }),
     );
 
     const renderHistoryVirtualizedRow = useCallback<
@@ -1785,11 +1912,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const processMembershipRef = useRef(completedTurnProcess.turnIdByProcessItemId);
     processMembershipRef.current = completedTurnProcess.turnIdByProcessItemId;
     const historyDisplayStateIds = useMemo(() => {
-      const ids = new Set([
-        ...expandedToolCallGroupIds,
-        ...expandedCompletedTurnIds,
-        ...nativeProcesses.expandedItemIds,
-      ]);
+      const ids = new Set([...expandedCompletedTurnIds, ...nativeProcesses.expandedItemIds]);
+      for (const [groupId, group] of projectedToolCalls.groupsByHostId) {
+        if (
+          resolveOverviewGroupExpanded({
+            groupId,
+            isSealed: group.run.isSealed,
+            isCompact: isMobile,
+            overrides: toolCallGroupExpansionOverrides,
+          })
+        ) {
+          ids.add(groupId);
+        }
+      }
       // 原生单元按条目身份缓存；只有一个过程项时下标不会改变，也需要刷新入口和正文。
       for (const [itemId, turnId] of processMembershipRef.current) {
         if (expandedCompletedTurnIds.has(turnId)) ids.add(itemId);
@@ -1801,8 +1936,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }, [
       completedTurnProcess.toggleByItemId,
       expandedCompletedTurnIds,
-      expandedToolCallGroupIds,
+      isMobile,
       nativeProcesses.expandedItemIds,
+      projectedToolCalls.groupsByHostId,
+      toolCallGroupExpansionOverrides,
     ]);
     const estimatedCollapsedProcessHeightById = useMemo(() => {
       const heights = new Map<string, number>();
@@ -1837,6 +1974,42 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       isMobile,
       retainedCompletedTurnIds,
     ]);
+    const historyGlobalContentRevision = useMemo(
+      () => ({
+        isMobile,
+        autoExpandReasoning,
+        status: context.status,
+        cwd: context.cwd,
+        readOnly,
+        conversationDividerSpacing,
+        messageParagraphSpacing,
+        executingToolIds,
+        completedTurnProcess,
+        historyLayout: streamLayout.history,
+        transitioningCompletedTurnIds,
+        nativeTransitioningTurnIds: nativeProcesses.transitioningTurnIds,
+        supportsAgentForkContextCursor,
+        supportsAgentForkContextNativeTurn,
+        toolCallDetailLevel,
+      }),
+      [
+        autoExpandReasoning,
+        completedTurnProcess,
+        context.cwd,
+        context.status,
+        conversationDividerSpacing,
+        executingToolIds,
+        isMobile,
+        messageParagraphSpacing,
+        nativeProcesses.transitioningTurnIds,
+        readOnly,
+        streamLayout.history,
+        supportsAgentForkContextCursor,
+        supportsAgentForkContextNativeTurn,
+        toolCallDetailLevel,
+        transitioningCompletedTurnIds,
+      ],
+    );
     const historyRowRevision = useMemo(
       () => ({
         contentById: projectedToolCalls.historyGroupUpdatesByHostId,
@@ -1850,11 +2023,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         ),
         virtualizeExpandedProcess,
         globalDisplayState: isMobile,
+        globalContentRevision: historyGlobalContentRevision,
       }),
       [
         completedTurnProcess.toggleByItemId,
         estimatedCollapsedProcessHeightById,
         historyDisplayStateIds,
+        historyGlobalContentRevision,
         isMobile,
         projectedToolCalls.historyGroupUpdatesByHostId,
         virtualizeExpandedProcess,
@@ -2058,40 +2233,75 @@ interface ThoughtSlotProps {
   onInlineDetailsExpandedChangeByItemId: (itemId: string, expanded: boolean) => void;
   text: string;
   status: Extract<StreamItem, { kind: "thought" }>["status"];
+  startedAt?: Date;
+  timestamp?: Date;
+  timestampUnknown?: boolean;
+  executionActive?: boolean;
   isLastInSequence: boolean;
   defaultExpanded: boolean;
+  maxDetailHeight?: number;
 }
 
-// 推理文字与助手正文使用同一套稳定显示节奏。
-function ThoughtSlot({
+// 推理文字与助手正文使用同一套稳定显示节奏；折叠态不驱动 30fps 逐帧揭示。
+const ThoughtSlot = memo(function ThoughtSlot({
   itemId,
   revealOwnerKey,
   onInlineDetailsExpandedChangeByItemId,
   text,
   status,
+  startedAt,
+  timestamp,
+  timestampUnknown,
+  executionActive = true,
   isLastInSequence,
   defaultExpanded,
+  maxDetailHeight,
 }: ThoughtSlotProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const handleExpandedChange = useCallback(
+    (id: string, expanded: boolean) => {
+      setIsExpanded(expanded);
+      onInlineDetailsExpandedChangeByItemId(id, expanded);
+    },
+    [onInlineDetailsExpandedChangeByItemId],
+  );
   const revealedText = useRevealedText(
     text,
-    status === "ready" ? "complete" : "streaming",
+    status === "ready" || !isExpanded ? "complete" : "streaming",
     revealOwnerKey ? { ownerKey: revealOwnerKey } : undefined,
+  );
+  const durationMs = resolveThoughtDurationMs({ startedAt, timestamp, timestampUnknown });
+  const secondaryLabel = useMemo(
+    () => formatThoughtSecondaryLabel({ text: revealedText, durationMs }),
+    [durationMs, revealedText],
+  );
+  const detail = useMemo(
+    () =>
+      ({
+        type: "plain_text",
+        icon: "brain",
+        ...(secondaryLabel ? { label: secondaryLabel } : {}),
+        ...(revealedText ? { text: revealedText } : {}),
+      }) as const,
+    [revealedText, secondaryLabel],
   );
   return (
     <ToolCallSlot
       itemId={itemId}
-      onInlineDetailsExpandedChangeByItemId={onInlineDetailsExpandedChangeByItemId}
+      onInlineDetailsExpandedChangeByItemId={handleExpandedChange}
       toolName="thinking"
-      args={revealedText}
+      detail={detail}
       status={status === "ready" ? "completed" : "executing"}
+      executionActive={executionActive}
       isLastInSequence={isLastInSequence}
       defaultExpanded={defaultExpanded}
       forceInline={defaultExpanded}
+      maxDetailHeight={maxDetailHeight}
     />
   );
-}
+});
 
-function ToolCallSlot({
+const ToolCallSlot = memo(function ToolCallSlot({
   itemId,
   onInlineDetailsExpandedChangeByItemId,
   ...rest
@@ -2101,7 +2311,7 @@ function ToolCallSlot({
     [onInlineDetailsExpandedChangeByItemId, itemId],
   );
   return <ToolCall {...rest} onInlineDetailsExpandedChange={handleExpandedChange} />;
-}
+});
 
 const ThemedActivityIndicator = withUnistyles(ActivityIndicator);
 const ThemedCheckIcon = withUnistyles(Check);

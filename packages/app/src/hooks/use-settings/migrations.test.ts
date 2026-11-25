@@ -2,10 +2,18 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryKeyValueStorage } from "./fakes";
 import { APP_SETTINGS_KEY, SETTINGS_MIGRATIONS_KEY } from "./keys";
 import { migrateAppSettings } from "./migrations";
-import { DEFAULT_CLIENT_SETTINGS, type AppSettings, type SendBehavior } from "./storage";
+import {
+  DEFAULT_CLIENT_SETTINGS,
+  type AppSettings,
+  type SendBehavior,
+  type ToolCallDetailLevel,
+} from "./storage";
 
-function settingsWith(sendBehavior: SendBehavior): AppSettings {
-  return { ...DEFAULT_CLIENT_SETTINGS, sendBehavior };
+function settingsWith(
+  sendBehavior: SendBehavior,
+  toolCallDetailLevel: ToolCallDetailLevel = DEFAULT_CLIENT_SETTINGS.toolCallDetailLevel,
+): AppSettings {
+  return { ...DEFAULT_CLIENT_SETTINGS, sendBehavior, toolCallDetailLevel };
 }
 
 type Storage = ReturnType<typeof createInMemoryKeyValueStorage>;
@@ -18,6 +26,11 @@ function appliedIds(storage: Storage): string[] {
 function storedSendBehavior(storage: Storage): SendBehavior | undefined {
   const raw = storage.entries.get(APP_SETTINGS_KEY);
   return raw === undefined ? undefined : JSON.parse(raw).sendBehavior;
+}
+
+function storedToolCallDetailLevel(storage: Storage): ToolCallDetailLevel | undefined {
+  const raw = storage.entries.get(APP_SETTINGS_KEY);
+  return raw === undefined ? undefined : JSON.parse(raw).toolCallDetailLevel;
 }
 
 /** An in-memory storage whose write to `failingKey` always throws, as a full disk would. */
@@ -40,7 +53,7 @@ describe("migrateAppSettings", () => {
 
     expect(result.sendBehavior).toBe("steer");
     expect(storedSendBehavior(storage)).toBe("steer");
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "overview-tool-call-default"]);
   });
 
   it("leaves interrupt alone once the migration has run", async () => {
@@ -59,7 +72,7 @@ describe("migrateAppSettings", () => {
 
     expect(result.sendBehavior).toBe("queue");
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "overview-tool-call-default"]);
   });
 
   it("marks itself applied on a fresh install without rewriting settings", async () => {
@@ -68,7 +81,7 @@ describe("migrateAppSettings", () => {
     await migrateAppSettings(settingsWith("steer"), storage, {});
 
     expect(storage.entries.has(APP_SETTINGS_KEY)).toBe(false);
-    expect(appliedIds(storage)).toEqual(["steer-default"]);
+    expect(appliedIds(storage)).toEqual(["steer-default", "overview-tool-call-default"]);
   });
 
   it("keeps unknown migration ids written by a newer client", async () => {
@@ -78,7 +91,25 @@ describe("migrateAppSettings", () => {
 
     await migrateAppSettings(settingsWith("interrupt"), storage, {});
 
-    expect(appliedIds(storage)).toEqual(["some-later-migration", "steer-default"]);
+    expect(appliedIds(storage)).toEqual([
+      "some-later-migration",
+      "steer-default",
+      "overview-tool-call-default",
+    ]);
+  });
+
+  it("migrates legacy detailed tool call display once to overview and preserves explicit detailed afterwards", async () => {
+    const storage = createInMemoryKeyValueStorage({
+      [SETTINGS_MIGRATIONS_KEY]: JSON.stringify({ applied: ["steer-default"] }),
+    });
+
+    const migrated = await migrateAppSettings(settingsWith("steer", "detailed"), storage, {});
+    expect(migrated.toolCallDetailLevel).toBe("overview");
+    expect(storedToolCallDetailLevel(storage)).toBe("overview");
+    expect(appliedIds(storage)).toEqual(["steer-default", "overview-tool-call-default"]);
+
+    const preserved = await migrateAppSettings(settingsWith("steer", "detailed"), storage, {});
+    expect(preserved.toolCallDetailLevel).toBe("detailed");
   });
 
   it("stays unmarked when the settings write fails, so a later launch retries", async () => {
@@ -98,7 +129,7 @@ describe("migrateAppSettings", () => {
     const result = await migrateAppSettings(settingsWith("steer"), recovered, {});
 
     expect(result.sendBehavior).toBe("steer");
-    expect(appliedIds(recovered)).toEqual(["steer-default"]);
+    expect(appliedIds(recovered)).toEqual(["steer-default", "overview-tool-call-default"]);
   });
 
   it("迁移发送行为时保留较新版本写入的未知设置", async () => {

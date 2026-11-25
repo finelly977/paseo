@@ -60,7 +60,7 @@ Markdown 表格按整张表的可见内容估算各列需求，不均分列宽�
 
 Markdown 共享等值主题样式的编译结果，缓存按完整颜色、字体、字号和样式合并选项区分，并以 32 组为上限淘汰；不缓存渲染器实例、正文、链接回调或会话状态，主题和外观更新仍实时生效。披露组件保留期间复用正文元素，命令详情的正文工厂保持稳定，悬停、按压和开合状态变化不重新构建详情；关闭完成后仍卸载正文。网页的单条工具和思考详情只在主动开合时测量起止高度并启动一次高度、透明度动画，展开准备在同一次布局提交完成，不额外等待下一帧；结束后恢复自然高度。滚动重新挂载的已展开条目直接显示完整正文，流式输出与子命令尺寸变化不重播父层动画。网页和桌面当前回合结束时，只给正在追尾的可见过程行统一做 120 毫秒淡出，完成后一次性收起并对齐尾部；不逐行改变高度，不在旧会话打开、离屏或减少动态效果时补播。开启动画期间正文尺寸再次变化时，从当前可见高度续接剩余轨迹并保留原截止时间，不强制跳到完整高度，也不反复重启动画。虚拟行、常驻行和实时行共用稳定的 keyed 父列表，区域变化不卸载用户图片；虚拟器启用首帧沿用实际视口和滚动位置，补页变更索引时重新登记测量。
 
-命令概览中的自动追尾只由新增调用触发，并以读者仍接近列表底部为前提；不能在 `onContentSizeChange` 中无条件滚到末尾。展开详情、动画结束和既有输出的尺寸修正不代表新的阅读意图，桌面内联概览与移动底部面板遵循同一规则。
+命令概览将两条回复（或可见边界、回合边界）之间连续的思考与工具调用统一合并为同一个过程折叠块（仅单条思考时不叠加冗余外框），并在桌面/网页端设 360 像素最大高度与独立滚动视口；子步骤采用克制的轻缩进与细竖线，当内容发生纵向溢出时在被遮盖的顶边或底边以柔和线性渐变透明遮罩自然淡出（未溢出时不施加遮罩），避免硬切截断；活跃过程块默认展开，下一条正文到达封口后自动收起，用户手动展开/收起偏好保留，移动端不自动弹出底部面板。过程块内的思考条目默认折叠为紧凑单行，展示真实思考耗时（≥ 1 秒且时间有效时）与首行预览，悬停提供低对比度底色。命令概览中的自动追尾只由首次打开或新增过程步骤触发，并以读者仍接近列表底部为前提（已展开时平滑滚动，减少动态效果时即时切换），不能在 `onContentSizeChange` 中无条件滚到末尾；读者主动上翻立即解除追尾，展开详情、动画结束和既有输出的尺寸修正不代表新的阅读意图，桌面内联概览与移动底部面板遵循同一规则。
 
 历史过程展开后，说明文字与各段命令组进入普通对话流，不用一个内部滚动条包住整轮。命令组和单条详情保留各自展开层级。提供方在最终回复后补到的命令完成记录仍放回该回复之前，不能挂在回合尾部。耗时入口显示“用时”，左侧为 12 像素 Lucide Layers 叠层线框图标，与文字按行框居中、共用辅助前景色，普通历史与 Codex 原生历史保持一致；右侧保留独立展开箭头。单位使用 h、m、s 短写；中断回合同样显示用时，真实错误另行保留。命令行使用 12 像素正方形终端图标，图标槽不可被长文本挤窄；图标与标签按文字行框居中对齐，文字保持统一界面字号。纯图片工具结果的“已查看图像”入口默认收起，只有用户明确展开时才挂载缩略图。命令输出底部不再追加成功、运行中等状态行或预留高度；标题反馈与真实错误保留。当前模型为 GPT 时，显示投影隐藏历史和实时思考（包括思考工具），原始记录、回合耗时及其他模型的思考保持不变。
 
@@ -225,6 +225,8 @@ Kebab menus (`<DropdownMenu>` with `<MoreVertical size={14} />` trigger) are for
 A row may carry both a chevron and a kebab when both navigation and row-level actions apply. Chevron sits at the end; kebab sits before it.
 
 Switches and segmented controls also sit in the trailing slot. A row that both navigates and toggles is a `<Pressable>` with a `<Switch>` in the trailing slot — the switch calls `event.stopPropagation()` so the row press does not fire (`packages/app/src/screens/settings/providers-section.tsx:92-132`). Sidebar items that hold a status dot, a count, and a kebab follow the same rule (`packages/app/src/components/sidebar-workspace-list.tsx`).
+
+左侧栏上下操作区沿用同一界面字族和主题色，主操作、次级导航、底部动作分别按界面字号的 93.75%、81.25%、87.5% 缩放，图标与文字在同一行居中。主操作左对齐，图标单独内嵌，快捷键靠右，闲置时不改变宽度；次级导航与底部工具采用内收的低对比度托盘，只有当前页、已展开、悬停或按压有高亮。底部“添加项目”与右侧工具分组独立，窄栏不足时切换成有提示的图标按钮；紧凑触控端上下操作保留至少 44 像素点击区和系统安全区。不改变工作区列表密度或窗口拖动区域。
 
 Selected state on rows in a desktop list+detail uses `surfaceSidebarHover` as the background (`packages/app/src/screens/projects-screen.tsx`). Selected state on rows in the sidebar list uses `surface2` (`packages/app/src/components/agent-list.tsx:563-571`).
 

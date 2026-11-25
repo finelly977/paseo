@@ -1823,6 +1823,10 @@ export const en = {
       one: "called Paseo {{count}} time",
       other: "called Paseo {{count}} times",
     },
+    thoughts: {
+      one: "thought {{count}} time",
+      other: "thought {{count}} times",
+    },
     and: "and",
   },
   renameModal: {

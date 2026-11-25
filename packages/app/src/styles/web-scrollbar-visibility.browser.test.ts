@@ -92,3 +92,36 @@ test("临时绘制层保留复制的滚动条状态，不测量或修改它", as
   await expect.poll(() => real.hasAttribute("data-scrollbar-y")).toBe(false);
   expect(copy.hasAttribute("data-scrollbar-y")).toBe(true);
 });
+
+test("披露动画期间跳过子树扫描，动画结束移除标记后一次性补测滚动条", async () => {
+  setup();
+  const disclosure = document.createElement("div");
+  disclosure.setAttribute("data-disclosure-animating", "");
+  const nested = document.createElement("div");
+  nested.style.cssText = "width:120px;height:80px;overflow:auto";
+  const content = document.createElement("div");
+  content.style.height = "400px";
+  nested.append(content);
+  disclosure.append(nested);
+  host.append(disclosure);
+
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);
+  expect(nested.hasAttribute("data-scrollbar-y")).toBe(false);
+
+  disclosure.removeAttribute("data-disclosure-animating");
+  await expect.poll(() => nested.hasAttribute("data-scrollbar-y")).toBe(true);
+});
+
+test("静态标记节点内的文本更新不触发滚动条重测", async () => {
+  setup();
+  const timer = document.createElement("span");
+  timer.setAttribute("data-scrollbar-static", "");
+  timer.textContent = "1s";
+  host.append(timer);
+  await new Promise(requestAnimationFrame);
+  expect(timer.hasAttribute("data-scrollbar-y")).toBe(false);
+  timer.textContent = "2s";
+  await new Promise(requestAnimationFrame);
+  expect(timer.hasAttribute("data-scrollbar-y")).toBe(false);
+});

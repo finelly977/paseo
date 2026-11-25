@@ -190,7 +190,7 @@ export const DEFAULT_CLIENT_SETTINGS: AppSettings = {
   syntaxTheme: "one",
   workspaceTitleSource: "title",
   autoExpandReasoning: false,
-  toolCallDetailLevel: "detailed",
+  toolCallDetailLevel: "overview",
   vimKeybindings: false,
   messageParagraphSpacing: DEFAULT_MESSAGE_PARAGRAPH_SPACING,
   conversationMessageSpacing: DEFAULT_CONVERSATION_MESSAGE_SPACING,

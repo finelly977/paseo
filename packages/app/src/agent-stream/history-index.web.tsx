@@ -640,11 +640,20 @@ export function ConversationHistoryIndex({
     };
     scrollContainer.addEventListener("scroll", scheduleUpdate, { passive: true });
     window.addEventListener("resize", scheduleUpdate);
-    const contentObserver = new MutationObserver(scheduleUpdate);
+    const contentObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        const target =
+          record.target instanceof Element ? record.target : record.target.parentElement;
+        if (target?.closest("[data-disclosure-animating], [data-scrollbar-static]")) {
+          continue;
+        }
+        scheduleUpdate();
+        return;
+      }
+    });
     contentObserver.observe(scrollContainer, {
       childList: true,
       subtree: true,
-      characterData: true,
     });
     scheduleUpdate();
     return () => {

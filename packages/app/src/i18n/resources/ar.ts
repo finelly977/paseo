@@ -1812,6 +1812,10 @@ export const ar: TranslationResources = {
       one: "استدعى Paseo {{count}} مرة",
       other: "استدعى Paseo {{count}} مرات",
     },
+    thoughts: {
+      one: "فكّر {{count}} مرة",
+      other: "فكّر {{count}} مرات",
+    },
     and: "و",
   },
   renameModal: {

@@ -401,6 +401,110 @@ describe("createWebStreamStrategy", () => {
     expect(renderLiveHeadRow).toHaveBeenCalledTimes(2);
   });
 
+  it("re-renders only the affected history row when one process group toggles or updates", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
+    const viewportRef = React.createRef<StreamViewportHandle>();
+    const historyMounted = [userMessage(1), userMessage(2), userMessage(3)];
+    const renderedIds: string[] = [];
+    const renderHistoryMountedRow = vi.fn((item: StreamItem) => {
+      renderedIds.push(item.id);
+      return <div>{item.id}</div>;
+    });
+    const renderers: StreamSegmentRenderers = {
+      ...createRenderers(vi.fn()),
+      renderHistoryMountedRow,
+    };
+    const baseInput: StreamRenderInput = {
+      agentId: "agent",
+      segments: {
+        historyVirtualized: [],
+        historyMounted,
+        liveHead: [],
+      },
+      boundary: {
+        hasVirtualizedHistory: false,
+        hasMountedHistory: true,
+        hasLiveHead: false,
+      },
+      renderers,
+      listEmptyComponent: null,
+      viewportRef,
+      routeBottomAnchorRequest: null,
+      isAuthoritativeHistoryReady: true,
+      onNearBottomChange: vi.fn(),
+      onNearHistoryStart: vi.fn(),
+      isLoadingOlderHistory: false,
+      hasOlderHistory: false,
+      scrollEnabled: true,
+      messageParagraphSpacing: 8,
+      listStyle: null,
+      baseListContentContainerStyle: null,
+      forwardListContentContainerStyle: null,
+    };
+    const emptyHeights = new Map<string, number>();
+    const emptyAnchors = new Map<string, string>();
+    const sharedGlobalRevision = { token: 1 };
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    act(() => {
+      root?.render(
+        strategy.render({
+          ...baseInput,
+          historyRowRevision: {
+            contentById: new Map(),
+            displayStateById: new Set(),
+            estimatedHeightById: emptyHeights,
+            processAnchorIdByItemId: emptyAnchors,
+            globalDisplayState: false,
+            globalContentRevision: sharedGlobalRevision,
+          },
+        }),
+      );
+    });
+    expect(renderedIds).toEqual(["message-1", "message-2", "message-3"]);
+
+    // 仅切换 message-2 的折叠状态，其他历史行不应重新渲染。
+    renderedIds.length = 0;
+    act(() => {
+      root?.render(
+        strategy.render({
+          ...baseInput,
+          historyRowRevision: {
+            contentById: new Map(),
+            displayStateById: new Set(["message-2"]),
+            estimatedHeightById: emptyHeights,
+            processAnchorIdByItemId: emptyAnchors,
+            globalDisplayState: false,
+            globalContentRevision: sharedGlobalRevision,
+          },
+        }),
+      );
+    });
+    expect(renderedIds).toEqual(["message-2"]);
+
+    // 仅更新 message-3 的活跃分组对象，message-1 和 message-2 不应重新渲染。
+    renderedIds.length = 0;
+    act(() => {
+      root?.render(
+        strategy.render({
+          ...baseInput,
+          historyRowRevision: {
+            contentById: new Map([["message-3", { rev: 2 }]]),
+            displayStateById: new Set(["message-2"]),
+            estimatedHeightById: emptyHeights,
+            processAnchorIdByItemId: emptyAnchors,
+            globalDisplayState: false,
+            globalContentRevision: sharedGlobalRevision,
+          },
+        }),
+      );
+    });
+    expect(renderedIds).toEqual(["message-3"]);
+  });
+
   it("keeps a row mounted when it moves from the live head into mounted history", () => {
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
     const viewportRef = React.createRef<StreamViewportHandle>();

@@ -18,6 +18,7 @@ import * as React from "react";
 import {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   memo,
   useMemo,
@@ -163,6 +164,7 @@ interface UserMessageProps {
 const EMPTY_PROVIDER_USER_IMAGES: AgentUserMessageImage[] = [];
 
 const MessageOuterSpacingContext = createContext(false);
+const ProcessGroupListContext = createContext(false);
 
 export function MessageOuterSpacingProvider({
   disableOuterSpacing,
@@ -178,13 +180,30 @@ export function MessageOuterSpacingProvider({
   );
 }
 
+export function ProcessGroupListProvider({
+  inGroup = true,
+  children,
+}: {
+  inGroup?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <ProcessGroupListContext.Provider value={inGroup}>{children}</ProcessGroupListContext.Provider>
+  );
+}
+
 function useDisableOuterSpacing(disableOuterSpacing: boolean | undefined) {
   const contextValue = useContext(MessageOuterSpacingContext);
   return disableOuterSpacing ?? contextValue;
 }
 
+function useIsInProcessGroupList() {
+  return useContext(ProcessGroupListContext);
+}
+
 const WEB_TOOLCALL_SHIMMER_KEYFRAME_ID = "paseo-toolcall-shimmer-keyframes";
 const WEB_TOOLCALL_SHIMMER_ANIMATION_NAME = "paseo-toolcall-shimmer";
+const STATIC_SCROLLBAR_DATASET = { scrollbarStatic: "" } as const;
 const MARKDOWN_ALLOWED_IMAGE_HANDLERS = [
   "data:image/png;base64",
   "data:image/gif;base64",
@@ -944,7 +963,7 @@ export const LiveElapsed = memo(function LiveElapsed({
   }, [active, startedAtMs]);
 
   return (
-    <Text style={style} testID={testID}>
+    <Text style={style} testID={testID} dataSet={isWeb ? STATIC_SCROLLBAR_DATASET : undefined}>
       {formatDuration(visibleElapsedMs)}
     </Text>
   );
@@ -1451,11 +1470,17 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   container: {
     marginHorizontal: -13,
   },
+  containerGrouped: {
+    marginHorizontal: 0,
+  },
   containerSpacing: {
     marginBottom: theme.spacing[1],
   },
   containerLastInSequence: {
     marginBottom: theme.spacing[4],
+  },
+  containerGroupedLastInSequence: {
+    marginBottom: theme.spacing[0],
   },
   pressable: {
     borderRadius: theme.borderRadius.lg,
@@ -1464,6 +1489,12 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
     overflow: "hidden",
+  },
+  pressableGrouped: {
+    paddingHorizontal: theme.spacing[1],
+  },
+  pressableGroupedHovered: {
+    backgroundColor: theme.colors.surface1,
   },
   pressablePressed: {
     opacity: 0.9,
@@ -1488,6 +1519,9 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     justifyContent: "center",
     marginRight: theme.spacing[1],
     backgroundColor: "transparent",
+  },
+  iconBadgeGrouped: {
+    width: 16,
   },
   label: {
     color: theme.colors.foregroundMuted,
@@ -1564,10 +1598,16 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     borderBottomRightRadius: 0,
   },
   inlineDetails: { paddingLeft: 22 },
+  inlineDetailsGrouped: { paddingLeft: theme.spacing[3] },
   thinkingDetails: { paddingLeft: theme.spacing[2] },
   commandDetails: {
     paddingLeft: 22,
     paddingRight: theme.spacing[3],
+    paddingVertical: theme.spacing[1],
+  },
+  commandDetailsGrouped: {
+    paddingLeft: theme.spacing[3],
+    paddingRight: theme.spacing[1],
     paddingVertical: theme.spacing[1],
   },
   commandPanel: {
@@ -1587,6 +1627,7 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     overflow: "hidden",
+    ...(isWeb ? { contain: "layout paint" as const } : {}),
   },
   shimmerMaskRow: {
     flexDirection: "row",
@@ -2717,25 +2758,19 @@ interface ExpandableBadgeProps {
 interface ExpandableBadgeSecondaryLabelProps {
   secondaryLabel?: string;
   secondaryLabelStyle: StyleProp<TextStyle>;
-  shouldMeasureWebShimmer: boolean;
-  onSecondaryLayout: (event: LayoutChangeEvent) => void;
+  secondaryRef?: React.RefObject<Text | null>;
 }
 
 function ExpandableBadgeSecondaryLabel({
   secondaryLabel,
   secondaryLabelStyle,
-  shouldMeasureWebShimmer,
-  onSecondaryLayout,
+  secondaryRef,
 }: ExpandableBadgeSecondaryLabelProps) {
   if (!secondaryLabel) {
     return null;
   }
   return (
-    <Text
-      style={secondaryLabelStyle}
-      numberOfLines={1}
-      onLayout={shouldMeasureWebShimmer ? onSecondaryLayout : undefined}
-    >
+    <Text ref={secondaryRef} style={secondaryLabelStyle} numberOfLines={1}>
       {secondaryLabel}
     </Text>
   );
@@ -2757,7 +2792,11 @@ function ExpandableBadgeWebShimmerOverlay({
   showOpenFileButton,
 }: ExpandableBadgeWebShimmerOverlayProps) {
   return (
-    <View style={expandableBadgeStylesheet.shimmerOverlay} pointerEvents="none">
+    <View
+      style={expandableBadgeStylesheet.shimmerOverlay}
+      pointerEvents="none"
+      dataSet={isWeb ? STATIC_SCROLLBAR_DATASET : undefined}
+    >
       <Text style={shimmerLabelTextStyle} numberOfLines={1}>
         {label}
       </Text>
@@ -2781,9 +2820,10 @@ function ExpandableBadgeWebShimmerOverlay({
 interface ExpandableBadgeLabelRowProps {
   label: string;
   labelStyle: StyleProp<TextStyle>;
+  labelRef?: React.RefObject<Text | null>;
   secondaryLabel?: string;
   secondaryLabelStyle: StyleProp<TextStyle>;
-  shouldMeasureWebShimmer: boolean;
+  secondaryRef?: React.RefObject<Text | null>;
   shouldMeasureNativeShimmer: boolean;
   isWebShimmer: boolean;
   isNativeShimmer: boolean;
@@ -2795,8 +2835,6 @@ interface ExpandableBadgeLabelRowProps {
   shimmerDuration: number;
   nativeGradientId: string;
   onLabelRowLayout: (event: LayoutChangeEvent) => void;
-  onLabelLayout: (event: LayoutChangeEvent) => void;
-  onSecondaryLayout: (event: LayoutChangeEvent) => void;
   showOpenFileButton: boolean;
   isOpenFileHovered: boolean;
   onOpenFilePress: (event: GestureResponderEvent) => void;
@@ -2807,9 +2845,10 @@ interface ExpandableBadgeLabelRowProps {
 function ExpandableBadgeLabelRow({
   label,
   labelStyle,
+  labelRef,
   secondaryLabel,
   secondaryLabelStyle,
-  shouldMeasureWebShimmer,
+  secondaryRef,
   shouldMeasureNativeShimmer,
   isWebShimmer,
   isNativeShimmer,
@@ -2821,8 +2860,6 @@ function ExpandableBadgeLabelRow({
   shimmerDuration,
   nativeGradientId,
   onLabelRowLayout,
-  onLabelLayout,
-  onSecondaryLayout,
   showOpenFileButton,
   isOpenFileHovered,
   onOpenFilePress,
@@ -2835,18 +2872,13 @@ function ExpandableBadgeLabelRow({
       style={expandableBadgeStylesheet.labelRow}
       onLayout={shouldMeasureNativeShimmer ? onLabelRowLayout : undefined}
     >
-      <Text
-        style={labelStyle}
-        numberOfLines={1}
-        onLayout={shouldMeasureWebShimmer ? onLabelLayout : undefined}
-      >
+      <Text ref={labelRef} style={labelStyle} numberOfLines={1}>
         {label}
       </Text>
       <ExpandableBadgeSecondaryLabel
         secondaryLabel={secondaryLabel}
         secondaryLabelStyle={secondaryLabelStyle}
-        shouldMeasureWebShimmer={shouldMeasureWebShimmer}
-        onSecondaryLayout={onSecondaryLayout}
+        secondaryRef={secondaryRef}
       />
       {showOpenFileButton ? (
         <Pressable
@@ -2964,9 +2996,6 @@ function computeShimmerMetrics(input: {
     Math.min(120, input.labelRowWidth > 0 ? input.labelRowWidth * 0.28 : 0),
   );
   const isWebShimmer = input.isLoading && isWeb;
-  // React Native Web only observes a node when onLayout exists at mount. Keep
-  // measuring while idle so a retained badge has dimensions when it starts loading.
-  const shouldMeasureWebShimmer = isWeb;
   const shouldMeasureNativeShimmer = input.isLoading && isNative;
   const isNativeShimmer =
     shouldMeasureNativeShimmer && input.labelRowWidth > 0 && input.labelRowHeight > 0;
@@ -2982,7 +3011,6 @@ function computeShimmerMetrics(input: {
     shimmerDuration,
     nativeShimmerPeakWidth,
     isWebShimmer,
-    shouldMeasureWebShimmer,
     shouldMeasureNativeShimmer,
     isNativeShimmer,
     webShimmerPeakWidth,
@@ -3074,6 +3102,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const inProcessGroup = useIsInProcessGroupList();
   const [isHovered, setIsHovered] = useState(false);
   const [isOpenFileHovered, setIsOpenFileHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
@@ -3106,6 +3135,8 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const nativeGradientIdRef = useRef(
     `shimmer-gradient-${Math.random().toString(36).substring(2, 9)}`,
   );
+  const labelRef = useRef<Text | null>(null);
+  const secondaryRef = useRef<Text | null>(null);
   const [labelRowWidth, setLabelRowWidth] = useState(0);
   const [labelRowHeight, setLabelRowHeight] = useState(0);
   const [labelOffsetX, setLabelOffsetX] = useState(0);
@@ -3117,7 +3148,6 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     shimmerDuration,
     nativeShimmerPeakWidth,
     isWebShimmer,
-    shouldMeasureWebShimmer,
     shouldMeasureNativeShimmer,
     isNativeShimmer,
     webShimmerPeakWidth,
@@ -3147,29 +3177,29 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     [shouldMeasureNativeShimmer],
   );
 
-  const handleLabelLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      if (!shouldMeasureWebShimmer) {
-        return;
-      }
-      const { x, width } = event.nativeEvent.layout;
+  // 仅在网页端实际处于加载流光态时同步读取标签几何，避免每个静止条目挂载两个 ResizeObserver。
+  useLayoutEffect(() => {
+    if (!isWebShimmer) {
+      return;
+    }
+    const labelNode: unknown = labelRef.current;
+    if (labelNode instanceof HTMLElement) {
+      const x = labelNode.offsetLeft;
+      const width = labelNode.offsetWidth;
       setLabelOffsetX((previous) => (Math.abs(previous - x) > 0.5 ? x : previous));
       setLabelWidth((previous) => (Math.abs(previous - width) > 0.5 ? width : previous));
-    },
-    [shouldMeasureWebShimmer],
-  );
-
-  const handleSecondaryLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      if (!shouldMeasureWebShimmer || !secondaryLabel) {
-        return;
-      }
-      const { x, width } = event.nativeEvent.layout;
+    }
+    if (!secondaryLabel) {
+      return;
+    }
+    const secondaryNode: unknown = secondaryRef.current;
+    if (secondaryNode instanceof HTMLElement) {
+      const x = secondaryNode.offsetLeft;
+      const width = secondaryNode.offsetWidth;
       setSecondaryOffsetX((previous) => (Math.abs(previous - x) > 0.5 ? x : previous));
       setSecondaryWidth((previous) => (Math.abs(previous - width) > 0.5 ? width : previous));
-    },
-    [shouldMeasureWebShimmer, secondaryLabel],
-  );
+    }
+  }, [isWebShimmer, label, secondaryLabel]);
 
   useEffect(() => {
     if (!isWebShimmer) {
@@ -3223,26 +3253,45 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     ],
   );
 
-  const containerStyle = useMemo(
-    () => [
-      expandableBadgeStylesheet.container,
-      !resolvedDisableOuterSpacing &&
-        (isLastInSequence
-          ? expandableBadgeStylesheet.containerLastInSequence
-          : expandableBadgeStylesheet.containerSpacing),
+  const containerStyle = useMemo(() => {
+    let spacingStyle: StyleProp<ViewStyle> = null;
+    if (!resolvedDisableOuterSpacing) {
+      if (!isLastInSequence) {
+        spacingStyle = expandableBadgeStylesheet.containerSpacing;
+      } else if (inProcessGroup) {
+        spacingStyle = expandableBadgeStylesheet.containerGroupedLastInSequence;
+      } else {
+        spacingStyle = expandableBadgeStylesheet.containerLastInSequence;
+      }
+    }
+    return [
+      inProcessGroup
+        ? expandableBadgeStylesheet.containerGrouped
+        : expandableBadgeStylesheet.container,
+      spacingStyle,
       style,
-    ],
-    [isLastInSequence, resolvedDisableOuterSpacing, style],
-  );
+    ];
+  }, [inProcessGroup, isLastInSequence, resolvedDisableOuterSpacing, style]);
 
   const pressableStyle = useMemo(
     () => [
       expandableBadgeStylesheet.pressable,
+      inProcessGroup ? expandableBadgeStylesheet.pressableGrouped : null,
+      inProcessGroup && isHovered && isInteractive
+        ? expandableBadgeStylesheet.pressableGroupedHovered
+        : null,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded && !borderlessWhenExpanded && expandableBadgeStylesheet.pressableExpandedAttached,
     ],
-    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
+    [borderlessWhenExpanded, inProcessGroup, isExpanded, isHovered, isInteractive, isPressed],
+  );
+  const iconBadgeStyle = useMemo(
+    () => [
+      expandableBadgeStylesheet.iconBadge,
+      inProcessGroup ? expandableBadgeStylesheet.iconBadgeGrouped : null,
+    ],
+    [inProcessGroup],
   );
 
   const detailWrapperStyle = useMemo(
@@ -3348,13 +3397,14 @@ export const ExpandableBadge = memo(function ExpandableBadge({
         style={pressableStyle}
       >
         <View style={expandableBadgeStylesheet.headerRow}>
-          <View style={expandableBadgeStylesheet.iconBadge}>{iconSlotNode}</View>
+          <View style={iconBadgeStyle}>{iconSlotNode}</View>
           <ExpandableBadgeLabelRow
             label={label}
             labelStyle={labelStyle}
+            labelRef={isWeb ? labelRef : undefined}
             secondaryLabel={secondaryLabel}
             secondaryLabelStyle={secondaryLabelStyle}
-            shouldMeasureWebShimmer={shouldMeasureWebShimmer}
+            secondaryRef={isWeb ? secondaryRef : undefined}
             shouldMeasureNativeShimmer={shouldMeasureNativeShimmer}
             isWebShimmer={isWebShimmer}
             isNativeShimmer={isNativeShimmer}
@@ -3366,8 +3416,6 @@ export const ExpandableBadge = memo(function ExpandableBadge({
             shimmerDuration={shimmerDuration}
             nativeGradientId={nativeGradientIdRef.current}
             onLabelRowLayout={handleLabelRowLayout}
-            onLabelLayout={handleLabelLayout}
-            onSecondaryLayout={handleSecondaryLayout}
             showOpenFileButton={Boolean(onOpenFile && isHovered)}
             isOpenFileHovered={isOpenFileHovered}
             onOpenFilePress={handleOpenFilePress}
@@ -3408,6 +3456,9 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
   if (previous.onDetailHoverChange !== next.onDetailHoverChange) return false;
+  if (!previous.isExpanded && !next.isExpanded) {
+    return Boolean(previous.renderDetails) === Boolean(next.renderDetails);
+  }
   if (previous.renderDetails !== next.renderDetails) return false;
   return true;
 }
@@ -3463,6 +3514,7 @@ export const ToolCall = memo(function ToolCall({
   maxDetailHeight = 400,
 }: ToolCallProps) {
   const { openToolCall } = useToolCallSheet();
+  const inProcessGroup = useIsInProcessGroupList();
   const [isExpanded, setIsExpanded] = useState(defaultExpanded ?? false);
 
   const isMobile = useIsCompactFormFactor();
@@ -3564,7 +3616,13 @@ export const ToolCall = memo(function ToolCall({
     if (!shouldRenderInline) return null;
     if (isCommand) {
       return (
-        <View style={expandableBadgeStylesheet.commandDetails}>
+        <View
+          style={
+            inProcessGroup
+              ? expandableBadgeStylesheet.commandDetailsGrouped
+              : expandableBadgeStylesheet.commandDetails
+          }
+        >
           <View style={expandableBadgeStylesheet.commandPanel} testID="command-output-panel">
             <ToolCallDetailsContent
               appearance="plain"
@@ -3578,10 +3636,12 @@ export const ToolCall = memo(function ToolCall({
         </View>
       );
     }
-    const inlineDetailsStyle =
-      toolName === "thinking"
-        ? expandableBadgeStylesheet.thinkingDetails
-        : expandableBadgeStylesheet.inlineDetails;
+    let inlineDetailsStyle = expandableBadgeStylesheet.inlineDetails;
+    if (toolName === "thinking") {
+      inlineDetailsStyle = expandableBadgeStylesheet.thinkingDetails;
+    } else if (inProcessGroup) {
+      inlineDetailsStyle = expandableBadgeStylesheet.inlineDetailsGrouped;
+    }
     return (
       <View style={inlineDetailsStyle}>
         <ToolCallDetailsContent
@@ -3602,6 +3662,7 @@ export const ToolCall = memo(function ToolCall({
     presentation.isLoadingDetails,
     executionActive,
     maxDetailHeight,
+    inProcessGroup,
     isCommand,
   ]);
 

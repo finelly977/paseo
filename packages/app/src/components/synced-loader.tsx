@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { scheduleOnUI } from "react-native-worklets";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { isWeb } from "@/constants/platform";
 import {
   SYNCED_LOADER_DOT_COUNT,
   getSyncedLoaderDotOpacity,
@@ -16,6 +17,7 @@ import {
 } from "@/components/synced-loader-state";
 
 const GRID_COLUMNS = 2;
+const STATIC_SCROLLBAR_DATASET = { scrollbarStatic: "" } as const;
 const DOT_KEYS = Array.from({ length: SYNCED_LOADER_DOT_COUNT }, (_, i) => `dot-${i}`);
 const sharedStep = makeMutable(0);
 const activeLoaderCount = makeMutable(0);
@@ -118,7 +120,7 @@ export function SyncedLoader({ size = 10, color }: { size?: number; color: strin
   );
 
   return (
-    <View style={containerStyle}>
+    <View style={containerStyle} dataSet={isWeb ? STATIC_SCROLLBAR_DATASET : undefined}>
       <View style={gridStyle}>
         {Array.from({ length: SYNCED_LOADER_DOT_COUNT }).map((_, dotIndex) => {
           const rowIndex = Math.floor(dotIndex / GRID_COLUMNS);

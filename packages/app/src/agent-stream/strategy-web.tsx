@@ -236,6 +236,29 @@ interface WebHistoryRowProps {
   renderRow: StreamRenderInput["renderers"]["renderHistoryVirtualizedRow"];
   measure?: (node: HTMLDivElement | null) => void;
   revision?: unknown;
+  contentRevision?: unknown;
+  displayRevision?: boolean;
+  globalRevision?: unknown;
+}
+
+function resolveHistoryRowContentRevision(
+  contentById: NonNullable<StreamRenderInput["historyRowRevision"]>["contentById"] | undefined,
+  itemId: string,
+): unknown {
+  if (!contentById) return undefined;
+  if (typeof contentById.get === "function") return contentById.get(itemId);
+  return contentById.has(itemId);
+}
+
+function readHistoryRowRevision(revision: StreamRenderInput["historyRowRevision"]) {
+  return {
+    collapsedHeights: revision?.estimatedHeightById,
+    processAnchorIdByItemId: revision?.processAnchorIdByItemId,
+    virtualizeExpandedProcess: revision?.virtualizeExpandedProcess,
+    contentById: revision?.contentById,
+    displayStateById: revision?.displayStateById,
+    globalRevision: revision?.globalContentRevision ?? revision?.globalDisplayState,
+  };
 }
 
 const WebHistoryRow = memo(function WebHistoryRow({
@@ -363,9 +386,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     conversationHorizontalPadding,
     isMobileBreakpoint,
   } = props;
-  const collapsedHeights = historyRowRevision?.estimatedHeightById;
-  const processAnchorIdByItemId = historyRowRevision?.processAnchorIdByItemId;
-  const virtualizeExpandedProcess = historyRowRevision?.virtualizeExpandedProcess;
+  const {
+    collapsedHeights,
+    processAnchorIdByItemId,
+    virtualizeExpandedProcess,
+    contentById: historyContentById,
+    displayStateById: historyDisplayStateById,
+    globalRevision: historyGlobalRevision,
+  } = readHistoryRowRevision(historyRowRevision);
   const resolveHistoryAnchorItemId = useCallback(
     (anchor: HistoryAnchor) => {
       // 补页会把收起入口移到本轮更早的过程，旧承载行此时已被零高度过滤。
@@ -1133,6 +1161,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
 
     updateScrollMetrics();
+    let resizeFrame: number | null = null;
     const observer = new ResizeObserver(() => {
       if (
         followOutputRef.current &&
@@ -1140,11 +1169,21 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         performance.now() <= alignProcessExitUntilRef.current
       ) {
         scrollMessagesToBottom();
-      } else {
-        updateScrollMetrics();
-        if (followOutputRef.current && !historyAnchoringRef.current) scheduleStickToBottom();
+        return;
       }
-      autoLoadOlderHistoryIfViewportIsTooShort();
+      if (resizeFrame !== null) {
+        return;
+      }
+      // 合并同一帧内多次展开/收起高度变化引发的布局读取，避免每帧重复触发布局重排。
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = null;
+        if (followOutputRef.current && !historyAnchoringRef.current) {
+          scrollMessagesToBottom("auto");
+        } else {
+          updateScrollMetrics();
+        }
+        autoLoadOlderHistoryIfViewportIsTooShort();
+      });
     });
     observer.observe(scrollContainer);
     if (contentNode) {
@@ -1152,6 +1191,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     }
     return () => {
       observer.disconnect();
+      if (resizeFrame !== null) {
+        window.cancelAnimationFrame(resizeFrame);
+      }
     };
   }, [
     autoLoadOlderHistoryIfViewportIsTooShort,
@@ -1285,9 +1327,19 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         index={index}
         items={segments.historyMounted}
         renderRow={renderHistoryMountedRow}
+        contentRevision={resolveHistoryRowContentRevision(historyContentById, item.id)}
+        displayRevision={historyDisplayStateById?.has(item.id) ?? false}
+        globalRevision={historyGlobalRevision}
       />
     ));
-  }, [renderHistoryMountedRow, segments.historyMounted, processAnchorIdByItemId]);
+  }, [
+    historyContentById,
+    historyDisplayStateById,
+    historyGlobalRevision,
+    renderHistoryMountedRow,
+    segments.historyMounted,
+    processAnchorIdByItemId,
+  ]);
   const liveHeadRows = useMemo(() => {
     void liveHeadRowRevision;
     return segments.liveHead.map((item, index) => (
@@ -1328,6 +1380,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
           items={segments.historyVirtualized}
           measure={measureVirtualizedRowElement}
           renderRow={renderHistoryVirtualizedRow}
+          contentRevision={resolveHistoryRowContentRevision(historyContentById, item.id)}
+          displayRevision={historyDisplayStateById?.has(item.id) ?? false}
+          globalRevision={historyGlobalRevision}
         />,
       );
     }
@@ -1336,6 +1391,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     );
     return [...rows, ...mountedHistoryRows, ...liveHeadRows];
   }, [
+    historyContentById,
+    historyDisplayStateById,
+    historyGlobalRevision,
     virtualBottomStyle,
     virtualRows,
     segments.historyVirtualized,

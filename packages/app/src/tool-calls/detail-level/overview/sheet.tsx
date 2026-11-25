@@ -1,32 +1,30 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
-import {
-  Pressable,
-  Text,
-  View,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
-} from "react-native";
+import { useCallback, useRef, type ReactNode } from "react";
+import { Pressable, Text, View } from "react-native";
 import {
   BottomSheetBackdrop,
   BottomSheetScrollView,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import { Wrench, X } from "lucide-react-native";
+import { Brain, Wrench, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { useIsolatedBottomSheetVisibility } from "@/components/ui/isolated-bottom-sheet-modal";
 import { ToolCallSheetModal, useToolCallSheetContextBridge } from "@/components/tool-call-sheet";
 import type { Theme } from "@/styles/theme";
+import { useFollowLatestScroll } from "./follow-latest";
 
 interface OverviewToolCallGroupSheetProps {
   visible: boolean;
   summary: string;
+  thoughtOnly?: boolean;
   itemCount: number;
+  latestItemId: string;
   children: ReactNode;
   onClose: () => void;
 }
 
 const SNAP_POINTS = ["60%", "95%"];
+const ThemedBrain = withUnistyles(Brain);
 const ThemedWrench = withUnistyles(Wrench);
 const ThemedX = withUnistyles(X);
 const foregroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
@@ -35,13 +33,14 @@ const foregroundMutedMapping = (theme: Theme) => ({ color: theme.colors.foregrou
 export function OverviewToolCallGroupSheet({
   visible,
   summary,
+  thoughtOnly = false,
   itemCount,
+  latestItemId,
   children,
   onClose,
 }: OverviewToolCallGroupSheetProps) {
   const { t } = useTranslation();
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
-  const followLatest = useRef(true);
   const contextBridge = useToolCallSheetContextBridge();
   const { sheetRef, handleSheetChange, handleSheetDismiss } = useIsolatedBottomSheetVisibility({
     visible,
@@ -53,22 +52,15 @@ export function OverviewToolCallGroupSheet({
     ),
     [],
   );
-  const scrollToLatest = useCallback(() => {
-    scrollRef.current?.scrollToEnd({ animated: false });
+  const scrollToEnd = useCallback((animated: boolean) => {
+    scrollRef.current?.scrollToEnd({ animated });
   }, []);
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentSize, layoutMeasurement, contentOffset } = event.nativeEvent;
-    followLatest.current = contentSize.height - layoutMeasurement.height - contentOffset.y <= 16;
-  }, []);
-  useEffect(() => {
-    if (!visible) {
-      followLatest.current = true;
-      return;
-    }
-    if (!followLatest.current) return;
-    const frame = requestAnimationFrame(scrollToLatest);
-    return () => cancelAnimationFrame(frame);
-  }, [itemCount, scrollToLatest, visible]);
+  const { handleScroll } = useFollowLatestScroll({
+    open: visible,
+    itemCount,
+    latestItemId,
+    scrollToEnd,
+  });
 
   return (
     <ToolCallSheetModal
@@ -85,7 +77,11 @@ export function OverviewToolCallGroupSheet({
       <View style={styles.container} testID="tool-call-group-sheet">
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <ThemedWrench size={20} uniProps={foregroundMapping} />
+            {thoughtOnly ? (
+              <ThemedBrain size={20} uniProps={foregroundMapping} />
+            ) : (
+              <ThemedWrench size={20} uniProps={foregroundMapping} />
+            )}
             <Text
               style={styles.headerTitle}
               numberOfLines={2}

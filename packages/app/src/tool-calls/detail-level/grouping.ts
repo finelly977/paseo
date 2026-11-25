@@ -1,5 +1,8 @@
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
-import type { StreamItem, ToolCallItem } from "@/types/stream";
+import { continuesTurn } from "@/agent-stream/turn-membership";
+import type { StreamItem, ThoughtItem, ToolCallItem } from "@/types/stream";
+
+export type ProcessRunItem = ToolCallItem | ThoughtItem;
 
 export interface ToolCallDescriptor {
   detail: ToolCallDetail;
@@ -11,15 +14,15 @@ export interface ToolCallDescriptor {
 
 export interface ToolCallRun {
   id: string;
-  calls: readonly ToolCallItem[];
-  latest: ToolCallItem;
+  calls: readonly ProcessRunItem[];
+  latest: ProcessRunItem;
   isSealed: boolean;
 }
 
 export interface GroupedHistory<TGroup> {
   tail: StreamItem[];
   groupsByHostId: Map<string, TGroup>;
-  pendingCalls: readonly ToolCallItem[];
+  pendingCalls: readonly ProcessRunItem[];
 }
 
 export interface GroupedToolCalls<TGroup> {
@@ -33,6 +36,7 @@ export interface ToolCallGroupLookup<TGroup> {
   readonly size: number;
   get(id: string): TGroup | undefined;
   has(id: string): boolean;
+  [Symbol.iterator](): IterableIterator<[string, TGroup]>;
 }
 
 const EMPTY_GROUPS = new Map<string, never>();
@@ -62,7 +66,17 @@ export function describeToolCall(item: ToolCallItem): ToolCallDescriptor {
   };
 }
 
-export function isGroupableToolCall(item: StreamItem): item is ToolCallItem {
+export function isThoughtProcessItem(item: ProcessRunItem): boolean {
+  if (item.kind === "thought") {
+    return true;
+  }
+  return describeToolCall(item).name.trim().toLowerCase() === "thinking";
+}
+
+export function isGroupableToolCall(item: StreamItem): item is ProcessRunItem {
+  if (item.kind === "thought") {
+    return true;
+  }
   if (item.kind !== "tool_call") {
     return false;
   }
@@ -70,7 +84,9 @@ export function isGroupableToolCall(item: StreamItem): item is ToolCallItem {
   return descriptor.detail.type !== "plan" && descriptor.name.trim().toLowerCase() !== "speak";
 }
 
-function createRun(calls: readonly ToolCallItem[], isSealed: boolean): ToolCallRun {
+export const isGroupableProcessItem = isGroupableToolCall;
+
+function createRun(calls: readonly ProcessRunItem[], isSealed: boolean): ToolCallRun {
   const first = calls[0];
   const latest = calls.at(-1);
   if (!first || !latest) {
@@ -79,20 +95,40 @@ function createRun(calls: readonly ToolCallItem[], isSealed: boolean): ToolCallR
   return { id: first.id, calls, latest, isSealed };
 }
 
-function createHost(run: ToolCallRun): ToolCallItem {
+function findLastToolCall(calls: readonly ProcessRunItem[]): ToolCallItem | null {
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const entry = calls[index];
+    if (entry?.kind === "tool_call") {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function createHost(run: ToolCallRun): ProcessRunItem {
   if (run.calls.length === 1) {
     return run.latest;
   }
-  return { ...run.latest, id: run.id };
+  const hostBase = findLastToolCall(run.calls) ?? run.latest;
+  const turnId = run.latest.turnId ?? hostBase.turnId;
+  return {
+    ...hostBase,
+    id: run.id,
+    timestamp: run.latest.timestamp,
+    ...(turnId !== undefined ? { turnId } : {}),
+  };
 }
 
-function isRunning(call: ToolCallItem): boolean {
-  const status = describeToolCall(call).status;
+function isRunning(entry: ProcessRunItem): boolean {
+  if (entry.kind === "thought") {
+    return entry.status === "loading";
+  }
+  const status = describeToolCall(entry).status;
   return status === "running" || status === "executing";
 }
 
 function appendRun<TGroup>(input: {
-  calls: readonly ToolCallItem[];
+  calls: readonly ProcessRunItem[];
   isSealed: boolean;
   output: StreamItem[];
   groups: Map<string, TGroup>;
@@ -113,10 +149,21 @@ export function prepareGroupedHistory<TGroup>(input: {
 }): GroupedHistory<TGroup> {
   const output: StreamItem[] = [];
   const groups = new Map<string, TGroup>();
-  let pending: ToolCallItem[] = [];
+  let pending: ProcessRunItem[] = [];
 
   for (const item of input.tail) {
     if (isGroupableToolCall(item)) {
+      const previous = pending.at(-1) ?? null;
+      if (previous && !continuesTurn(previous, item)) {
+        appendRun({
+          calls: pending,
+          isSealed: true,
+          output,
+          groups,
+          buildGroup: input.buildGroup,
+        });
+        pending = [];
+      }
       pending.push(item);
       continue;
     }
@@ -154,7 +201,7 @@ export function groupLiveToolCalls<TGroup>(input: {
 }): GroupedToolCalls<TGroup> {
   const head: StreamItem[] = [];
   const liveGroups = new Map<string, TGroup>();
-  let pending = [...input.history.pendingCalls];
+  let pending: ProcessRunItem[] = [...input.history.pendingCalls];
   let hostPlacement: "history" | "head" | null = pending.length > 0 ? "history" : null;
   let pendingIncludesHead = false;
 
@@ -176,6 +223,10 @@ export function groupLiveToolCalls<TGroup>(input: {
 
   for (const item of input.head) {
     if (isGroupableToolCall(item)) {
+      const previous = pending.at(-1) ?? null;
+      if (previous && !continuesTurn(previous, item)) {
+        flush(true);
+      }
       if (pending.length === 0) {
         hostPlacement = "head";
       }

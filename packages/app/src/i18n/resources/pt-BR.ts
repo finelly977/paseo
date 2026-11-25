@@ -1843,6 +1843,10 @@ export const ptBR: TranslationResources = {
       one: "chamou o Paseo {{count}} vez",
       other: "chamou o Paseo {{count}} vezes",
     },
+    thoughts: {
+      one: "pensou {{count}} vez",
+      other: "pensou {{count}} vezes",
+    },
     and: "e",
   },
   renameModal: {

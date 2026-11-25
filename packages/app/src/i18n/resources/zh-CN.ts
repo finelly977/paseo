@@ -78,7 +78,7 @@ export const zhCN: TranslationResources = {
       workspaces: "工作区",
       agents: "Agents",
       newAgent: "新建 Agent",
-      addProject: "添加 project",
+      addProject: "添加项目",
       home: "首页",
       modelGroupLabel: "模型",
       modelSearchKeywords: "切换模型 更改模型 设置模型 选择模型",
@@ -1058,9 +1058,9 @@ export const zhCN: TranslationResources = {
       searchPlaceholder: "搜索 Hosts...",
     },
     actions: {
-      addProject: "添加 project",
+      addProject: "添加项目",
       newWorkspace: "新建工作区",
-      hosts: "Hosts",
+      hosts: "主机",
       home: "首页",
       settings: "设置",
       closeSidebar: "关闭侧边栏",
@@ -1789,6 +1789,10 @@ export const zhCN: TranslationResources = {
     paseoCalls: {
       one: "调用了 Paseo {{count}} 次",
       other: "调用了 Paseo {{count}} 次",
+    },
+    thoughts: {
+      one: "思考了 {{count}} 次",
+      other: "思考了 {{count}} 次",
     },
     and: "并",
   },

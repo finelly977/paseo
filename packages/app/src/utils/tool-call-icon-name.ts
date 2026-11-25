@@ -24,8 +24,11 @@ export function resolveToolCallIconName(toolName: string, detail?: ToolCallDetai
     return detail.icon;
   }
 
-  // Thoughts are rendered through ToolCall with unknown detail payloads.
-  if (lowerName === "thinking" && (!detail || detail.type === "unknown")) {
+  // Thoughts are rendered through ToolCall with unknown or plain_text detail payloads.
+  if (
+    lowerName === "thinking" &&
+    (!detail || detail.type === "unknown" || detail.type === "plain_text")
+  ) {
     return "brain";
   }
   if (lowerName === "speak") {

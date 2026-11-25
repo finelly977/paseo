@@ -791,6 +791,7 @@ export interface ThoughtItem {
   turnId?: string;
   text: string;
   timestamp: Date;
+  startedAt?: Date;
   status: ThoughtStatus;
 }
 
@@ -1284,6 +1285,7 @@ function appendThought(state: StreamItem[], text: string, timestamp: Date): Stre
       ...last,
       text: `${last.text}${chunk}`,
       timestamp,
+      startedAt: last.startedAt ?? last.timestamp,
       status: "loading",
     };
     return [...state.slice(0, -1), updated];
@@ -1299,6 +1301,7 @@ function appendThought(state: StreamItem[], text: string, timestamp: Date): Stre
     id: createUniqueTimelineId(state, "thought", idSeed, timestamp),
     text: chunk,
     timestamp,
+    startedAt: timestamp,
     status: "loading",
   };
   return [...state, item];

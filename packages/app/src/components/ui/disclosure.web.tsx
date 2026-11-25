@@ -113,6 +113,7 @@ export function DisclosureContent({
     resizeRef.current?.disconnect();
     animationRef.current = null;
     resizeRef.current = null;
+    viewport.removeAttribute("data-disclosure-animating");
     if (reducedMotion || !active) {
       setRetained(expanded);
       return;
@@ -132,6 +133,7 @@ export function DisclosureContent({
       fromOpacity,
     });
     const animation = new Animation(effect, document.timeline);
+    viewport.setAttribute("data-disclosure-animating", "");
     animation.play();
     animationRef.current = animation;
     animation.onfinish = () => {
@@ -139,6 +141,7 @@ export function DisclosureContent({
       animationRef.current = null;
       resizeRef.current?.disconnect();
       resizeRef.current = null;
+      viewport.removeAttribute("data-disclosure-animating");
       if (!expanded) {
         setRetained(false);
         animation.cancel();
@@ -156,6 +159,7 @@ export function DisclosureContent({
     () => () => {
       animationRef.current?.cancel();
       resizeRef.current?.disconnect();
+      viewportRef.current?.removeAttribute("data-disclosure-animating");
     },
     [],
   );
@@ -165,6 +169,7 @@ export function DisclosureContent({
       height: animateLayout && !expanded ? 0 : undefined,
       opacity: expanded ? 1 : 0,
       overflow: "hidden",
+      contain: "layout style",
     }),
     [animateLayout, expanded],
   );

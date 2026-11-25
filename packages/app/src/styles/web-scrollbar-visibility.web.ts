@@ -73,12 +73,12 @@ export function trackWebScrollbarVisibility(): () => void {
     dirty.add(element);
   }
 
+  function isIgnoredElement(element: Element): boolean {
+    return element.closest("[data-scrollbar-static], [data-disclosure-animating]") !== null;
+  }
+
   function discover(element: Element) {
-    if (
-      !(element instanceof HTMLElement) ||
-      tracked.has(element) ||
-      element.closest("[data-scrollbar-static]")
-    )
+    if (!(element instanceof HTMLElement) || tracked.has(element) || isIgnoredElement(element))
       return;
     const style = getComputedStyle(element);
     if (
@@ -86,14 +86,16 @@ export function trackWebScrollbarVisibility(): () => void {
       !/auto|scroll/.test(`${style.overflowX} ${style.overflowY}`)
     )
       return;
-    const observer = new ResizeObserver(() => schedule(element));
+    const observer = new ResizeObserver(() => {
+      if (!isIgnoredElement(element)) schedule(element);
+    });
     tracked.set(element, observer);
     observeContent(element, observer);
   }
 
   function discoverTree(element: Element) {
-    // 临时绘制副本沿用源节点的滚动条样式，不登记额外的尺寸观察器。
-    if (element.closest("[data-scrollbar-static]")) return;
+    // 临时绘制副本和披露动画期间跳过整树扫描，动画结束后再一次性补测。
+    if (isIgnoredElement(element)) return;
     for (const root of trees) {
       if (root.contains(element)) return;
       if (element.contains(root)) trees.delete(root);
@@ -113,7 +115,16 @@ export function trackWebScrollbarVisibility(): () => void {
   discoverTree(document.documentElement);
   const mutations = new MutationObserver((records) => {
     for (const record of records) {
-      if (record.target instanceof Element && record.target.closest("[data-scrollbar-static]")) {
+      if (record.type === "attributes" && record.attributeName === "data-disclosure-animating") {
+        if (record.target instanceof Element && !isIgnoredElement(record.target)) {
+          discoverTree(record.target);
+          invalidateAncestors(record.target);
+        }
+        continue;
+      }
+      const targetElement =
+        record.target instanceof Element ? record.target : record.target.parentElement;
+      if (targetElement && isIgnoredElement(targetElement)) {
         continue;
       }
       invalidateAncestors(record.target);
@@ -138,7 +149,7 @@ export function trackWebScrollbarVisibility(): () => void {
     childList: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["style", "class", "hidden"],
+    attributeFilter: ["style", "class", "hidden", "data-disclosure-animating"],
   });
   const onInput = (event: Event) => {
     if (event.target instanceof Node) invalidateAncestors(event.target);

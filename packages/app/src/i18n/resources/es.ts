@@ -1858,6 +1858,10 @@ export const es: TranslationResources = {
       one: "llamó a Paseo {{count}} vez",
       other: "llamó a Paseo {{count}} veces",
     },
+    thoughts: {
+      one: "pensó {{count}} vez",
+      other: "pensó {{count}} veces",
+    },
     and: "y",
   },
   renameModal: {
