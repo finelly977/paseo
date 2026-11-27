@@ -2090,6 +2090,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             {streamRenderStrategy.render({
               agentId,
               segments: renderModel.segments,
+              isRunning: context.status === "running",
               processExit,
               historyRowRevision,
               liveHeadRowRevision,

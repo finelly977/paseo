@@ -26,6 +26,13 @@ import { createStreamStrategy } from "./strategy";
 import { useContentToggleAnchor } from "./use-content-toggle-anchor";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { MOTION_DURATION, MOTION_EASING_CSS } from "@/styles/motion";
+import {
+  animateLiveElementEntrance,
+  createSmoothScrollChase,
+  findNewlyAppendedLiveItems,
+  isWebReducedMotionPreferred,
+  trackLiveAnimation,
+} from "./live-entrance.web";
 import { createProcessMotion, PROCESS_SCROLL_ANCHOR_VAR } from "./process-motion.web";
 
 interface CreateWebStreamStrategyInput {
@@ -111,6 +118,58 @@ function scrollElementToBottom(
     top: scrollContainer.scrollHeight,
     behavior,
   });
+}
+
+function recordStreamSegmentIds(
+  seen: Set<string>,
+  segments: {
+    historyVirtualized: readonly StreamItem[];
+    historyMounted: readonly StreamItem[];
+    liveHead: readonly StreamItem[];
+  },
+): void {
+  for (const item of segments.historyVirtualized) seen.add(item.id);
+  for (const item of segments.historyMounted) seen.add(item.id);
+  for (const item of segments.liveHead) seen.add(item.id);
+}
+
+function isLiveEntranceEligible(item: StreamItem): boolean {
+  return item.kind !== "user_message" && item.kind !== "native_history_process";
+}
+
+function resolveLiveRowEntrancePreset(item: StreamItem): "row-process" | "row-reply" {
+  return item.kind === "tool_call" || item.kind === "thought" ? "row-process" : "row-reply";
+}
+
+function animateNewlyAppendedLiveRows(input: {
+  scrollContainer: HTMLElement;
+  items: readonly StreamItem[];
+  activeAnimations: Set<Animation>;
+  followOutput: boolean;
+}): void {
+  const viewport = input.scrollContainer.getBoundingClientRect();
+  // 正在追尾底部时，新追加的行在平滑追尾开始前会紧贴视口下缘外侧，放宽底部可见缓冲确保连发都能平滑入场。
+  const bottomMargin = input.followOutput ? Math.max(240, viewport.height) : 40;
+  let visibleIndex = 0;
+  for (const item of input.items) {
+    const selector = `[data-stream-row-id="${CSS.escape(item.id)}"]`;
+    const row = input.scrollContainer.querySelector<HTMLElement>(selector);
+    if (!row) continue;
+    const bounds = row.getBoundingClientRect();
+    if (
+      bounds.height <= 0 ||
+      bounds.top > viewport.bottom + bottomMargin ||
+      bounds.bottom < viewport.top - 40
+    ) {
+      continue;
+    }
+    const animation = animateLiveElementEntrance(row, {
+      preset: resolveLiveRowEntrancePreset(item),
+      staggerIndex: visibleIndex,
+    });
+    visibleIndex += 1;
+    trackLiveAnimation(input.activeAnimations, animation);
+  }
 }
 
 function syncNearBottom(
@@ -402,6 +461,7 @@ class HistoryContent extends React.Component<
 function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: boolean }) {
   const {
     segments: sourceSegments,
+    isRunning = false,
     processExit,
     historyRowRevision,
     liveHeadRowRevision,
@@ -508,6 +568,16 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   const toggleAnchorRef = useRef<HistoryAnchor | null>(null);
   const readingProcessTurnRef = useRef<string | undefined>(undefined);
   const holdAutomaticHistoryStartRef = useRef(false);
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+  const seenLiveRowIdsRef = useRef<Set<string> | null>(null);
+  const activeLiveEntranceAnimationsRef = useRef<Set<Animation>>(new Set());
+  const cancelLiveEntranceAnimations = useCallback(() => {
+    for (const animation of activeLiveEntranceAnimationsRef.current) {
+      animation.cancel();
+    }
+    activeLiveEntranceAnimationsRef.current.clear();
+  }, []);
   const motionOverlayRef = useRef<HTMLDivElement | null>(null);
   const [processMotion] = useState(createProcessMotion);
   const applyProgrammaticScroll = useCallback((scroll: HTMLElement, writeScroll: () => void) => {
@@ -751,13 +821,53 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     };
   }, []);
 
+  const alignProcessExitUntilRef = useRef(-Infinity);
+  const onNearBottomChangeRef = useRef(onNearBottomChange);
+  onNearBottomChangeRef.current = onNearBottomChange;
+  const smoothBottomChase = useMemo(
+    () =>
+      createSmoothScrollChase({
+        getScrollContainer: () => scrollContainerRef.current,
+        shouldContinue: () =>
+          followOutputRef.current &&
+          !historyAnchoringRef.current &&
+          isPaneActiveRef.current &&
+          performance.now() > alignProcessExitUntilRef.current,
+        applyScrollTop: (scroll, nextTop) => {
+          applyProgrammaticScroll(scroll, () => {
+            scroll.scrollTop = nextTop;
+          });
+        },
+        onStep: () => {
+          onNearBottomChangeRef.current(true);
+        },
+        onSettled: (scroll) => {
+          syncNearBottom(scroll, onNearBottomChangeRef.current);
+        },
+      }),
+    [applyProgrammaticScroll],
+  );
+  useEffect(() => {
+    if (!isPaneActive) {
+      smoothBottomChase.cancel();
+      cancelLiveEntranceAnimations();
+    }
+  }, [cancelLiveEntranceAnimations, isPaneActive, smoothBottomChase]);
+  useEffect(() => {
+    return () => {
+      smoothBottomChase.cancel();
+      cancelLiveEntranceAnimations();
+    };
+  }, [cancelLiveEntranceAnimations, smoothBottomChase]);
+
   const cancelPendingStickToBottom = useCallback(() => {
+    smoothBottomChase.cancel();
     const pendingFrame = pendingAutoScrollFrameRef.current;
     if (pendingFrame !== null) {
       pendingAutoScrollFrameRef.current = null;
       window.cancelAnimationFrame(pendingFrame);
     }
-  }, []);
+  }, [smoothBottomChase]);
 
   const cancelItemJump = useCallback(() => {
     if (pendingItemJumpFrameRef.current !== null) {
@@ -813,6 +923,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     (direction: "up" | "down" | "pointer") => {
       inputEpochRef.current += 1;
       pendingProgrammaticScrollRef.current = null;
+      smoothBottomChase.cancel();
       cancelItemJump();
       cancelToggleAnchor();
       cancelPendingHistoryAnchor();
@@ -831,6 +942,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       cancelPendingStickToBottom,
       cancelToggleAnchor,
       setFollowOutput,
+      smoothBottomChase,
     ],
   );
   useLayoutEffect(() => {
@@ -889,9 +1001,29 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     [applyProgrammaticScroll, onNearBottomChange],
   );
 
+  const shouldUseSmoothLiveFollow = useCallback(() => {
+    return (
+      isRunningRef.current &&
+      isPaneActiveRef.current &&
+      !isWebReducedMotionPreferred() &&
+      performance.now() > alignProcessExitUntilRef.current
+    );
+  }, []);
+
   const scheduleStickToBottom = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
     if (scrollContainer && isScrollContainerOverscrolledPastBottom(scrollContainer)) {
+      return;
+    }
+    if (shouldUseSmoothLiveFollow()) {
+      if (!scrollContainer || scrollContainer.clientHeight <= 0) {
+        return;
+      }
+      if (!isScrollContainerAtBottom(scrollContainer)) {
+        smoothBottomChase.chase();
+      } else {
+        syncNearBottom(scrollContainer, onNearBottomChange);
+      }
       return;
     }
     if (pendingAutoScrollFrameRef.current !== null) {
@@ -904,7 +1036,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
       scrollMessagesToBottom("auto");
     });
-  }, [scrollMessagesToBottom]);
+  }, [onNearBottomChange, scrollMessagesToBottom, shouldUseSmoothLiveFollow, smoothBottomChase]);
 
   const forceStickToBottom = useCallback(() => {
     cancelPendingStickToBottom();
@@ -912,13 +1044,14 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     scheduleStickToBottom();
   }, [cancelPendingStickToBottom, scheduleStickToBottom, scrollMessagesToBottom]);
 
-  const alignProcessExitUntilRef = useRef(-Infinity);
   const processExitId = processExit?.turnId;
   const processExitRef = useRef(processExit);
   processExitRef.current = processExit;
   useLayoutEffect(() => {
     const exit = processExitRef.current;
     if (!exit) return;
+    cancelLiveEntranceAnimations();
+    smoothBottomChase.cancel();
     const scroll = scrollContainerRef.current;
     if (!scroll || !isPaneActive || !followOutputRef.current) {
       exit.onFinish();
@@ -955,7 +1088,60 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       // 折叠会使历史行换区，后续测得的真实行高也在绘制前对齐，避免露出旧偏移的一帧。
       alignProcessExitUntilRef.current = performance.now() + MOTION_DURATION.base;
     };
-  }, [forceStickToBottom, isPaneActive, processExitId]);
+  }, [
+    cancelLiveEntranceAnimations,
+    forceStickToBottom,
+    isPaneActive,
+    processExitId,
+    smoothBottomChase,
+  ]);
+
+  useLayoutEffect(() => {
+    const seen = seenLiveRowIdsRef.current;
+    if (!seen) {
+      const initial = new Set<string>();
+      recordStreamSegmentIds(initial, segments);
+      seenLiveRowIdsRef.current = initial;
+      return;
+    }
+    const skipAnimation =
+      !isRunning ||
+      !isPaneActive ||
+      isLoadingOlderHistory ||
+      isHistoryAnchoring ||
+      hasPendingHistoryAnchor ||
+      isToggleAnchoring ||
+      Boolean(processExitRef.current);
+    if (skipAnimation) {
+      recordStreamSegmentIds(seen, segments);
+      return;
+    }
+    const newlyAppended = findNewlyAppendedLiveItems({
+      items: [...segments.historyMounted, ...segments.liveHead],
+      seenIds: seen,
+      eligible: isLiveEntranceEligible,
+    });
+    recordStreamSegmentIds(seen, segments);
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer || newlyAppended.length === 0 || isWebReducedMotionPreferred()) {
+      return;
+    }
+    animateNewlyAppendedLiveRows({
+      scrollContainer,
+      items: newlyAppended,
+      activeAnimations: activeLiveEntranceAnimationsRef.current,
+      followOutput: followOutputRef.current,
+    });
+  }, [
+    hasPendingHistoryAnchor,
+    isHistoryAnchoring,
+    isLoadingOlderHistory,
+    isPaneActive,
+    isRunning,
+    isToggleAnchoring,
+    processExitId,
+    segments,
+  ]);
 
   useLayoutEffect(() => {
     if (followOutputRef.current && performance.now() <= alignProcessExitUntilRef.current) {
@@ -973,8 +1159,12 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       width: scrollContainer.clientWidth,
       height: scrollContainer.clientHeight,
     };
+    if (followOutputRef.current && smoothBottomChase.isActive()) {
+      onNearBottomChange(true);
+      return;
+    }
     syncNearBottom(scrollContainer, onNearBottomChange);
-  }, [onNearBottomChange]);
+  }, [onNearBottomChange, smoothBottomChase]);
 
   const requestOlderHistoryAtStart = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -1214,7 +1404,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       resizeFrame = window.requestAnimationFrame(() => {
         resizeFrame = null;
         if (followOutputRef.current && !historyAnchoringRef.current) {
-          scrollMessagesToBottom("auto");
+          if (shouldUseSmoothLiveFollow()) {
+            smoothBottomChase.chase();
+          } else {
+            scrollMessagesToBottom("auto");
+          }
         } else {
           updateScrollMetrics();
         }
@@ -1235,6 +1429,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     autoLoadOlderHistoryIfViewportIsTooShort,
     scheduleStickToBottom,
     scrollMessagesToBottom,
+    shouldUseSmoothLiveFollow,
+    smoothBottomChase,
     updateScrollMetrics,
   ]);
 

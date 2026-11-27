@@ -54,6 +54,7 @@ export interface FollowLatestScrollInput {
   itemCount: number;
   latestItemId: string;
   scrollToEnd: (animated: boolean) => void;
+  onStopFollowing?: () => void;
   onEdgeFadeChange?: (edgeFade: ScrollEdgeFade) => void;
 }
 
@@ -66,6 +67,7 @@ export function useFollowLatestScroll({
   itemCount,
   latestItemId,
   scrollToEnd,
+  onStopFollowing,
   onEdgeFadeChange,
 }: FollowLatestScrollInput) {
   const followLatestRef = useRef(true);
@@ -100,6 +102,7 @@ export function useFollowLatestScroll({
       if (movedUp) {
         followLatestRef.current = false;
         programmaticUntilRef.current = 0;
+        onStopFollowing?.();
         return;
       }
       if (distanceFromBottom <= FOLLOW_LATEST_BOTTOM_THRESHOLD_PX) {
@@ -109,13 +112,15 @@ export function useFollowLatestScroll({
       }
       if (Date.now() > programmaticUntilRef.current) {
         followLatestRef.current = false;
+        onStopFollowing?.();
       }
     },
-    [updateEdgeFade],
+    [onStopFollowing, updateEdgeFade],
   );
 
   useEffect(() => {
     if (!open) {
+      onStopFollowing?.();
       followLatestRef.current = true;
       wasOpenRef.current = false;
       programmaticUntilRef.current = 0;
@@ -153,7 +158,7 @@ export function useFollowLatestScroll({
       scrollToEnd(animated);
     });
     return () => cancelAnimationFrame(frame);
-  }, [itemCount, latestItemId, onEdgeFadeChange, open, scrollToEnd]);
+  }, [itemCount, latestItemId, onEdgeFadeChange, onStopFollowing, open, scrollToEnd]);
 
   return { handleScroll, syncEdgeFade: updateEdgeFade };
 }

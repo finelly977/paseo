@@ -1,7 +1,8 @@
-import React, { memo, useCallback, useMemo, type ReactNode } from "react";
+import React, { memo, useCallback, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { MAX_CHAT_CONTENT_WIDTH } from "@/constants/layout";
+import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
@@ -19,6 +20,7 @@ import { AssistantTurnFooter, LiveElapsed, type AssistantForkTarget } from "@/co
 import type { TurnFooterHost } from "./layout";
 import { SyncedLoader } from "@/components/synced-loader";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { animateLiveElementEntrance } from "./live-entrance";
 
 const ThemedSyncedLoader = withUnistyles(SyncedLoader);
 const workingIndicatorColorMapping = (theme: Theme) => ({
@@ -142,8 +144,32 @@ const WorkingIndicator = memo(function WorkingIndicator({
 });
 
 function RunningTurnFooter({ inFlightTurnStartedAt }: { inFlightTurnStartedAt: Date | null }) {
+  const slotRef = useRef<View | null>(null);
+  const animationRef = useRef<Animation | null>(null);
+  const active = useRetainedPanelActive();
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  useLayoutEffect(() => {
+    if (!isWeb || !activeRef.current) return;
+    const node: unknown = slotRef.current;
+    if (!(node instanceof HTMLElement)) return;
+    const animation = animateLiveElementEntrance(node, { preset: "indicator" });
+    animationRef.current = animation;
+    return () => {
+      animation?.cancel();
+      if (animationRef.current === animation) {
+        animationRef.current = null;
+      }
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (!active) {
+      animationRef.current?.cancel();
+      animationRef.current = null;
+    }
+  }, [active]);
   return (
-    <View style={stylesheet.turnFooterSlot} testID="turn-working-indicator">
+    <View ref={slotRef} style={stylesheet.turnFooterSlot} testID="turn-working-indicator">
       <WorkingIndicator inFlightTurnStartedAt={inFlightTurnStartedAt} />
     </View>
   );

@@ -137,6 +137,11 @@ import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import {
+  animateLiveElementEntrance,
+  isWebReducedMotionPreferred,
+  trackLiveAnimation,
+} from "@/agent-stream/live-entrance";
 import { useSettings } from "@/hooks/use-settings";
 import {
   shouldCollapseUserMessage,
@@ -1899,6 +1904,27 @@ const AssistantMessageBlockRow = React.memo(function AssistantMessageBlockRow({
   );
 });
 
+function animateStreamingAssistantBlocks(input: {
+  containerNode: unknown;
+  previousCount: number;
+  nextCount: number;
+  activeAnimations: Set<Animation>;
+}): void {
+  if (!(input.containerNode instanceof HTMLElement) || isWebReducedMotionPreferred()) {
+    return;
+  }
+  const startIndex = Math.max(1, input.previousCount);
+  for (let index = startIndex; index < input.nextCount; index += 1) {
+    const child = input.containerNode.children[index];
+    if (!(child instanceof HTMLElement)) continue;
+    const animation = animateLiveElementEntrance(child, {
+      preset: "markdown-block",
+      staggerIndex: index - startIndex,
+    });
+    trackLiveAnimation(input.activeAnimations, animation);
+  }
+}
+
 export const AssistantMessage = memo(function AssistantMessage({
   message,
   timestamp: _timestamp,
@@ -2266,8 +2292,42 @@ export const AssistantMessage = memo(function AssistantMessage({
     [spacing],
   );
 
+  const containerRef = useRef<View | null>(null);
+  const panelActive = useRetainedPanelActive();
+  const seenBlockStateRef = useRef<{ ownerKey: string | undefined; count: number } | null>(null);
+  const blockAnimationsRef = useRef<Set<Animation>>(new Set());
+
+  useEffect(() => {
+    const animations = blockAnimationsRef.current;
+    return () => {
+      for (const animation of animations) animation.cancel();
+      animations.clear();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isWeb) return;
+    const seen = seenBlockStateRef.current;
+    const nextCount = displayBlocks.length;
+    if (!seen || seen.ownerKey !== revealOwnerKey) {
+      seenBlockStateRef.current = { ownerKey: revealOwnerKey, count: nextCount };
+      return;
+    }
+    const previousCount = seen.count;
+    seenBlockStateRef.current = { ownerKey: revealOwnerKey, count: nextCount };
+    if (phase !== "streaming" || !panelActive || nextCount <= previousCount) {
+      return;
+    }
+    animateStreamingAssistantBlocks({
+      containerNode: containerRef.current,
+      previousCount,
+      nextCount,
+      activeAnimations: blockAnimationsRef.current,
+    });
+  }, [displayBlocks.length, panelActive, phase, revealOwnerKey]);
+
   return (
-    <View testID="assistant-message" style={assistantContainerStyle}>
+    <View ref={containerRef} testID="assistant-message" style={assistantContainerStyle}>
       {displayBlocks.map(({ id, block }, index) => (
         <AssistantMessageBlockRow
           key={id}

@@ -1,9 +1,25 @@
-import React, { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { ScrollView, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Brain, Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
+import {
+  animateLiveElementEntrance,
+  createSmoothScrollChase,
+  isWebReducedMotionPreferred,
+  trackLiveAnimation,
+} from "@/agent-stream/live-entrance";
 import { ExpandableBadge, ProcessGroupListProvider } from "@/components/message";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import type { ProcessRunItem } from "../grouping";
@@ -48,19 +64,115 @@ interface OverviewGroupProps {
   children?: () => ReactNode;
 }
 
+const STEP_ROW_STYLE: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+};
+
+const ProcessGroupStepRow = memo(function ProcessGroupStepRow({
+  entry,
+  isLast,
+  renderItem,
+  registerNode,
+}: {
+  entry: ProcessRunItem;
+  isLast: boolean;
+  renderItem: (entry: ProcessRunItem, isLast: boolean) => ReactNode;
+  registerNode: (id: string, node: HTMLDivElement | null) => void;
+}) {
+  const handleRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      registerNode(entry.id, node);
+    },
+    [entry.id, registerNode],
+  );
+  return (
+    <div ref={handleRef} style={STEP_ROW_STYLE}>
+      {renderItem(entry, isLast)}
+    </div>
+  );
+});
+
 const ProcessGroupItemsList = memo(function ProcessGroupItemsList({
   calls,
   renderItem,
+  animateNewSteps,
 }: {
   calls: readonly ProcessRunItem[];
   renderItem: (entry: ProcessRunItem, isLast: boolean) => ReactNode;
+  animateNewSteps: boolean;
 }) {
+  const panelActive = useRetainedPanelActive();
+  const knownStepIdsRef = useRef<Set<string> | null>(null);
+  const stepNodesRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const animationsRef = useRef<Set<Animation>>(new Set());
+
+  const registerNode = useCallback((id: string, node: HTMLDivElement | null) => {
+    if (node) {
+      stepNodesRef.current.set(id, node);
+    } else {
+      stepNodesRef.current.delete(id);
+    }
+  }, []);
+
+  useEffect(() => {
+    const animations = animationsRef.current;
+    return () => {
+      for (const animation of animations) animation.cancel();
+      animations.clear();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isWeb) return;
+    const known = knownStepIdsRef.current;
+    if (!known) {
+      knownStepIdsRef.current = new Set(calls.map((entry) => entry.id));
+      return;
+    }
+    const newlyAdded = calls.filter((entry) => !known.has(entry.id));
+    for (const entry of calls) known.add(entry.id);
+    if (!animateNewSteps || !panelActive || newlyAdded.length === 0) {
+      return;
+    }
+    if (isWebReducedMotionPreferred()) {
+      return;
+    }
+    let staggerIndex = 0;
+    for (const entry of newlyAdded) {
+      const node = stepNodesRef.current.get(entry.id);
+      if (!node) continue;
+      const animation = animateLiveElementEntrance(node, {
+        preset: "process-step",
+        staggerIndex,
+      });
+      staggerIndex += 1;
+      trackLiveAnimation(animationsRef.current, animation);
+    }
+  }, [animateNewSteps, calls, panelActive]);
+
+  if (!isWeb) {
+    return (
+      <>
+        {calls.map((entry, index) => (
+          <React.Fragment key={entry.id}>
+            {renderItem(entry, index === calls.length - 1)}
+          </React.Fragment>
+        ))}
+      </>
+    );
+  }
+
   return (
     <>
       {calls.map((entry, index) => (
-        <React.Fragment key={entry.id}>
-          {renderItem(entry, index === calls.length - 1)}
-        </React.Fragment>
+        <ProcessGroupStepRow
+          key={entry.id}
+          entry={entry}
+          isLast={index === calls.length - 1}
+          renderItem={renderItem}
+          registerNode={registerNode}
+        />
       ))}
     </>
   );
@@ -123,15 +235,46 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
     applyEdgeFadeMask(maskWrapperRef.current, edgeFade);
   }, []);
   const syncDomEdgeFadeRef = useRef<() => void>(() => {});
-  const scrollToEnd = useCallback((animated: boolean) => {
-    scrollRef.current?.scrollToEnd({ animated });
-    syncDomEdgeFadeRef.current();
-  }, []);
+  const smoothScrollChase = useMemo(
+    () =>
+      createSmoothScrollChase({
+        getScrollContainer: () => getScrollableDomNode(scrollRef.current),
+        applyScrollTop: (scroll, nextTop) => {
+          scroll.scrollTop = nextTop;
+        },
+        onStep: () => {
+          syncDomEdgeFadeRef.current();
+        },
+        onSettled: () => {
+          syncDomEdgeFadeRef.current();
+        },
+      }),
+    [],
+  );
+  useEffect(() => () => smoothScrollChase.cancel(), [smoothScrollChase]);
+  const scrollToEnd = useCallback(
+    (animated: boolean) => {
+      if (isWeb && animated && !isWebReducedMotionPreferred()) {
+        smoothScrollChase.chase();
+        return;
+      }
+      smoothScrollChase.cancel();
+      const domNode = getScrollableDomNode(scrollRef.current);
+      if (domNode) {
+        domNode.scrollTop = Math.max(0, domNode.scrollHeight - domNode.clientHeight);
+      } else {
+        scrollRef.current?.scrollToEnd({ animated });
+      }
+      syncDomEdgeFadeRef.current();
+    },
+    [smoothScrollChase],
+  );
   const { handleScroll, syncEdgeFade } = useFollowLatestScroll({
     open: !isCompact && expanded,
     itemCount: group.run.calls.length,
     latestItemId: group.run.latest.id,
     scrollToEnd,
+    onStopFollowing: smoothScrollChase.cancel,
     onEdgeFadeChange: handleEdgeFadeChange,
   });
   const syncDomEdgeFade = useCallback(() => {
@@ -146,14 +289,19 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
   const close = useCallback(() => {
     onExpandedChange(group.run.id, false);
   }, [group.run.id, onExpandedChange]);
+  const animateNewSteps = !group.run.isSealed && executionActive;
   const renderItems = useCallback(
     () =>
       renderItem ? (
-        <ProcessGroupItemsList calls={group.run.calls} renderItem={renderItem} />
+        <ProcessGroupItemsList
+          calls={group.run.calls}
+          renderItem={renderItem}
+          animateNewSteps={animateNewSteps}
+        />
       ) : (
         (children?.() ?? null)
       ),
-    [children, group.run.calls, renderItem],
+    [animateNewSteps, children, group.run.calls, renderItem],
   );
   const renderDetails = useCallback(
     () => (
