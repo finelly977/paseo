@@ -12,6 +12,7 @@ import {
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { Theme } from "@/styles/theme";
+import { hydrateDocxMathPlaceholders, prepareDocxWithMathPlaceholders } from "./docx-math";
 import { parseExcelWorkbook, toSpreadsheetColumnLabel, type ParsedExcelSheet } from "./excel-model";
 import {
   validatePdfPreviewBytes,
@@ -360,6 +361,22 @@ const DOCX_WRAPPER_CSS = `
     margin-bottom: 0 !important;
     color: #111827;
   }
+  .paseo-docx-math-inline {
+    display: inline-block;
+    vertical-align: baseline;
+    margin: 0 0.08em;
+  }
+  .paseo-docx-math-block {
+    display: block;
+    text-align: center;
+    margin: 6px 0;
+  }
+  .paseo-docx math {
+    font-family: "Cambria Math", "STIX Two Math", "Latin Modern Math", "Segoe UI Symbol", serif;
+    font-size: 1.04em;
+    line-height: 1.35;
+    color: inherit;
+  }
 `;
 
 function WordDocumentPreview({ bytes }: { bytes: Uint8Array }) {
@@ -382,7 +399,9 @@ function WordDocumentPreview({ bytes }: { bytes: Uint8Array }) {
 
     void (async () => {
       validateWordPreviewBytes(bytes);
-      await renderAsync(bytes.slice().buffer, contentHost, styleHost, {
+      const prepared = await prepareDocxWithMathPlaceholders(bytes);
+      if (cancelled) return;
+      await renderAsync(prepared.buffer, contentHost, styleHost, {
         className: "paseo-docx",
         inWrapper: true,
         ignoreWidth: false,
@@ -393,9 +412,9 @@ function WordDocumentPreview({ bytes }: { bytes: Uint8Array }) {
         renderEndnotes: true,
         useBase64URL: true,
       });
-      if (!cancelled) {
-        setIsLoading(false);
-      }
+      if (cancelled) return;
+      hydrateDocxMathPlaceholders(contentHost, prepared.replacements);
+      setIsLoading(false);
     })().catch((error: unknown) => {
       if (cancelled) return;
       console.error("[文件预览] Word 解析失败", error);

@@ -17,6 +17,7 @@ import fs from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { createPathEquivalenceMatcher } from "../../../utils/path.js";
+import { sortProviderThinkingOptions } from "./thinking-options-order.js";
 import pLimit from "p-limit";
 import type { Logger } from "pino";
 import { z } from "zod";
@@ -788,7 +789,7 @@ function buildOpenCodeModelDefinition(
   const thinkingOptions = rawVariants.length
     ? [
         { id: OPENCODE_DEFAULT_VARIANT_ID, label: "Default", isDefault: true },
-        ...rawVariants.map((id) => ({ id, label: id })),
+        ...sortProviderThinkingOptions(rawVariants.map((id) => ({ id, label: id }))),
       ]
     : [];
 

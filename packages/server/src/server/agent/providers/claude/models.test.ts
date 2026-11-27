@@ -121,8 +121,8 @@ describe("getClaudeModels", () => {
       "medium",
       "high",
       "xhigh",
-      "max",
       CLAUDE_ULTRACODE_THINKING_OPTION_ID,
+      "max",
     ]);
     expect(models.get("claude-sonnet-5")?.thinkingOptions?.map((option) => option.id)).toEqual([
       CLAUDE_DISABLED_THINKING_OPTION_ID,
@@ -130,8 +130,8 @@ describe("getClaudeModels", () => {
       "medium",
       "high",
       "xhigh",
-      "max",
       CLAUDE_ULTRACODE_THINKING_OPTION_ID,
+      "max",
     ]);
     expect(
       models
@@ -150,8 +150,8 @@ describe("getClaudeModels", () => {
       "medium",
       "high",
       "xhigh",
-      "max",
       CLAUDE_ULTRACODE_THINKING_OPTION_ID,
+      "max",
     ]);
     expect(models.get("claude-sonnet-4-6")?.thinkingOptions?.map((option) => option.id)).toEqual([
       CLAUDE_DISABLED_THINKING_OPTION_ID,
@@ -215,8 +215,8 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
       "medium",
       "high",
       "xhigh",
-      "max",
       "ultracode",
+      "max",
     ]);
     expect(model?.isDefault).toBeUndefined();
   });
@@ -232,7 +232,7 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
 
     expect(
       models.find((model) => model.id === modelId)?.thinkingOptions?.map(({ id }) => id),
-    ).toEqual(["low", "medium", "high", "xhigh", "max", "ultracode"]);
+    ).toEqual(["low", "medium", "high", "xhigh", "ultracode", "max"]);
     expect(models.find((model) => model.id === modelId)?.defaultThinkingOptionId).toBe("high");
   });
 
@@ -268,8 +268,8 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
           { id: "medium", label: "Medium" },
           { id: "high", label: "High" },
           { id: "xhigh", label: "Extra High" },
-          { id: "max", label: "Max" },
           { id: "ultracode", label: "Ultra Code" },
+          { id: "max", label: "Max" },
         ],
         defaultThinkingOptionId: "low",
       },

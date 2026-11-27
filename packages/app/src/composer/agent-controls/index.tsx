@@ -47,6 +47,7 @@ import {
   getFeatureTooltip,
   formatThinkingOptionLabel,
   resolveAgentModelSelection,
+  sortThinkingOptions,
 } from "@/composer/agent-controls/utils";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
@@ -213,7 +214,7 @@ function toComboboxOptions(options: AgentControlOption[] | undefined): ComboboxO
 }
 
 function toThinkingControlOptions(options: AgentControlOption[] | undefined): AgentControlOption[] {
-  return (options ?? []).map((option) => ({
+  return sortThinkingOptions(options ?? []).map((option) => ({
     id: option.id,
     label: formatThinkingOptionLabel(option),
   }));

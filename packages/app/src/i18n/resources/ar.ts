@@ -486,6 +486,7 @@ export const ar: TranslationResources = {
         refreshing: "تحديث الملفات",
         hideHiddenFiles: "إخفاء الملفات المخفية",
         showHiddenFiles: "إظهار الملفات المخفية",
+        collapseAll: "طي جميع المجلدات",
       },
       empty: {
         noFiles: "لا توجد ملفات",

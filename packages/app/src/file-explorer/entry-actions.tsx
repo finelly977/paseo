@@ -12,7 +12,7 @@ import { getPanelInstanceAttributes } from "@/panels/panel-instance-attributes";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { treeRowPaddingLeft } from "@/components/tree-primitives";
+import { TREE_INDENT_PER_LEVEL } from "@/components/tree-primitives";
 import { buildEntryMutation, renameNameSelection, type EntryActionState } from "./entry-edit";
 import type { Theme } from "@/styles/theme";
 import { Folder } from "lucide-react-native";
@@ -294,15 +294,18 @@ export function ExplorerEntryInlineEditor({
       : state.action.entry.kind === "directory";
   return (
     <View
-      style={[styles.editor, { paddingLeft: treeRowPaddingLeft(depth) }]}
+      style={[styles.editor, { paddingLeft: 6 + depth * TREE_INDENT_PER_LEVEL }]}
       testID="file-entry-inline-editor"
     >
       <View style={styles.editorRow}>
-        {isDirectory ? (
-          <ThemedFolder size={16} uniProps={spinnerColor} />
-        ) : (
-          <MaterialFileIcon fileName={state.name} size={16} />
-        )}
+        <View style={styles.chevronSpacer} aria-hidden />
+        <View style={styles.iconSlot}>
+          {isDirectory ? (
+            <ThemedFolder size={15} strokeWidth={1.65} uniProps={spinnerColor} />
+          ) : (
+            <MaterialFileIcon fileName={state.name} size={15} />
+          )}
+        </View>
         <TextInput
           ref={inputRef}
           autoFocus
@@ -331,26 +334,47 @@ export function ExplorerEntryInlineEditor({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  editor: { paddingRight: theme.spacing[2] },
-  editorRow: { minHeight: 32, flexDirection: "row", alignItems: "center", gap: theme.spacing[1] },
+  editor: {
+    marginHorizontal: theme.spacing[2],
+    paddingRight: theme.spacing[1.5],
+  },
+  editorRow: {
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  chevronSpacer: {
+    width: 14,
+    height: 14,
+    flexShrink: 0,
+  },
+  iconSlot: {
+    width: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
   error: {
     color: theme.colors.destructive,
     fontSize: theme.fontSize.xs,
     paddingTop: theme.spacing[1],
+    paddingLeft: 35,
   },
   progress: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.xs },
   input: {
     ...(isWeb ? { outlineWidth: 0 } : {}),
     flex: 1,
-    height: 28,
+    height: 26,
     color: theme.colors.foreground,
-    backgroundColor: theme.colors.surface1,
+    backgroundColor: theme.colors.surface2,
     borderColor: theme.colors.accent,
     borderWidth: 1,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing[1],
+    borderRadius: theme.borderRadius.md,
+    paddingHorizontal: theme.spacing[2],
     paddingVertical: 0,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
   },
   inputError: { borderColor: theme.colors.destructive },
 }));

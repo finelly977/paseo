@@ -5,6 +5,7 @@ import {
   Pressable,
   useWindowDimensions,
   StyleSheet as RNStyleSheet,
+  type PressableStateCallbackType,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { useAnimatedStyle, useSharedValue, runOnJS } from "react-native-reanimated";
@@ -27,6 +28,7 @@ import { useToast } from "@/contexts/toast-context";
 import { useCloseFileExplorerGesture } from "@/mobile-panels/gestures";
 import { MobilePanelOverlay } from "@/mobile-panels/presentation";
 import { HEADER_INNER_HEIGHT } from "@/constants/layout";
+import { isWeb } from "@/constants/platform";
 import { GitDiffPane } from "@/git/diff-pane";
 import { FileExplorerPane } from "./file-explorer-pane";
 import { useKeyboardShiftStyle } from "@/hooks/use-keyboard-shift-style";
@@ -41,6 +43,7 @@ import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { resolveFocusedChatTarget } from "@/composer/focused-chat-target";
 import { createWorkspaceFileAttachment } from "@/attachments/workspace-file";
 import { useDraftStore } from "@/stores/draft-store";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 
 function logExplorerSidebar(_event: string, _details: Record<string, unknown>): void {}
 
@@ -255,6 +258,17 @@ interface ExplorerTabButtonProps {
   children?: React.ReactNode;
 }
 
+function closeButtonStyle({
+  hovered,
+  pressed,
+}: PressableStateCallbackType & { hovered?: boolean }) {
+  return [
+    styles.closeButton,
+    Boolean(hovered) && styles.closeButtonHovered,
+    pressed && styles.controlPressed,
+  ];
+}
+
 function ExplorerTabButton({
   tab,
   active,
@@ -264,12 +278,40 @@ function ExplorerTabButton({
   children,
 }: ExplorerTabButtonProps) {
   const handlePress = useCallback(() => onTabPress(tab), [onTabPress, tab]);
-  const tabStyle = useMemo(() => [styles.tab, active && styles.tabActive], [active]);
-  const tabTextStyle = useMemo(() => [styles.tabText, active && styles.tabTextActive], [active]);
+  const tabStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.tab,
+      active ? styles.tabActive : Boolean(hovered) && styles.tabHovered,
+      pressed && styles.tabPressed,
+    ],
+    [active],
+  );
+  const accessibilityState = useMemo(() => ({ selected: active }), [active]);
   return (
-    <Pressable testID={testID} style={tabStyle} onPress={handlePress}>
-      {children}
-      {label !== undefined ? <Text style={tabTextStyle}>{label}</Text> : null}
+    <Pressable
+      testID={testID}
+      style={tabStyle}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityState={accessibilityState}
+    >
+      {({ hovered }) => (
+        <>
+          {children}
+          {label !== undefined ? (
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.tabText,
+                (active || Boolean(hovered)) && styles.tabTextActive,
+                active && styles.tabTextSelected,
+              ]}
+            >
+              {label}
+            </Text>
+          ) : null}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -338,47 +380,55 @@ function ExplorerSidebarContent({
       >
         <TitlebarDragRegion />
         <View style={styles.tabsContainer}>
-          {isGit && (
-            <ExplorerTabButton
-              tab="changes"
-              active={resolvedTab === "changes"}
-              label={t("workspace.git.panel.sourceControl")}
-              onTabPress={onTabPress}
-              testID="explorer-tab-changes"
-            />
-          )}
-          <ExplorerTabButton
-            tab="files"
-            active={resolvedTab === "files"}
-            label={t("workspace.tabs.explorer.files")}
-            onTabPress={onTabPress}
-            testID="explorer-tab-files"
-          />
-          {isGit && showPrTab && (
-            <ExplorerTabButton
-              tab="pr"
-              active={resolvedTab === "pr"}
-              label={prTabLabel}
-              onTabPress={onTabPress}
-              testID="explorer-tab-pr"
-            >
-              <PullRequestTabIcon
-                forge={prPane.forge}
-                size={13}
-                color={
-                  resolvedTab === "pr"
-                    ? theme.colors.foregroundSidebar
-                    : theme.colors.foregroundMuted
-                }
+          {isGit ? (
+            <>
+              <ExplorerTabButton
+                tab="changes"
+                active={resolvedTab === "changes"}
+                label={t("workspace.git.panel.sourceControl")}
+                onTabPress={onTabPress}
+                testID="explorer-tab-changes"
               />
-            </ExplorerTabButton>
+              <ExplorerTabButton
+                tab="files"
+                active={resolvedTab === "files"}
+                label={t("workspace.tabs.explorer.files")}
+                onTabPress={onTabPress}
+                testID="explorer-tab-files"
+              />
+              {showPrTab && (
+                <ExplorerTabButton
+                  tab="pr"
+                  active={resolvedTab === "pr"}
+                  label={prTabLabel}
+                  onTabPress={onTabPress}
+                  testID="explorer-tab-pr"
+                >
+                  <PullRequestTabIcon
+                    forge={prPane.forge}
+                    size={13}
+                    color={
+                      resolvedTab === "pr"
+                        ? theme.colors.foregroundSidebar
+                        : theme.colors.foregroundMuted
+                    }
+                  />
+                </ExplorerTabButton>
+              )}
+            </>
+          ) : (
+            <View style={styles.singleHeaderTitle} testID="explorer-tab-files">
+              <Text numberOfLines={1} style={styles.singleHeaderTitleText}>
+                {t("workspace.tabs.explorer.files")}
+              </Text>
+            </View>
           )}
         </View>
         <View style={styles.headerRightSection}>
           {!hasRightWindowControls && (
             <Pressable
               onPress={onClose}
-              style={styles.closeButton}
+              style={closeButtonStyle}
               testID="explorer-close"
               nativeID="explorer-close"
               accessible
@@ -388,7 +438,8 @@ function ExplorerSidebarContent({
             >
               {({ hovered, pressed }) => (
                 <X
-                  size={18}
+                  size={16}
+                  strokeWidth={1.75}
                   color={
                     hovered || pressed
                       ? theme.colors.foregroundSidebar
@@ -578,26 +629,52 @@ const styles = StyleSheet.create((theme) => ({
   },
   tabsContainer: {
     flexDirection: "row",
-    gap: theme.spacing[1],
+    alignItems: "center",
+    gap: 2,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  singleHeaderTitle: {
+    paddingLeft: theme.spacing[2],
+    paddingRight: theme.spacing[1],
+    height: 28,
+    justifyContent: "center",
+  },
+  singleHeaderTitleText: {
+    fontSize: theme.fontSize.sidebar,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.foregroundSidebar,
   },
   tab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
+    gap: theme.spacing[1.5],
+    height: 26,
+    paddingHorizontal: theme.spacing[2],
     borderRadius: theme.borderRadius.md,
+    ...(isWeb
+      ? ({ transition: "background-color 120ms ease, transform 100ms ease" } as object)
+      : {}),
   },
-  tabActive: {
+  tabHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
+  tabActive: {
+    backgroundColor: theme.colors.surfaceSidebarSelected,
+  },
+  tabPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.button }],
+  },
   tabText: {
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundMuted,
   },
   tabTextActive: {
     color: theme.colors.foregroundSidebar,
+  },
+  tabTextSelected: {
+    fontWeight: theme.fontWeight.medium,
   },
   tabTextMuted: {
     opacity: 0.8,
@@ -605,11 +682,23 @@ const styles = StyleSheet.create((theme) => ({
   headerRightSection: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: theme.spacing[1],
   },
   closeButton: {
-    padding: theme.spacing[2],
+    width: 28,
+    height: 28,
     borderRadius: theme.borderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    ...(isWeb
+      ? ({ transition: "background-color 120ms ease, transform 100ms ease" } as object)
+      : {}),
+  },
+  closeButtonHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  controlPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
   },
   contentArea: {
     flex: 1,

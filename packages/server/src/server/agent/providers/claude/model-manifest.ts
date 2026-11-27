@@ -160,16 +160,19 @@ function buildThinkingOptions(
     return undefined;
   }
 
-  const options: AgentSelectOption[] = [
-    ...(supportsThinkingDisabled ? [{ id: CLAUDE_DISABLED_THINKING_OPTION_ID, label: "Off" }] : []),
-    ...effortLevels.map((id) => ({
+  const options: AgentSelectOption[] = supportsThinkingDisabled
+    ? [{ id: CLAUDE_DISABLED_THINKING_OPTION_ID, label: "Off" }]
+    : [];
+
+  for (const id of effortLevels) {
+    options.push({
       id,
       label: CLAUDE_EFFORT_LABELS[id],
-    })),
-  ];
-
-  if (effortLevels.includes("xhigh")) {
-    options.push({ id: CLAUDE_ULTRACODE_THINKING_OPTION_ID, label: "Ultra Code" });
+    });
+    // Ultra Code 底层使用 xhigh + ultracode，排在 xhigh 之后、Max 之前，确保 Max 始终在最右侧最高档。
+    if (id === "xhigh") {
+      options.push({ id: CLAUDE_ULTRACODE_THINKING_OPTION_ID, label: "Ultra Code" });
+    }
   }
 
   return options;

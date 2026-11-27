@@ -491,6 +491,7 @@ export const ptBR: TranslationResources = {
         refreshing: "Atualizando arquivos",
         hideHiddenFiles: "Ocultar arquivos ocultos",
         showHiddenFiles: "Mostrar arquivos ocultos",
+        collapseAll: "Recolher todas as pastas",
       },
       empty: {
         noFiles: "Nenhum arquivo",

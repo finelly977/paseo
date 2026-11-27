@@ -491,6 +491,7 @@ export const es: TranslationResources = {
         refreshing: "Actualizar archivos",
         hideHiddenFiles: "Ocultar archivos ocultos",
         showHiddenFiles: "Mostrar archivos ocultos",
+        collapseAll: "Contraer todas las carpetas",
       },
       empty: {
         noFiles: "Sin archivos",

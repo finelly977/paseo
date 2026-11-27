@@ -60,6 +60,41 @@ describe("conversation history index model", () => {
     expect(buildHistoryIndexItemOwners(items, entries).get("reply")).toBe(entries[0]);
     expect(buildHistoryIndexItemOwners(items, entries).get("second")).toBe(entries[1]);
   });
+
+  it("首屏仅加载长回合尾部或从上一轮中途切入时，仍将可见正文归属到正确轮次而非留空或落回首轮", () => {
+    const entries: ConversationHistoryIndexEntry[] = Array.from({ length: 20 }, (_, index) => ({
+      id: `reused-msg-1`,
+      title: `Turn ${index}`,
+      preview: "",
+      sourceIndex: index,
+      seqStart: index * 10 + 1,
+      ...(index === 19 ? { loadedId: "loaded-user-19" } : {}),
+    }));
+
+    // 场景 A：仅加载最新第 19 轮末尾助手正文（该轮用户消息因超过 40 条投影记录尚未加载）
+    const tailOnlyItems: StreamItem[] = [
+      {
+        kind: "assistant_message",
+        id: "reused-msg-1",
+        text: "超长诊断报告与表格",
+        timestamp: new Date(),
+        timelineCursor: { epoch: "e1", seq: 198 },
+      },
+    ];
+    const tailOwners = buildHistoryIndexItemOwners(tailOnlyItems, entries);
+    expect(tailOwners.get("reused-msg-1")).toBe(entries[19]);
+
+    // 场景 B：无 timelineCursor 的原生分页从第 18 轮回复中途开始，紧跟第 19 轮用户消息
+    const nativeItems: StreamItem[] = [
+      assistant("assistant-18", "第 18 轮回复"),
+      user("loaded-user-19", "第 19 轮提问"),
+      assistant("assistant-19", "第 19 轮长回复"),
+    ];
+    const nativeOwners = buildHistoryIndexItemOwners(nativeItems, entries);
+    expect(nativeOwners.get("assistant-18")).toBe(entries[18]);
+    expect(nativeOwners.get("loaded-user-19")).toBe(entries[19]);
+    expect(nativeOwners.get("assistant-19")).toBe(entries[19]);
+  });
   it("重复提供方标识不覆盖不同历史位置，跳转只匹配目标位置", () => {
     const first = summaryEntry("reused-provider-id", 1);
     const second = summaryEntry("reused-provider-id", 20);

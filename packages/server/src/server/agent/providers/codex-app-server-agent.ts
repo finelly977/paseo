@@ -40,6 +40,7 @@ import {
   type ProviderCatalog,
 } from "../agent-sdk-types.js";
 import { importSessionFromPersistence } from "../provider-session-import.js";
+import { sortProviderThinkingOptions } from "./thinking-options-order.js";
 import type { Logger } from "pino";
 
 import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
@@ -8560,10 +8561,12 @@ function buildCodexModelDefinition(
     ctx.configuredDefaultThinkingOptionId,
   );
 
-  const thinkingOptions = Array.from(thinkingById.values()).map((option) =>
-    Object.assign({}, option, {
-      isDefault: option.id === resolvedDefaultReasoningEffort,
-    }),
+  const thinkingOptions = sortProviderThinkingOptions(
+    Array.from(thinkingById.values()).map((option) =>
+      Object.assign({}, option, {
+        isDefault: option.id === resolvedDefaultReasoningEffort,
+      }),
+    ),
   );
   const defaultThinkingOptionId =
     resolvedDefaultReasoningEffort ??

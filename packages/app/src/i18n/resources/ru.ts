@@ -491,6 +491,7 @@ export const ru: TranslationResources = {
         refreshing: "Обновление файлов",
         hideHiddenFiles: "Скрыть скрытые файлы",
         showHiddenFiles: "Показать скрытые файлы",
+        collapseAll: "Свернуть все папки",
       },
       empty: {
         noFiles: "Нет файлов",

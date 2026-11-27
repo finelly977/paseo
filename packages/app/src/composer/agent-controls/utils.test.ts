@@ -7,6 +7,7 @@ import {
   formatThinkingOptionLabel,
   normalizeModelId,
   resolveAgentModelSelection,
+  sortThinkingOptions,
 } from "./utils";
 
 describe("getAgentControlHintKey", () => {
@@ -214,5 +215,68 @@ describe("resolveAgentModelSelection", () => {
 
     expect(selection.activeModelId).toBe("proxy-codex-model");
     expect(selection.displayModel).toBe("proxy-codex-model");
+  });
+
+  it("按由浅入深规范排序思考强度选项，确保 Max 在 Extra high 与 Ultra code 之后", () => {
+    const selection = resolveAgentModelSelection({
+      models: [
+        {
+          id: "claude-opus-5",
+          provider: "claude",
+          label: "Opus 5",
+          thinkingOptions: [
+            { id: "max", label: "Max" },
+            { id: "high", label: "High" },
+            { id: "ultracode", label: "Ultra code" },
+            { id: "low", label: "Low" },
+            { id: "xhigh", label: "Extra high" },
+            { id: "medium", label: "Medium" },
+            { id: "off", label: "Off" },
+          ],
+          defaultThinkingOptionId: "high",
+        },
+      ],
+      runtimeModelId: "claude-opus-5",
+      configuredModelId: null,
+      explicitThinkingOptionId: null,
+    });
+
+    expect(selection.thinkingOptions?.map((option) => option.id)).toEqual([
+      "off",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "ultracode",
+      "max",
+    ]);
+    expect(selection.selectedThinkingId).toBe("high");
+  });
+});
+
+describe("sortThinkingOptions", () => {
+  it("将乱序的通用思考档位规范为从浅到深并保持 Max 居末", () => {
+    expect(
+      sortThinkingOptions([
+        { id: "max", label: "Max" },
+        { id: "xhigh", label: "Extra high" },
+        { id: "low", label: "Low" },
+        { id: "high", label: "High" },
+        { id: "medium", label: "Medium" },
+      ]).map((option) => option.id),
+    ).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it("保留 default/minimal 靠前以及未知自定义档位在 Max 之前的相对顺序", () => {
+    expect(
+      sortThinkingOptions([
+        { id: "max", label: "Max" },
+        { id: "custom-b", label: "Custom B" },
+        { id: "ultracode", label: "Ultra code" },
+        { id: "custom-a", label: "Custom A" },
+        { id: "default", label: "Default" },
+        { id: "minimal", label: "Minimal" },
+      ]).map((option) => option.id),
+    ).toEqual(["default", "minimal", "custom-b", "custom-a", "ultracode", "max"]);
   });
 });

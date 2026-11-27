@@ -486,6 +486,7 @@ export const zhCN: TranslationResources = {
         refreshing: "正在刷新文件",
         hideHiddenFiles: "隐藏隐藏文件",
         showHiddenFiles: "显示隐藏文件",
+        collapseAll: "全部折叠",
       },
       empty: {
         noFiles: "没有文件",

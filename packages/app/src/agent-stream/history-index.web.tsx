@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -54,6 +55,35 @@ interface MountedHistoryIndexEntry {
   height: number;
 }
 
+function isEarlierMountedEntry(
+  candidate: MountedHistoryIndexEntry,
+  current: MountedHistoryIndexEntry | null,
+): boolean {
+  if (!current) return true;
+  if (candidate.top !== current.top) return candidate.top < current.top;
+  return candidate.entry.sourceIndex < current.entry.sourceIndex;
+}
+
+function isPreferredStraddlingEntry(
+  candidate: MountedHistoryIndexEntry,
+  current: MountedHistoryIndexEntry | null,
+): boolean {
+  if (!current) return true;
+  if (candidate.entry.sourceIndex !== current.entry.sourceIndex) {
+    return candidate.entry.sourceIndex > current.entry.sourceIndex;
+  }
+  return candidate.top > current.top;
+}
+
+function isCloserPrecedingEntry(
+  candidate: MountedHistoryIndexEntry,
+  current: MountedHistoryIndexEntry | null,
+): boolean {
+  if (!current) return true;
+  if (candidate.top !== current.top) return candidate.top > current.top;
+  return candidate.entry.sourceIndex > current.entry.sourceIndex;
+}
+
 export function resolveActiveHistoryIndexEntry(input: {
   entries: readonly ConversationHistoryIndexEntry[];
   mountedEntries: readonly MountedHistoryIndexEntry[];
@@ -67,21 +97,31 @@ export function resolveActiveHistoryIndexEntry(input: {
     return input.entries[input.entries.length - 1] ?? null;
   }
 
+  let straddlingTarget: MountedHistoryIndexEntry | null = null;
   let closestBefore: MountedHistoryIndexEntry | null = null;
   let firstMounted: MountedHistoryIndexEntry | null = null;
+
   for (const mounted of input.mountedEntries) {
-    const center = mounted.top + mounted.height / 2;
-    if (!firstMounted || center < firstMounted.top + firstMounted.height / 2) {
+    // 忽略 display:none 或零高度节点（getBoundingClientRect 返回 top=0,height=0，会压过上方负坐标真实消息）。
+    if (mounted.height <= 0) {
+      continue;
+    }
+    if (isEarlierMountedEntry(mounted, firstMounted)) {
       firstMounted = mounted;
     }
-    if (
-      center <= input.targetY &&
-      (!closestBefore || center > closestBefore.top + closestBefore.height / 2)
-    ) {
-      closestBefore = mounted;
+    if (mounted.top <= input.targetY) {
+      if (
+        mounted.top + mounted.height >= input.targetY &&
+        isPreferredStraddlingEntry(mounted, straddlingTarget)
+      ) {
+        straddlingTarget = mounted;
+      }
+      if (isCloserPrecedingEntry(mounted, closestBefore)) {
+        closestBefore = mounted;
+      }
     }
   }
-  return (closestBefore ?? firstMounted)?.entry ?? null;
+  return (straddlingTarget ?? closestBefore ?? firstMounted)?.entry ?? null;
 }
 
 function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
@@ -240,14 +280,20 @@ export function ConversationHistoryIndex({
     railHeight: railLayout.railHeight,
   });
   const renderedEntries = visibleEntries.slice(markerWindow.start, markerWindow.end);
-  const entryByDomId = useMemo(
-    () =>
-      new Map([
-        ...entries.map((entry) => [getStreamItemDomId(entry.id), entry] as const),
-        ...Array.from(itemOwners ?? [], ([id, entry]) => [getStreamItemDomId(id), entry] as const),
-      ]),
-    [entries, itemOwners],
-  );
+  const entryByDomId = useMemo(() => {
+    const map = new Map<string, ConversationHistoryIndexEntry>();
+    for (const entry of entries) {
+      // 仅登记已加载到前端的轮次 DOM 标识，避免未加载摘要复用提供方 messageId 时误命中当前挂载节点并跳回第 0 轮。
+      const loadedDomItemId = entry.loadedId ?? (entry.seqStart === undefined ? entry.id : null);
+      if (loadedDomItemId) {
+        map.set(getStreamItemDomId(loadedDomItemId), entry);
+      }
+    }
+    for (const [id, entry] of itemOwners ?? []) {
+      map.set(getStreamItemDomId(id), entry);
+    }
+    return map;
+  }, [entries, itemOwners]);
   const railStyle = useMemo<CSSProperties>(
     () => ({
       position: "absolute",
@@ -412,6 +458,11 @@ export function ConversationHistoryIndex({
       if (!isPanelActiveRef.current || event.currentTarget.clientHeight <= 0) {
         return;
       }
+      if (wasHiddenRef.current) {
+        // 面板刚从 display:none 恢复时，延迟到达的 scroll(scrollTop=0) 不能覆盖隐藏前保存的底部位置。
+        restoreRailScrollIfHidden(event.currentTarget);
+        return;
+      }
       const nextScrollTop = event.currentTarget.scrollTop;
       const maxScroll = Math.max(
         0,
@@ -422,7 +473,7 @@ export function ConversationHistoryIndex({
       userScrolledAwayRef.current = nextScrollTop < maxScroll - RAIL_BOTTOM_EPSILON;
       syncPointerFractionForScroll(nextScrollTop);
     },
-    [syncPointerFractionForScroll],
+    [restoreRailScrollIfHidden, syncPointerFractionForScroll],
   );
 
   // 接管轨道滚轮，把浏览器默认 ~100px/格的滚轮步长按 8px 刻度密度缩放，避免轻滚即直达顶部。
@@ -464,8 +515,8 @@ export function ConversationHistoryIndex({
   }, [restoreRailScrollIfHidden, syncPointerFractionForScroll, visibleEntries.length]);
 
   // 内容超出轨道高度时默认展示最新刻度；用户没有主动上滚时，新刻度到来仍保持在底部。
-  // 从隐藏保活状态切回时，优先还原隐藏前停留的位置或重新贴底，抵消 Chromium 归零 scrollTop。
-  useEffect(() => {
+  // 从隐藏保活状态切回时，在绘制前同步还原隐藏前停留的位置或重新贴底，抵消 Chromium 归零 scrollTop。
+  useLayoutEffect(() => {
     const rail = railRef.current;
     if (!rail || !isPanelActive || rail.clientHeight <= 0) {
       return;
@@ -608,6 +659,9 @@ export function ConversationHistoryIndex({
         continue;
       }
       const targetBounds = target.getBoundingClientRect();
+      if (targetBounds.height <= 0 || targetBounds.width <= 0) {
+        continue;
+      }
       mountedEntries.push({ entry, top: targetBounds.top, height: targetBounds.height });
     }
     const closestEntry = resolveActiveHistoryIndexEntry({
@@ -617,7 +671,9 @@ export function ConversationHistoryIndex({
       isAtBottom: false,
     });
     if (!closestEntry) {
-      setActiveId(null);
+      if (visibleEntries.length === 0) {
+        setActiveId(null);
+      }
       return;
     }
     setActiveId(getHistoryIndexEntryKey(closestEntry));

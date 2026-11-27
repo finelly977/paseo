@@ -487,6 +487,7 @@ export const en = {
         refreshing: "Refreshing files",
         hideHiddenFiles: "Hide hidden files",
         showHiddenFiles: "Show hidden files",
+        collapseAll: "Collapse all folders",
       },
       empty: {
         noFiles: "No files",

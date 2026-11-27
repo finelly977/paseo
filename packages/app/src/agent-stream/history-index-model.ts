@@ -114,17 +114,106 @@ export function buildConversationHistoryIndex(
   return entries;
 }
 
-/** 用户气泡被虚拟化卸载后，当前可见正文仍归属同一轮刻度。 */
+function findLatestEntryAtOrBeforeSeq(
+  sequencedEntries: readonly ConversationHistoryIndexEntry[],
+  seq: number,
+): ConversationHistoryIndexEntry | undefined {
+  let low = 0;
+  let high = sequencedEntries.length - 1;
+  let best: ConversationHistoryIndexEntry | undefined;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const candidate = sequencedEntries[mid];
+    if (candidate && candidate.seqStart !== undefined && candidate.seqStart <= seq) {
+      best = candidate;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return best;
+}
+
+function indexEntriesForOwnership(entries: readonly ConversationHistoryIndexEntry[]) {
+  const entriesBySeq = new Map<number, ConversationHistoryIndexEntry>();
+  const entriesByLoadedId = new Map<string, ConversationHistoryIndexEntry>();
+  const entriesById = new Map<string, ConversationHistoryIndexEntry>();
+  const sequencedEntries: ConversationHistoryIndexEntry[] = [];
+
+  for (const entry of entries) {
+    if (entry.seqStart !== undefined) {
+      entriesBySeq.set(entry.seqStart, entry);
+      sequencedEntries.push(entry);
+    }
+    if (entry.loadedId) {
+      entriesByLoadedId.set(entry.loadedId, entry);
+    }
+    if (entry.loadedId || entry.seqStart === undefined || !entriesById.has(entry.id)) {
+      entriesById.set(entry.id, entry);
+    }
+  }
+  sequencedEntries.sort((a, b) => (a.seqStart ?? 0) - (b.seqStart ?? 0));
+
+  const matchUserEntry = (item: StreamItem): ConversationHistoryIndexEntry | undefined => {
+    if (item.timelineCursor?.seq !== undefined) {
+      const bySeq = entriesBySeq.get(item.timelineCursor.seq);
+      if (bySeq) return bySeq;
+    }
+    return entriesByLoadedId.get(item.id) ?? entriesById.get(item.id);
+  };
+
+  return { matchUserEntry, sequencedEntries };
+}
+
+function resolveFallbackLeadingOwner(
+  items: readonly StreamItem[],
+  entries: readonly ConversationHistoryIndexEntry[],
+  matchUserEntry: (item: StreamItem) => ConversationHistoryIndexEntry | undefined,
+): ConversationHistoryIndexEntry | undefined {
+  let firstMatchedEntryIndex = -1;
+  for (const item of items) {
+    if (item.kind !== "user_message") continue;
+    const matched = matchUserEntry(item);
+    if (matched) {
+      firstMatchedEntryIndex = entries.indexOf(matched);
+      break;
+    }
+  }
+  if (firstMatchedEntryIndex > 0) {
+    return entries[firstMatchedEntryIndex - 1];
+  }
+  if (firstMatchedEntryIndex < 0) {
+    return entries[entries.length - 1];
+  }
+  return undefined;
+}
+
+/** 用户气泡被虚拟化卸载或首屏仅加载长回合尾部时，当前可见正文仍归属所属轮次刻度。 */
 export function buildHistoryIndexItemOwners(
   items: readonly StreamItem[],
   entries: readonly ConversationHistoryIndexEntry[],
 ): Map<string, ConversationHistoryIndexEntry> {
-  const users = new Map(entries.map((entry) => [entry.id, entry]));
   const owners = new Map<string, ConversationHistoryIndexEntry>();
+  if (items.length === 0 || entries.length === 0) {
+    return owners;
+  }
+
+  const { matchUserEntry, sequencedEntries } = indexEntriesForOwnership(entries);
+  const fallbackLeadingOwner = resolveFallbackLeadingOwner(items, entries, matchUserEntry);
+
   let current: ConversationHistoryIndexEntry | undefined;
   for (const item of items) {
-    if (item.kind === "user_message") current = users.get(item.id);
-    if (current) owners.set(item.id, current);
+    if (item.kind === "user_message") {
+      current = matchUserEntry(item) ?? current;
+    }
+    const seqOwner =
+      !current && item.timelineCursor?.seq !== undefined
+        ? findLatestEntryAtOrBeforeSeq(sequencedEntries, item.timelineCursor.seq)
+        : undefined;
+    const owner = current ?? seqOwner ?? fallbackLeadingOwner;
+    if (owner) {
+      owners.set(item.id, owner);
+    }
   }
   return owners;
 }

@@ -4,6 +4,7 @@ import { hydrateStreamState, isUnreconciledLocalUserMessage } from "@/types/stre
 import type { TimelineReadCursor } from "./fetch-agent-timeline-once";
 
 export function nativeHistoryItems(page: NativeHistoryPage, cursor: string | null): StreamItem[] {
+  const reservedItemIds = new Set<string>();
   return page.turns.flatMap((turn) => {
     // Date 是现有水合模型的内部要求；原生缺失的时间必须显式标记，不能展示为 1970 年。
     const started = (turn.startedAt ?? 0) * 1000;
@@ -13,8 +14,9 @@ export function nativeHistoryItems(page: NativeHistoryPage, cursor: string | nul
         item.type === "user_message" ? started : started + (turn.durationMs ?? 0),
       ),
     }));
-    const hydrated = hydrateStreamState(events, { source: "canonical" });
+    const hydrated = hydrateStreamState(events, { source: "canonical", reservedItemIds });
     for (const item of hydrated) {
+      reservedItemIds.add(item.id);
       item.timestampUnknown =
         turn.startedAt === null || (item.kind !== "user_message" && turn.durationMs === null);
     }

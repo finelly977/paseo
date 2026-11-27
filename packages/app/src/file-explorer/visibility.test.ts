@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ExplorerEntry } from "@/stores/session-store";
-import { filterVisibleExplorerEntries, isHiddenExplorerPath } from "./visibility";
+import {
+  filterVisibleExplorerEntries,
+  isDimmedExplorerEntry,
+  isHiddenExplorerPath,
+} from "./visibility";
 
 function makeEntry(name: string, kind: ExplorerEntry["kind"]): ExplorerEntry {
   return {
@@ -40,5 +44,15 @@ describe("file explorer visibility", () => {
     expect(isHiddenExplorerPath("src/components")).toBe(false);
     expect(isHiddenExplorerPath(".git")).toBe(true);
     expect(isHiddenExplorerPath("src/.cache/output.json")).toBe(true);
+  });
+
+  it("dims dot-prefixed entries and build/dependency directories while keeping project folders prominent", () => {
+    expect(isDimmedExplorerEntry(makeEntry(".codex", "directory"))).toBe(true);
+    expect(isDimmedExplorerEntry(makeEntry(".env", "file"))).toBe(true);
+    expect(isDimmedExplorerEntry(makeEntry("node_modules", "directory"))).toBe(true);
+    expect(isDimmedExplorerEntry(makeEntry("dist", "directory"))).toBe(true);
+    expect(isDimmedExplorerEntry(makeEntry("dist", "file"))).toBe(false);
+    expect(isDimmedExplorerEntry(makeEntry("tools", "directory"))).toBe(false);
+    expect(isDimmedExplorerEntry(makeEntry("README.md", "file"))).toBe(false);
   });
 });

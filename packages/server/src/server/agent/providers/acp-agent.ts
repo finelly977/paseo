@@ -9,6 +9,7 @@ import { Readable, Writable } from "node:stream";
 
 import { terminateWithTreeKill } from "../../../utils/tree-kill.js";
 import type { ProcessTerminator } from "../../../utils/tree-kill.js";
+import { sortProviderThinkingOptions } from "./thinking-options-order.js";
 import type {
   ReadableStream as NodeReadableStream,
   WritableStream as NodeWritableStream,
@@ -3338,13 +3339,14 @@ export function deriveSelectorOptions(
     return [];
   }
 
-  return flattenSelectOptions(option.options).map((value) => ({
+  const options = flattenSelectOptions(option.options).map((value) => ({
     id: value.value,
     label: value.name,
     description: value.description ?? undefined,
     isDefault: value.value === option.currentValue,
     metadata: value.group ? { group: value.group } : undefined,
   }));
+  return category === "thought_level" ? sortProviderThinkingOptions(options) : options;
 }
 
 function deriveCurrentConfigValue(

@@ -490,6 +490,7 @@ export const ja: TranslationResources = {
         refreshing: "ファイルを更新中",
         hideHiddenFiles: "隠しファイルを非表示",
         showHiddenFiles: "隠しファイルを表示",
+        collapseAll: "すべて折りたたむ",
       },
       empty: {
         noFiles: "ファイルなし",

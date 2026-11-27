@@ -389,4 +389,23 @@ describe("resolveActiveHistoryIndexEntry", () => {
 
     expect(active?.id).toBe("turn-1");
   });
+
+  it("keeps the latest turn active when scrolling up slightly inside a tall latest assistant reply", () => {
+    const entries = Array.from({ length: 20 }, (_, index) => entry(index));
+    // 用户在最新第 19 轮的长回复（高度 1800px，top=-200..bottom=1600，跨过 targetY=340）中稍微上滚，
+    // 即使其几何中心 center=700 > targetY，且上方挂载了更早轮次或零高隐藏节点，仍应保持在 turn-19 而非跳回 turn-0。
+    const active = resolveActiveHistoryIndexEntry({
+      entries,
+      mountedEntries: [
+        { entry: entries[0]!, top: -9000, height: 48 },
+        { entry: entries[0]!, top: 0, height: 0 },
+        { entry: entries[18]!, top: -420, height: 120 },
+        { entry: entries[19]!, top: -200, height: 1800 },
+      ],
+      targetY: 340,
+      isAtBottom: false,
+    });
+
+    expect(active?.id).toBe("turn-19");
+  });
 });

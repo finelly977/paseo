@@ -18,30 +18,37 @@ import {
   Text,
   View,
   type PressableStateCallbackType,
-  type StyleProp,
-  type ViewStyle,
 } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
 import * as Clipboard from "expo-clipboard";
 import {
+  ArrowDownUp,
   ChevronDown,
   Eye,
   EyeOff,
-  RotateCw,
   FilePlus,
+  Folder,
+  FolderOpen,
   FolderPlus,
+  ListChevronsDownUp,
+  RotateCw,
   Search,
+  type LucideIcon,
 } from "lucide-react-native";
 import { MaterialFileIcon } from "@/components/material-file-icon";
-import {
-  TreeChevron,
-  TreeIndentGuides,
-  treeRowPaddingLeft,
-  WORKSPACE_FILE_ROW_VERTICAL_PADDING,
-} from "@/components/tree-primitives";
+import { TREE_INDENT_PER_LEVEL, TreeChevron, TreeIndentGuides } from "@/components/tree-primitives";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SIDEBAR_TYPOGRAPHY_DATASET } from "@/styles/sidebar-typography";
+import { MOTION_PRESS_SCALE } from "@/styles/motion";
 import type {
   AgentFileExplorerState,
   ExplorerDirectory,
@@ -55,7 +62,7 @@ import { buildWorkspaceExplorerStateKey } from "@/hooks/use-file-explorer-action
 import { usePanelStore, type ExpandedPathsUpdate, type SortOption } from "@/stores/panel-store";
 import { formatTimeAgo } from "@/utils/time";
 import { buildAbsoluteExplorerPath } from "@/utils/explorer-paths";
-import { isHiddenExplorerPath } from "@/file-explorer/visibility";
+import { isDimmedExplorerEntry, isHiddenExplorerPath } from "@/file-explorer/visibility";
 import { collectExplorerRefreshPaths, refreshExplorerDirectories } from "@/file-explorer/refresh";
 import { createExplorerRefreshQueue } from "@/file-explorer/refresh-queue";
 import {
@@ -91,6 +98,12 @@ const SORT_OPTIONS: { value: SortOption }[] = [
   { value: "modified" },
   { value: "size" },
 ];
+const EXPLORER_ROW_BASE_PADDING_LEFT = 6;
+const EXPLORER_ROW_GUIDE_OFFSET = 7;
+
+function explorerTreeRowPaddingLeft(depth: number): number {
+  return EXPLORER_ROW_BASE_PADDING_LEFT + depth * TREE_INDENT_PER_LEVEL;
+}
 
 function formatFileSize({ size }: { size: number }): string {
   if (size < 1024) {
@@ -125,16 +138,213 @@ interface TreeRowItemProps {
 function sortTriggerStyle({
   hovered,
   pressed,
-}: PressableStateCallbackType & { hovered?: boolean }) {
-  return [styles.sortTrigger, (Boolean(hovered) || pressed) && styles.sortTriggerHovered];
-}
-
-function iconButtonStyle({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) {
-  return [styles.iconButton, (Boolean(hovered) || pressed) && styles.iconButtonHovered];
+  open,
+}: PressableStateCallbackType & { hovered?: boolean; open?: boolean }) {
+  return [
+    styles.sortTrigger,
+    open ? styles.sortTriggerOpen : Boolean(hovered) && styles.sortTriggerHovered,
+    pressed && styles.controlPressed,
+  ];
 }
 
 function treeRowKeyExtractor(row: ExplorerDisplayRow) {
   return "draftParent" in row ? `draft:${row.draftParent}` : `entry:${row.entry.path}`;
+}
+
+interface ExplorerToolbarIconButtonProps {
+  icon?: LucideIcon;
+  iconNode?: ReactNode;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  testID?: string;
+}
+
+function ExplorerToolbarIconButton({
+  icon: Icon,
+  iconNode,
+  label,
+  onPress,
+  disabled = false,
+  active = false,
+  testID,
+}: ExplorerToolbarIconButtonProps) {
+  const { theme } = useUnistyles();
+  const buttonStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.toolbarIconButton,
+      active && styles.toolbarIconButtonActive,
+      !disabled && !active && Boolean(hovered) && styles.toolbarIconButtonHovered,
+      !disabled && pressed && styles.toolbarIconButtonPressed,
+      disabled && styles.toolbarIconButtonDisabled,
+    ],
+    [active, disabled],
+  );
+  const accessibilityState = useMemo(() => ({ disabled, selected: active }), [active, disabled]);
+
+  return (
+    <Tooltip delayDuration={350} enabledOnDesktop={!disabled}>
+      <TooltipTrigger asChild>
+        <Pressable
+          onPress={onPress}
+          disabled={disabled}
+          hitSlop={4}
+          style={buttonStyle}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          accessibilityState={accessibilityState}
+          testID={testID}
+        >
+          {({ hovered, pressed }) => {
+            if (iconNode) {
+              return iconNode;
+            }
+            if (!Icon) {
+              return null;
+            }
+            const highlighted = !disabled && (active || Boolean(hovered) || pressed);
+            return (
+              <Icon
+                size={14}
+                strokeWidth={1.75}
+                color={highlighted ? theme.colors.foregroundSidebar : theme.colors.foregroundMuted}
+              />
+            );
+          }}
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" offset={6}>
+        <Text style={styles.toolbarTooltipText}>{label}</Text>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface ExplorerSortMenuProps {
+  sortOption: SortOption;
+  sortLabels: Record<SortOption, string>;
+  onSelectSort: (option: SortOption) => void;
+}
+
+function ExplorerSortOptionItem({
+  option,
+  selected,
+  label,
+  onSelectSort,
+}: {
+  option: SortOption;
+  selected: boolean;
+  label: string;
+  onSelectSort: (option: SortOption) => void;
+}) {
+  const handleSelect = useCallback(() => onSelectSort(option), [onSelectSort, option]);
+  return (
+    <DropdownMenuItem
+      selected={selected}
+      showSelectedCheck
+      onSelect={handleSelect}
+      testID={`files-sort-option-${option}`}
+    >
+      {label}
+    </DropdownMenuItem>
+  );
+}
+
+function ExplorerSortMenu({ sortOption, sortLabels, onSelectSort }: ExplorerSortMenuProps) {
+  const { theme } = useUnistyles();
+  const currentSortLabel = resolveCurrentSortLabel(sortOption, sortLabels);
+
+  return (
+    <DropdownMenu typography="sidebar" compact>
+      <DropdownMenuTrigger style={sortTriggerStyle} testID="files-sort-trigger">
+        {({ hovered, open }) => {
+          const highlighted = Boolean(hovered) || Boolean(open);
+          const color = highlighted ? theme.colors.foregroundSidebar : theme.colors.foregroundMuted;
+          return (
+            <>
+              <ArrowDownUp size={12} strokeWidth={1.75} color={color} />
+              <Text
+                style={[styles.sortTriggerText, highlighted && styles.sortTriggerTextActive]}
+                testID="files-sort-label"
+                numberOfLines={1}
+              >
+                {currentSortLabel}
+              </Text>
+              <ChevronDown size={11} strokeWidth={1.8} color={color} />
+            </>
+          );
+        }}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" width={148}>
+        {SORT_OPTIONS.map((option) => (
+          <ExplorerSortOptionItem
+            key={option.value}
+            option={option.value}
+            selected={option.value === sortOption}
+            label={sortLabels[option.value]}
+            onSelectSort={onSelectSort}
+          />
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function TreeEntryLeadingIcons({
+  entry,
+  isDirectory,
+  isExpanded,
+  loading,
+  dimmed,
+  emphasized,
+}: {
+  entry: ExplorerEntry;
+  isDirectory: boolean;
+  isExpanded: boolean;
+  loading: boolean;
+  dimmed: boolean;
+  emphasized: boolean;
+}) {
+  const { theme } = useUnistyles();
+
+  if (isDirectory) {
+    const FolderIcon = isExpanded ? FolderOpen : Folder;
+    let folderColor = theme.colors.foregroundMuted;
+    if (dimmed) {
+      folderColor = emphasized ? theme.colors.foregroundMuted : theme.colors.foregroundExtraMuted;
+    } else if (emphasized || isExpanded) {
+      folderColor = theme.colors.foregroundSidebar;
+    }
+    return (
+      <>
+        <View style={styles.chevronSlot}>
+          {loading ? (
+            <LoadingSpinner size={12} color={theme.colors.foregroundMuted} />
+          ) : (
+            <TreeChevron expanded={isExpanded} size={13} subtle={!emphasized} />
+          )}
+        </View>
+        <View style={styles.entryIcon}>
+          <FolderIcon
+            size={15}
+            strokeWidth={1.65}
+            color={folderColor}
+            fill={dimmed || isExpanded ? "none" : theme.colors.surface3}
+          />
+        </View>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <View style={styles.chevronSlot} aria-hidden />
+      <View style={[styles.entryIcon, dimmed && !emphasized && styles.entryIconDimmed]}>
+        <MaterialFileIcon fileName={entry.name} size={15} />
+      </View>
+    </>
+  );
 }
 
 function TreeRowItem({
@@ -158,8 +368,12 @@ function TreeRowItem({
 }: TreeRowItemProps) {
   const { t } = useTranslation();
   const [isHovered, setHovered] = useState(false);
+  const [isMenuOpen, setMenuOpen] = useState(false);
   const isCompact = useIsCompactFormFactor();
   const isDirectory = entry.kind === "directory";
+  const isDimmed = isDimmedExplorerEntry(entry);
+  const isRowHighlighted = isHovered || isMenuOpen || isSelected;
+  const showMenu = isCompact || !isWeb || isHovered || isMenuOpen;
   const enterRow = useStableEvent(() => setHovered(true));
   const leaveRow = useStableEvent(() => setHovered(false));
   const rowData = useMemo(() => ({ explorerEntryPath: entry.path }), [entry.path]);
@@ -177,10 +391,12 @@ function TreeRowItem({
   const pressableStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
       styles.entryRow,
-      { paddingLeft: treeRowPaddingLeft(depth) },
-      (isHovered || pressed || isSelected) && styles.entryRowActive,
+      { paddingLeft: explorerTreeRowPaddingLeft(depth) },
+      isSelected
+        ? styles.entryRowSelected
+        : (isHovered || isMenuOpen || pressed) && styles.entryRowHovered,
     ],
-    [depth, isSelected, isHovered],
+    [depth, isHovered, isMenuOpen, isSelected],
   );
 
   const handleCopy = useCallback(() => {
@@ -287,25 +503,38 @@ function TreeRowItem({
         accessibilityLabel={entry.name}
         dataSet={rowData}
       >
-        <TreeIndentGuides depth={depth} />
+        <TreeIndentGuides
+          depth={depth}
+          baseLeft={EXPLORER_ROW_BASE_PADDING_LEFT}
+          guideOffset={EXPLORER_ROW_GUIDE_OFFSET}
+        />
         <View ref={dragSourceRef} style={styles.entryInfo}>
-          <View style={styles.entryIcon}>
-            {(() => {
-              if (!isDirectory) {
-                return <MaterialFileIcon fileName={entry.name} size={16} />;
-              }
-              if (loading) return <ActivityIndicator size="small" />;
-              return <TreeChevron expanded={isExpanded} />;
-            })()}
-          </View>
-          <Text style={styles.entryName} numberOfLines={1}>
+          <TreeEntryLeadingIcons
+            entry={entry}
+            isDirectory={isDirectory}
+            isExpanded={isExpanded}
+            loading={loading}
+            dimmed={isDimmed}
+            emphasized={isRowHighlighted}
+          />
+          <Text
+            style={[
+              styles.entryName,
+              isDimmed && !isRowHighlighted && styles.entryNameDimmed,
+              isSelected && styles.entryNameSelected,
+            ]}
+            numberOfLines={1}
+          >
             {entry.name}
           </Text>
         </View>
-        <View
-          style={[styles.entryMenu, !isHovered && isWeb && !isCompact && styles.entryMenuHidden]}
-        >
-          <FileActionsMenu {...actionProps} header={metaHeader} />
+        <View style={[styles.entryMenu, !showMenu && styles.entryMenuHidden]}>
+          <FileActionsMenu
+            {...actionProps}
+            header={metaHeader}
+            open={isMenuOpen}
+            onOpenChange={setMenuOpen}
+          />
         </View>
       </Pressable>
     ),
@@ -314,16 +543,19 @@ function TreeRowItem({
       pressableStyle,
       testID,
       rowData,
-      entry.name,
+      entry,
       depth,
       dragSourceRef,
       isDirectory,
       isExpanded,
       loading,
-      isHovered,
-      isCompact,
+      isDimmed,
+      isRowHighlighted,
+      isSelected,
+      showMenu,
       actionProps,
       metaHeader,
+      isMenuOpen,
     ],
   );
   if (
@@ -529,11 +761,24 @@ export function FileExplorerPane({
     [downloadFile],
   );
 
-  const handleSortCycle = useCallback(() => {
-    const currentIndex = SORT_OPTIONS.findIndex((opt) => opt.value === sortOption);
-    const nextIndex = (currentIndex + 1) % SORT_OPTIONS.length;
-    setSortOption(SORT_OPTIONS[nextIndex].value);
-  }, [sortOption, setSortOption]);
+  const handleSelectSort = useCallback(
+    (option: SortOption) => {
+      setSortOption(option);
+    },
+    [setSortOption],
+  );
+
+  const hasExpandedDirectories = useMemo(
+    () => Array.from(expandedPaths).some((path) => path !== "."),
+    [expandedPaths],
+  );
+
+  const handleCollapseAll = useCallback(() => {
+    if (!workspaceStateKey || !hasExpandedDirectories) {
+      return;
+    }
+    setExpandedPathsForWorkspace(workspaceStateKey, ["."]);
+  }, [hasExpandedDirectories, setExpandedPathsForWorkspace, workspaceStateKey]);
 
   const handleToggleHiddenFiles = useCallback(() => {
     const willShow = !usePanelStore.getState().explorerShowHiddenFiles;
@@ -731,7 +976,7 @@ export function FileExplorerPane({
   });
   const openSearch = useStableEvent(() => setSearchOpen(true));
 
-  const sortLabels = useMemo(
+  const sortLabels = useMemo<Record<SortOption, string>>(
     () => ({
       name: t("workspace.fileExplorer.sort.name"),
       modified: t("workspace.fileExplorer.sort.modified"),
@@ -739,7 +984,6 @@ export function FileExplorerPane({
     }),
     [t],
   );
-  const currentSortLabel = resolveCurrentSortLabel(sortOption, sortLabels);
 
   const baseTreeRows = useMemo(
     () => flattenExplorerTree({ directories, expandedPaths, sortOption, showHiddenFiles }),
@@ -891,7 +1135,7 @@ export function FileExplorerPane({
   }
 
   return (
-    <View ref={containerRef} style={styles.container}>
+    <View ref={containerRef} style={styles.container} dataSet={SIDEBAR_TYPOGRAPHY_DATASET}>
       {browser.pending ? (
         <Text style={styles.loadingText}>{t("workspace.fileActions.preparingPreview")}</Text>
       ) : null}
@@ -918,31 +1162,33 @@ export function FileExplorerPane({
         <FileExplorerPaneContent
           actionsToolbar={
             <>
-              <Button
-                size="xs"
-                variant="ghost"
-                leftIcon={Search}
-                accessibilityLabel={t("workspace.fileActions.searchFiles")}
+              <ExplorerToolbarIconButton
+                icon={Search}
+                label={t("workspace.fileActions.searchFiles")}
+                active={searchOpen}
                 onPress={openSearch}
                 testID="files-search"
               />
-              <Button
-                size="xs"
-                variant="ghost"
-                leftIcon={FilePlus}
-                accessibilityLabel={t("workspace.fileActions.newFile")}
+              <ExplorerToolbarIconButton
+                icon={FilePlus}
+                label={t("workspace.fileActions.newFile")}
                 disabled={!supportsEntryMutation || entryActions.pending}
                 onPress={newRootFile}
                 testID="files-new-file"
               />
-              <Button
-                size="xs"
-                variant="ghost"
-                leftIcon={FolderPlus}
-                accessibilityLabel={t("workspace.fileActions.newDirectory")}
+              <ExplorerToolbarIconButton
+                icon={FolderPlus}
+                label={t("workspace.fileActions.newDirectory")}
                 disabled={!supportsEntryMutation || entryActions.pending}
                 onPress={newRootDirectory}
                 testID="files-new-directory"
+              />
+              <ExplorerToolbarIconButton
+                icon={ListChevronsDownUp}
+                label={t("workspace.fileExplorer.actions.collapseAll")}
+                disabled={!hasExpandedDirectories}
+                onPress={handleCollapseAll}
+                testID="files-collapse-all"
               />
             </>
           }
@@ -950,17 +1196,16 @@ export function FileExplorerPane({
           showInitialLoading={showInitialLoading}
           showBackFromError={showBackFromError}
           treeRows={treeRows}
-          currentSortLabel={currentSortLabel}
+          sortOption={sortOption}
+          sortLabels={sortLabels}
           isRefreshFetching={isRefreshFetching}
           treeListRef={treeListRef}
           renderTreeRow={renderTreeRow}
-          handleSortCycle={handleSortCycle}
+          handleSelectSort={handleSelectSort}
           handleToggleHiddenFiles={handleToggleHiddenFiles}
           handleRefresh={handleRefresh}
           handleBackFromError={handleBackFromError}
           handleRetry={handleRetry}
-          sortTriggerStyle={sortTriggerStyle}
-          iconButtonStyle={iconButtonStyle}
         />
       ) : null}
       {!supportsEntryMutation && client ? (
@@ -976,17 +1221,16 @@ interface FileExplorerPaneContentProps {
   showInitialLoading: boolean;
   showBackFromError: boolean;
   treeRows: ExplorerDisplayRow[];
-  currentSortLabel: string;
+  sortOption: SortOption;
+  sortLabels: Record<SortOption, string>;
   isRefreshFetching: boolean;
   treeListRef: RefObject<FlatList<ExplorerDisplayRow> | null>;
   renderTreeRow: (info: ListRenderItemInfo<ExplorerDisplayRow>) => ReactElement;
-  handleSortCycle: () => void;
+  handleSelectSort: (option: SortOption) => void;
   handleToggleHiddenFiles: () => void;
   handleRefresh: () => void;
   handleBackFromError: () => void;
   handleRetry: () => void;
-  sortTriggerStyle: (state: PressableStateCallbackType) => StyleProp<ViewStyle>;
-  iconButtonStyle: (state: PressableStateCallbackType) => StyleProp<ViewStyle>;
 }
 
 function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
@@ -997,17 +1241,16 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
     showInitialLoading,
     showBackFromError,
     treeRows,
-    currentSortLabel,
+    sortOption,
+    sortLabels,
     isRefreshFetching,
     treeListRef,
     renderTreeRow,
-    handleSortCycle,
+    handleSelectSort,
     handleToggleHiddenFiles,
     handleRefresh,
     handleBackFromError,
     handleRetry,
-    sortTriggerStyle: sortTriggerStyleProp,
-    iconButtonStyle: iconButtonStyleProp,
   } = props;
 
   const showHiddenFiles = usePanelStore((state) => state.explorerShowHiddenFiles);
@@ -1018,16 +1261,15 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
   const emptyLabel = showHiddenFiles
     ? t("workspace.fileExplorer.empty.noFiles")
     : t("workspace.fileExplorer.empty.noVisibleFiles");
-  const hiddenFilesToggleStyle = useCallback(
-    (state: PressableStateCallbackType) => [
-      iconButtonStyleProp(state),
-      !showHiddenFiles && styles.iconButtonActive,
-    ],
-    [showHiddenFiles, iconButtonStyleProp],
-  );
-  const hiddenFilesToggleAccessibilityState = useMemo(
-    () => ({ selected: !showHiddenFiles }),
-    [showHiddenFiles],
+  const refreshLabel = isRefreshFetching
+    ? t("workspace.fileExplorer.actions.refreshing")
+    : t("workspace.fileExplorer.actions.refresh");
+  const refreshSpinnerNode = useMemo(
+    () =>
+      isRefreshFetching ? (
+        <LoadingSpinner size={14} color={theme.colors.foregroundMuted} />
+      ) : undefined,
+    [isRefreshFetching, theme.colors.foregroundMuted],
   );
 
   if (error) {
@@ -1060,54 +1302,28 @@ function FileExplorerPaneContent(props: FileExplorerPaneContentProps) {
   return (
     <View style={[styles.treePane, styles.treePaneFill]}>
       <View style={styles.paneHeader} testID="files-pane-header">
-        <Pressable
-          onPress={handleSortCycle}
-          style={sortTriggerStyleProp}
-          testID="files-sort-trigger"
-        >
-          <Text style={styles.sortTriggerText} testID="files-sort-label">
-            {currentSortLabel}
-          </Text>
-          <ChevronDown size={12} color={theme.colors.foregroundMuted} />
-        </Pressable>
+        <ExplorerSortMenu
+          sortOption={sortOption}
+          sortLabels={sortLabels}
+          onSelectSort={handleSelectSort}
+        />
         <View style={styles.headerActions}>
           {props.actionsToolbar}
-          <Pressable
+          <ExplorerToolbarIconButton
+            icon={showHiddenFiles ? Eye : EyeOff}
+            label={hiddenFilesToggleAccessibilityLabel}
+            active={showHiddenFiles}
             onPress={handleToggleHiddenFiles}
-            hitSlop={8}
-            style={hiddenFilesToggleStyle}
-            accessibilityRole="button"
-            accessibilityLabel={hiddenFilesToggleAccessibilityLabel}
-            accessibilityState={hiddenFilesToggleAccessibilityState}
             testID="files-hidden-toggle"
-          >
-            {showHiddenFiles ? (
-              <Eye size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
-            ) : (
-              <EyeOff size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
-            )}
-          </Pressable>
-          <Pressable
-            onPress={handleRefresh}
+          />
+          <ExplorerToolbarIconButton
+            icon={RotateCw}
+            iconNode={refreshSpinnerNode}
+            label={refreshLabel}
             disabled={isRefreshFetching}
-            hitSlop={8}
-            style={iconButtonStyleProp}
-            accessibilityRole="button"
-            accessibilityLabel={
-              isRefreshFetching
-                ? t("workspace.fileExplorer.actions.refreshing")
-                : t("workspace.fileExplorer.actions.refresh")
-            }
+            onPress={handleRefresh}
             testID="files-refresh"
-          >
-            <View style={styles.refreshIcon}>
-              {isRefreshFetching ? (
-                <LoadingSpinner size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
-              ) : (
-                <RotateCw size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
-              )}
-            </View>
-          </Pressable>
+          />
         </View>
       </View>
       {treeRows.length === 0 ? (
@@ -1375,9 +1591,22 @@ function isMissingExplorerPath(path: string, missingPaths: readonly string[]): b
 }
 
 const styles = StyleSheet.create((theme) => ({
-  entryWrapper: { position: "relative" },
-  entryMenu: { flexShrink: 0 },
-  entryMenuHidden: { opacity: 0, pointerEvents: "none" },
+  entryWrapper: {
+    position: "relative",
+    marginHorizontal: theme.spacing[2],
+    marginBottom: 1,
+  },
+  entryMenu: {
+    flexShrink: 0,
+    marginLeft: theme.spacing[1],
+  },
+  entryMenuHidden: {
+    width: 0,
+    marginLeft: 0,
+    overflow: "hidden",
+    opacity: 0,
+    pointerEvents: "none",
+  },
   container: {
     flex: 1,
     backgroundColor: theme.colors.surfaceSidebar,
@@ -1418,7 +1647,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingRight: theme.spacing[3],
+    paddingHorizontal: theme.spacing[2],
+    gap: theme.spacing[1],
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
@@ -1427,29 +1657,69 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     gap: theme.spacing[1],
-    marginLeft: theme.spacing[3] - theme.spacing[1],
-    paddingHorizontal: theme.spacing[1],
-    height: 24,
-    borderRadius: theme.borderRadius.base,
+    paddingHorizontal: theme.spacing[1.5],
+    height: 26,
+    borderRadius: theme.borderRadius.md,
+    flexShrink: 1,
+    minWidth: 0,
+    ...(isWeb
+      ? ({ transition: "background-color 120ms ease, transform 100ms ease" } as object)
+      : {}),
   },
   sortTriggerHovered: {
-    backgroundColor: theme.colors.surface2,
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  sortTriggerOpen: {
+    backgroundColor: theme.colors.surfaceSidebarSelected,
+  },
+  controlPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.button }],
   },
   sortTriggerText: {
     fontSize: theme.fontSize.xs,
     color: theme.colors.foregroundMuted,
   },
+  sortTriggerTextActive: {
+    color: theme.colors.foregroundSidebar,
+  },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[1],
+    gap: 2,
+    flexShrink: 0,
+  },
+  toolbarIconButton: {
+    width: { xs: 34, md: 26 },
+    height: { xs: 34, md: 26 },
+    borderRadius: theme.borderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    ...(isWeb
+      ? ({ transition: "background-color 120ms ease, transform 100ms ease" } as object)
+      : {}),
+  },
+  toolbarIconButtonHovered: {
+    backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  toolbarIconButtonActive: {
+    backgroundColor: theme.colors.surfaceSidebarSelected,
+  },
+  toolbarIconButtonPressed: {
+    transform: [{ scale: MOTION_PRESS_SCALE.iconButton }],
+  },
+  toolbarIconButtonDisabled: {
+    opacity: 0.35,
+  },
+  toolbarTooltipText: {
+    fontSize: 13,
+    color: theme.colors.foreground,
   },
   treeList: {
     flex: 1,
     minHeight: 0,
   },
   entriesContent: {
-    paddingTop: theme.spacing[2],
+    paddingTop: theme.spacing[1.5],
     paddingBottom: theme.spacing[4],
   },
   centerState: {
@@ -1495,21 +1765,35 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
   },
   entryRow: {
+    position: "relative",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: WORKSPACE_FILE_ROW_VERTICAL_PADDING,
-    paddingRight: theme.spacing[3],
+    minHeight: { xs: 36, md: 28 },
+    paddingVertical: { xs: 7, md: 4 },
+    paddingRight: theme.spacing[1.5],
+    borderRadius: theme.borderRadius.md,
+    ...(isWeb ? ({ transition: "background-color 120ms ease" } as object) : {}),
   },
-  entryRowActive: {
+  entryRowHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
+  },
+  entryRowSelected: {
+    backgroundColor: theme.colors.surfaceSidebarSelected,
   },
   entryInfo: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.spacing[2],
+    gap: 5,
     minWidth: 0,
+  },
+  chevronSlot: {
+    width: 14,
+    height: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   entryIcon: {
     width: 16,
@@ -1518,10 +1802,19 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     flexShrink: 0,
   },
+  entryIconDimmed: {
+    opacity: 0.72,
+  },
   entryName: {
     flex: 1,
     color: theme.colors.foregroundSidebar,
-    fontSize: theme.fontSize.sm,
+    fontSize: theme.fontSize.sidebar,
+  },
+  entryNameDimmed: {
+    color: theme.colors.foregroundMuted,
+  },
+  entryNameSelected: {
+    color: theme.colors.foreground,
   },
   contextMetaBlock: {
     paddingVertical: theme.spacing[1],
@@ -1551,25 +1844,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundSidebar,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-  },
-  iconButton: {
-    width: 22,
-    height: 22,
-    borderRadius: theme.borderRadius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  iconButtonHovered: {
-    backgroundColor: theme.colors.surface2,
-  },
-  iconButtonActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  refreshIcon: {
-    width: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
   },
   previewContent: {
     flex: 1,
